@@ -58,6 +58,7 @@ export interface SceneContentOptions {
   generatedMediaMapping?: ImageMapping;
   agents?: AgentInfo[];
   languageDirective?: string;
+  specificContext?: string;
 }
 
 export interface SceneActionsOptions {
@@ -187,6 +188,7 @@ export async function generateSceneContent(
     generatedMediaMapping,
     agents,
     languageDirective,
+    specificContext,
   } = options;
   // If outline is interactive but missing interactiveConfig, fall back to slide
   if (outline.type === 'interactive' && !outline.interactiveConfig) {
@@ -203,6 +205,7 @@ export async function generateSceneContent(
       generatedMediaMapping,
       agents,
       languageDirective,
+      specificContext,
     );
   }
 
@@ -217,6 +220,7 @@ export async function generateSceneContent(
         generatedMediaMapping,
         agents,
         languageDirective,
+        specificContext,
       );
     case 'quiz':
       return generateQuizContent(outline, aiCall, languageDirective);
@@ -495,6 +499,7 @@ async function generateSlideContent(
   generatedMediaMapping?: ImageMapping,
   agents?: AgentInfo[],
   languageDirective?: string,
+  specificContext?: string,
 ): Promise<GeneratedSlideContent | null> {
   // Build assigned images description for the prompt
   let assignedImagesText = 'No images available. Do NOT insert any image elements.';
@@ -558,7 +563,10 @@ async function generateSlideContent(
   const canvasWidth = 1000;
   const canvasHeight = 562.5;
 
-  const teacherContext = formatTeacherPersonaForPrompt(agents);
+  let teacherContext = formatTeacherPersonaForPrompt(agents);
+  if (specificContext) {
+    teacherContext += `\n\nTextbook Context (use this specifically for content):\n${specificContext}`;
+  }
 
   const prompts = buildPrompt(PROMPT_IDS.SLIDE_CONTENT, {
     title: outline.title,

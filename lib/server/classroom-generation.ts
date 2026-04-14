@@ -22,6 +22,9 @@ import { determineOptimalModel } from '@/lib/ai/smart-router';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
 import { persistClassroom } from '@/lib/server/classroom-storage';
+import { configureRagEngine } from '@/lib/ai/rag/config';
+import { ingestTextToDatabase } from '@/lib/ai/rag/ingest';
+import { getContextForSlide } from '@/lib/ai/rag/retrieve';
 import {
   generateMediaForClassroom,
   replaceMediaPlaceholders,
@@ -263,6 +266,19 @@ export async function generateClassroom(
   };
   const pdfText = pdfContent?.text || undefined;
 
+  const stageId = nanoid(10);
+
+  if (pdfText) {
+    try {
+      log.info(`Initializing RAG engine for classroom ${stageId}`);
+      await configureRagEngine(modelString);
+      await ingestTextToDatabase(pdfText, stageId);
+    } catch (error) {
+      log.error(`Failed to ingest textbook into LlamaIndex:`, error);
+      // We do not fail the generation if RAG ingestion fails, it degrades gracefully.
+    }
+  }
+
   await options.onProgress?.({
     step: 'researching',
     progress: 10,
@@ -354,7 +370,6 @@ export async function generateClassroom(
     agents = getDefaultAgents();
   }
 
-  const stageId = nanoid(10);
   const stage: Stage = {
     id: stageId,
     name: outlines[0]?.title || requirement.slice(0, 50),
@@ -401,7 +416,16 @@ export async function generateClassroom(
       totalScenes: outlines.length,
     });
 
-    const content = await generateSceneContent(safeOutline, aiCall, { agents, languageDirective });
+    let specificContext: string | undefined;
+    if (pdfText) {
+      try {
+        specificContext = await getContextForSlide(safeOutline.title, stageId);
+      } catch (e) {
+        log.warn(`Failed to retrieve context from vector database for slide: ${safeOutline.title}`, e);
+      }
+    }
+
+    const content = await generateSceneContent(safeOutline, aiCall, { agents, languageDirective, specificContext });
     if (!content) {
       log.warn(`Skipping scene "${safeOutline.title}" — content generation failed`);
       continue;
