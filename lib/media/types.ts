@@ -74,7 +74,8 @@ export type ImageProviderId =
   | 'qwen-image'
   | 'nano-banana'
   | 'minimax-image'
-  | 'grok-image';
+  | 'grok-image'
+  | 'comfyui_generic';
 // Add new image providers below (uncomment and modify):
 // | 'dall-e'
 // | 'midjourney'
@@ -189,7 +190,8 @@ export type VideoProviderId =
   | 'veo'
   | 'sora'
   | 'minimax-video'
-  | 'grok-video';
+  | 'grok-video'
+  | 'comfyui_generic';
 // Add new video providers below (uncomment and modify):
 // | 'runway'
 // | 'pika'
