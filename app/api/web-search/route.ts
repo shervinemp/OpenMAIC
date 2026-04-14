@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
         query: query.trim(),
         baseUrl: baseUrl || process.env.SEARXNG_URL || 'http://127.0.0.1:8080/search'
       });
-    } else {
+    } else if (providerId === 'tavily' || !providerId) {
       const apiKey = resolveWebSearchApiKey(clientApiKey);
       if (!apiKey) {
         return apiError(
@@ -60,6 +60,8 @@ export async function POST(req: NextRequest) {
         );
       }
       result = await searchWithTavily({ query: query.trim(), apiKey });
+    } else {
+      return apiError('INVALID_PROVIDER', 400, `Unsupported web search provider: ${providerId}`);
     }
 
     // Clamp rewrite input at the route boundary; framework body limits still apply to total request size.
@@ -103,13 +105,15 @@ export async function POST(req: NextRequest) {
        finalSources = searchRes.sources;
        finalQuery = searchRes.query;
        finalResponseTime = searchRes.responseTime;
-    } else {
+    } else if (providerId === 'tavily' || !providerId) {
        const resolvedApiKey = resolveWebSearchApiKey(clientApiKey);
        const searchRes = await searchWithTavily({ query: searchQuery.query, apiKey: resolvedApiKey! });
        finalAnswer = searchRes.answer;
        finalSources = searchRes.sources;
        finalQuery = searchRes.query;
        finalResponseTime = searchRes.responseTime;
+    } else {
+       return apiError('INVALID_PROVIDER', 400, `Unsupported web search provider: ${providerId}`);
     }
     const context = formatSearchResultsAsContext({ answer: finalAnswer, sources: finalSources, query: finalQuery, responseTime: finalResponseTime });
 
