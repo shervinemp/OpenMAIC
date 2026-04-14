@@ -95,15 +95,30 @@ export async function POST(req: NextRequest) {
       finalQueryLength: searchQuery.finalQueryLength,
     });
 
-    const result = await searchWithTavily({ query: searchQuery.query, apiKey });
-    const context = formatSearchResultsAsContext(result);
+    let finalAnswer, finalSources, finalQuery, finalResponseTime;
+
+    if (providerId === 'searxng') {
+       const searchRes = await searchWithSearXNG({ query: searchQuery.query, baseUrl: baseUrl || process.env.SEARXNG_URL || 'http://127.0.0.1:8080/search' });
+       finalAnswer = searchRes.answer;
+       finalSources = searchRes.sources;
+       finalQuery = searchRes.query;
+       finalResponseTime = searchRes.responseTime;
+    } else {
+       const resolvedApiKey = resolveWebSearchApiKey(clientApiKey);
+       const searchRes = await searchWithTavily({ query: searchQuery.query, apiKey: resolvedApiKey! });
+       finalAnswer = searchRes.answer;
+       finalSources = searchRes.sources;
+       finalQuery = searchRes.query;
+       finalResponseTime = searchRes.responseTime;
+    }
+    const context = formatSearchResultsAsContext({ answer: finalAnswer, sources: finalSources, query: finalQuery, responseTime: finalResponseTime });
 
     return apiSuccess({
-      answer: result.answer,
-      sources: result.sources,
+      answer: finalAnswer,
+      sources: finalSources,
       context,
-      query: result.query,
-      responseTime: result.responseTime,
+      query: finalQuery,
+      responseTime: finalResponseTime,
     });
   } catch (err) {
     log.error(`Web search failed [query="${query?.substring(0, 60) ?? 'unknown'}"]:`, err);

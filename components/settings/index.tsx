@@ -169,6 +169,7 @@ const IMAGE_PROVIDER_NAMES: Record<ImageProviderId, string> = {
   'nano-banana': 'providerNanoBanana',
   'minimax-image': 'providerMiniMaxImage',
   'grok-image': 'providerGrokImage',
+  'comfyui_generic': 'providerComfyUI',
 };
 
 const IMAGE_PROVIDER_ICONS: Record<ImageProviderId, string> = {
@@ -177,6 +178,7 @@ const IMAGE_PROVIDER_ICONS: Record<ImageProviderId, string> = {
   'nano-banana': '/logos/gemini.svg',
   'minimax-image': '/logos/minimax.svg',
   'grok-image': '/logos/grok.svg',
+  'comfyui_generic': '/logos/comfyui.svg',
 };
 
 const VIDEO_PROVIDER_NAMES: Record<VideoProviderId, string> = {
@@ -186,6 +188,7 @@ const VIDEO_PROVIDER_NAMES: Record<VideoProviderId, string> = {
   sora: 'providerSora',
   'minimax-video': 'providerMiniMaxVideo',
   'grok-video': 'providerGrokVideo',
+  'comfyui_generic': 'providerComfyUI',
 };
 
 const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
@@ -195,6 +198,7 @@ const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
   sora: '/logos/openai.svg',
   'minimax-video': '/logos/minimax.svg',
   'grok-video': '/logos/grok.svg',
+  'comfyui_generic': '/logos/comfyui.svg',
 };
 
 interface SettingsDialogProps {

@@ -17,6 +17,7 @@ import {
   testMiniMaxImageConnectivity,
 } from './adapters/minimax-image-adapter';
 import { generateWithGrokImage, testGrokImageConnectivity } from './adapters/grok-image-adapter';
+import { generateWithGenericComfyUI } from './adapters/comfyui-adapter';
 
 export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
   seedream: {
@@ -93,6 +94,13 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
     ],
     supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16'],
   },
+  comfyui_generic: {
+    id: 'comfyui_generic',
+    name: 'Local Generative Media (ComfyUI)',
+    requiresApiKey: false,
+    models: [],
+    supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16'],
+  },
 };
 
 export async function testImageConnectivity(
@@ -109,6 +117,8 @@ export async function testImageConnectivity(
       return testMiniMaxImageConnectivity(config);
     case 'grok-image':
       return testGrokImageConnectivity(config);
+    case 'comfyui_generic':
+      return { success: true, message: 'Local ComfyUI does not require connectivity test' };
     default:
       return {
         success: false,
@@ -132,6 +142,8 @@ export async function generateImage(
       return generateWithMiniMaxImage(config, options);
     case 'grok-image':
       return generateWithGrokImage(config, options);
+    case 'comfyui_generic':
+      return generateWithGenericComfyUI(options);
     default:
       throw new Error(`Unsupported image provider: ${config.providerId}`);
   }

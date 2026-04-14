@@ -17,6 +17,7 @@ import {
   testMiniMaxVideoConnectivity,
 } from './adapters/minimax-video-adapter';
 import { generateWithGrokVideo, testGrokVideoConnectivity } from './adapters/grok-video-adapter';
+import { generateWithGenericComfyUI } from './adapters/comfyui-adapter';
 
 export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   seedance: {
@@ -106,6 +107,15 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     supportedDurations: [6],
     maxDuration: 6,
   },
+  comfyui_generic: {
+    id: 'comfyui_generic',
+    name: 'Local Generative Video (ComfyUI)',
+    requiresApiKey: false,
+    models: [],
+    supportedAspectRatios: ['16:9', '1:1', '9:16'],
+    supportedDurations: [5],
+    maxDuration: 5,
+  },
 };
 
 export async function testVideoConnectivity(
@@ -122,6 +132,8 @@ export async function testVideoConnectivity(
       return testMiniMaxVideoConnectivity(config);
     case 'grok-video':
       return testGrokVideoConnectivity(config);
+    case 'comfyui_generic':
+      return { success: true, message: 'Local ComfyUI does not require connectivity test' };
     default:
       return {
         success: false,
@@ -187,6 +199,8 @@ export async function generateVideo(
       return generateWithMiniMaxVideo(config, options);
     case 'grok-video':
       return generateWithGrokVideo(config, options);
+    case 'comfyui_generic':
+      return generateWithGenericComfyUI(options);
     default:
       throw new Error(`Unsupported video provider: ${config.providerId}`);
   }
