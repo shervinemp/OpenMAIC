@@ -44,6 +44,7 @@ export interface GenerateClassroomInput {
   enableVideoGeneration?: boolean;
   enableTTS?: boolean;
   agentMode?: 'default' | 'generate';
+  classroomId?: string;
 
   // Smart Routing Config
   enableSmartRouting?: boolean;
@@ -69,6 +70,9 @@ export interface ClassroomGenerationProgress {
   message: string;
   scenesGenerated: number;
   totalScenes?: number;
+  outlines?: SceneOutline[];
+  scenes?: Scene[];
+  stage?: Stage;
 }
 
 export interface GenerateClassroomResult {
@@ -172,6 +176,10 @@ export async function generateClassroom(
   options: {
     baseUrl: string;
     onProgress?: (progress: ClassroomGenerationProgress) => Promise<void> | void;
+    startSceneIndex?: number;
+    initialScenes?: Scene[];
+    initialOutlines?: SceneOutline[];
+    stageIdOverride?: string;
   },
 ): Promise<GenerateClassroomResult> {
   const { requirement, pdfContent } = input;
@@ -266,16 +274,15 @@ export async function generateClassroom(
   };
   const pdfText = pdfContent?.text || undefined;
 
-  const stageId = nanoid(10);
+  const stageId = options.stageIdOverride || input.classroomId || nanoid(10);
 
   if (pdfText) {
     try {
       log.info(`Initializing RAG engine for classroom ${stageId}`);
       await configureRagEngine(modelString);
-      await ingestTextToDatabase(pdfText, stageId);
+      // Note: Ingestion is handled asynchronously in parse-pdf now, or can be run here as fallback
     } catch (error) {
-      log.error(`Failed to ingest textbook into LlamaIndex:`, error);
-      // We do not fail the generation if RAG ingestion fails, it degrades gracefully.
+      log.error(`Failed to configure LlamaIndex:`, error);
     }
   }
 
@@ -317,42 +324,54 @@ export async function generateClassroom(
     }
   }
 
-  await options.onProgress?.({
-    step: 'generating_outlines',
-    progress: 15,
-    message: 'Generating scene outlines',
-    scenesGenerated: 0,
-  });
+  let outlines: SceneOutline[] = [];
+  let languageDirective = '';
 
-  const outlinesResult = await generateSceneOutlinesFromRequirements(
-    requirements,
-    pdfText,
-    undefined,
-    aiCall,
-    undefined,
-    {
-      imageGenerationEnabled: input.enableImageGeneration,
-      videoGenerationEnabled: input.enableVideoGeneration,
-      researchContext,
-      // NO teacherContext — agents haven't been generated yet
-    },
-  );
+  if (options.initialOutlines && options.initialOutlines.length > 0) {
+    log.info(`Resuming job with ${options.initialOutlines.length} existing outlines`);
+    outlines = options.initialOutlines;
+    // Guess language directive from first outline or default
+    languageDirective = outlines[0]?.languageNote || '';
+  } else {
+    await options.onProgress?.({
+      step: 'generating_outlines',
+      progress: 15,
+      message: 'Generating scene outlines',
+      scenesGenerated: 0,
+    });
 
-  if (!outlinesResult.success || !outlinesResult.data) {
-    log.error('Failed to generate outlines:', outlinesResult.error);
-    throw new Error(outlinesResult.error || 'Failed to generate scene outlines');
+    const outlinesResult = await generateSceneOutlinesFromRequirements(
+      requirements,
+      pdfText,
+      undefined,
+      aiCall,
+      undefined,
+      {
+        imageGenerationEnabled: input.enableImageGeneration,
+        videoGenerationEnabled: input.enableVideoGeneration,
+        researchContext,
+        // NO teacherContext — agents haven't been generated yet
+      },
+    );
+
+    if (!outlinesResult.success || !outlinesResult.data) {
+      log.error('Failed to generate outlines:', outlinesResult.error);
+      throw new Error(outlinesResult.error || 'Failed to generate scene outlines');
+    }
+
+    languageDirective = outlinesResult.data.languageDirective;
+    outlines = outlinesResult.data.outlines;
+    log.info(`Generated ${outlines.length} scene outlines (languageDirective: ${languageDirective})`);
+
+    await options.onProgress?.({
+      step: 'generating_outlines',
+      progress: 30,
+      message: `Generated ${outlines.length} scene outlines`,
+      scenesGenerated: 0,
+      totalScenes: outlines.length,
+      outlines,
+    });
   }
-
-  const { languageDirective, outlines } = outlinesResult.data;
-  log.info(`Generated ${outlines.length} scene outlines (languageDirective: ${languageDirective})`);
-
-  await options.onProgress?.({
-    step: 'generating_outlines',
-    progress: 30,
-    message: `Generated ${outlines.length} scene outlines`,
-    scenesGenerated: 0,
-    totalScenes: outlines.length,
-  });
 
   // Resolve agents based on agentMode — now AFTER outlines so we can use languageDirective
   let agents: AgentInfo[];
@@ -402,9 +421,16 @@ export async function generateClassroom(
   const api = createStageAPI(store);
 
   log.info('Stage 2: Generating scene content and actions...');
-  let generatedScenes = 0;
+  let generatedScenes = options.startSceneIndex || 0;
 
-  for (const [index, outline] of outlines.entries()) {
+  if (options.initialScenes) {
+    for (const scene of options.initialScenes) {
+      store.getState().addScene(scene);
+    }
+  }
+
+  for (let index = generatedScenes; index < outlines.length; index++) {
+    const outline = outlines[index];
     const safeOutline = applyOutlineFallbacks(outline, true);
     const progressStart = 30 + Math.floor((index / Math.max(outlines.length, 1)) * 60);
 
@@ -444,6 +470,7 @@ export async function generateClassroom(
     }
 
     generatedScenes += 1;
+    const currentScenes = store.getState().scenes;
     const progressEnd = 30 + Math.floor(((index + 1) / Math.max(outlines.length, 1)) * 60);
     await options.onProgress?.({
       step: 'generating_scenes',
@@ -451,6 +478,8 @@ export async function generateClassroom(
       message: `Generated ${generatedScenes}/${outlines.length} scenes`,
       scenesGenerated: generatedScenes,
       totalScenes: outlines.length,
+      scenes: currentScenes,
+      stage,
     });
   }
 

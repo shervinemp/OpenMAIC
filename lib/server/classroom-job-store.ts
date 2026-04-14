@@ -11,6 +11,8 @@ import {
   ensureClassroomJobsDir,
   writeJsonFileAtomic,
 } from '@/lib/server/classroom-storage';
+import type { SceneOutline } from '@/lib/types/generation';
+import type { Scene, Stage } from '@/lib/types/stage';
 
 export type ClassroomGenerationJobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
@@ -38,6 +40,9 @@ export interface ClassroomGenerationJob {
     scenesCount: number;
   };
   error?: string;
+  outlines?: SceneOutline[];
+  scenes?: Scene[];
+  stage?: Stage;
 }
 
 function jobFilePath(jobId: string) {
@@ -181,14 +186,20 @@ export async function updateClassroomGenerationJobProgress(
   jobId: string,
   progress: ClassroomGenerationProgress,
 ): Promise<ClassroomGenerationJob> {
-  return updateClassroomGenerationJob(jobId, {
+  const patch: Partial<ClassroomGenerationJob> = {
     status: 'running',
     step: progress.step,
     progress: progress.progress,
     message: progress.message,
     scenesGenerated: progress.scenesGenerated,
     totalScenes: progress.totalScenes,
-  });
+  };
+
+  if (progress.outlines) patch.outlines = progress.outlines;
+  if (progress.scenes) patch.scenes = progress.scenes;
+  if (progress.stage) patch.stage = progress.stage;
+
+  return updateClassroomGenerationJob(jobId, patch);
 }
 
 export async function markClassroomGenerationJobSucceeded(
