@@ -280,7 +280,6 @@ export async function generateClassroom(
     try {
       log.info(`Initializing RAG engine for classroom ${stageId}`);
       await configureRagEngine(modelString);
-      // Note: Ingestion is handled asynchronously in parse-pdf now, or can be run here as fallback
     } catch (error) {
       log.error(`Failed to configure LlamaIndex:`, error);
     }

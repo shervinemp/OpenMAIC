@@ -92,12 +92,8 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// The background worker function
 async function processBackgroundIngestion(text: string, classroomId: string) {
     log.info(`[RAG Worker] Started embedding textbook for ${classroomId}...`);
-
-    // Call the LlamaIndex local function we built earlier
     await ingestTextToDatabase(text, classroomId);
-
     log.info(`[RAG Worker] Finished embedding for ${classroomId}!`);
 }
