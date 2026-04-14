@@ -207,7 +207,7 @@ async function parseWithLocalVision(
   config: PDFParserConfig,
   pdfBuffer: Buffer
 ): Promise<ParsedPdfContent> {
-  const { getDocumentProxy, extractText, renderPageAsImage } = await import('unpdf');
+  const { getDocumentProxy, renderPageAsImage } = await import('unpdf');
   const pdf = await getDocumentProxy(new Uint8Array(pdfBuffer));
   const numPages = pdf.numPages;
 
@@ -216,7 +216,8 @@ async function parseWithLocalVision(
   const baseUrl = config.baseUrl || 'http://127.0.0.1:11434/v1';
 
   for (let i = 1; i <= numPages; i++) {
-    const page = await pdf.getPage(i);
+    // page is intentionally unused if only OCR is used
+    await pdf.getPage(i);
     const imageArrayBuffer = await renderPageAsImage(new Uint8Array(pdfBuffer), i, { scale: 2 });
     const base64Image = Buffer.from(imageArrayBuffer).toString('base64');
     const imageUrl = `data:image/png;base64,${base64Image}`;

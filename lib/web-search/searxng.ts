@@ -24,11 +24,11 @@ export async function searchWithSearXNG(params: {
   const data = await response.json();
   const startTime = Date.now();
 
-  const sources: WebSearchSource[] = data.results.slice(0, maxResults).map((result: any) => ({
-    title: result.title,
-    url: result.url,
-    content: result.content,
-    score: result.score || 1,
+  const sources: WebSearchSource[] = data.results.slice(0, maxResults).map((result: Record<string, string | number>) => ({
+    title: String(result.title || ''),
+    url: String(result.url || ''),
+    content: String(result.content || ''),
+    score: typeof result.score === 'number' ? result.score : 1,
   }));
 
   const answer = data.answers && data.answers.length > 0 ? data.answers[0] : '';
