@@ -164,12 +164,25 @@ export interface SettingsState {
   agentMode: 'preset' | 'auto';
   autoAgentCount: number;
 
+  // Smart Routing Settings
+  enableSmartRouting: boolean;
+  routerModel: string;
+  fastModel: string;
+  complexityThreshold: number;
+  maxLengthThreshold: number;
+
   // Layout preferences (persisted via localStorage)
   sidebarCollapsed: boolean;
   chatAreaCollapsed: boolean;
   chatAreaWidth: number;
 
   // Actions
+  setEnableSmartRouting: (enabled: boolean) => void;
+  setRouterModel: (model: string) => void;
+  setFastModel: (model: string) => void;
+  setComplexityThreshold: (threshold: number) => void;
+  setMaxLengthThreshold: (threshold: number) => void;
+
   setModel: (providerId: ProviderId, modelId: string) => void;
   setProviderConfig: (providerId: ProviderId, config: Partial<ProvidersConfig[ProviderId]>) => void;
   setProvidersConfig: (config: ProvidersConfig) => void;
@@ -616,6 +629,13 @@ export const useSettingsStore = create<SettingsState>()(
         autoPlayLecture: false,
         playbackSpeed: 1,
 
+        // Smart Routing defaults
+        enableSmartRouting: false,
+        routerModel: 'gpt-4o-mini',
+        fastModel: 'gpt-4o-mini',
+        complexityThreshold: 6,
+        maxLengthThreshold: 3000,
+
         // Layout preferences
         sidebarCollapsed: true,
         chatAreaCollapsed: true,
@@ -677,6 +697,13 @@ export const useSettingsStore = create<SettingsState>()(
         setMaxTurns: (turns) => set({ maxTurns: turns }),
         setAgentMode: (mode) => set({ agentMode: mode }),
         setAutoAgentCount: (count) => set({ autoAgentCount: count }),
+
+        // Smart Routing actions
+        setEnableSmartRouting: (enabled) => set({ enableSmartRouting: enabled }),
+        setRouterModel: (model) => set({ routerModel: model }),
+        setFastModel: (model) => set({ fastModel: model }),
+        setComplexityThreshold: (threshold) => set({ complexityThreshold: threshold }),
+        setMaxLengthThreshold: (threshold) => set({ maxLengthThreshold: threshold }),
 
         // Layout actions
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
