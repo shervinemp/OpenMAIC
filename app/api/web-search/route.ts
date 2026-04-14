@@ -8,6 +8,7 @@
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
 import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
+import { searchWithSearXNG } from '@/lib/web-search/searxng';
 import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -28,10 +29,14 @@ export async function POST(req: NextRequest) {
       query: requestQuery,
       pdfText,
       apiKey: clientApiKey,
+      providerId,
+      baseUrl,
     } = body as {
       query?: string;
       pdfText?: string;
       apiKey?: string;
+      providerId?: string;
+      baseUrl?: string;
     };
     query = requestQuery;
 
@@ -39,13 +44,22 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'query is required');
     }
 
-    const apiKey = resolveWebSearchApiKey(clientApiKey);
-    if (!apiKey) {
-      return apiError(
-        'MISSING_API_KEY',
-        400,
-        'Tavily API key is not configured. Set it in Settings → Web Search or set TAVILY_API_KEY env var.',
-      );
+    let result;
+    if (providerId === 'searxng') {
+      result = await searchWithSearXNG({
+        query: query.trim(),
+        baseUrl: baseUrl || process.env.SEARXNG_URL || 'http://127.0.0.1:8080/search'
+      });
+    } else {
+      const apiKey = resolveWebSearchApiKey(clientApiKey);
+      if (!apiKey) {
+        return apiError(
+          'MISSING_API_KEY',
+          400,
+          'Tavily API key is not configured. Set it in Settings → Web Search or set TAVILY_API_KEY env var.',
+        );
+      }
+      result = await searchWithTavily({ query: query.trim(), apiKey });
     }
 
     // Clamp rewrite input at the route boundary; framework body limits still apply to total request size.
