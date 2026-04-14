@@ -19,7 +19,7 @@ interface ComfyUIConfig {
 }
 
 // Helper to load the config dynamically at runtime
-function loadComfyConfig(): ComfyUIConfig {
+async function loadComfyConfig(): Promise<ComfyUIConfig> {
   if (typeof window !== 'undefined') {
     throw new Error('ComfyUI config cannot be loaded in the browser.');
   }
@@ -33,7 +33,8 @@ function loadComfyConfig(): ComfyUIConfig {
   if (!fs.existsSync(configPath)) {
     throw new Error(`ComfyUI config not found at ${configPath}. Please create it.`);
   }
-  return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  const fileContent = await fs.promises.readFile(configPath, 'utf-8');
+  return JSON.parse(fileContent);
 }
 
 export async function generateWithGenericComfyUI(
@@ -44,7 +45,7 @@ export async function generateWithGenericComfyUI(
   log.info(`Initializing Generic ComfyUI Generation for prompt: ${params.prompt}`);
 
   try {
-    const config = loadComfyConfig();
+    const config = await loadComfyConfig();
     const { baseUrl, nodeMapping, workflowTemplate } = config;
 
     // 1. Deep clone the template so we don't mutate the base object in memory
@@ -89,29 +90,47 @@ export async function generateWithGenericComfyUI(
     let finalSubfolder = "";
     let finalType = "";
 
-    while (!isFinished) {
+    // Safety timeout: stop after 200 attempts (600 seconds = 10 minutes)
+    const MAX_ATTEMPTS = 200;
+    let attempts = 0;
+
+    while (!isFinished && attempts < MAX_ATTEMPTS) {
+      attempts++;
       await new Promise(res => setTimeout(res, 3000)); // Poll every 3 seconds
 
-      const historyRes = await fetch(`${baseUrl}/history/${prompt_id}`);
-      const historyData = await historyRes.json();
-
-      if (historyData[prompt_id]) {
-        const outputs = historyData[prompt_id].outputs;
-        const outNode = outputs[nodeMapping.outputNodeId];
-
-        if (!outNode) {
-            throw new Error(`Output Node ${nodeMapping.outputNodeId} returned no data.`);
+      try {
+        const historyRes = await fetch(`${baseUrl}/history/${prompt_id}`);
+        if (!historyRes.ok) {
+          log.warn(`Failed to fetch history for ${prompt_id}, status: ${historyRes.status}`);
+          continue;
         }
 
-        // Handle both Image outputs (SaveImage node) and Video outputs (VHS_VideoCombine node)
-        const mediaArray = outNode.images || outNode.gifs || [];
-        if (mediaArray.length > 0) {
-           finalFilename = mediaArray[0].filename;
-           finalSubfolder = mediaArray[0].subfolder || "";
-           finalType = mediaArray[0].type || "output";
-           isFinished = true;
+        const historyData = await historyRes.json();
+
+        if (historyData[prompt_id]) {
+          const outputs = historyData[prompt_id].outputs;
+          const outNode = outputs[nodeMapping.outputNodeId];
+
+          if (!outNode) {
+              throw new Error(`Output Node ${nodeMapping.outputNodeId} returned no data.`);
+          }
+
+          // Handle both Image outputs (SaveImage node) and Video outputs (VHS_VideoCombine node)
+          const mediaArray = outNode.images || outNode.gifs || [];
+          if (mediaArray.length > 0) {
+             finalFilename = mediaArray[0].filename;
+             finalSubfolder = mediaArray[0].subfolder || "";
+             finalType = mediaArray[0].type || "output";
+             isFinished = true;
+          }
         }
+      } catch (err) {
+        log.error(`Error during polling for ${prompt_id}:`, err);
       }
+    }
+
+    if (!isFinished) {
+      throw new Error(`ComfyUI Generation timed out after ${MAX_ATTEMPTS} attempts.`);
     }
 
     // 7. Construct the final URL

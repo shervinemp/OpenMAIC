@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
       }
       result = await searchWithTavily({ query: query.trim(), apiKey });
     } else {
-      return apiError('INVALID_PROVIDER', 400, `Unsupported web search provider: ${providerId}`);
+      return apiError('INVALID_REQUEST', 400, `Unsupported web search provider: ${providerId}`);
     }
 
     // Clamp rewrite input at the route boundary; framework body limits still apply to total request size.
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
        finalQuery = searchRes.query;
        finalResponseTime = searchRes.responseTime;
     } else {
-       return apiError('INVALID_PROVIDER', 400, `Unsupported web search provider: ${providerId}`);
+       return apiError('INVALID_REQUEST', 400, `Unsupported web search provider: ${providerId}`);
     }
     const context = formatSearchResultsAsContext({ answer: finalAnswer, sources: finalSources, query: finalQuery, responseTime: finalResponseTime });
 
