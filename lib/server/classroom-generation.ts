@@ -18,6 +18,7 @@ import { createLogger } from '@/lib/logger';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { resolveModel } from '@/lib/server/resolve-model';
+import { determineOptimalModel } from '@/lib/ai/smart-router';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
 import { persistClassroom } from '@/lib/server/classroom-storage';
@@ -40,6 +41,13 @@ export interface GenerateClassroomInput {
   enableVideoGeneration?: boolean;
   enableTTS?: boolean;
   agentMode?: 'default' | 'generate';
+
+  // Smart Routing Config
+  enableSmartRouting?: boolean;
+  routerModel?: string;
+  fastModel?: string;
+  complexityThreshold?: number;
+  maxLengthThreshold?: number;
 }
 
 export type ClassroomGenerationStep =
@@ -172,13 +180,44 @@ export async function generateClassroom(
     scenesGenerated: 0,
   });
 
-  const {
+  // Fetch the default model configured in the server
+  let {
     model: languageModel,
     modelInfo,
     modelString,
     providerId,
     apiKey,
   } = await resolveModel({});
+
+  if (
+    input.enableSmartRouting &&
+    input.routerModel &&
+    input.fastModel &&
+    input.complexityThreshold !== undefined &&
+    input.maxLengthThreshold !== undefined
+  ) {
+    const optimalModelString = await determineOptimalModel({
+      topic: requirement,
+      requirements: pdfContent?.text,
+      defaultModel: modelString,
+      routerModel: input.routerModel,
+      fastModel: input.fastModel,
+      complexityThreshold: input.complexityThreshold,
+      maxLengthThreshold: input.maxLengthThreshold,
+    });
+
+    // If the router decided to use a different model, resolve it instead
+    if (optimalModelString !== modelString) {
+      log.info(`Smart router routed job from ${modelString} to ${optimalModelString}`);
+      const resolvedRouter = await resolveModel({ modelString: optimalModelString });
+      languageModel = resolvedRouter.model;
+      modelInfo = resolvedRouter.modelInfo;
+      modelString = resolvedRouter.modelString;
+      providerId = resolvedRouter.providerId;
+      apiKey = resolvedRouter.apiKey;
+    }
+  }
+
   log.info(`Using server-configured model: ${modelString}`);
 
   // Fail fast if the resolved provider has no API key configured

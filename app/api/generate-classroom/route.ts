@@ -29,6 +29,12 @@ export async function POST(req: NextRequest) {
         : {}),
       ...(rawBody.enableTTS != null ? { enableTTS: rawBody.enableTTS } : {}),
       ...(rawBody.agentMode ? { agentMode: rawBody.agentMode } : {}),
+
+      ...(rawBody.enableSmartRouting != null ? { enableSmartRouting: rawBody.enableSmartRouting } : {}),
+      ...(rawBody.routerModel ? { routerModel: rawBody.routerModel } : {}),
+      ...(rawBody.fastModel ? { fastModel: rawBody.fastModel } : {}),
+      ...(rawBody.complexityThreshold != null ? { complexityThreshold: rawBody.complexityThreshold } : {}),
+      ...(rawBody.maxLengthThreshold != null ? { maxLengthThreshold: rawBody.maxLengthThreshold } : {}),
     };
     const { requirement } = body;
 
