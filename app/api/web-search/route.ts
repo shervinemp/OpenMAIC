@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   let query: string | undefined;
   try {
     const body = await req.json();
-    const {
+    let {
       query: requestQuery,
       pdfText,
       apiKey: clientApiKey,
@@ -40,6 +40,8 @@ export async function POST(req: NextRequest) {
     };
     query = requestQuery;
 
+    providerId = providerId || 'tavily';
+
     if (!query || !query.trim()) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'query is required');
     }
@@ -50,7 +52,7 @@ export async function POST(req: NextRequest) {
         query: query.trim(),
         baseUrl: baseUrl || process.env.SEARXNG_URL || 'http://127.0.0.1:8080/search'
       });
-    } else if (providerId === 'tavily' || !providerId) {
+    } else if (providerId === 'tavily') {
       const apiKey = resolveWebSearchApiKey(clientApiKey);
       if (!apiKey) {
         return apiError(
@@ -105,7 +107,7 @@ export async function POST(req: NextRequest) {
        finalSources = searchRes.sources;
        finalQuery = searchRes.query;
        finalResponseTime = searchRes.responseTime;
-    } else if (providerId === 'tavily' || !providerId) {
+    } else if (providerId === 'tavily') {
        const resolvedApiKey = resolveWebSearchApiKey(clientApiKey);
        const searchRes = await searchWithTavily({ query: searchQuery.query, apiKey: resolvedApiKey! });
        finalAnswer = searchRes.answer;
