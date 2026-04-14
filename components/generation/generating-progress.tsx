@@ -6,6 +6,7 @@ import { Loader2, CheckCircle2, XCircle, Circle, Copy, Play } from 'lucide-react
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { toast } from 'sonner';
 
 interface GeneratingProgressProps {
   outlineReady: boolean; // Is outline generation complete?
@@ -84,7 +85,10 @@ export function GeneratingProgress({
   }, [error, firstPageReady]);
 
   const handleCopyPrompt = () => {
-    if (manualPromptText) navigator.clipboard.writeText(manualPromptText);
+    if (manualPromptText) {
+      navigator.clipboard.writeText(manualPromptText);
+      toast.success("Prompt copied to clipboard");
+    }
   };
 
   const handleSubmitManualResponse = async () => {
@@ -98,10 +102,10 @@ export function GeneratingProgress({
 
       // Reload the page. The user will click "Generate" again,
       // but the backend will instantly skip the step using the cache!
-      alert("Saved! Please restart the generation. The system will automatically use your injected response and continue.");
+      toast.success("Saved! Please restart the generation.");
       window.location.reload();
     } catch (_e) {
-      alert("Failed to save response.");
+      toast.error("Failed to save response.");
     } finally {
       setIsSubmitting(false);
     }
