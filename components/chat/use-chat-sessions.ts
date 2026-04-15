@@ -1096,10 +1096,37 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           return;
         }
 
+        const errorMessage = error instanceof Error ? error.message : String(error);
+
+        // Detect API limits (e.g., HTTP 429, quota limits, or context limits)
+        const isLimitError = errorMessage.includes('429') ||
+                             errorMessage.toLowerCase().includes('limit') ||
+                             errorMessage.toLowerCase().includes('quota');
+
+        if (isLimitError) {
+          // Automatically copy the user's prompt to the clipboard
+          navigator.clipboard.writeText(content).catch((err) => {
+            log.warn('Failed to auto-copy to clipboard:', err);
+          });
+
+          // Show an interactive toast alert with a Retry button
+          toast.error('API Limit Reached', {
+            description: 'Your prompt was copied to your clipboard. Please wait a moment and try again.',
+            action: {
+              label: 'Retry',
+              onClick: () => {
+                // Retry sending the exact same content
+                sendMessage(content);
+              },
+            },
+            duration: 8000, // keep the toast open a bit longer so they can click retry
+          });
+        }
+
         log.error('[ChatArea] Error:', error);
         clearLiveSessionAfterError(
           sessionId!,
-          `Error: ${error instanceof Error ? error.message : String(error)}`,
+          `Error: ${errorMessage}`,
         );
       } finally {
         // Only clean up if this is still the active controller (avoid race with interrupt)
@@ -1238,10 +1265,38 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           return;
         }
 
+        const errorMessage = error instanceof Error ? error.message : String(error);
+
+        // Detect API limits (e.g., HTTP 429, quota limits, or context limits)
+        const isLimitError = errorMessage.includes('429') ||
+                             errorMessage.toLowerCase().includes('limit') ||
+                             errorMessage.toLowerCase().includes('quota');
+
+        if (isLimitError) {
+          const contentToCopy = request.prompt || request.topic;
+          // Automatically copy the user's prompt to the clipboard
+          navigator.clipboard.writeText(contentToCopy).catch((err) => {
+            log.warn('Failed to auto-copy to clipboard:', err);
+          });
+
+          // Show an interactive toast alert with a Retry button
+          toast.error('API Limit Reached', {
+            description: 'Your prompt was copied to your clipboard. Please wait a moment and try again.',
+            action: {
+              label: 'Retry',
+              onClick: () => {
+                // Retry sending the exact same request
+                startDiscussion(request);
+              },
+            },
+            duration: 8000, // keep the toast open a bit longer so they can click retry
+          });
+        }
+
         log.error('[ChatArea] Discussion error:', error);
         clearLiveSessionAfterError(
           sessionId,
-          `Error starting discussion: ${error instanceof Error ? error.message : String(error)}`,
+          `Error starting discussion: ${errorMessage}`,
         );
       } finally {
         // Only clean up if this is still the active controller (avoid race with interrupt)
