@@ -1,5 +1,5 @@
 import { createLogger } from '@/lib/logger';
-import type { ImageGenerationOptions, ImageGenerationResult, VideoGenerationOptions, VideoGenerationResult } from '../types';
+
 
 const log = createLogger('ComfyUI-Generic-Adapter');
 
@@ -40,7 +40,7 @@ async function loadComfyConfig(): Promise<ComfyUIConfig> {
 export async function generateWithGenericComfyUI(
   // I need to use Options and not Params because the codebase uses Options,
   // I can look up the structure of ImageGenerationOptions/VideoGenerationOptions
-  params: any
+  params: unknown
 ): Promise<any> {
   log.info(`Initializing Generic ComfyUI Generation for prompt: ${(params as { prompt?: string; providerId?: string; modelId?: string; duration?: number }).prompt}`);
 
@@ -53,7 +53,7 @@ export async function generateWithGenericComfyUI(
 
     // 2. DYNAMIC INJECTION: Text Prompt
     if (workflow[nodeMapping.textPromptNodeId] && workflow[nodeMapping.textPromptNodeId].inputs) {
-      workflow[nodeMapping.textPromptNodeId].inputs[nodeMapping.textPromptField] = (params as any).prompt;
+      workflow[nodeMapping.textPromptNodeId].inputs[nodeMapping.textPromptField] = (params as { prompt?: string; providerId?: string; modelId?: string; duration?: number; seed?: number; imageInput?: string }).prompt;
     } else {
       log.warn(`Prompt Node ID ${nodeMapping.textPromptNodeId} not found in workflow.`);
     }
@@ -67,7 +67,7 @@ export async function generateWithGenericComfyUI(
     // 4. DYNAMIC INJECTION: Source Image (For Image-to-Image or Image-to-Video)
     // Note: To use this, ComfyUI needs the image uploaded first, or passed as a base64 string depending on your custom nodes.
     // For standard ComfyUI, you would use an endpoint to upload the image first, then pass the filename here.
-    if (nodeMapping.imageInputNodeId && params.imageUrls && params.imageUrls.length > 0) {
+    if (nodeMapping.imageInputNodeId && (params as any).imageUrls && (params as any).imageUrls.length > 0) {
        log.warn("Image-to-Image mapping is configured, but handling remote URLs requires a custom ComfyUI upload step.");
        // Example: workflow[nodeMapping.imageInputNodeId].inputs[nodeMapping.imageInputField || 'image'] = "uploaded_file.png";
     }
@@ -148,9 +148,9 @@ export async function generateWithGenericComfyUI(
       url: mediaUrl,
       sourceProvider: 'comfyui-generic',
       // width and height are required by ImageGenerationResult and VideoGenerationResult
-      // I'll return dummy numbers here for now, or fallback to params.width/height if available
-      width: params.width || 1024,
-      height: params.height || 1024,
+      // I'll return dummy numbers here for now, or fallback to (params as any).width/height if available
+      width: (params as any).width || 1024,
+      height: (params as any).height || 1024,
       duration: (params as { prompt?: string; providerId?: string; modelId?: string; duration?: number }).duration || 5
     };
 
