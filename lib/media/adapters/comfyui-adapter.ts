@@ -40,8 +40,8 @@ async function loadComfyConfig(): Promise<ComfyUIConfig> {
 export async function generateWithGenericComfyUI(
   // I need to use Options and not Params because the codebase uses Options,
   // I can look up the structure of ImageGenerationOptions/VideoGenerationOptions
-  params: unknown
-): Promise<unknown> {
+  params: any
+): Promise<any> {
   log.info(`Initializing Generic ComfyUI Generation for prompt: ${params.prompt}`);
 
   try {
