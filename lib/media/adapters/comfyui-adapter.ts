@@ -40,8 +40,8 @@ async function loadComfyConfig(): Promise<ComfyUIConfig> {
 export async function generateWithGenericComfyUI(
   // I need to use Options and not Params because the codebase uses Options,
   // I can look up the structure of ImageGenerationOptions/VideoGenerationOptions
-  params: unknown
-): Promise<unknown> {
+  params: any
+): Promise<any> {
   log.info(`Initializing Generic ComfyUI Generation for prompt: ${(params as { prompt?: string; providerId?: string; modelId?: string; duration?: number }).prompt}`);
 
   try {
@@ -53,7 +53,7 @@ export async function generateWithGenericComfyUI(
 
     // 2. DYNAMIC INJECTION: Text Prompt
     if (workflow[nodeMapping.textPromptNodeId] && workflow[nodeMapping.textPromptNodeId].inputs) {
-      workflow[nodeMapping.textPromptNodeId].inputs[nodeMapping.textPromptField] = params.prompt;
+      workflow[nodeMapping.textPromptNodeId].inputs[nodeMapping.textPromptField] = (params as any).prompt;
     } else {
       log.warn(`Prompt Node ID ${nodeMapping.textPromptNodeId} not found in workflow.`);
     }

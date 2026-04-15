@@ -1,4 +1,7 @@
-import { create, StateCreator } from 'zustand';
+const fs = require('fs');
+let content = fs.readFileSync('lib/store/canvas.ts', 'utf-8');
+
+const newContent = `import { create, StateCreator } from 'zustand';
 import { createSelectors } from '@/lib/utils/create-selectors';
 import type { TextAttrs } from '@/lib/prosemirror/utils';
 import { defaultRichTextAttrs } from '@/lib/prosemirror/utils';
@@ -364,3 +367,6 @@ const useCanvasStoreBase = create<CanvasState>((...a) => ({
 
 // Enhance store with selectors, supporting store.use.xxx() syntax
 export const useCanvasStore = createSelectors(useCanvasStoreBase);
+`;
+
+fs.writeFileSync('lib/store/canvas.ts', newContent);

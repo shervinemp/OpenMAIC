@@ -147,121 +147,113 @@ export function parseStructuredChunk(chunk: string, state: ParserState): ParseRe
 
   state.buffer += chunk;
 
-  // Step 1: Find the opening `[` if not yet found
+  // Step 1: Find the opening `[` containing an object `{` if not yet found
   if (!state.jsonStarted) {
-    const bracketIndex = state.buffer.indexOf('[');
-    if (bracketIndex === -1) {
+    const match = state.buffer.match(/\[\s*\{/);
+    if (!match) {
       return result;
     }
-    // Trim everything before `[` (markdown fences, explanatory text, etc.)
+    // Trim everything before the actual `[`
+    const bracketIndex = state.buffer.indexOf('[', match.index);
     state.buffer = state.buffer.slice(bracketIndex);
     state.jsonStarted = true;
   }
 
-  // Step 2: Check if the array is complete (closing `]` found)
-  const trimmed = state.buffer.trimEnd();
-  const isArrayClosed = trimmed.endsWith(']') && trimmed.length > 1;
+  // Step 2: Extract complete JSON objects (finite-state machine approach)
+  // Instead of passing the entire array to jsonrepair every time, we find complete objects,
+  // slice them out, and emit them. The buffer will only hold the currently incomplete object.
+  let openBraces = 0;
+  let inString = false;
+  let escapeNext = false;
+  let lastValidEnd = 0;
+  let firstBrace = -1;
 
-  // Step 3: Try incremental parse — jsonrepair first (fixes unescaped quotes), fallback to partial-json
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial-json returns any[]
-  let parsed: any[];
-  try {
-    const repaired = jsonrepair(state.buffer);
-    parsed = JSON.parse(repaired);
-  } catch {
+  for (let i = 0; i < state.buffer.length; i++) {
+    const char = state.buffer[i];
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (char === '{') {
+        if (openBraces === 0) firstBrace = i;
+        openBraces++;
+      } else if (char === '}') {
+        openBraces--;
+        if (openBraces === 0 && firstBrace !== -1) {
+          // We found a complete object
+          const objectString = state.buffer.slice(firstBrace, i + 1);
+          lastValidEnd = i + 1;
+
+          try {
+            const repaired = jsonrepair(objectString);
+            const item = JSON.parse(repaired);
+
+            if (item && typeof item === 'object') {
+              // Since we process complete objects one by one, we no longer need to
+              // track text delta offsets for them.
+              emitItem(item, result, state.lastParsedItemCount, state.lastParsedItemCount);
+              state.lastParsedItemCount++;
+              state.lastPartialTextLength = 0; // Reset as we finished an object
+            }
+          } catch (_e) {
+            // Ignore parse errors on individual objects
+          }
+
+          firstBrace = -1;
+        }
+      }
+    }
+  }
+
+  // Remove completely parsed objects from the buffer to avoid O(N²) bloat
+  if (lastValidEnd > 0) {
+    state.buffer = '[' + state.buffer.slice(lastValidEnd).replace(/^\s*,\s*/, '');
+  }
+
+  // Step 3: Stream partial text delta for the currently incomplete object
+  if (state.buffer.length > 1) {
     try {
-      parsed = parsePartialJson(
+      // Try to parse the remaining buffer incrementally
+      const parsed = parsePartialJson(
         state.buffer,
         Allow.ARR | Allow.OBJ | Allow.STR | Allow.NUM | Allow.BOOL | Allow.NULL,
       );
+
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const lastItem = parsed[parsed.length - 1];
+        if (lastItem && typeof lastItem === 'object' && lastItem.type === 'text') {
+          const content = lastItem.content || '';
+          if (content.length > state.lastPartialTextLength) {
+            result.textChunks.push(content.slice(state.lastPartialTextLength));
+            state.lastPartialTextLength = content.length;
+          }
+        }
+      }
     } catch {
-      return result;
+      // Ignore incremental parse errors
     }
   }
 
-  if (!Array.isArray(parsed)) {
-    return result;
-  }
-
-  // Step 4: Determine how many items are fully complete
-  // When the array is closed, all items are complete.
-  // When still streaming, items [0..N-2] are complete; item [N-1] may be partial.
-  const completeUpTo = isArrayClosed ? parsed.length : Math.max(0, parsed.length - 1);
-
-  // Count segment indices for items already emitted
-  let textSegmentIndex = 0;
-  let actionSegmentIndex = 0;
-  for (let i = 0; i < state.lastParsedItemCount && i < parsed.length; i++) {
-    const item = parsed[i];
-    if (item?.type === 'text') textSegmentIndex++;
-    else if (item?.type === 'action') actionSegmentIndex++;
-  }
-
-  // Step 5: Emit newly completed items
-  for (let i = state.lastParsedItemCount; i < completeUpTo; i++) {
-    const item = parsed[i];
-    if (!item || typeof item !== 'object') continue;
-
-    // If this item was previously the trailing partial text item, we've already
-    // streamed its content incrementally. Only emit the remaining delta, not the full content.
-    if (
-      i === state.lastParsedItemCount &&
-      state.lastPartialTextLength > 0 &&
-      item.type === 'text'
-    ) {
-      const content = item.content || '';
-      const remaining = content.slice(state.lastPartialTextLength);
-      if (remaining) {
-        result.textChunks.push(remaining);
-        // Only push ordered entry when there is actual content to emit
-        result.ordered.push({
-          type: 'text',
-          index: result.textChunks.length - 1,
-        });
-      }
-      textSegmentIndex++;
-      state.lastPartialTextLength = 0;
-      continue;
-    }
-
-    const indices = emitItem(item, result, textSegmentIndex, actionSegmentIndex);
-    textSegmentIndex = indices.textSegmentIndex;
-    actionSegmentIndex = indices.actionSegmentIndex;
-  }
-
-  state.lastParsedItemCount = completeUpTo;
-
-  // Step 6: Stream partial text delta for the trailing item
-  if (!isArrayClosed && parsed.length > completeUpTo) {
-    const lastItem = parsed[parsed.length - 1];
-    if (lastItem && typeof lastItem === 'object' && lastItem.type === 'text') {
-      const content = lastItem.content || '';
-      if (content.length > state.lastPartialTextLength) {
-        result.textChunks.push(content.slice(state.lastPartialTextLength));
-        state.lastPartialTextLength = content.length;
-      }
-    }
-  }
-
-  // Step 7: Mark done if array is closed
-  if (isArrayClosed) {
+  // Step 4: Check if the array is complete
+  const trimmed = state.buffer.trimEnd();
+  if (trimmed === ']' || trimmed === '[]') {
     state.isDone = true;
     result.isDone = true;
-    state.lastParsedItemCount = parsed.length;
     state.lastPartialTextLength = 0;
   }
 
   return result;
 }
 
-/**
- * Finalize parsing after the stream ends.
- *
- * Handles the case where the model never produced a valid JSON array —
- * e.g. it output plain text instead of the expected `[...]` format.
- * Emits whatever content is in the buffer as a single text item so the
- * frontend can still display something rather than showing nothing.
- */
 export function finalizeParser(state: ParserState): ParseResult {
   const result: ParseResult = {
     textChunks: [],
