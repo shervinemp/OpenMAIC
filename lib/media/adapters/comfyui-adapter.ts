@@ -40,9 +40,9 @@ async function loadComfyConfig(): Promise<ComfyUIConfig> {
 export async function generateWithGenericComfyUI(
   // I need to use Options and not Params because the codebase uses Options,
   // I can look up the structure of ImageGenerationOptions/VideoGenerationOptions
-  params: any
-): Promise<any> {
-  log.info(`Initializing Generic ComfyUI Generation for prompt: ${params.prompt}`);
+  params: unknown
+): Promise<unknown> {
+  log.info(`Initializing Generic ComfyUI Generation for prompt: ${(params as { prompt?: string; providerId?: string; modelId?: string; duration?: number }).prompt}`);
 
   try {
     const config = await loadComfyConfig();
@@ -151,7 +151,7 @@ export async function generateWithGenericComfyUI(
       // I'll return dummy numbers here for now, or fallback to params.width/height if available
       width: params.width || 1024,
       height: params.height || 1024,
-      duration: params.duration || 5
+      duration: (params as { prompt?: string; providerId?: string; modelId?: string; duration?: number }).duration || 5
     };
 
   } catch (error: unknown) {
