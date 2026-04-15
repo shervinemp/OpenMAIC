@@ -1,5 +1,5 @@
 import { Settings } from "llamaindex";
-import { OllamaEmbedding } from "llamaindex/embeddings/OllamaEmbedding";
+import { OllamaEmbedding } from "@llamaindex/ollama";
 import { resolveModel } from "@/lib/server/resolve-model";
 
 export async function configureRagEngine(modelString: string) {
@@ -7,7 +7,7 @@ export async function configureRagEngine(modelString: string) {
   const resolved = await resolveModel({ modelString });
 
   // 2. Tell LlamaIndex to use OpenMAIC's chosen LLM
-  Settings.llm = resolved.model as any;
+  Settings.llm = resolved.model as unknown as import("llamaindex").LLM;
 
   // 3. Set a fast local embedding model (runs completely offline)
   Settings.embedModel = new OllamaEmbedding({

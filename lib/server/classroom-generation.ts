@@ -1,3 +1,4 @@
+import { SceneOutline } from "@/lib/types/generation";
 import { nanoid } from 'nanoid';
 import { callLLM } from '@/lib/ai/llm';
 import { createStageAPI } from '@/lib/api/stage-api';
@@ -424,7 +425,7 @@ export async function generateClassroom(
 
   if (options.initialScenes) {
     for (const scene of options.initialScenes) {
-      store.getState().addScene(scene);
+      (store.getState() as unknown as { addScene: (scene: import("@/lib/types/stage").Scene) => void }).addScene(scene);
     }
   }
 
