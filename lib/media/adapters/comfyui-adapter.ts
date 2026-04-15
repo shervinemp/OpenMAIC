@@ -15,7 +15,7 @@ interface ComfyUIConfig {
     imageInputField?: string;
     outputNodeId: string;
   };
-  workflowTemplate: Record<string, any>;
+  workflowTemplate: Record<string, unknown>;
 }
 
 // Helper to load the config dynamically at runtime
@@ -40,8 +40,8 @@ async function loadComfyConfig(): Promise<ComfyUIConfig> {
 export async function generateWithGenericComfyUI(
   // I need to use Options and not Params because the codebase uses Options,
   // I can look up the structure of ImageGenerationOptions/VideoGenerationOptions
-  params: any
-): Promise<any> {
+  params: unknown
+): Promise<unknown> {
   log.info(`Initializing Generic ComfyUI Generation for prompt: ${params.prompt}`);
 
   try {
@@ -154,7 +154,7 @@ export async function generateWithGenericComfyUI(
       duration: params.duration || 5
     };
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error("Generic ComfyUI Generation failed", error);
     // The codebase throws exceptions for failed generation in other adapters
     throw error;

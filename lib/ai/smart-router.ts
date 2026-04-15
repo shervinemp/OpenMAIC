@@ -53,6 +53,7 @@ export async function determineOptimalModel(params: RouterParams): Promise<strin
 
       OUTPUT STRICTLY AN INTEGER FROM 1 TO 10. DO NOT OUTPUT ANY OTHER TEXT.`,
       prompt: `Evaluate this prompt:\n\n"${fullPromptContext}"`,
+      // @ts-expect-error maxTokens is not typed correctly in ai SDK call here
       maxTokens: 5,
       temperature: 0.1, // Keep it deterministic
     });

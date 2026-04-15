@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   let query: string | undefined;
   try {
     const body = await req.json();
-    let {
+    const {
       query: requestQuery,
       pdfText,
       apiKey: clientApiKey,
