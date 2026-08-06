@@ -77,6 +77,42 @@ describe('disabling the active provider switches selection away', () => {
     expect(useSettingsStore.getState().videoGenerationEnabled).toBe(false);
   });
 
+  it('video: an unconfigured ComfyUI provider is never chosen as the fallback', () => {
+    useSettingsStore.setState((state) => ({
+      videoProviderId: 'kling',
+      videoGenerationEnabled: true,
+      videoProvidersConfig: {
+        ...state.videoProvidersConfig,
+        kling: { apiKey: 'k-test', baseUrl: '', enabled: true },
+        'comfyui-video': { apiKey: '', baseUrl: '', enabled: true },
+      },
+    }));
+
+    const s = useSettingsStore.getState();
+    s.setVideoProviderConfig('kling', { enabled: false });
+    // Every keyed provider is empty and ComfyUI has no base URL: fall back to
+    // the registry default rather than blind-selecting a keyless local server.
+    expect(useSettingsStore.getState().videoProviderId).toBe('seedance');
+  });
+
+  it('video: a configured ComfyUI provider is a valid fallback target', () => {
+    useSettingsStore.setState((state) => ({
+      videoProviderId: 'kling',
+      videoGenerationEnabled: true,
+      videoProvidersConfig: {
+        ...state.videoProvidersConfig,
+        kling: { apiKey: 'k-test', baseUrl: '', enabled: true },
+        'comfyui-video': { apiKey: '', baseUrl: 'http://localhost:8188', enabled: true },
+      },
+    }));
+
+    const s = useSettingsStore.getState();
+    s.setVideoProviderConfig('kling', { enabled: false });
+    // Keyed providers have no keys; ComfyUI is the only actually-configured
+    // target, so it is selected even though it is keyless.
+    expect(useSettingsStore.getState().videoProviderId).toBe('comfyui-video');
+  });
+
   it('tts: disabling the selected provider falls back to browser TTS', () => {
     const s = useSettingsStore.getState();
     s.setTTSProvider('openai-tts');

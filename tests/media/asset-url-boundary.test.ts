@@ -51,7 +51,9 @@ describe('asset URL ownership boundary', () => {
   it('keeps pool URL resolution and release inside the shared owner module', () => {
     const cwd = process.cwd();
     const sources = SOURCE_ROOTS.flatMap((root) => sourceFiles(join(cwd, root))).map((path) => ({
-      path: relative(cwd, path),
+      // Normalize so the allowlist (written with forward slashes) matches on
+      // Windows, where path.relative emits backslashes.
+      path: relative(cwd, path).replace(/\\/g, '/'),
       source: readFileSync(path, 'utf8'),
     }));
     // Best-effort static guard: dynamic import(), require aliases, and computed

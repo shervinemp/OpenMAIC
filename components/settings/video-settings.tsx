@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import {
   Plus,
   Settings2,
   Trash2,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { VideoProviderId } from '@/lib/media/types';
@@ -32,6 +33,8 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
   const videoModelId = useSettingsStore((state) => state.videoModelId);
   const videoProvidersConfig = useSettingsStore((state) => state.videoProvidersConfig);
   const setVideoProviderConfig = useSettingsStore((state) => state.setVideoProviderConfig);
+  const setVideoProvider = useSettingsStore((state) => state.setVideoProvider);
+  const setVideoModelId = useSettingsStore((state) => state.setVideoModelId);
 
   const [showApiKey, setShowApiKey] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
@@ -59,6 +62,31 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
     [currentConfig?.customModels],
   );
   const isServerConfigured = !!currentConfig?.isServerConfigured;
+  const requiresApiKey = currentProvider?.requiresApiKey ?? true;
+  const isComfyUI = selectedProviderId === 'comfyui-video';
+
+  // ComfyUI: workflow files in public/ act as the model list.
+  const [workflows, setWorkflows] = useState<Array<{ id: string; name: string }>>([]);
+  const [workflowsLoading, setWorkflowsLoading] = useState(false);
+  const [workflowsError, setWorkflowsError] = useState('');
+  const fetchWorkflows = useCallback(async () => {
+    setWorkflowsLoading(true);
+    setWorkflowsError('');
+    try {
+      const res = await fetch('/api/comfyui-workflows');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setWorkflows(data.workflows || []);
+    } catch (err) {
+      setWorkflowsError(t('settings.comfyuiLoadError').replace('{error}', String(err)));
+      setWorkflows([]);
+    } finally {
+      setWorkflowsLoading(false);
+    }
+  }, [t]);
+  useEffect(() => {
+    if (isComfyUI) void fetchWorkflows();
+  }, [isComfyUI, fetchWorkflows]);
 
   const handleApiKeyChange = (apiKey: string) => {
     setVideoProviderConfig(selectedProviderId, { apiKey });
@@ -156,35 +184,44 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
             <Label>API Key</Label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <Input
-                  name={`video-api-key-${selectedProviderId}`}
-                  type={showApiKey ? 'text' : 'password'}
-                  autoComplete="new-password"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  placeholder={
-                    selectedProviderId === 'kling'
-                      ? 'accessKey:secretKey'
-                      : t('settings.enterApiKey')
-                  }
-                  value={currentConfig?.apiKey || ''}
-                  onChange={(e) => handleApiKeyChange(e.target.value)}
-                  className="h-8 pr-8"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+                {!isComfyUI && (
+                  <>
+                    <Input
+                      name={`video-api-key-${selectedProviderId}`}
+                      type={showApiKey ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      placeholder={
+                        selectedProviderId === 'kling'
+                          ? 'accessKey:secretKey'
+                          : t('settings.enterApiKey')
+                      }
+                      value={currentConfig?.apiKey || ''}
+                      onChange={(e) => handleApiKeyChange(e.target.value)}
+                      className="h-8 pr-8"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </>
+                )}
+                {isComfyUI && (
+                  <div className="flex h-8 items-center rounded-md border border-border/60 bg-muted/30 px-3 text-xs text-muted-foreground">
+                    {t('settings.videoNoApiKeyRequired')}
+                  </div>
+                )}
               </div>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleTest}
-                disabled={testLoading || !currentConfig?.apiKey}
+                disabled={testLoading || (requiresApiKey && !currentConfig?.apiKey)}
                 className="gap-1.5"
               >
                 {testLoading ? (
@@ -303,6 +340,73 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
           ))}
         </div>
       </div>
+
+      {/* ComfyUI: workflow files serve as the model picker */}
+      {isComfyUI && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <Label className="text-base">{t('settings.comfyuiWorkflows')}</Label>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchWorkflows}
+              disabled={workflowsLoading}
+              className="gap-1.5"
+            >
+              {workflowsLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              {t('settings.comfyuiRefresh')}
+            </Button>
+          </div>
+
+          {workflowsError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-300">
+              {workflowsError}
+            </div>
+          )}
+
+          {!workflowsLoading && !workflowsError && workflows.length === 0 && (
+            <div className="rounded-lg border border-border/50 bg-muted/30 p-4 text-sm text-muted-foreground text-center">
+              {t('settings.comfyuiNoWorkflowsFoundPrefix')}{' '}
+              <code className="font-mono text-xs">public/</code>.
+              <br />
+              {t('settings.comfyuiAddWorkflowPrefix')}{' '}
+              <code className="font-mono text-xs">comfyui-*.json</code>{' '}
+              {t('settings.comfyuiAddWorkflowSuffix')}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            {workflows.map((workflow) => (
+              <div
+                key={workflow.id}
+                className={cn(
+                  'flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors',
+                  videoModelId === workflow.id
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border/50 bg-card hover:border-border hover:bg-accent/30',
+                )}
+                onClick={() => {
+                  // Selecting a workflow also makes ComfyUI the active video
+                  // provider, so the model id and provider never drift.
+                  setVideoProvider(selectedProviderId);
+                  setVideoModelId(workflow.id);
+                }}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium">{workflow.name}</div>
+                  <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                    {workflow.id}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit Model Dialog */}
       <Dialog open={showModelDialog} onOpenChange={setShowModelDialog}>

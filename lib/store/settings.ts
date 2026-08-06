@@ -1187,10 +1187,16 @@ export const useSettingsStore = create<SettingsState>()(
               // disabled provider with an empty key.
               if (config.enabled === false) {
                 const providerIds = Object.keys(VIDEO_PROVIDERS) as VideoProviderId[];
+                // Keyless local providers (e.g. ComfyUI) only count as usable
+                // fallbacks once the user has actually pointed one at a base
+                // URL; an unconfigured one must never silently claim selection.
+                const isUsableVideoFallback = (id: VideoProviderId): boolean =>
+                  isUsableMediaProvider(VIDEO_PROVIDERS[id], videoProvidersConfig[id]) &&
+                  (!!VIDEO_PROVIDERS[id]?.requiresApiKey ||
+                    !!videoProvidersConfig[id]?.baseUrl ||
+                    !!videoProvidersConfig[id]?.isServerConfigured);
                 const usableFallback = providerIds.find(
-                  (id) =>
-                    id !== providerId &&
-                    isUsableMediaProvider(VIDEO_PROVIDERS[id], videoProvidersConfig[id]),
+                  (id) => id !== providerId && isUsableVideoFallback(id),
                 );
                 const fallback =
                   usableFallback ?? providerIds.find((id) => id !== providerId) ?? providerId;

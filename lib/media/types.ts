@@ -195,7 +195,8 @@ export type VideoProviderId =
   | 'sora'
   | 'minimax-video'
   | 'grok-video'
-  | 'happyhorse';
+  | 'happyhorse'
+  | 'comfyui-video';
 // Add new video providers below (uncomment and modify):
 // | 'runway'
 // | 'pika'
