@@ -38,6 +38,8 @@ import { cn } from '@/lib/utils';
 import { SettingsDialog } from '@/components/settings';
 import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
+import { RestoreBackupButton } from '@/components/backup/restore-backup-button';
+import { BACKUP_UI_ENABLED } from '@/lib/backup/config';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
@@ -1164,6 +1166,7 @@ function HomePage() {
                   {t('import.classroom')}
                 </span>
               </button>
+              {BACKUP_UI_ENABLED && <RestoreBackupButton variant="pill" />}
               {PPTX_IMPORT_ENABLED && (
                 <button
                   onClick={triggerPptxFileSelect}
