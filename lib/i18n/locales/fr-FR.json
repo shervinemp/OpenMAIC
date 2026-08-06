@@ -1799,7 +1799,8 @@
     },
     "ttsBrowserNativeTimelineNotice": "La synthèse vocale native du navigateur ne prend pas en charge les fonctions audio de la piste de l’éditeur (écoute, régénération et sonorisation groupée). Choisissez un fournisseur de synthèse vocale géré pour produire et gérer l’audio réplique par réplique.",
     "alidocmindAccessKeyId": "Identifiant de clé d’accès",
-    "alidocmindAccessKeySecret": "Secret de clé d’accès"
+    "alidocmindAccessKeySecret": "Secret de clé d’accès",
+    "videoNoApiKeyRequired": "No API key required"
   },
   "profile": {
     "title": "Profil",
