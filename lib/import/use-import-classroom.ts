@@ -280,7 +280,184 @@ export type ImportPhase =
   | 'writingCourse'
   | 'done';
 
-export function useImportClassroom(onSuccess?: (importedStageId: string) => void) {
+export class ImportClassroomError extends Error {
+  readonly code: 'INVALID_MANIFEST';
+
+  constructor(code: 'INVALID_MANIFEST', message?: string) {
+    super(message || code);
+    this.name = 'ImportClassroomError';
+    this.code = code;
+  }
+}
+
+/**
+ * Imperative entry point for importing a single Classroom ZIP (a
+ * `ClassroomManifest` at the root, as produced by `addStageContentToZip`).
+ *
+ * Extracted from `useImportClassroom` so both the settings picker and the full
+ * local-backup restore can reuse the same validated pipeline. On failure every
+ * partially-allocated asset/document is rolled back before the error is
+ * rethrown.
+ */
+export async function importClassroomZip(
+  zip: JSZip,
+  onPhase?: (phase: ImportPhase) => void,
+): Promise<string> {
+  onPhase?.('validating');
+  const manifestFile = zip.file('manifest.json');
+  if (!manifestFile) throw new ImportClassroomError('INVALID_MANIFEST');
+
+  let manifest: ClassroomManifest;
+  try {
+    manifest = JSON.parse(await manifestFile.async('text'));
+  } catch {
+    throw new ImportClassroomError('INVALID_MANIFEST');
+  }
+  if (!manifest.stage || !manifest.scenes || !Array.isArray(manifest.scenes)) {
+    throw new ImportClassroomError('INVALID_MANIFEST');
+  }
+
+  const newStageId = nanoid();
+  const now = Date.now();
+
+  // Agent ID mapping: index → new ID
+  const newAgentIds: string[] = (manifest.agents ?? []).map(() => nanoid());
+  const studentAgentIndex = manifest.agents?.findIndex((agent) => agent.role === 'student') ?? -1;
+  const nonTeacherAgentIndex =
+    manifest.agents?.findIndex((agent) => agent.role !== 'teacher') ?? -1;
+  const fallbackDiscussionAgentIndex =
+    studentAgentIndex >= 0
+      ? studentAgentIndex
+      : nonTeacherAgentIndex >= 0
+        ? nonTeacherAgentIndex
+        : undefined;
+
+  const importedPoolIds: string[] = [];
+  let importCommitted = false;
+  try {
+    onPhase?.('writingMedia');
+    const audioRefToNewId = await materializeImportedAudio(
+      zip,
+      manifest,
+      newStageId,
+      now,
+      importedPoolIds,
+    );
+    const mediaMappings = await materializeImportedMedia(
+      zip,
+      manifest,
+      newStageId,
+      now,
+      importedPoolIds,
+    );
+
+    onPhase?.('writingCourse');
+
+    // Rebuild the roster as stage-embedded configs: the stage document is the
+    // single source of truth for generated agents (voice included).
+    const importedAgentConfigs: GeneratedAgentConfig[] = (manifest.agents ?? []).map((a, i) =>
+      agentConfigFromManifest(a, newAgentIds[i]),
+    );
+
+    const document: AppDocument = {
+      stage: {
+        id: newStageId,
+        name: manifest.stage.name || 'Imported Classroom',
+        description: manifest.stage.description,
+        languageDirective: manifest.stage.language,
+        style: manifest.stage.style,
+        createdAt: manifest.stage.createdAt || now,
+        updatedAt: now,
+        agentIds: newAgentIds.length > 0 ? newAgentIds : undefined,
+        ...(manifest.stage.videoManifest
+          ? {
+              videoManifest: rewriteImportedVideoManifest(
+                manifest.stage.videoManifest,
+                mediaMappings,
+              ),
+            }
+          : {}),
+        ...(importedAgentConfigs.length > 0 ? { generatedAgentConfigs: importedAgentConfigs } : {}),
+      },
+      scenes: manifest.scenes.map((mScene: ManifestScene, index: number) => {
+        const newSceneId = nanoid();
+        const actions = mScene.actions
+          ? rewriteAudioRefsToIds(mScene.actions, audioRefToNewId, {
+              agentIds: newAgentIds,
+              fallbackDiscussionAgentIndex,
+            })
+          : undefined;
+        const multiAgent = mScene.multiAgent?.enabled
+          ? {
+              enabled: true,
+              agentIds: (mScene.multiAgent.agentIndices ?? [])
+                .map((idx) => newAgentIds[idx])
+                .filter(Boolean),
+              directorPrompt: mScene.multiAgent.directorPrompt,
+            }
+          : undefined;
+
+        const content =
+          mScene.content.type === 'slide'
+            ? {
+                ...mScene.content,
+                canvas: rewriteImportedSlideMediaRefs(mScene.content.canvas, mediaMappings),
+              }
+            : mScene.content;
+        return canonicalizeLegacyScene({
+          id: newSceneId,
+          stageId: newStageId,
+          title: mScene.title,
+          order: mScene.order ?? index,
+          content,
+          actions,
+          whiteboards: mScene.whiteboards?.map((slide) =>
+            rewriteImportedSlideMediaRefs(slide, mediaMappings),
+          ),
+          multiAgent,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }),
+    };
+
+    // The document is the commit point: one aggregate write under its per-stage lock.
+    await mutateDocument(newStageId, async (_existing, store) => store.saveDocument(document));
+    importCommitted = true;
+    return newStageId;
+  } catch (error) {
+    // Media files cannot join the aggregate document transaction. Until the
+    // document commit point, compensate every row/allocation individually.
+    const cleanup = async (label: string, operation: () => Promise<unknown>) => {
+      try {
+        await operation();
+      } catch (cleanupError) {
+        log.error(`Failed to undo imported ${label}:`, cleanupError);
+      }
+    };
+    if (!importCommitted) {
+      await cleanup('document', async () => {
+        await mutateDocument(newStageId, async (_document, store) =>
+          store.deleteDocument(newStageId),
+        );
+      });
+      await cleanup('generated media', () =>
+        db.mediaFiles.where('stageId').equals(newStageId).delete(),
+      );
+      await cleanup('audio files', () =>
+        db.audioFiles.where('stageId').equals(newStageId).delete(),
+      );
+    }
+    if (!importCommitted) {
+      for (const id of importedPoolIds) {
+        await cleanup(`asset pool entry ${id}`, () => removeAsset(id));
+      }
+    }
+    throw error;
+  }
+}
+
+export function useImportClassroom(onSuccess?: () => void) {
   const [importing, setImporting] = useState(false);
   const [phase, setPhase] = useState<ImportPhase>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -302,213 +479,46 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
       setPhase('parsing');
       const toastId = toast.loading(t('import.parsing'));
 
-      let importedStageId: string | undefined;
-      const importedPoolIds: string[] = [];
-      let importCommitted = false;
-      try {
-        // 0. Size check — warn for files over 200MB
-        const MAX_SAFE_SIZE = 200 * 1024 * 1024;
-        if (file.size > MAX_SAFE_SIZE) {
-          log.warn(`Large ZIP file: ${(file.size / 1024 / 1024).toFixed(0)}MB`);
-        }
+      // Size check — warn for files over 200MB
+      const MAX_SAFE_SIZE = 200 * 1024 * 1024;
+      if (file.size > MAX_SAFE_SIZE) {
+        log.warn(`Large ZIP file: ${(file.size / 1024 / 1024).toFixed(0)}MB`);
+      }
 
-        // 1. Parse ZIP
+      let success = false;
+      try {
         const JSZip = (await import('jszip')).default;
         const zip = await JSZip.loadAsync(file);
-
-        const manifestFile = zip.file('manifest.json');
-        if (!manifestFile) {
-          toast.error(t('import.error.invalidManifest'), { id: toastId });
-          return;
-        }
-
-        // 2. Validate
-        setPhase('validating');
-        toast.loading(t('import.validating'), { id: toastId });
-
-        const manifestText = await manifestFile.async('text');
-        let manifest: ClassroomManifest;
-        try {
-          manifest = JSON.parse(manifestText);
-        } catch {
-          toast.error(t('import.error.invalidManifest'), { id: toastId });
-          return;
-        }
-
-        if (!manifest.stage || !manifest.scenes || !Array.isArray(manifest.scenes)) {
-          toast.error(t('import.error.missingData'), { id: toastId });
-          return;
-        }
-
-        // 3. Generate new IDs
-        const newStageId = nanoid();
-        importedStageId = newStageId;
-        const now = Date.now();
-
-        // Agent ID mapping: index → new ID
-        const newAgentIds: string[] = (manifest.agents ?? []).map(() => nanoid());
-        const studentAgentIndex =
-          manifest.agents?.findIndex((agent) => agent.role === 'student') ?? -1;
-        const nonTeacherAgentIndex =
-          manifest.agents?.findIndex((agent) => agent.role !== 'teacher') ?? -1;
-        const fallbackDiscussionAgentIndex =
-          studentAgentIndex >= 0
-            ? studentAgentIndex
-            : nonTeacherAgentIndex >= 0
-              ? nonTeacherAgentIndex
-              : undefined;
-
-        // 4. Write media to IndexedDB
-        setPhase('writingMedia');
-        toast.loading(t('import.writingMedia'), { id: toastId });
-
-        const audioRefToNewId = await materializeImportedAudio(
-          zip,
-          manifest,
-          newStageId,
-          now,
-          importedPoolIds,
-        );
-
-        const mediaMappings = await materializeImportedMedia(
-          zip,
-          manifest,
-          newStageId,
-          now,
-          importedPoolIds,
-        );
-
-        // 5. Write course data
-        setPhase('writingCourse');
-        toast.loading(t('import.writingCourse'), { id: toastId });
-
-        // Rebuild the roster as stage-embedded configs: the stage document is
-        // the single source of truth for generated agents (voice included), so
-        // an import round-trips the roster without any side-table writes.
-        const importedAgentConfigs: GeneratedAgentConfig[] = (manifest.agents ?? []).map((a, i) =>
-          agentConfigFromManifest(a, newAgentIds[i]),
-        );
-
-        const document: AppDocument = {
-          stage: {
-            id: newStageId,
-            name: manifest.stage.name || 'Imported Classroom',
-            description: manifest.stage.description,
-            languageDirective: manifest.stage.language,
-            style: manifest.stage.style,
-            createdAt: manifest.stage.createdAt || now,
-            updatedAt: now,
-            agentIds: newAgentIds.length > 0 ? newAgentIds : undefined,
-            ...(manifest.stage.videoManifest
-              ? {
-                  videoManifest: rewriteImportedVideoManifest(
-                    manifest.stage.videoManifest,
-                    mediaMappings,
-                  ),
-                }
-              : {}),
-            ...(importedAgentConfigs.length > 0
-              ? { generatedAgentConfigs: importedAgentConfigs }
-              : {}),
-          },
-          scenes: manifest.scenes.map((mScene: ManifestScene, index: number) => {
-            const newSceneId = nanoid();
-            const actions = mScene.actions
-              ? rewriteAudioRefsToIds(mScene.actions, audioRefToNewId, {
-                  agentIds: newAgentIds,
-                  fallbackDiscussionAgentIndex,
-                })
-              : undefined;
-            const multiAgent = mScene.multiAgent?.enabled
-              ? {
-                  enabled: true,
-                  agentIds: (mScene.multiAgent.agentIndices ?? [])
-                    .map((idx) => newAgentIds[idx])
-                    .filter(Boolean),
-                  directorPrompt: mScene.multiAgent.directorPrompt,
-                }
-              : undefined;
-
-            const content =
-              mScene.content.type === 'slide'
-                ? {
-                    ...mScene.content,
-                    canvas: rewriteImportedSlideMediaRefs(mScene.content.canvas, mediaMappings),
-                  }
-                : mScene.content;
-            return canonicalizeLegacyScene({
-              id: newSceneId,
-              stageId: newStageId,
-              title: mScene.title,
-              order: mScene.order ?? index,
-              content,
-              actions,
-              whiteboards: mScene.whiteboards?.map((slide) =>
-                rewriteImportedSlideMediaRefs(slide, mediaMappings),
-              ),
-              multiAgent,
-              createdAt: now,
-              updatedAt: now,
-            });
-          }),
-        };
-
-        // The document is the commit point: one aggregate write under its
-        // per-stage lock. Wholesale replacement: the imported aggregate
-        // overwrites the whole document, so eager conversion of whatever
-        // currently sits there would allocate assets the import immediately
-        // replaces.
-        await mutateDocument(
-          newStageId,
-          async (_existing, store) => store.saveDocument(document),
-          {},
-          { mode: 'replace' },
-        );
-        importCommitted = true;
+        await importClassroomZip(zip, (phase) => {
+          setPhase(phase);
+          if (phase === 'validating') toast.loading(t('import.validating'), { id: toastId });
+          else if (phase === 'writingMedia')
+            toast.loading(t('import.writingMedia'), { id: toastId });
+          else if (phase === 'writingCourse')
+            toast.loading(t('import.writingCourse'), { id: toastId });
+        });
         setPhase('done');
+        success = true;
       } catch (error) {
         log.error('Classroom ZIP import failed:', error);
         const isQuotaError = error instanceof DOMException && error.name === 'QuotaExceededError';
-        toast.error(isQuotaError ? t('import.error.storageFull') : t('import.error.invalidZip'), {
-          id: toastId,
-        });
+        toast.error(
+          isQuotaError
+            ? t('import.error.storageFull')
+            : error instanceof ImportClassroomError
+              ? t('import.error.invalidManifest')
+              : t('import.error.invalidZip'),
+          { id: toastId },
+        );
       } finally {
-        // Media files cannot join the aggregate document transaction. Until the
-        // document commit point, compensate every row/allocation individually.
-        const cleanup = async (label: string, operation: () => Promise<unknown>) => {
-          try {
-            await operation();
-          } catch (cleanupError) {
-            log.error(`Failed to undo imported ${label}:`, cleanupError);
-          }
-        };
-        if (!importCommitted && importedStageId) {
-          const stageId = importedStageId;
-          await cleanup('document', async () => {
-            await mutateDocument(stageId, async (_document, store) =>
-              store.deleteDocument(stageId),
-            );
-          });
-          await cleanup('generated media', () =>
-            db.mediaFiles.where('stageId').equals(stageId).delete(),
-          );
-          await cleanup('audio files', () =>
-            db.audioFiles.where('stageId').equals(stageId).delete(),
-          );
-        }
-        if (!importCommitted) {
-          for (const id of importedPoolIds) {
-            await cleanup(`asset pool entry ${id}`, () => removeAsset(id));
-          }
-        }
         setImporting(false);
         setPhase('idle');
       }
       // A consumer callback is outside the rollback region: its exception
       // cannot make a fully committed classroom lose its already-owned assets.
-      if (importCommitted) {
+      if (success) {
         toast.success(t('import.success'), { id: toastId });
-        onSuccess?.(importedStageId!);
+        onSuccess?.();
       }
     },
     [t, onSuccess],
