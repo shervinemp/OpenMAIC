@@ -18,7 +18,7 @@
 
 import { NextRequest } from 'next/server';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
-import { generateVideo, normalizeVideoOptions } from '@/lib/media/video-providers';
+import { generateVideo, normalizeVideoOptions, VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import {
   isServerConfiguredProvider,
   resolveVideoApiKey,
@@ -56,7 +56,9 @@ export async function POST(request: NextRequest) {
     }
 
     const apiKey = resolveVideoApiKey(providerId, clientApiKey);
-    if (!apiKey) {
+    const providerDef = VIDEO_PROVIDERS[providerId];
+    // Keyless local providers (e.g. ComfyUI) need no credential.
+    if (providerDef?.requiresApiKey && !apiKey) {
       return apiError(
         'MISSING_API_KEY',
         401,
