@@ -2,7 +2,8 @@
  * Video Generation API
  *
  * Generates a video from a text prompt using the specified provider.
- * Uses async task pattern (submit → poll) so maxDuration is set to 5 minutes.
+ * Uses async task pattern (submit → poll) so maxDuration is set to 15 minutes.
+ * Local ComfyUI providers (e.g. MiniMax H3) can take 10-12 min for 15s clips.
  *
  * POST /api/generate/video
  *
@@ -31,7 +32,7 @@ import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
 const log = createLogger('VideoGeneration API');
 
-export const maxDuration = 300;
+export const maxDuration = 900;
 
 export async function POST(request: NextRequest) {
   try {
