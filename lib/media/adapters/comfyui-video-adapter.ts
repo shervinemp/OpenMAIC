@@ -51,8 +51,9 @@ const log = {
 };
 
 const POLL_INTERVAL_MS = 2000;
-/** Hard cap per generation: next/video API route maxDuration is 300s. */
-const GENERATION_TIMEOUT_MS = 240_000;
+/** Hard cap per generation: next/video API route maxDuration is 900s.
+ *  Local MiniMax H3 15s clips take ~10-12 min, well under the 15 min cap. */
+const GENERATION_TIMEOUT_MS = 900_000;
 const FETCH_TIMEOUT_MS = 30_000;
 const CONNECTIVITY_TIMEOUT_MS = 10_000;
 /** Base width per resolution tier (height follows aspect ratio, default 16:9). */
