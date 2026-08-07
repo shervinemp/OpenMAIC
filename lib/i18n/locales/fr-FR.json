@@ -1575,6 +1575,7 @@
     "providerMiniMaxImage": "MiniMax Image",
     "providerGrokImage": "Grok Image (xAI)",
     "providerComfyUIImage": "ComfyUI Image",
+    "providerComfyUIVideo": "ComfyUI (Local)",
     "providerLemonadeImage": "Lemonade Image (local)",
     "testImageGeneration": "Tester la génération d’images",
     "testImageConnectivity": "Tester la connexion",
