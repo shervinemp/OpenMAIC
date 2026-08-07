@@ -183,7 +183,7 @@ const VIDEO_PROVIDER_NAMES: Record<VideoProviderId, string> = {
   'minimax-video': 'providerMiniMaxVideo',
   'grok-video': 'providerGrokVideo',
   happyhorse: 'providerHappyHorse',
-  'comfyui-video': 'providerComfyUIImage',
+  'comfyui-video': 'providerComfyUIVideo',
 };
 
 const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {

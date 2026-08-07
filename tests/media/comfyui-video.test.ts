@@ -170,6 +170,30 @@ describe('ComfyUI video adapter generation', () => {
     expect(result.poster).toBeUndefined();
   });
 
+  it('labels a GIF output with its own mime type rather than video/mp4', async () => {
+    stubComfy(() => ({
+      status: { status_str: 'success', completed: true },
+      outputs: {
+        '3': { gifs: [{ filename: 'clip.gif', subfolder: '', type: 'output' }] },
+      },
+    }));
+
+    const config = {
+      providerId: 'comfyui-video',
+      apiKey: '',
+      baseUrl: BASE,
+      workflowJson: makeWorkflow(),
+    };
+    const result = await generateWithComfyuiVideo(config as never, {
+      prompt: 'a galloping horse',
+      duration: 5,
+      resolution: '480p',
+      aspectRatio: '16:9',
+    });
+
+    expect(result.url).toMatch(/^data:image\/gif;base64,/);
+  });
+
   it('fails loudly when the workflow has no prompt node', async () => {
     stubComfy(() => ({}));
     const config = {

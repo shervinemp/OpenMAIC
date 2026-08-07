@@ -1654,6 +1654,7 @@
     "providerMiniMaxImage": "MiniMax 图像",
     "providerGrokImage": "Grok Image（xAI）",
     "providerComfyUIImage": "ComfyUI Image",
+    "providerComfyUIVideo": "ComfyUI (Local)",
     "providerLemonadeImage": "Lemonade 图像（本地）",
     "testImageGeneration": "测试图像生成",
     "testImageConnectivity": "测试连接",
