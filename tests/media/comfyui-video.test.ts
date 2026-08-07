@@ -116,6 +116,60 @@ describe('ComfyUI video adapter generation', () => {
     expect(result.height).toBeGreaterThan(0);
   });
 
+  it('returns the native SaveVideo output (single video history key)', async () => {
+    stubComfy(() => ({
+      status: { status_str: 'success', completed: true },
+      outputs: {
+        '3': {
+          video: [{ filename: 'clip.mp4', subfolder: 'video/MiniMax_H3', type: 'output' }],
+        },
+      },
+    }));
+
+    const config = {
+      providerId: 'comfyui-video',
+      apiKey: '',
+      baseUrl: BASE,
+      workflowJson: makeWorkflow(),
+    };
+    const result = await generateWithComfyuiVideo(config as never, {
+      prompt: 'a red fox leaping over a log',
+      duration: 5,
+      resolution: '480p',
+      aspectRatio: '16:9',
+    });
+
+    expect(result.url).toMatch(/^data:video\/mp4;base64,/);
+    expect(result.poster).toBeUndefined();
+  });
+
+  it('returns the native SaveVideo output (recorded under history "images")', async () => {
+    stubComfy(() => ({
+      status: { status_str: 'success', completed: true },
+      outputs: {
+        '3': {
+          images: [{ filename: 'MiniMax_H3_00001_.mp4', subfolder: 'video', type: 'output' }],
+        },
+      },
+    }));
+
+    const config = {
+      providerId: 'comfyui-video',
+      apiKey: '',
+      baseUrl: BASE,
+      workflowJson: makeWorkflow(),
+    };
+    const result = await generateWithComfyuiVideo(config as never, {
+      prompt: 'a red fox leaping over a log',
+      duration: 5,
+      resolution: '480p',
+      aspectRatio: '16:9',
+    });
+
+    expect(result.url).toMatch(/^data:video\/mp4;base64,/);
+    expect(result.poster).toBeUndefined();
+  });
+
   it('fails loudly when the workflow has no prompt node', async () => {
     stubComfy(() => ({}));
     const config = {
