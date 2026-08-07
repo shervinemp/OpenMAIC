@@ -20,6 +20,8 @@ export interface ComfyNodeFile {
 
 export interface ComfyNodeOutput {
   videos?: ComfyNodeFile[];
+  /** Single-file output of native SaveVideo / SaveWEBM nodes. */
+  video?: ComfyNodeFile[];
   gifs?: ComfyNodeFile[];
   images?: ComfyNodeFile[];
 }
@@ -247,11 +249,41 @@ export async function fetchComfyFileAsBase64(
 /** First file of a given kind across every node output. */
 export function firstComfyMemberFile(
   entry: ComfyHistoryEntry,
-  kind: 'videos' | 'gifs' | 'images',
+  kind: 'videos' | 'video' | 'gifs' | 'images',
 ): ComfyNodeFile | undefined {
   for (const output of Object.values(entry.outputs ?? {})) {
     const files = output[kind];
     if (files && files.length > 0) return files[0];
+  }
+  return undefined;
+}
+
+/** First generated video across every node output, including SaveVideo results
+ * (which ComfyUI records under the `images` output). */
+export function firstComfyVideoFile(entry: ComfyHistoryEntry): ComfyNodeFile | undefined {
+  return (
+    firstComfyMemberFile(entry, 'videos') ??
+    firstComfyMemberFile(entry, 'video') ??
+    firstComfyMemberFile(entry, 'gifs') ??
+    firstComfyVideoInImages(entry)
+  );
+}
+
+function firstComfyVideoInImages(entry: ComfyHistoryEntry): ComfyNodeFile | undefined {
+  for (const output of Object.values(entry.outputs ?? {})) {
+    for (const file of output.images ?? []) {
+      if (/\.(mp4|webm|mov|gif)$/i.test(file.filename)) return file;
+    }
+  }
+  return undefined;
+}
+
+/** First actual image file (never a video container) across node outputs. */
+export function firstComfyImageFile(entry: ComfyHistoryEntry): ComfyNodeFile | undefined {
+  for (const output of Object.values(entry.outputs ?? {})) {
+    for (const file of output.images ?? []) {
+      if (/\.(png|jpe?g|webp|bmp)$/i.test(file.filename)) return file;
+    }
   }
   return undefined;
 }

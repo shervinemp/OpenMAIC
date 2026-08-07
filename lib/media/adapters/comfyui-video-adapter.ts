@@ -30,7 +30,8 @@ import {
   extractComfyExecutionError,
   fetchComfyFileAsBase64,
   findNodeIdByTitle,
-  firstComfyMemberFile,
+  firstComfyImageFile,
+  firstComfyVideoFile,
   loadComfyWorkflow,
   nodeInputs,
   pollComfyHistory,
@@ -234,7 +235,7 @@ export async function generateWithComfyuiVideo(
   }
 
   // 4. Extract the first video output (+ optional first-frame poster).
-  const videoFile = firstComfyMemberFile(entry, 'videos') ?? firstComfyMemberFile(entry, 'gifs');
+  const videoFile = firstComfyVideoFile(entry);
   if (!videoFile) {
     throw new Error(
       'ComfyUI finished but no video output was found. ' +
@@ -246,7 +247,7 @@ export async function generateWithComfyuiVideo(
   log.info(`Fetching video "${videoFile.filename}" from ComfyUI /view`);
   const videoBase64 = await fetchComfyFileAsBase64(baseUrl, videoFile, FETCH_TIMEOUT_MS);
 
-  const posterFile = firstComfyMemberFile(entry, 'images');
+  const posterFile = firstComfyImageFile(entry);
   let poster: string | undefined;
   if (posterFile) {
     try {
