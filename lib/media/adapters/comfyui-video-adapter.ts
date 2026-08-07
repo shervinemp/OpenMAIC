@@ -243,7 +243,14 @@ export async function generateWithComfyuiVideo(
     );
   }
 
-  const mimeType = videoFile.filename.toLowerCase().endsWith('.webm') ? 'video/webm' : 'video/mp4';
+  const filename = videoFile.filename.toLowerCase();
+  const mimeType = filename.endsWith('.webm')
+    ? 'video/webm'
+    : filename.endsWith('.mov')
+      ? 'video/quicktime'
+      : filename.endsWith('.gif')
+        ? 'image/gif'
+        : 'video/mp4';
   log.info(`Fetching video "${videoFile.filename}" from ComfyUI /view`);
   const videoBase64 = await fetchComfyFileAsBase64(baseUrl, videoFile, FETCH_TIMEOUT_MS);
 
