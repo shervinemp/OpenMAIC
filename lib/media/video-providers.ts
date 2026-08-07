@@ -141,9 +141,9 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     // the same list /api/comfyui-workflows serves to the Settings UI.
     models: [],
     supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16', '3:4', '21:9'],
-    supportedDurations: [5, 8, 10],
+    supportedDurations: [5, 8, 10, 15],
     supportedResolutions: ['480p', '720p'],
-    maxDuration: 10,
+    maxDuration: 15,
   },
 };
 
