@@ -31,7 +31,7 @@ export interface BackupPrefs {
   autoSnapshots: boolean;
 }
 
-/** Coalescing key so background capture can't run more often than once per hour per tab. */
+/** Coalescing key so background capture can't run more often than once per interval per tab. */
 let lastAutomaticCapture = 0;
 
 export async function getBackupPrefs(): Promise<BackupPrefs> {
@@ -79,7 +79,7 @@ export async function captureSnapshot(label: string): Promise<BackupSnapshotMeta
 
 export async function captureAutomaticIfDue(): Promise<void> {
   const now = Date.now();
-  if (now - lastAutomaticCapture < 60 * 60 * 1000) return;
+  if (now - lastAutomaticCapture < SNAPSHOT_INTERVAL_MS) return;
   const prefs = await getBackupPrefs();
   if (!prefs.autoSnapshots) return;
   lastAutomaticCapture = now;
