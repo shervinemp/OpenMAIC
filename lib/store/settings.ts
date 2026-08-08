@@ -554,6 +554,7 @@ const getDefaultVideoConfig = () => ({
     'minimax-video': { apiKey: '', baseUrl: '', enabled: false },
     'grok-video': { apiKey: '', baseUrl: '', enabled: false },
     happyhorse: { apiKey: '', baseUrl: '', enabled: false },
+    'comfyui-video': { apiKey: '', baseUrl: '', enabled: false },
   } as Record<VideoProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
 
@@ -1229,7 +1230,9 @@ export const useSettingsStore = create<SettingsState>()(
         setImageGenerationEnabled: (enabled) => {
           if (enabled) {
             const cfg = get().imageProvidersConfig;
-            const hasUsable = Object.values(cfg).some((c) => c.isServerConfigured || c.apiKey);
+            const hasUsable = Object.values(cfg).some(
+              (c) => c && (c.isServerConfigured || c.apiKey),
+            );
             if (!hasUsable) return;
           }
           set({ imageGenerationEnabled: enabled });
@@ -1237,7 +1240,9 @@ export const useSettingsStore = create<SettingsState>()(
         setVideoGenerationEnabled: (enabled) => {
           if (enabled) {
             const cfg = get().videoProvidersConfig;
-            const hasUsable = Object.values(cfg).some((c) => c.isServerConfigured || c.apiKey);
+            const hasUsable = Object.values(cfg).some(
+              (c) => c && (c.isServerConfigured || c.apiKey),
+            );
             if (!hasUsable) return;
           }
           set({ videoGenerationEnabled: enabled });
