@@ -282,64 +282,66 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
         </>
       )}
 
-      {/* Model list */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <Label className="text-base">{t('settings.models')}</Label>
-          <Button variant="outline" size="sm" onClick={handleOpenAddModel} className="gap-1.5">
-            <Plus className="h-3.5 w-3.5" />
-            {t('settings.addNewModel')}
-          </Button>
-        </div>
+      {/* Model list (ComfyUI uses the workflow list below instead) */}
+      {!isComfyUI && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <Label className="text-base">{t('settings.models')}</Label>
+            <Button variant="outline" size="sm" onClick={handleOpenAddModel} className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              {t('settings.addNewModel')}
+            </Button>
+          </div>
 
-        <div className="space-y-1.5">
-          {/* Built-in models */}
-          {builtInModels.map((model) => (
-            <div
-              key={model.id}
-              className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-card"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="font-mono text-sm font-medium">{model.name}</div>
-                <div className="text-xs text-muted-foreground font-mono mt-0.5">{model.id}</div>
+          <div className="space-y-1.5">
+            {/* Built-in models */}
+            {builtInModels.map((model) => (
+              <div
+                key={model.id}
+                className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-card"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono text-sm font-medium">{model.name}</div>
+                  <div className="text-xs text-muted-foreground font-mono mt-0.5">{model.id}</div>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
 
-          {/* Custom models */}
-          {customModels.map((model, index) => (
-            <div
-              key={`custom-${index}`}
-              className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-card"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="font-mono text-sm font-medium">{model.name}</div>
-                <div className="text-xs text-muted-foreground font-mono mt-0.5">{model.id}</div>
+            {/* Custom models */}
+            {customModels.map((model, index) => (
+              <div
+                key={`custom-${index}`}
+                className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-card"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono text-sm font-medium">{model.name}</div>
+                  <div className="text-xs text-muted-foreground font-mono mt-0.5">{model.id}</div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={() => handleOpenEditModel(index)}
+                    title={t('settings.editModel')}
+                  >
+                    <Settings2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => handleDeleteModel(index)}
+                    title={t('settings.deleteModel')}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 px-2"
-                  onClick={() => handleOpenEditModel(index)}
-                  title={t('settings.editModel')}
-                >
-                  <Settings2 className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-                  onClick={() => handleDeleteModel(index)}
-                  title={t('settings.deleteModel')}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ComfyUI: workflow files serve as the model picker */}
       {isComfyUI && (
