@@ -137,4 +137,23 @@ describe('disabling the active provider switches selection away', () => {
     s.setImageProviderConfig('openai-image', { apiKey: 'sk-x', enabled: true });
     expect(useSettingsStore.getState().imageProviderId).toBe('openai-image');
   });
+
+  it('enabling video generation does not throw on an undefined config entry', () => {
+    // Regression: videoProvidersConfig entries added after a user's persisted
+    // state was saved (e.g. comfyui-video) used to be filled with `undefined`,
+    // and Object.values(cfg).some((c) => c.isServerConfigured ...) threw.
+    useSettingsStore.setState({
+      videoProviderId: 'seedance',
+      videoGenerationEnabled: false,
+      videoProvidersConfig: {
+        seedance: { apiKey: '', baseUrl: '', enabled: false, isServerConfigured: false },
+        'comfyui-video': undefined as never,
+      } as never,
+    });
+    expect(() =>
+      useSettingsStore.getState().setVideoGenerationEnabled(true),
+    ).not.toThrow();
+    // No usable provider → the toggle stays off.
+    expect(useSettingsStore.getState().videoGenerationEnabled).toBe(false);
+  });
 });
