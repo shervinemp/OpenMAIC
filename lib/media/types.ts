@@ -271,6 +271,11 @@ export interface VideoGenerationOptions {
   stageId?: string;
   /** Cancel server-side provider I/O (agent runtime / background callers). */
   signal?: AbortSignal;
+  /**
+   * Optional source image for image-to-video generation (base64 data URL or
+   * http(s) URL). Providers that only do text-to-video ignore it.
+   */
+  inputImage?: string;
 }
 
 /**

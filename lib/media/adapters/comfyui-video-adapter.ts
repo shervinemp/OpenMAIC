@@ -13,8 +13,15 @@
  * adapter). This module only adds the video-specific parts: output picking
  * (`videos`/`gifs`), poster extraction, and runtime option patching.
  *
+ * Text-to-video and image-to-video share this adapter. When `options.inputImage`
+ * is supplied and the workflow contains a Load Image node, the image is
+ * uploaded (POST /upload/image) and its name is injected into the node before
+ * the prompt is queued — so a single Wan/CogVideoX I2V workflow in public/ is
+ * enough to animate an existing image.
+ *
  * Nodes patched at runtime (conventional titles, best-effort):
  *   "Input Prompt" | "String (Multiline - Prompt)" → inputs.value = prompt
+ *   "Load Image" (or class LoadImage)              → inputs.image = uploaded name
  *   "Width"/"Height"                               → inputs.value = dims
  *   "Duration"                                     → inputs.value = seconds
  *   "KSampler"                                     → inputs.seed  = random int
@@ -25,6 +32,7 @@ import type {
   VideoGenerationResult,
 } from '../types';
 import { aspectRatioToDimensions } from '../image-providers';
+import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import {
   DEFAULT_COMFYUI_BASE_URL,
   extractComfyExecutionError,
@@ -36,6 +44,8 @@ import {
   nodeInputs,
   pollComfyHistory,
   queueComfyPrompt,
+  uploadComfyImage,
+  type ComfyUploadResult,
 } from './comfyui-shared';
 
 const COMPONENT = 'ComfyUI Video';
@@ -56,6 +66,8 @@ const POLL_INTERVAL_MS = 2000;
 const GENERATION_TIMEOUT_MS = 900_000;
 const FETCH_TIMEOUT_MS = 30_000;
 const CONNECTIVITY_TIMEOUT_MS = 10_000;
+/** Ceiling on the decoded size of a client-supplied input image (memory guard). */
+const MAX_INPUT_IMAGE_BYTES = 20 * 1024 * 1024;
 /** Base width per resolution tier (height follows aspect ratio, default 16:9). */
 const RESOLUTION_WIDTHS: Record<string, number> = { '480p': 854, '720p': 1280, '1080p': 1920 };
 const DEFAULT_WIDTH = 1280;
@@ -81,13 +93,125 @@ function resolveOutputDimensions(options: VideoGenerationOptions): {
   return { width: base, height: Math.round((base * 9) / 16) };
 }
 
+/** First node that loads a source image — by title, then by class_type. */
+function findLoadImageNode(workflow: Record<string, unknown>): string | undefined {
+  const byTitle = findNodeIdByTitle(workflow, 'Load Image');
+  if (byTitle) return byTitle;
+  for (const [id, node] of Object.entries(workflow)) {
+    if ((node as Record<string, unknown>)['class_type'] === 'LoadImage') return id;
+  }
+  return undefined;
+}
+
+function filenameForMime(mime: string): string {
+  const ext =
+    { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' }[mime] ??
+    'png';
+  return `input.${ext}`;
+}
+
+function filenameFromUrl(url: string): string {
+  try {
+    const segment = decodeURIComponent(new URL(url).pathname.split('/').pop() ?? '');
+    if (/\.(png|jpe?g|webp|gif)$/i.test(segment)) return segment;
+  } catch {
+    // fall through to the generic name
+  }
+  return 'input.png';
+}
+
+/**
+ * Turn a client-supplied input image into upload-ready bytes + a filename.
+ * Accepts base64 data URLs and http(s) URLs. Remote URLs are SSRF-guarded in
+ * production (same policy as client-supplied base URLs in the API routes);
+ * self-hosted deployments may allow local targets via ALLOW_LOCAL_NETWORKS.
+ */
+async function resolveInputImageBytes(
+  inputImage: string,
+): Promise<{ bytes: Uint8Array; filename: string }> {
+  if (inputImage.startsWith('data:')) {
+    const comma = inputImage.indexOf(',');
+    if (comma < 0) {
+      throw new Error('ComfyUI: malformed input image data URL.');
+    }
+    const meta = inputImage.slice(5, comma);
+    if (!meta.includes(';base64')) {
+      throw new Error(
+        'ComfyUI: input image data URL must be base64-encoded (data:<mime>;base64,...).',
+      );
+    }
+    const raw = inputImage.slice(comma + 1);
+    const bytes =
+      typeof Buffer !== 'undefined'
+        ? new Uint8Array(Buffer.from(raw, 'base64'))
+        : Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
+    if (bytes.byteLength > MAX_INPUT_IMAGE_BYTES) {
+      throw new Error(
+        `ComfyUI: input image exceeds the ${MAX_INPUT_IMAGE_BYTES / (1024 * 1024)}MB size limit.`,
+      );
+    }
+    const mime = meta.split(';')[0] || 'image/png';
+    return { bytes, filename: filenameForMime(mime) };
+  }
+
+  if (/^https?:\/\//i.test(inputImage)) {
+    if (process.env.NODE_ENV === 'production') {
+      const ssrfError = await validateUrlForSSRF(inputImage);
+      if (ssrfError) {
+        throw new Error(`ComfyUI: input image URL rejected: ${ssrfError}`);
+      }
+    }
+    const response = await fetch(inputImage, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!response.ok) {
+      throw new Error(`ComfyUI: failed to fetch input image (HTTP ${response.status}).`);
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > MAX_INPUT_IMAGE_BYTES) {
+      throw new Error(
+        `ComfyUI: input image exceeds the ${MAX_INPUT_IMAGE_BYTES / (1024 * 1024)}MB size limit.`,
+      );
+    }
+    return { bytes, filename: filenameFromUrl(inputImage) };
+  }
+
+  throw new Error('ComfyUI: input image must be a base64 data URL or an http(s) URL.');
+}
+
 /**
  * Patch the workflow clone with the caller-supplied options. Best-effort:
  * unknown layouts keep the workflow's own defaults, but a missing prompt node
  * is a hard error (silent no-prompt generation is worse than a loud failure).
  */
-function patchWorkflow(workflow: Record<string, unknown>, options: VideoGenerationOptions): void {
+function patchWorkflow(
+  workflow: Record<string, unknown>,
+  options: VideoGenerationOptions,
+  uploadedImage?: ComfyUploadResult,
+): void {
   const dims = resolveOutputDimensions(options);
+
+  // --- Load Image (image-to-video) ------------------------------------------
+  const loadImageNodeId = findLoadImageNode(workflow);
+  if (loadImageNodeId) {
+    const imageInputs = nodeInputs(workflow[loadImageNodeId]);
+    if (!imageInputs) {
+      log.warn(
+        `Load Image node (id: ${loadImageNodeId}) is malformed (missing "inputs") — skipping image injection`,
+      );
+    } else if (!uploadedImage) {
+      throw new Error(
+        'ComfyUI video workflow uses a Load Image node (image-to-video) but no input image ' +
+          'was provided. Pass an inputImage (base64 data URL or http(s) URL) to animate a ' +
+          'source image, or pick a text-to-video workflow instead.',
+      );
+    } else {
+      imageInputs['image'] = uploadedImage.name;
+      log.debug(`Patched Load Image node (id: ${loadImageNodeId}) → "${uploadedImage.name}"`);
+    }
+  } else if (uploadedImage) {
+    log.warn(
+      'Workflow has no Load Image node — ignoring supplied input image (text-to-video workflow).',
+    );
+  }
 
   const promptNodeId =
     findNodeIdByTitle(workflow, 'Input Prompt') ??
@@ -178,19 +302,40 @@ export async function generateWithComfyuiVideo(
       duration: options.duration,
       aspectRatio: options.aspectRatio,
       resolution: options.resolution,
+      inputImage: options.inputImage ? 'present' : 'none',
     })}`,
   );
 
   const startTime = Date.now();
 
-  // 1. Load and patch the workflow.
+  // 1. Load the workflow, then upload any input image for image-to-video.
   const workflow = await loadComfyWorkflow({
     label: 'ComfyUI',
     workflowJson: comfyConfig.workflowJson,
     model: comfyConfig.model,
     workflowPublicPath: comfyConfig.workflowPublicPath,
   });
-  patchWorkflow(workflow, options);
+
+  const loadImageNodeId = findLoadImageNode(workflow);
+  let uploadedImage: ComfyUploadResult | undefined;
+  if (loadImageNodeId) {
+    if (!options.inputImage) {
+      throw new Error(
+        'ComfyUI video workflow uses a Load Image node (image-to-video) but no input image ' +
+          'was provided. Pass an inputImage (base64 data URL or http(s) URL) to animate a ' +
+          'source image, or pick a text-to-video workflow instead.',
+      );
+    }
+    const { bytes, filename } = await resolveInputImageBytes(options.inputImage);
+    uploadedImage = await uploadComfyImage(baseUrl, bytes, filename, FETCH_TIMEOUT_MS);
+    log.info(`Uploaded input image "${filename}" → "${uploadedImage.name}"`);
+  } else if (options.inputImage) {
+    log.warn(
+      'Workflow has no Load Image node — ignoring supplied input image (text-to-video workflow).',
+    );
+  }
+
+  patchWorkflow(workflow, options, uploadedImage);
 
   // 2. Submit to the queue.
   const clientId = `openmaic-video-${Date.now()}-${Math.random().toString(36).slice(2)}`;

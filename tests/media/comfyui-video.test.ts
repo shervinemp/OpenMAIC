@@ -20,27 +20,66 @@ function makeWorkflow() {
   };
 }
 
-/** Fake ComfyUI REST server: /system_stats, /prompt, /history/<id>, /view. */
+/** I2V workflow: a Load Image node (by title) plus a prompt/sampler. */
+function makeI2VWorkflow() {
+  return {
+    ...makeWorkflow(),
+    '4': { inputs: { image: 'placeholder.png' }, _meta: { title: 'Load Image' } },
+  };
+}
+
+/** I2V workflow whose LoadImage node is discovered by class_type, not title. */
+function makeUntitledI2VWorkflow() {
+  return {
+    ...makeWorkflow(),
+    '4': { inputs: { image: 'placeholder.png' }, class_type: 'LoadImage' },
+  };
+}
+
+/**
+ * Fake ComfyUI REST server: /system_stats, /upload/image, /prompt,
+ * /history/<id>, /view. Records the last queued workflow and the uploaded
+ * image name so tests can assert what was patched.
+ */
 function stubComfy(history: () => unknown, viewBytes: Uint8Array = VIDEO_BYTES) {
+  const calls: { promptBody?: unknown; uploadedImageName?: string; uploadCount: number } = {
+    uploadCount: 0,
+  };
   const jsonResponse = (value: unknown) =>
     ({ ok: true, json: async () => value }) as unknown as Response;
+  const bytesResponse = (bytes: Uint8Array) =>
+    ({ ok: true, arrayBuffer: async () => bytes.buffer }) as unknown as Response;
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/system_stats')) return jsonResponse({});
+      if (url.endsWith('/upload/image')) {
+        calls.uploadCount += 1;
+        const form = init?.body as FormData | undefined;
+        const image = form?.get('image');
+        if (image instanceof Blob) {
+          calls.uploadedImageName = 'uploaded-' + image.size + '.png';
+        }
+        return jsonResponse({ name: calls.uploadedImageName ?? 'uploaded.png', subfolder: '', type: 'input' });
+      }
       if (url.endsWith('/prompt')) {
+        calls.promptBody = JSON.parse(String(init?.body));
         return jsonResponse({ prompt_id: 'prompt-1', number: 1, node_errors: {} });
       }
       if (url.includes('/history/')) {
         return jsonResponse({ 'prompt-1': history() });
       }
       if (url.includes('/view?')) {
-        return { ok: true, arrayBuffer: async () => viewBytes.buffer } as unknown as Response;
+        return bytesResponse(viewBytes);
+      }
+      if (url.startsWith('http://images.test/')) {
+        return bytesResponse(viewBytes);
       }
       throw new Error(`Unexpected fetch: ${url}`);
     }),
   );
+  return calls;
 }
 
 afterEach(() => {
@@ -215,5 +254,155 @@ describe('ComfyUI video adapter generation', () => {
         { prompt: 'x' },
       ),
     ).rejects.toThrow(/not a valid workflow filename/i);
+  });
+
+  it('image-to-video: uploads the input image and patches the Load Image node', async () => {
+    const calls = stubComfy(() => ({
+      status: { status_str: 'success', completed: true },
+      outputs: {
+        '3': { videos: [{ filename: 'clip.mp4', subfolder: '', type: 'output' }] },
+      },
+    }));
+
+    const pngBase64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]).toString('base64');
+    const config = {
+      providerId: 'comfyui-video',
+      apiKey: '',
+      baseUrl: BASE,
+      workflowJson: makeI2VWorkflow(),
+    };
+    const result = await generateWithComfyuiVideo(config as never, {
+      prompt: 'the camera slowly zooms in',
+      duration: 5,
+      resolution: '480p',
+      aspectRatio: '16:9',
+      inputImage: `data:image/png;base64,${pngBase64}`,
+    });
+
+    expect(calls.uploadCount).toBe(1);
+    expect(result.url).toMatch(/^data:video\/mp4;base64,/);
+    // The uploaded filename must be wired into the LoadImage node's image input.
+    const promptBody = calls.promptBody as {
+      prompt: Record<string, { inputs: { image?: string } }>;
+    };
+    expect(promptBody.prompt['4'].inputs.image).toBe('uploaded-7.png');
+    // Prompt, seed, and dims are patched as before.
+    expect(promptBody.prompt['1'].inputs).toMatchObject({ value: 'the camera slowly zooms in' });
+  });
+
+  it('image-to-video: finds an untitled LoadImage node by class_type', async () => {
+    const calls = stubComfy(() => ({
+      status: { status_str: 'success', completed: true },
+      outputs: {
+        '3': { videos: [{ filename: 'clip.mp4', subfolder: '', type: 'output' }] },
+      },
+    }));
+
+    const pngBase64 = Buffer.from([1, 2, 3, 4]).toString('base64');
+    const config = {
+      providerId: 'comfyui-video',
+      apiKey: '',
+      baseUrl: BASE,
+      workflowJson: makeUntitledI2VWorkflow(),
+    };
+    await generateWithComfyuiVideo(config as never, {
+      prompt: 'pan right across the scene',
+      duration: 5,
+      resolution: '480p',
+      inputImage: `data:image/png;base64,${pngBase64}`,
+    });
+
+    const promptBody = calls.promptBody as {
+      prompt: Record<string, { inputs: { image?: string } }>;
+    };
+    expect(promptBody.prompt['4'].inputs.image).toBe('uploaded-4.png');
+  });
+
+  it('image-to-video: accepts an http(s) input image URL', async () => {
+    const calls = stubComfy(() => ({
+      status: { status_str: 'success', completed: true },
+      outputs: {
+        '3': { videos: [{ filename: 'clip.mp4', subfolder: '', type: 'output' }] },
+      },
+    }));
+
+    const config = {
+      providerId: 'comfyui-video',
+      apiKey: '',
+      baseUrl: BASE,
+      workflowJson: makeI2VWorkflow(),
+    };
+    await generateWithComfyuiVideo(config as never, {
+      prompt: 'birds scatter from the tree',
+      duration: 5,
+      resolution: '480p',
+      inputImage: 'http://images.test/ref.png',
+    });
+
+    expect(calls.uploadCount).toBe(1);
+    const promptBody = calls.promptBody as {
+      prompt: Record<string, { inputs: { image?: string } }>;
+    };
+    // The filename is derived from the URL basename.
+    expect(promptBody.prompt['4'].inputs.image).toBe('uploaded-6.png');
+  });
+
+  it('image-to-video: fails fast when a Load Image workflow gets no input image', async () => {
+    stubComfy(() => ({}));
+    const config = {
+      providerId: 'comfyui-video',
+      apiKey: '',
+      baseUrl: BASE,
+      workflowJson: makeI2VWorkflow(),
+    };
+    await expect(
+      generateWithComfyuiVideo(config as never, { prompt: 'x', duration: 5, resolution: '480p' }),
+    ).rejects.toThrow(/input image/i);
+  });
+
+  it('image-to-video: ignores a supplied input image on a text-to-video workflow', async () => {
+    const calls = stubComfy(() => ({
+      status: { status_str: 'success', completed: true },
+      outputs: {
+        '3': { videos: [{ filename: 'clip.mp4', subfolder: '', type: 'output' }] },
+      },
+    }));
+
+    const pngBase64 = Buffer.from([9, 9, 9]).toString('base64');
+    const config = {
+      providerId: 'comfyui-video',
+      apiKey: '',
+      baseUrl: BASE,
+      workflowJson: makeWorkflow(),
+    };
+    const result = await generateWithComfyuiVideo(config as never, {
+      prompt: 'a waterfall at sunset',
+      duration: 5,
+      resolution: '480p',
+      inputImage: `data:image/png;base64,${pngBase64}`,
+    });
+
+    expect(result.url).toMatch(/^data:video\/mp4;base64,/);
+    // No Load Image node → the image is never uploaded.
+    expect(calls.uploadCount).toBe(0);
+  });
+
+  it('rejects a non-base64 data URL input image before uploading', async () => {
+    const calls = stubComfy(() => ({}));
+    const config = {
+      providerId: 'comfyui-video',
+      apiKey: '',
+      baseUrl: BASE,
+      workflowJson: makeI2VWorkflow(),
+    };
+    await expect(
+      generateWithComfyuiVideo(config as never, {
+        prompt: 'x',
+        duration: 5,
+        resolution: '480p',
+        inputImage: 'data:image/png,not-base64',
+      }),
+    ).rejects.toThrow(/base64/i);
+    expect(calls.uploadCount).toBe(0);
   });
 });
