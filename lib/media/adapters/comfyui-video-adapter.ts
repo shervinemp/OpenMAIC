@@ -32,7 +32,6 @@ import type {
   VideoGenerationResult,
 } from '../types';
 import { aspectRatioToDimensions } from '../image-providers';
-import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import {
   DEFAULT_COMFYUI_BASE_URL,
   extractComfyExecutionError,
@@ -122,9 +121,9 @@ function filenameFromUrl(url: string): string {
 
 /**
  * Turn a client-supplied input image into upload-ready bytes + a filename.
- * Accepts base64 data URLs and http(s) URLs. Remote URLs are SSRF-guarded in
- * production (same policy as client-supplied base URLs in the API routes);
- * self-hosted deployments may allow local targets via ALLOW_LOCAL_NETWORKS.
+ * Accepts base64 data URLs and http(s) URLs. Remote URLs are SSRF-checked at
+ * the API route in production (this module stays server-only-import-free so
+ * the client bundle can include it).
  */
 async function resolveInputImageBytes(
   inputImage: string,
@@ -155,12 +154,10 @@ async function resolveInputImageBytes(
   }
 
   if (/^https?:\/\//i.test(inputImage)) {
-    if (process.env.NODE_ENV === 'production') {
-      const ssrfError = await validateUrlForSSRF(inputImage);
-      if (ssrfError) {
-        throw new Error(`ComfyUI: input image URL rejected: ${ssrfError}`);
-      }
-    }
+    // SSRF validation for client-supplied remote URLs happens at the API
+    // route (app/api/generate/video/route.ts) in production — this module is
+    // reachable from the client bundle, so it must not import server-only
+    // modules (e.g. node:dns via ssrf-guard).
     const response = await fetch(inputImage, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!response.ok) {
       throw new Error(`ComfyUI: failed to fetch input image (HTTP ${response.status}).`);

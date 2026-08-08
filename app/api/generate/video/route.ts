@@ -56,6 +56,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // A client-supplied remote input image (image-to-video) is fetched
+    // server-side by the ComfyUI adapter — same SSRF policy as base URLs.
+    if (
+      body.inputImage &&
+      /^https?:\/\//i.test(body.inputImage) &&
+      process.env.NODE_ENV === 'production'
+    ) {
+      const ssrfError = await validateUrlForSSRF(body.inputImage);
+      if (ssrfError) {
+        return apiError('INVALID_URL', 403, ssrfError);
+      }
+    }
+
     const apiKey = resolveVideoApiKey(providerId, clientApiKey);
     const providerDef = VIDEO_PROVIDERS[providerId];
     // Keyless local providers (e.g. ComfyUI) need no credential.
