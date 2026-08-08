@@ -265,6 +265,11 @@ export interface VideoGenerationOptions {
   aspectRatio?: '16:9' | '4:3' | '1:1' | '9:16' | '3:4' | '21:9';
   /** Desired output resolution */
   resolution?: '480p' | '720p' | '1080p';
+  /**
+   * Optional source image for image-to-video generation (base64 data URL or
+   * http(s) URL). Providers that only do text-to-video ignore it.
+   */
+  inputImage?: string;
 }
 
 /**

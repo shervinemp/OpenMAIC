@@ -287,3 +287,45 @@ export function firstComfyImageFile(entry: ComfyHistoryEntry): ComfyNodeFile | u
   }
   return undefined;
 }
+
+/** Result of uploading a file to a ComfyUI instance. */
+export interface ComfyUploadResult {
+  name: string;
+  subfolder: string;
+  type: string;
+}
+
+/**
+ * Upload a source image (for image-to-video workflows) via POST /upload/image.
+ * The returned `name` is what a LoadImage node's `inputs.image` must be set to.
+ */
+export async function uploadComfyImage(
+  baseUrl: string,
+  imageBytes: Uint8Array,
+  filename: string,
+  timeoutMs: number,
+): Promise<ComfyUploadResult> {
+  const form = new FormData();
+  form.append('image', new Blob([imageBytes as BlobPart]), filename);
+  form.append('overwrite', 'true');
+  const response = await fetch(`${baseUrl}/upload/image`, {
+    method: 'POST',
+    body: form,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `ComfyUI /upload/image failed (${response.status}) for "${filename}"${text ? `: ${text}` : ''}`,
+    );
+  }
+  const data = (await response.json()) as Partial<ComfyUploadResult> & { name?: string };
+  if (!data.name) {
+    throw new Error('ComfyUI /upload/image returned no image name.');
+  }
+  return {
+    name: data.name,
+    subfolder: data.subfolder ?? '',
+    type: data.type ?? 'input',
+  };
+}
