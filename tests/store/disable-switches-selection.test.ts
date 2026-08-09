@@ -156,4 +156,17 @@ describe('disabling the active provider switches selection away', () => {
     // No usable provider → the toggle stays off.
     expect(useSettingsStore.getState().videoGenerationEnabled).toBe(false);
   });
+
+  it('enabling generation works with a keyless provider that has a base URL', () => {
+    // Keyless local providers (ComfyUI) count as usable once baseUrl is set.
+    useSettingsStore.setState({
+      videoProviderId: 'comfyui-video',
+      videoGenerationEnabled: false,
+      videoProvidersConfig: {
+        'comfyui-video': { apiKey: '', baseUrl: 'http://localhost:8188', enabled: true },
+      } as never,
+    });
+    useSettingsStore.getState().setVideoGenerationEnabled(true);
+    expect(useSettingsStore.getState().videoGenerationEnabled).toBe(true);
+  });
 });
