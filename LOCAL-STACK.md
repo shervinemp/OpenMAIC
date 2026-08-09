@@ -31,6 +31,8 @@ started.
 | ASR | — | — | left for later (VRAM pressure) |
 | PDF | unpdf | — | In-process, always local |
 
+**App port:** OpenMAIC runs on the first free port starting at **3000** (Next auto-increments: 3000, 3001, …) — so it never collides with other dev servers on this machine.
+
 ## Model files (ComfyUI `models/`)
 
 - `unet/`: `qwen-image-2512-Q4_K_M.gguf` (or Q5_K_S), `z-image-turbo-Q8_0.gguf`,
