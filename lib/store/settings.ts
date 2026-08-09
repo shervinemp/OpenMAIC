@@ -1245,8 +1245,10 @@ export const useSettingsStore = create<SettingsState>()(
         setImageGenerationEnabled: (enabled) => {
           if (enabled) {
             const cfg = get().imageProvidersConfig;
+            // Keyless local providers (e.g. ComfyUI) count as usable once a
+            // base URL is set — mirror the fallback rule in setVideoProviderConfig.
             const hasUsable = Object.values(cfg).some(
-              (c) => c && (c.isServerConfigured || c.apiKey),
+              (c) => c && (c.isServerConfigured || c.apiKey || !!c.baseUrl),
             );
             if (!hasUsable) return;
           }
@@ -1255,8 +1257,10 @@ export const useSettingsStore = create<SettingsState>()(
         setVideoGenerationEnabled: (enabled) => {
           if (enabled) {
             const cfg = get().videoProvidersConfig;
+            // Keyless local providers (e.g. ComfyUI) count as usable once a
+            // base URL is set — mirror the fallback rule in setVideoProviderConfig.
             const hasUsable = Object.values(cfg).some(
-              (c) => c && (c.isServerConfigured || c.apiKey),
+              (c) => c && (c.isServerConfigured || c.apiKey || !!c.baseUrl),
             );
             if (!hasUsable) return;
           }
