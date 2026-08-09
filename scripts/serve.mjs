@@ -16,6 +16,10 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
+// OpenMAIC runs on the first free port starting here (Next auto-increments
+// when a port is taken); these probes use an OpenMAIC-only route so a foreign
+// server squatting on a port can never be mistaken for OpenMAIC.
+const OPENMAIC_CANDIDATE_PORTS = [3000, 3001, 3002, 3003, 3004];
 
 const SERVICES = {
   ollama: {
@@ -54,7 +58,12 @@ const SERVICES = {
     cmd: process.execPath,
     args: [fileURLToPath(new URL('../node_modules/next/dist/bin/next', import.meta.url)), 'dev'],
     cwd: ROOT,
-    healthUrl: 'http://localhost:3000',
+    // Probe an OpenMAIC-only route across candidate ports: Next picks the
+    // first free port (3000, 3001, ...), and only a real OpenMAIC responds
+    // 200 here — a foreign server on the same port 404s.
+    healthUrl: OPENMAIC_CANDIDATE_PORTS.map(
+      (port) => `http://localhost:${port}/api/comfyui-workflows`,
+    ),
     timeoutMs: 90_000,
   },
 };
@@ -75,6 +84,14 @@ async function isUp(url, timeoutMs = 2000) {
   }
 }
 
+async function isServiceUp(service) {
+  const urls = Array.isArray(service.healthUrl) ? service.healthUrl : [service.healthUrl];
+  for (const url of urls) {
+    if (await isUp(url)) return true;
+  }
+  return false;
+}
+
 function pipe(child, service) {
   child.stdout?.on('data', (d) => process.stdout.write(`[${service.label}] ${d}`));
   child.stderr?.on('data', (d) => process.stderr.write(`[${service.label}] ${d}`));
@@ -85,7 +102,7 @@ function pipe(child, service) {
 }
 
 async function start(name, service) {
-  if (await isUp(service.healthUrl)) {
+  if (await isServiceUp(service)) {
     log(service, 'already running — skipping');
     started.set(name, false);
     return;
@@ -97,8 +114,14 @@ async function start(name, service) {
 
   const deadline = Date.now() + service.timeoutMs;
   while (Date.now() < deadline) {
-    if (await isUp(service.healthUrl)) {
-      log(service, 'ready');
+    if (await isServiceUp(service)) {
+      const urls = Array.isArray(service.healthUrl) ? service.healthUrl : [service.healthUrl];
+      for (const url of urls) {
+        if (await isUp(url)) {
+          log(service, `ready (${url})`);
+          break;
+        }
+      }
       started.set(name, true);
       return;
     }
