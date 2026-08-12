@@ -409,6 +409,27 @@ describe('fetchServerProviders — provider availability sync', () => {
     expect(modelIds).not.toContain('gpt-4-turbo');
   });
 
+  it('keeps a keyless base-URL image provider selected and enabled after sync', async () => {
+    // Regression: media provider configs never carried requiresApiKey, so a
+    // keyless provider configured with only a baseUrl (ComfyUI) read as
+    // unusable during server sync and image generation was force-disabled.
+    const store = await getStore();
+    store.setState({
+      imageProviderId: 'comfyui-image',
+      imageGenerationEnabled: true,
+      imageProvidersConfig: {
+        ...store.getState().imageProvidersConfig,
+        'comfyui-image': { apiKey: '', baseUrl: 'http://localhost:8188', enabled: true },
+      },
+    });
+
+    mockServerResponse({ image: {} }); // server has zero image providers
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().imageProviderId).toBe('comfyui-image');
+    expect(store.getState().imageGenerationEnabled).toBe(true);
+  });
+
   it('preserves custom server model IDs in server order', async () => {
     const store = await getStore();
     mockServerResponse({
