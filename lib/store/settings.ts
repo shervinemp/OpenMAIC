@@ -32,6 +32,7 @@ import {
   validateProvider,
   resolveSelectedModel,
   isLLMProviderConfigured,
+  isProviderUsable,
 } from '@/lib/store/settings-validation';
 import { createKVPersistStorage, purgeLegacyPersistKey } from '@/lib/store/kv-persist';
 
@@ -157,6 +158,7 @@ export interface SettingsState {
       apiKey: string;
       baseUrl: string;
       enabled: boolean;
+      requiresApiKey?: boolean;
       isServerConfigured?: boolean;
       customModels?: Array<{ id: string; name: string }>;
       replaceBuiltInModels?: boolean;
@@ -172,6 +174,7 @@ export interface SettingsState {
       apiKey: string;
       baseUrl: string;
       enabled: boolean;
+      requiresApiKey?: boolean;
       isServerConfigured?: boolean;
       customModels?: Array<{ id: string; name: string }>;
       replaceBuiltInModels?: boolean;
@@ -1499,6 +1502,7 @@ export const useSettingsStore = create<SettingsState>()(
                 if (newImageConfig[key]) {
                   newImageConfig[key] = {
                     ...newImageConfig[key],
+                    requiresApiKey: IMAGE_PROVIDERS[key]?.requiresApiKey ?? true,
                     isServerConfigured: false,
                   };
                 }
@@ -1520,6 +1524,7 @@ export const useSettingsStore = create<SettingsState>()(
                 if (newVideoConfig[key]) {
                   newVideoConfig[key] = {
                     ...newVideoConfig[key],
+                    requiresApiKey: VIDEO_PROVIDERS[key]?.requiresApiKey ?? true,
                     isServerConfigured: false,
                   };
                 }
@@ -1561,7 +1566,13 @@ export const useSettingsStore = create<SettingsState>()(
               const buildFallback = <T extends string>(
                 config: Record<
                   string,
-                  { isServerConfigured?: boolean; apiKey?: string; serverDisabled?: boolean }
+                  {
+                    isServerConfigured?: boolean;
+                    apiKey?: string;
+                    baseUrl?: string;
+                    requiresApiKey?: boolean;
+                    serverDisabled?: boolean;
+                  }
                 >,
               ): T[] => [
                 // Server-disabled providers (TTS only) are never fallback targets.
@@ -1569,7 +1580,7 @@ export const useSettingsStore = create<SettingsState>()(
                   .filter(([, c]) => c.isServerConfigured && !c.serverDisabled)
                   .map(([id]) => id as T),
                 ...Object.entries(config)
-                  .filter(([, c]) => !c.isServerConfigured && !c.serverDisabled && !!c.apiKey)
+                  .filter(([, c]) => !c.isServerConfigured && !c.serverDisabled && isProviderUsable(c))
                   .map(([id]) => id as T),
               ];
 
