@@ -54,8 +54,10 @@ const DEFAULT_WORKFLOW_FILENAME = 'comfyui-workflow.json';
 const DEFAULT_WORKFLOW_PUBLIC_PATH = `/${DEFAULT_WORKFLOW_FILENAME}`;
 /** Polling interval while waiting for the queue to finish (ms) */
 const POLL_INTERVAL_MS = 1500;
-/** Hard timeout for a single generation request (ms) */
-const GENERATION_TIMEOUT_MS = 300_000; // 5 minutes
+/** Hard timeout for a single generation request (ms). Local 20B workflows
+ *  (Qwen-Image-2512 at 50 steps on a 12 GB card) measure ~5.5-6.5 min, so
+ *  this mirrors the 15-min budget the video route/adapter use. */
+const GENERATION_TIMEOUT_MS = 900_000;
 /**
  * Per-request timeout for individual ComfyUI HTTP calls (ms). The 5-minute
  * bound above is on the *polling loop* only — without this, an awaited call
