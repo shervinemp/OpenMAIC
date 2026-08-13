@@ -169,4 +169,32 @@ describe('disabling the active provider switches selection away', () => {
     useSettingsStore.getState().setVideoGenerationEnabled(true);
     expect(useSettingsStore.getState().videoGenerationEnabled).toBe(true);
   });
+
+  it('selecting a keyless provider seeds its default base URL', () => {
+    useSettingsStore.setState((state) => ({
+      imageProvidersConfig: {
+        ...state.imageProvidersConfig,
+        'comfyui-image': { apiKey: '', baseUrl: '', enabled: false },
+      },
+      videoProvidersConfig: {
+        ...state.videoProvidersConfig,
+        'comfyui-video': { apiKey: '', baseUrl: '', enabled: false },
+      },
+    }));
+    const s = useSettingsStore.getState();
+    s.setImageProvider('comfyui-image');
+    s.setVideoProvider('comfyui-video');
+    expect(useSettingsStore.getState().imageProvidersConfig['comfyui-image'].baseUrl).toBe(
+      'http://localhost:8188',
+    );
+    expect(useSettingsStore.getState().videoProvidersConfig['comfyui-video'].baseUrl).toBe(
+      'http://localhost:8188',
+    );
+  });
+
+  it('selecting a keyed provider does not seed a base URL', () => {
+    const s = useSettingsStore.getState();
+    s.setImageProvider('openai-image');
+    expect(useSettingsStore.getState().imageProvidersConfig['openai-image'].baseUrl).toBe('');
+  });
 });
