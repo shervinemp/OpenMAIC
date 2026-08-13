@@ -148,10 +148,10 @@ async function loadWorkflow(
       //      to pass for ComfyUI (IMAGE_PROVIDERS['comfyui-image'].models is []).
       //   2. The provider is selected in Settings but no workflow has been
       //      clicked yet, so x-image-model is empty.
-      // Default to the first workflow actually discovered in public/ rather
-      // than a hard-coded name: the set of workflow files is user-supplied and
-      // nothing guarantees any particular filename (e.g. comfyui-workflow.json)
-      // exists. This is the same list /api/comfyui-workflows shows the user.
+      // Prefer the first workflow that actually produces still images: the
+      // discovery list includes video workflows (e.g. comfyui-minimax-h3.json),
+      // and defaulting into one of those would load a huge video model and
+      // OOM on an image request.
       const known = await listComfyuiWorkflowFilenames();
       if (known.length === 0) {
         log.error('No ComfyUI workflow files found in public/');
@@ -160,8 +160,9 @@ async function loadWorkflow(
             'Add at least one comfyui-*.json workflow — see comfyui-setup-instructions.md.',
         );
       }
-      filename = known[0];
-      log.info(`No workflow specified — defaulting to first available: "${filename}"`);
+      const { defaultComfyuiWorkflowFilename } = await import('../comfyui-workflows');
+      filename = (await defaultComfyuiWorkflowFilename('image')) ?? known[0];
+      log.info(`No workflow specified — defaulting to first image workflow: "${filename}"`);
     }
 
     const publicDir = path.join(process.cwd(), 'public');

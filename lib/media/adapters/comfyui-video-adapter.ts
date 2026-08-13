@@ -311,6 +311,7 @@ export async function generateWithComfyuiVideo(
     workflowJson: comfyConfig.workflowJson,
     model: comfyConfig.model,
     workflowPublicPath: comfyConfig.workflowPublicPath,
+    preferOutput: 'video',
   });
 
   const loadImageNodeId = findLoadImageNode(workflow);
