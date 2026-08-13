@@ -34,13 +34,12 @@ import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
 const log = createLogger('ImageGeneration API');
 
-// The ComfyUI adapter polls up to GENERATION_TIMEOUT_MS (15 min) and local
-// 20B workflows (Qwen-Image-2512 at 50 steps on a 12 GB card) measure
-// ~5.5-6.5 min. 60s would let platforms that enforce maxDuration (e.g.
-// Vercel) kill the request far before the adapter finishes; 900s matches the
-// adapter's poll budget and the video route. (Self-hosted Node servers ignore
-// this value entirely.)
-export const maxDuration = 900;
+// The ComfyUI adapter allows up to 30 min of queue wait (a slow video can
+// hold the serial queue) plus a 15 min execution budget — local 20B workflows
+// (Qwen-Image-2512 at 50 steps on a 12 GB card) measure ~5.5-6.5 min. 3600s
+// covers queue wait + execution + download for platforms that enforce
+// maxDuration (e.g. Vercel). (Self-hosted Node servers ignore this value.)
+export const maxDuration = 3600;
 
 export async function POST(request: NextRequest) {
   try {
