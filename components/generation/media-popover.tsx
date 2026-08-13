@@ -175,17 +175,24 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     () =>
       Object.values(VIDEO_PROVIDERS)
         .filter((p) => cfgOk(videoProvidersConfig, p.id, p.requiresApiKey))
-        .map((p) => ({
-          groupId: p.id,
-          groupName: p.name,
-          groupIcon: VIDEO_PROVIDER_ICONS[p.id],
-          available: true,
-          items: providerModels(p.models, videoProvidersConfig[p.id]).map((m) => ({
-            id: m.id,
-            name: m.name,
-          })),
-        })),
-    [cfgOk, videoProvidersConfig],
+        .map((p) => {
+          const items =
+            p.id === 'comfyui-video'
+              ? comfyWorkflows
+              : providerModels(p.models, videoProvidersConfig[p.id]);
+          return {
+            groupId: p.id,
+            groupName: p.name,
+            groupIcon: VIDEO_PROVIDER_ICONS[p.id],
+            available: true,
+            // Map to a consistent format here
+            items: items.map((m) => ({
+              id: m.id,
+              name: m.name,
+            })),
+          };
+        }),
+    [cfgOk, videoProvidersConfig, comfyWorkflows],
   );
 
   // ASR: built-in + custom providers
