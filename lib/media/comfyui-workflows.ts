@@ -102,3 +102,75 @@ export async function listComfyuiWorkflowFilenames(): Promise<string[]> {
   const workflows = await listComfyuiWorkflows();
   return workflows.map((w) => w.id);
 }
+
+/** Node classes that mark a workflow as producing video (vs. still images). */
+const VIDEO_OUTPUT_CLASSES = new Set([
+  'SaveVideo',
+  'CreateVideo',
+  'SaveWEBM',
+  'SaveAnimatedWEBP',
+  'MiniMaxH3ImageToVideo',
+  'VHS_VideoCombine',
+  'SaveGif',
+]);
+
+/** Pure selection logic, separated from the fs/JSON parsing for testability. */
+export function pickComfyuiWorkflowByOutput(
+  candidates: Array<{ filename: string; workflow: Record<string, unknown> }>,
+  prefer: 'image' | 'video',
+): string | undefined {
+  for (const { filename, workflow } of candidates) {
+    const classes = Object.values(workflow).map((node) =>
+      typeof (node as Record<string, unknown>)?.['class_type'] === 'string'
+        ? String((node as Record<string, unknown>)['class_type'])
+        : '',
+    );
+    const hasVideo = classes.some((c) => VIDEO_OUTPUT_CLASSES.has(c));
+    const hasImage = classes.includes('SaveImage');
+    if (prefer === 'image' && hasImage && !hasVideo) return filename;
+    if (prefer === 'video' && hasVideo) return filename;
+  }
+  return undefined;
+}
+
+/**
+ * Pick the workflow to use when none was explicitly selected. Workflows of
+ * the wrong medium must never be auto-picked: without this, the first
+ * `comfyui-*.json` alphabetically could be a video workflow (e.g.
+ * `comfyui-minimax-h3.json`), and an image generation would try to run it —
+ * loading a huge video model and OOMing. Returns the first filename whose
+ * node classes match `prefer` ('image' = has an image output, no video
+ * outputs; 'video' = has a video output), falling back to the first
+ * discovered filename when nothing matches.
+ *
+ * Server-side only (reads from public/), like listComfyuiWorkflows.
+ */
+export async function defaultComfyuiWorkflowFilename(
+  prefer: 'image' | 'video',
+): Promise<string | undefined> {
+  if (typeof window === 'undefined') {
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const filenames = await listComfyuiWorkflowFilenames();
+      if (filenames.length === 0) return undefined;
+
+      const candidates: Array<{ filename: string; workflow: Record<string, unknown> }> = [];
+      for (const filename of filenames) {
+        try {
+          const raw = fs.readFileSync(path.join(process.cwd(), 'public', filename), 'utf-8');
+          candidates.push({ filename, workflow: JSON.parse(raw) as Record<string, unknown> });
+        } catch {
+          continue; // unreadable/unparseable workflow is never a safe default
+        }
+      }
+
+      return pickComfyuiWorkflowByOutput(candidates, prefer) ?? filenames[0];
+    } catch (err) {
+      console.error('[ComfyUI Workflows] Failed to pick default workflow:', err);
+      return undefined;
+    }
+  }
+
+  return undefined;
+}

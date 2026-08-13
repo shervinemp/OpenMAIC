@@ -44,6 +44,12 @@ export interface ComfyWorkflowLoadOptions {
   model?: string;
   /** Server-set basename override (not client-controlled). */
   workflowPublicPath?: string;
+  /**
+   * When no workflow is specified, prefer a workflow of this medium when
+   * defaulting — prevents an image request from auto-running a video
+   * workflow (and vice versa). Defaults to 'image'.
+   */
+  preferOutput?: 'image' | 'video';
 }
 
 /**
@@ -121,7 +127,8 @@ export async function loadComfyWorkflow(
             'Add at least one comfyui-*.json workflow.',
         );
       }
-      filename = known[0];
+      const { defaultComfyuiWorkflowFilename } = await import('../comfyui-workflows');
+      filename = (await defaultComfyuiWorkflowFilename(options.preferOutput ?? 'image')) ?? known[0];
       console.info(
         `[INFO]  [ComfyUI-${label}] No workflow specified — defaulting to "${filename}"`,
       );
