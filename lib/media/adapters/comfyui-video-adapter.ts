@@ -34,6 +34,7 @@ import type {
 import { aspectRatioToDimensions } from '../image-providers';
 import {
   DEFAULT_COMFYUI_BASE_URL,
+  cancelComfyPrompt,
   extractComfyExecutionError,
   fetchComfyFileAsBase64,
   findNodeIdByTitle,
@@ -60,9 +61,14 @@ const log = {
 };
 
 const POLL_INTERVAL_MS = 2000;
-/** Hard cap per generation: next/video API route maxDuration is 900s.
- *  Local MiniMax H3 15s clips take ~10-12 min, well under the 15 min cap. */
-const GENERATION_TIMEOUT_MS = 900_000;
+/** Execution budget per generation (ms), counted only from the moment the
+ *  prompt starts executing (see QUEUE_WAIT_TIMEOUT_MS below). MiniMax H3 on a
+ *  12 GB card offloads ~26 GB of staged weights and can take 30-60+ minutes
+ *  for a 1080p clip, so the old 15-min cap was unreachable for video. */
+const GENERATION_TIMEOUT_MS = 60 * 60_000;
+/** How long a prompt may sit in ComfyUI's serial queue before execution
+ *  starts (ms). Queue time does not count against the execution budget. */
+const QUEUE_WAIT_TIMEOUT_MS = 30 * 60_000;
 const FETCH_TIMEOUT_MS = 30_000;
 const CONNECTIVITY_TIMEOUT_MS = 10_000;
 /** Ceiling on the decoded size of a client-supplied input image (memory guard). */
@@ -339,16 +345,26 @@ export async function generateWithComfyuiVideo(
   const clientId = `openmaic-video-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const promptId = await queueComfyPrompt(baseUrl, workflow, clientId, FETCH_TIMEOUT_MS);
 
-  // 3. Poll until complete (or the request deadline is hit).
-  const deadline = Date.now() + GENERATION_TIMEOUT_MS;
+  // 3. Poll until complete. Two-phase budget: queue wait is "free" (a slow
+  // video can hold the serial queue for tens of minutes), and the execution
+  // budget only starts counting once /history reports the prompt is running.
+  const queueWaitDeadline = Date.now() + QUEUE_WAIT_TIMEOUT_MS;
+  let executionDeadline = Number.POSITIVE_INFINITY;
   let entry: Awaited<ReturnType<typeof pollComfyHistory>> = null;
   let pollCount = 0;
 
   log.info(`Polling for completion [prompt_id: ${promptId}]`);
-  while (Date.now() < deadline) {
+  while (true) {
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     pollCount += 1;
     entry = await pollComfyHistory(baseUrl, promptId, FETCH_TIMEOUT_MS);
+
+    if (entry && executionDeadline === Number.POSITIVE_INFINITY) {
+      executionDeadline = Date.now() + GENERATION_TIMEOUT_MS;
+      log.info(
+        `Execution started after ${((Date.now() - startTime) / 1000).toFixed(1)}s in queue [prompt_id: ${promptId}]`,
+      );
+    }
 
     if (entry?.status?.status_str === 'error') {
       const detail = extractComfyExecutionError(entry);
@@ -363,19 +379,31 @@ export async function generateWithComfyuiVideo(
       );
       break;
     }
-    if (pollCount % 10 === 0) {
-      log.debug(
-        `Still waiting… ${pollCount} polls, ${((Date.now() - startTime) / 1000).toFixed(0)}s elapsed`,
+
+    const budget = entry ? executionDeadline : queueWaitDeadline;
+    if (Date.now() > budget) {
+      const cancelled = await cancelComfyPrompt(baseUrl, promptId, FETCH_TIMEOUT_MS);
+      if (entry) {
+        throw new Error(
+          `ComfyUI video generation timed out after ${GENERATION_TIMEOUT_MS / 1000 / 60} min of ` +
+            `execution (prompt_id: ${promptId}). ` +
+            'Your GPU may be too slow for this resolution/duration, or the workflow used a ' +
+            'pipeline longer than the execution budget.' +
+            (cancelled ? ' The prompt was cancelled.' : ''),
+        );
+      }
+      throw new Error(
+        `ComfyUI video generation waited ${QUEUE_WAIT_TIMEOUT_MS / 1000 / 60} min in the queue ` +
+          `without starting (prompt_id: ${promptId}). Something ahead of it is stuck or the ` +
+          `queue is blocked by a long-running video.` +
+          (cancelled ? ' The prompt was cancelled.' : ''),
       );
     }
-  }
-
-  if (!entry?.status?.completed) {
-    throw new Error(
-      `ComfyUI video generation timed out after ${GENERATION_TIMEOUT_MS / 1000}s (prompt_id: ${promptId}). ` +
-        'Your GPU may be too slow for this resolution/duration, or the workflow used a ' +
-        'pipeline longer than the API timeout.',
-    );
+    if (pollCount % 10 === 0) {
+      log.debug(
+        `Still waiting… ${pollCount} polls, ${((Date.now() - startTime) / 1000).toFixed(0)}s elapsed${entry ? '' : ' (queued)'}`,
+      );
+    }
   }
 
   // 4. Extract the first video output (+ optional first-frame poster).
