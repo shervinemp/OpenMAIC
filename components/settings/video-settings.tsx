@@ -404,6 +404,9 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
                     {workflow.id}
                   </div>
                 </div>
+                {videoModelId === workflow.id && (
+                  <CheckCircle2 className="h-4 w-4 text-primary shrink-0 ml-2" />
+                )}
               </div>
             ))}
           </div>
