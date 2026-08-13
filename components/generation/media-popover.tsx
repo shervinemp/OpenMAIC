@@ -45,15 +45,20 @@ const IMAGE_PROVIDER_ICONS: Record<string, string> = {
   'openai-image': '/logos/openai.svg',
   'qwen-image': '/logos/bailian.svg',
   'nano-banana': '/logos/gemini.svg',
+  'minimax-image': '/logos/minimax.svg',
   'grok-image': '/logos/grok.svg',
   'comfyui-image': '/logos/comfyui.svg',
+  lemonade: '/logos/lemonade.svg',
 };
 const VIDEO_PROVIDER_ICONS: Record<string, string> = {
   seedance: '/logos/doubao.svg',
   kling: '/logos/kling.svg',
   veo: '/logos/gemini.svg',
   sora: '/logos/openai.svg',
+  'minimax-video': '/logos/minimax.svg',
   'grok-video': '/logos/grok.svg',
+  happyhorse: '/logos/qwen.svg',
+  'comfyui-video': '/logos/comfyui.svg',
 };
 
 type TabId = 'image' | 'video' | 'tts' | 'asr';
