@@ -1098,16 +1098,26 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Image Generation actions
         setImageProvider: (providerId) =>
-          set((state) => ({
-            imageProviderId: providerId,
-            imageModelId: resolveSelectedModel(
-              state.imageModelId,
-              resolveMediaModels(
-                IMAGE_PROVIDERS[providerId]?.models ?? [],
-                state.imageProvidersConfig[providerId],
+          set((state) => {
+            // Selecting a keyless provider is the user's intent to use it —
+            // seed its default base URL (if empty) so the provider counts as
+            // configured and the generation toggle can be enabled without the
+            // user retyping a default the adapter would assume anyway.
+            const provider = IMAGE_PROVIDERS[providerId];
+            const config = state.imageProvidersConfig[providerId];
+            const imageProvidersConfig =
+              provider?.requiresApiKey === false && config && !config.baseUrl && provider.defaultBaseUrl
+                ? { ...state.imageProvidersConfig, [providerId]: { ...config, baseUrl: provider.defaultBaseUrl } }
+                : state.imageProvidersConfig;
+            return {
+              imageProviderId: providerId,
+              imageProvidersConfig,
+              imageModelId: resolveSelectedModel(
+                state.imageModelId,
+                resolveMediaModels(provider?.models ?? [], imageProvidersConfig[providerId]),
               ),
-            ),
-          })),
+            };
+          }),
         setImageModelId: (modelId) => set({ imageModelId: modelId }),
 
         setImageProviderConfig: (providerId, config) =>
@@ -1162,16 +1172,24 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Video Generation actions
         setVideoProvider: (providerId) =>
-          set((state) => ({
-            videoProviderId: providerId,
-            videoModelId: resolveSelectedModel(
-              state.videoModelId,
-              resolveMediaModels(
-                VIDEO_PROVIDERS[providerId]?.models ?? [],
-                state.videoProvidersConfig[providerId],
+          set((state) => {
+            // Symmetric with image: selecting a keyless provider seeds its
+            // default base URL so it counts as configured (see setImageProvider).
+            const provider = VIDEO_PROVIDERS[providerId];
+            const config = state.videoProvidersConfig[providerId];
+            const videoProvidersConfig =
+              provider?.requiresApiKey === false && config && !config.baseUrl && provider.defaultBaseUrl
+                ? { ...state.videoProvidersConfig, [providerId]: { ...config, baseUrl: provider.defaultBaseUrl } }
+                : state.videoProvidersConfig;
+            return {
+              videoProviderId: providerId,
+              videoProvidersConfig,
+              videoModelId: resolveSelectedModel(
+                state.videoModelId,
+                resolveMediaModels(provider?.models ?? [], videoProvidersConfig[providerId]),
               ),
-            ),
-          })),
+            };
+          }),
         setVideoModelId: (modelId) => set({ videoModelId: modelId }),
 
         setVideoProviderConfig: (providerId, config) =>
