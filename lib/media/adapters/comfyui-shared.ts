@@ -210,6 +210,27 @@ export async function pollComfyHistory(
   }
 }
 
+/** Best-effort removal of a queued prompt via POST /queue {delete}. Returns
+ *  true when ComfyUI acknowledged the cancel; never throws (a cancel is a
+ *  cleanup step, not a reason to mask the original timeout). */
+export async function cancelComfyPrompt(
+  baseUrl: string,
+  promptId: string,
+  timeoutMs: number,
+): Promise<boolean> {
+  try {
+    const response = await fetch(`${baseUrl}/queue`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delete: [promptId] }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Pull a human-readable reason out of a failed history entry, or undefined. */
 export function extractComfyExecutionError(entry: ComfyHistoryEntry): string | undefined {
   const messages = entry.status?.messages;
