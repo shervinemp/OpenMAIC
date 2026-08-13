@@ -410,6 +410,12 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
               </div>
             ))}
           </div>
+
+          <p className="text-xs text-muted-foreground">
+            {t('settings.comfyuiFolderHintPrefix')} <code className="font-mono">public/</code>{' '}
+            {t('settings.comfyuiFolderHintMiddle')}{' '}
+            <code className="font-mono">comfyui-anime-style.json</code> → &quot;Anime Style&quot;.
+          </p>
         </div>
       )}
 
