@@ -4,6 +4,10 @@ describe('embedded persistence route', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.unstubAllEnvs();
+    // These tests target the Postgres path of the route; the local JSON-file
+    // backend is selected by PERSISTENCE_DIR (set in .env.local) and is
+    // covered by the storage package's conformance tests instead.
+    vi.stubEnv('PERSISTENCE_DIR', '');
   });
 
   it('returns a clear 404 when DATABASE_URL is unset', async () => {

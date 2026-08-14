@@ -304,7 +304,7 @@ export function useAssetUrlLeases(
   useEffect(() => {
     const currentRefs = JSON.parse(signature) as string[];
     if (currentRefs.length === 0) return;
-    let pool: BrowserAssetStore;
+    let pool: ReturnType<typeof getAssetPool>;
     try {
       pool = getAssetPool();
     } catch {

@@ -1,5 +1,6 @@
 import { BrowserAssetStore, toAssetId } from '@openmaic/storage';
 import type { AssetMeta } from '@openmaic/dsl';
+import { HttpAssetStore } from './server-asset-store';
 import {
   expectStageRealmPresenceBinding,
   releaseStageRealmPresenceBinding,
@@ -11,7 +12,7 @@ import {
 } from './asset-replacement-events';
 
 const ASSET_POOL_DATABASE_NAME = 'maic-asset-pool';
-let pool: BrowserAssetStore | undefined;
+let pool: BrowserAssetStore | HttpAssetStore | undefined;
 let clearing: Promise<void> | undefined;
 
 export class AssetPoolDeletionDeferredError extends Error {
@@ -55,12 +56,34 @@ if (typeof window !== 'undefined') {
 }
 
 /** Lazy browser-wide asset pool. Construction is forbidden during SSR. */
-export function getAssetPool(): BrowserAssetStore {
+export function getAssetPool(): BrowserAssetStore | HttpAssetStore {
   if (typeof indexedDB === 'undefined') {
     throw new Error('The browser asset pool requires IndexedDB.');
   }
   if (clearing) throw new Error('The browser asset pool is being cleared.');
-  return (pool ??= new BrowserAssetStore({ dbName: ASSET_POOL_DATABASE_NAME }));
+  return (pool ??= createAssetPool());
+}
+
+/**
+ * Server-backed pool when local server persistence is enabled (media lives on
+ * disk and follows the app across ports), IndexedDB otherwise.
+ */
+function createAssetPool(): BrowserAssetStore | HttpAssetStore {
+  if (process.env.NEXT_PUBLIC_PERSISTENCE === '1') {
+    return new HttpAssetStore({
+      baseUrl: '/api/persistence',
+      headers: async () => {
+        const { getLearnerKey } = await import('@/lib/runtime/learner-key');
+        const learnerKey = await getLearnerKey();
+        const token = process.env.NEXT_PUBLIC_PERSISTENCE_TOKEN;
+        return {
+          'x-learner-key': learnerKey,
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        };
+      },
+    });
+  }
+  return new BrowserAssetStore({ dbName: ASSET_POOL_DATABASE_NAME });
 }
 
 export function putAsset(blob: Blob, meta: AssetMeta = {}): Promise<string> {
