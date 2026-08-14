@@ -14,6 +14,10 @@ try {
     if (eqIdx < 0) continue;
     const key = trimmed.slice(0, eqIdx).trim();
     const value = trimmed.slice(eqIdx + 1).trim();
+    // NEXT_PUBLIC_* vars are inlined into the client bundle at build time by
+    // Next.js; they are meaningless (and behavior-changing) in the Node test
+    // environment, so they are never loaded here.
+    if (key.startsWith('NEXT_PUBLIC_')) continue;
     if (!process.env[key]) {
       process.env[key] = value;
     }

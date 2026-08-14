@@ -92,3 +92,6 @@ e2e/__screenshots-619/
 
 # machine-specific local runbook (service startup, weights, Kokoro TTS)
 /LOCAL-RUNBOOK.md
+
+# Local server persistence runtime data (lessons, media, runtime)
+.data/
