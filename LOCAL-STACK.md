@@ -33,6 +33,46 @@ started.
 
 **App port:** OpenMAIC runs on the first free port starting at **3000** (Next auto-increments: 3000, 3001, …) — so it never collides with other dev servers on this machine.
 
+## Origin-independent persistence (server-backed store)
+
+Lessons (documents), learner-runtime sessions, and **media assets** are
+persisted **on disk by the OpenMAIC server** (`PERSISTENCE_DIR` in
+`.env.local`), not in the browser. That means your lessons AND their images
+follow the app across port changes, hostname changes, or browser profile
+wipes — the browser origin only still holds small settings KV. Wired via
+`lib/persistence/bootstrap.ts` (`NEXT_PUBLIC_PERSISTENCE=1`),
+`app/api/persistence/[...path]/route.ts` (the JSON-file backend, no Postgres
+required), and `lib/media/server-asset-store.ts` (the asset pool's server
+backend, selected in `lib/media/asset-pool.ts`). Backend files live under
+`.data/persistence/` (`documents/<stageId>.json`, `runtime/<sessionId>.json`,
+`assets/<ref>`) — back them up with the rest of the repo folder.
+
+- The dev token (`PERSISTENCE_DEV_TOKEN` == `NEXT_PUBLIC_PERSISTENCE_TOKEN`) is
+  not a secret: it ships in the public bundle and only keeps scanners out of the
+  trusted-localhost endpoint.
+- Changing ports again later needs no migration: documents and assets are
+  origin-independent; only settings would reset to defaults (covered by
+  `DEFAULT_MODEL` in `.env.local`).
+
+## Migrating data from a previous browser origin
+
+If the app ran in another browser profile / port before, move the data once:
+
+1. Fully close the source browser (profile lock). The source data may live in
+   an MSIX-packaged browser's profile (e.g. DuckDuckGo keeps it under
+   `%LOCALAPPDATA%\Packages\DuckDuckGo.DesktopBrowser_*\LocalState\DDGWebView\`).
+2. Mirror the profile so a headless Chromium can read it (Chrome/CDP refuses
+   the default profile path): `robocopy <profile-root> %TEMP%\opencode\ddg-mirror /E`.
+3. Run `node scripts/run-migration.mjs` — it exports the old origin's
+   IndexedDB (all maic/* DBs incl. legacy `MAIC-Database`, `maic-asset-pool`,
+   `maic-backups`, `maic-runtime`) + localStorage into one JSON, imports it
+   through the app's `/migrate` page (documents + assets → the local server
+   store), and reports what landed on disk. The source browser is never
+   modified; the export file stays at `%TEMP%\opencode\openmaic-migration.json`.
+4. Reload the app — lessons are listed. The legacy per-file stores
+   (`imageFiles`/`mediaFiles`/chat sessions from the old app era) are preserved
+   in the export file but not restored (the modern app doesn't read them).
+
 ## Model files (ComfyUI `models/`)
 
 - `unet/`: `qwen-image-2512-Q4_K_M.gguf` (or Q5_K_S), `z-image-turbo-Q8_0.gguf`,
