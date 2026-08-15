@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { buildPrompt, PROMPT_IDS, processConditionalBlocks } from '@/lib/prompts';
 import type { PromptId } from '@/lib/prompts';
+import { deriveCourseContract, renderCourseContract } from '@/lib/generation/blueprint';
 
 function buildOutlinePrompt(
   flags: {
@@ -12,6 +13,7 @@ function buildOutlinePrompt(
 ) {
   const imageEnabled = flags.imageEnabled ?? false;
   const videoEnabled = flags.videoEnabled ?? false;
+  const contract = deriveCourseContract(20);
   return buildPrompt(promptId, {
     requirement: 'Teach water cycle basics',
     pdfContent: 'None',
@@ -23,6 +25,8 @@ function buildOutlinePrompt(
     imageEnabled,
     videoEnabled,
     mediaEnabled: imageEnabled || videoEnabled,
+    courseContract: renderCourseContract(contract, 'explainer'),
+    resolvedDurationMinutes: contract.durationMinutes,
   });
 }
 

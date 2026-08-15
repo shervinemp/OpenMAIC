@@ -38,6 +38,20 @@ import { createLogger } from '@/lib/logger';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
+import {
+  buildCourseBlueprint,
+  clampDurationMinutes,
+  deriveCourseContract,
+  inferCourseType,
+  parseDurationFromText,
+  renderCourseContract,
+  summarizeBlueprintValidation,
+  validateBlueprint,
+  MAX_BLUEPRINT_ATTEMPTS,
+  type ParsedOutlineResponse,
+} from '@/lib/generation/blueprint';
+import { DEFAULT_DURATION_MINUTES } from '@/lib/constants/generation';
+import type { CourseBlueprint } from '@/lib/types/generation';
 const log = createLogger('Outlines Stream');
 
 export const maxDuration = 300;
@@ -100,6 +114,26 @@ function extractCourseTitle(buffer: string): string | null {
 function extractCourseTitleFromComplete(buffer: string): string | null {
   const match = buffer.match(COURSE_TITLE_RE);
   return match ? normalizeStreamedTitle(match[1]) : null;
+}
+
+/**
+ * Recover the optional wrapper metadata (`lessons`, `audience`,
+ * `objectives`) from the completed stream. The incremental parser only
+ * handles the `outlines` array, so a single full-buffer JSON.parse is paid
+ * once at completion — the model emits a conforming wrapper per the prompt
+ * contract, and any failure falls back to derived values.
+ */
+function extractWrapperMeta(buffer: string): Partial<ParsedOutlineResponse> | null {
+  try {
+    const parsed = JSON.parse(buffer) as ParsedOutlineResponse;
+    return {
+      lessons: parsed.lessons,
+      audience: parsed.audience,
+      objectives: parsed.objectives,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -301,13 +335,14 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Requirements are required');
     }
 
-    const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents } = body as {
+    const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents, durationMinutes } = body as {
       requirements: UserRequirements;
       pdfText?: string;
       pdfImages?: PdfImage[];
       imageMapping?: ImageMapping;
       researchContext?: string;
       agents?: AgentInfo[];
+      durationMinutes?: number;
     };
     requirementSnippet = requirements?.requirement?.substring(0, 60);
 
@@ -369,6 +404,20 @@ export async function POST(req: NextRequest) {
         ? PROMPT_IDS.INTERACTIVE_OUTLINES
         : PROMPT_IDS.REQUIREMENTS_TO_OUTLINES;
 
+    // The course contract governs the default and interactive paths. The
+    // task-engine path has its own normalization and keeps legacy counts.
+    const contractMode = !taskEngineMode;
+    const courseType = inferCourseType(requirements.requirement);
+    const resolvedDuration = clampDurationMinutes(
+      durationMinutes ?? parseDurationFromText(requirements.requirement) ?? DEFAULT_DURATION_MINUTES,
+    );
+    const courseContract = contractMode
+      ? deriveCourseContract(resolvedDuration, courseType)
+      : null;
+    const courseContractText = courseContract
+      ? renderCourseContract(courseContract, courseType)
+      : '';
+
     const prompts = buildPrompt(promptId, {
       requirement: requirements.requirement,
       pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
@@ -380,6 +429,8 @@ export async function POST(req: NextRequest) {
       mediaEnabled: mediaGenerationEnabled,
       teacherContext,
       userProfile: userProfileText,
+      courseContract: courseContractText,
+      resolvedDurationMinutes: courseContract?.durationMinutes ?? resolvedDuration,
     });
 
     if (!prompts) {
@@ -423,33 +474,13 @@ export async function POST(req: NextRequest) {
         try {
           startHeartbeat();
 
-          const streamParams = visionImages?.length
-            ? {
-                model: languageModel,
-                system: prompts.system,
-                messages: [
-                  {
-                    role: 'user' as const,
-                    content: buildVisionUserContent(prompts.user, visionImages),
-                  },
-                ],
-                maxOutputTokens: modelInfo?.outputWindow,
-                // Tear down the upstream LLM request when the client disconnects,
-                // instead of letting it run to completion for a dead connection.
-                abortSignal: req.signal,
-              }
-            : {
-                model: languageModel,
-                system: prompts.system,
-                prompt: prompts.user,
-                maxOutputTokens: modelInfo?.outputWindow,
-                abortSignal: req.signal,
-              };
-
           let parsedOutlines: SceneOutline[] = [];
           let languageDirective: string | null = null;
           let courseTitle: string | null = null;
           let lastError: string | undefined;
+          let correctiveFeedback: string | undefined;
+          let finalBlueprint: CourseBlueprint | null = null;
+          let contractFailed = false;
 
           for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
             try {
@@ -458,7 +489,37 @@ export async function POST(req: NextRequest) {
               parsedOutlines = [];
               languageDirective = null;
               courseTitle = null;
+              contractFailed = false;
               const usedOutlineIds = new Set<string>();
+
+              // Rebuild per attempt: corrective feedback is appended to the
+              // user prompt when the previous attempt missed the contract.
+              const userPrompt = correctiveFeedback
+                ? `${prompts.user}\n\n## Correction Required\n\n${correctiveFeedback}`
+                : prompts.user;
+              const streamParams = visionImages?.length
+                ? {
+                    model: languageModel,
+                    system: prompts.system,
+                    messages: [
+                      {
+                        role: 'user' as const,
+                        content: buildVisionUserContent(userPrompt, visionImages),
+                      },
+                    ],
+                    maxOutputTokens: modelInfo?.outputWindow,
+                    // Tear down the upstream LLM request when the client disconnects,
+                    // instead of letting it run to completion for a dead connection.
+                    abortSignal: req.signal,
+                  }
+                : {
+                    model: languageModel,
+                    system: prompts.system,
+                    prompt: userPrompt,
+                    maxOutputTokens: modelInfo?.outputWindow,
+                    abortSignal: req.signal,
+                  };
+
               const textStream = streamLLM(
                 streamParams,
                 'scene-outlines-stream',
@@ -542,6 +603,56 @@ export async function POST(req: NextRequest) {
                   // recover it from the now-complete response before finalizing.
                   courseTitle = extractCourseTitleFromComplete(fullText);
                 }
+
+                // Contract mode: assemble the blueprint and hold it to the
+                // contract. A thin deck re-streams with corrective feedback
+                // (bounded); on final exhaustion the run fails with the report.
+                if (contractMode && courseContract) {
+                  const meta = extractWrapperMeta(fullText);
+                  // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
+                  const uniquifiedOutlines = uniquifyMediaElementIds(parsedOutlines);
+                  const blueprint = buildCourseBlueprint(
+                    {
+                      languageDirective: languageDirective || undefined,
+                      courseTitle: courseTitle || undefined,
+                      outlines: uniquifiedOutlines,
+                      audience: meta?.audience,
+                      objectives: meta?.objectives,
+                      lessons: meta?.lessons,
+                    },
+                    requirements.requirement,
+                    courseContract,
+                    courseType,
+                    courseTitle ?? requirements.requirement.slice(0, 30),
+                  );
+                  const report = validateBlueprint(blueprint, {
+                    tolerance: attempt === MAX_BLUEPRINT_ATTEMPTS,
+                  });
+                  if (report.valid) {
+                    finalBlueprint = blueprint;
+                    break;
+                  }
+                  correctiveFeedback = summarizeBlueprintValidation(report);
+                  lastError = correctiveFeedback;
+                  contractFailed = true;
+                  log.warn(
+                    `Blueprint contract not met (attempt ${attempt}/${MAX_BLUEPRINT_ATTEMPTS}): ${report.errors.length} error(s), ${report.warnings.length} warning(s)`,
+                  );
+                  if (attempt < MAX_BLUEPRINT_ATTEMPTS) {
+                    const retryEvent = JSON.stringify({
+                      type: 'retry',
+                      attempt,
+                      maxAttempts: MAX_BLUEPRINT_ATTEMPTS,
+                      reason: 'courseContract',
+                    });
+                    controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+                    continue;
+                  }
+                  // Exhausted: fall through to the error path (never accept
+                  // a broken deck).
+                  break;
+                }
+
                 break;
               }
 
@@ -593,7 +704,20 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          if (parsedOutlines.length > 0) {
+          if (finalBlueprint) {
+            // Contract path: the deck satisfied the blueprint contract. The
+            // outlines carry lessonId and the done event carries the blueprint
+            // for downstream job-model/UI consumers.
+            const doneEvent = JSON.stringify({
+              type: 'done',
+              outlines: finalBlueprint.lessons.flatMap((lesson) => lesson.outlines),
+              languageDirective: finalBlueprint.languageDirective,
+              courseTitle: finalBlueprint.title,
+              taskEngineMode,
+              blueprint: finalBlueprint,
+            });
+            controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));
+          } else if (parsedOutlines.length > 0 && !contractFailed) {
             // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
             const uniquifiedOutlines = uniquifyMediaElementIds(parsedOutlines);
             // Send done event with all outlines
@@ -606,13 +730,18 @@ export async function POST(req: NextRequest) {
             });
             controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));
           } else {
-            // All retries exhausted, no outlines produced
+            // All retries exhausted (no outlines, or the contract was never
+            // satisfied — never accept a broken deck).
             log.error(
               `Outline generation failed after ${MAX_STREAM_RETRIES + 1} attempts: ${lastError}`,
             );
             const errorEvent = JSON.stringify({
               type: 'error',
-              error: lastError || 'Failed to generate outlines',
+              error:
+                lastError ||
+                (contractFailed
+                  ? 'Generated deck did not meet the course contract'
+                  : 'Failed to generate outlines'),
             });
             controller.enqueue(encoder.encode(`data: ${errorEvent}\n\n`));
           }

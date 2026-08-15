@@ -132,6 +132,9 @@ export interface SceneOutline {
   estimatedDuration?: number; // seconds
   order: number;
   languageNote?: string; // LLM-inferred language note for this scene
+  /** Lesson membership (assigned during blueprint canonicalization; playback
+      order remains the global `order`). */
+  lessonId?: string;
   // Suggested image IDs (from PDF-extracted images)
   suggestedImageIds?: string[]; // e.g., ["img_1", "img_3"]
   // AI-generated media requests (when PDF images are insufficient)
@@ -166,6 +169,56 @@ export interface SceneOutline {
   // Widget fields (required for type === 'interactive' in unified mode)
   widgetType?: WidgetType;
   widgetOutline?: WidgetOutline;
+}
+
+// ==================== Course Blueprint (curriculum contract) ====================
+
+/**
+ * Course flavor inferred from the requirement text. Feeds the type mix and
+ * quiz cadence in the outline prompt contract.
+ */
+export type CourseType = 'explainer' | 'hands-on' | 'exam-prep';
+
+/**
+ * One lesson (section) of the course. Scene counts are derived from the
+ * resolved course duration and validated — see lib/generation/blueprint.ts.
+ */
+export interface LessonBlueprint {
+  /** Lesson/section title (teaching language). */
+  title: string;
+  /** 1-2 learning objectives for THIS lesson. */
+  objectives: string[];
+  /** DERIVED — informational: even split of the course duration. */
+  durationMinutes: number;
+  /** DERIVED — greedy even split of the course-wide total, clamped. */
+  sceneTarget: number;
+  /** The lesson's deck. Length validated against sceneTarget. */
+  outlines: SceneOutline[];
+}
+
+/**
+ * The curriculum as a validated contract (Pillar 1). Produced by the
+ * outline stage; consumed by the job model and the UI.
+ */
+export interface CourseBlueprint {
+  /** Display name for the course (≤ 30 chars, teaching language). */
+  title: string;
+  /** 2-5 sentence language directive (existing semantics). */
+  languageDirective: string;
+  /** RESOLVED course duration — never a model guess. */
+  durationMinutes: number;
+  /** Inferred audience; free text. */
+  audience: string;
+  /** 2-5 course-level learning objectives. */
+  objectives: string[];
+  /** DERIVED — course flavor from requirement keywords. */
+  courseType: CourseType;
+  /** DERIVED — lesson split: ceil(duration / LESSON_MINUTES), clamped. */
+  lessonCount: number;
+  /** DERIVED — quiz placement cadence (every N scenes, course-wide). */
+  quizPlacement: number;
+  /** The course, split into lessons (each validated against its target). */
+  lessons: LessonBlueprint[];
 }
 
 // ==================== Stage 3 Output: Generated Content ====================

@@ -55,6 +55,9 @@ export interface GenerationResult<T> {
   success: boolean;
   data?: T;
   error?: string;
+  /** Blueprint contract report, present when the outline stage exhausts its
+      corrective budget (success = false with concrete findings). */
+  validation?: import('./blueprint').BlueprintValidationResult;
 }
 
 export type AICallFn = (

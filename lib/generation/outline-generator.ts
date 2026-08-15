@@ -4,13 +4,27 @@
  */
 
 import { nanoid } from 'nanoid';
-import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { DEFAULT_DURATION_MINUTES, MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import type {
   UserRequirements,
   SceneOutline,
   PdfImage,
   ImageMapping,
+  CourseBlueprint,
 } from '@/lib/types/generation';
+import {
+  buildCourseBlueprint,
+  clampDurationMinutes,
+  deriveCourseContract,
+  inferCourseType,
+  parseDurationFromText,
+  renderCourseContract,
+  summarizeBlueprintValidation,
+  validateBlueprint,
+  MAX_BLUEPRINT_ATTEMPTS,
+  type BlueprintValidationResult,
+  type ParsedOutlineResponse,
+} from './blueprint';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import { formatImageDescription, formatImagePlaceholder } from './prompt-formatters';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
@@ -32,6 +46,16 @@ export const DEFAULT_LANGUAGE_DIRECTIVE =
 /**
  * Generate scene outlines from user requirements
  * Now uses simplified UserRequirements with just requirement text and language
+ *
+ * The output is a validated `CourseBlueprint`: the course-wide scene total
+ * and per-lesson targets are derived from the resolved duration and the
+ * parsed outlines must satisfy the contract exactly. A bounded corrective
+ * loop re-prompts with concrete findings; on exhaustion the run fails with
+ * the validation report — a thin deck is never accepted as valid output.
+ *
+ * `data` carries the blueprint plus legacy flattened fields
+ * (`languageDirective` / `courseTitle` / `outlines`) so existing callers
+ * keep working while migrating to `blueprint`.
  */
 export async function generateSceneOutlinesFromRequirements(
   requirements: UserRequirements,
@@ -45,10 +69,28 @@ export async function generateSceneOutlinesFromRequirements(
     videoGenerationEnabled?: boolean;
     researchContext?: string;
     teacherContext?: string;
+    /** Typed duration input (minutes). Falls back to text-parse, then default. */
+    durationMinutes?: number;
   },
 ): Promise<
-  GenerationResult<{ languageDirective: string; courseTitle?: string; outlines: SceneOutline[] }>
+  GenerationResult<{
+    blueprint: CourseBlueprint;
+    languageDirective: string;
+    courseTitle?: string;
+    outlines: SceneOutline[];
+  }>
 > {
+  // Resolve the course contract BEFORE the prompt: duration (typed input →
+  // requirement text → default) and course flavor from the requirement.
+  const courseType = inferCourseType(requirements.requirement);
+  const durationMinutes = clampDurationMinutes(
+    options?.durationMinutes ??
+      parseDurationFromText(requirements.requirement) ??
+      DEFAULT_DURATION_MINUTES,
+  );
+  const contract = deriveCourseContract(durationMinutes, courseType);
+  const courseContract = renderCourseContract(contract, courseType);
+
   // Build available images description for the prompt
   let availableImagesText = 'No images available';
   let visionImages: Array<{ id: string; src: string }> | undefined;
@@ -93,7 +135,7 @@ export async function generateSceneOutlinesFromRequirements(
   const hasSourceImages = (pdfImages?.length ?? 0) > 0;
 
   // Use simplified prompt variables
-  const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
+  const baseVariables = {
     // New simplified variables
     requirement: requirements.requirement,
     pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
@@ -106,57 +148,113 @@ export async function generateSceneOutlinesFromRequirements(
     researchContext: options?.researchContext || 'None',
     // Server-side generation populates this via options; client-side populates via formatTeacherPersonaForPrompt
     teacherContext: options?.teacherContext || '',
-  });
+    courseContract,
+    resolvedDurationMinutes: contract.durationMinutes,
+  };
 
-  if (!prompts) {
-    return { success: false, error: 'Prompt template not found' };
+  let feedback: string | undefined;
+  let lastBlueprint: CourseBlueprint | undefined;
+  let lastReport: BlueprintValidationResult | undefined;
+
+  for (let attempt = 1; attempt <= MAX_BLUEPRINT_ATTEMPTS; attempt++) {
+    const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, baseVariables);
+    if (!prompts) {
+      return { success: false, error: 'Prompt template not found' };
+    }
+    const userPrompt = feedback ? `${prompts.user}\n\n## Correction Required\n\n${feedback}` : prompts.user;
+
+    try {
+      const response = await aiCall(prompts.system, userPrompt, visionImages);
+      const parsed = parseJsonResponse<ParsedOutlineResponse | SceneOutline[]>(response);
+
+      let languageDirective: string;
+      let courseTitle: string | undefined;
+      let rawOutlines: SceneOutline[];
+      let audience: string | undefined;
+      let courseObjectives: string[] | undefined;
+      let lessons: ParsedOutlineResponse['lessons'];
+
+      if (Array.isArray(parsed)) {
+        // Fallback: LLM returned old flat array format
+        languageDirective = DEFAULT_LANGUAGE_DIRECTIVE;
+        rawOutlines = parsed;
+      } else if (parsed && parsed.outlines) {
+        languageDirective = parsed.languageDirective || DEFAULT_LANGUAGE_DIRECTIVE;
+        // courseTitle is optional — only honor a non-empty string, and cap its
+        // length defensively (the prompt asks for ≤30 chars, but older/hallucinating
+        // models may return far more). The downstream Stage.name column is bounded too.
+        const rawTitle = parsed.courseTitle;
+        courseTitle =
+          typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle.trim().slice(0, 120) : undefined;
+        rawOutlines = parsed.outlines;
+        audience = parsed.audience;
+        courseObjectives = parsed.objectives;
+        lessons = parsed.lessons;
+      } else {
+        return { success: false, error: 'Failed to parse scene outlines response' };
+      }
+
+      if (!Array.isArray(rawOutlines)) {
+        return { success: false, error: 'Failed to parse scene outlines response' };
+      }
+
+      // Ensure IDs and order
+      const enriched = rawOutlines.map((outline, index) => ({
+        ...outline,
+        id: outline.id || nanoid(),
+        order: index + 1,
+      }));
+
+      // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
+      const result = uniquifyMediaElementIds(enriched);
+
+      const blueprint = buildCourseBlueprint(
+        {
+          languageDirective,
+          courseTitle,
+          outlines: result,
+          audience,
+          objectives: courseObjectives,
+          lessons,
+        },
+        requirements.requirement,
+        contract,
+        courseType,
+        courseTitle ?? requirements.requirement.slice(0, 30),
+      );
+
+      const report = validateBlueprint(blueprint, { tolerance: attempt === MAX_BLUEPRINT_ATTEMPTS });
+      lastBlueprint = blueprint;
+      lastReport = report;
+
+      if (report.valid) {
+        return {
+          success: true,
+          data: {
+            blueprint,
+            languageDirective: blueprint.languageDirective,
+            courseTitle,
+            outlines: blueprint.lessons.flatMap((lesson) => lesson.outlines),
+          },
+        };
+      }
+
+      feedback = summarizeBlueprintValidation(report);
+      log.warn(
+        `Blueprint contract not met (attempt ${attempt}/${MAX_BLUEPRINT_ATTEMPTS}): ${report.errors.length} error(s), ${report.warnings.length} warning(s)`,
+      );
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
   }
 
-  try {
-    const response = await aiCall(prompts.system, prompts.user, visionImages);
-    const parsed = parseJsonResponse<
-      { languageDirective: string; courseTitle?: string; outlines: SceneOutline[] } | SceneOutline[]
-    >(response);
-
-    let languageDirective: string;
-    let courseTitle: string | undefined;
-    let rawOutlines: SceneOutline[];
-
-    if (Array.isArray(parsed)) {
-      // Fallback: LLM returned old flat array format
-      languageDirective = DEFAULT_LANGUAGE_DIRECTIVE;
-      rawOutlines = parsed;
-    } else if (parsed && parsed.outlines) {
-      languageDirective = parsed.languageDirective || DEFAULT_LANGUAGE_DIRECTIVE;
-      // courseTitle is optional — only honor a non-empty string, and cap its
-      // length defensively (the prompt asks for ≤30 chars, but older/hallucinating
-      // models may return far more). The downstream Stage.name column is bounded too.
-      const rawTitle = parsed.courseTitle;
-      courseTitle =
-        typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle.trim().slice(0, 120) : undefined;
-      rawOutlines = parsed.outlines;
-    } else {
-      return { success: false, error: 'Failed to parse scene outlines response' };
-    }
-
-    if (!Array.isArray(rawOutlines)) {
-      return { success: false, error: 'Failed to parse scene outlines response' };
-    }
-
-    // Ensure IDs and order
-    const enriched = rawOutlines.map((outline, index) => ({
-      ...outline,
-      id: outline.id || nanoid(),
-      order: index + 1,
-    }));
-
-    // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
-    const result = uniquifyMediaElementIds(enriched);
-
-    return { success: true, data: { languageDirective, courseTitle, outlines: result } };
-  } catch (error) {
-    return { success: false, error: String(error) };
-  }
+  // Exhausted the corrective budget: never accept a broken deck. Surface the
+  // last parse's validation report so the caller can show concrete findings.
+  return {
+    success: false,
+    error: 'Scene outline generation did not meet the course contract',
+    validation: lastReport,
+  };
 }
 
 /**
