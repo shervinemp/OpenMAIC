@@ -26,6 +26,7 @@ import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
+import { takeSceneDepthReport } from '@/lib/generation/content-depth';
 
 const log = createLogger('Scene Content API');
 
@@ -186,10 +187,18 @@ export async function POST(req: NextRequest) {
     if (!content) {
       log.error(`Failed to generate content for: "${effectiveOutline.title}"`);
 
+      // Depth-contract exhaustion (Pillar 3): the content was rejected for
+      // shallow substance or bad citations — surface the concrete findings
+      // so the client's retry card can show WHY the scene failed.
+      const depthReport = takeSceneDepthReport(effectiveOutline.id);
+      const depthDetail = depthReport
+        ? ` — depth contract: ${depthReport.findings.join('; ')}`
+        : '';
+
       return apiError(
         'GENERATION_FAILED',
         500,
-        `Failed to generate content: ${effectiveOutline.title}`,
+        `Failed to generate content: ${effectiveOutline.title}${depthDetail}`,
       );
     }
 

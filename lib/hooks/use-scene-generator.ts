@@ -492,6 +492,8 @@ export async function generateTTSForScene(
 export interface UseSceneGeneratorOptions {
   onSceneGenerated?: (scene: Scene, index: number) => void;
   onSceneFailed?: (outline: SceneOutline, error: string) => void;
+  /** TTS demotion: audio failed but the scene was kept (fill phase retryable). */
+  onSceneTtsFailed?: (outline: SceneOutline, error: string) => void;
   onPhaseChange?: (phase: 'content' | 'actions', outline: SceneOutline) => void;
   onComplete?: () => void;
 }
@@ -676,17 +678,12 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             }
             store.getState().addFailedOutline(outline);
             options.onSceneFailed?.(outline, contentResult.error || 'Content generation failed');
-            if (contentPromises) {
-              // Parallel: surface the failure but keep going with the other scenes
-              // (their content is already in flight).
-              hadContentFailure = true;
-              removeGeneratingOutline(outline.id);
-              continue;
-            }
-            // Serial: pause the batch (unchanged behaviour).
-            store.getState().setGenerationStatus('paused');
-            pausedByFailureOrAbort = true;
-            break;
+            // Surface and continue in both modes (Pillar 2 §4.8): a failure
+            // marks the outline failed and the loop advances — retry/skip are
+            // user actions on the retry cards. Pause only on cancel/abort.
+            hadContentFailure = true;
+            removeGeneratingOutline(outline.id);
+            continue;
           }
 
           if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
@@ -715,7 +712,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             const scene = actionsResult.scene;
             const settings = useSettingsStore.getState();
 
-            // TTS generation — failure means the whole scene fails
+            // TTS is a background fill phase (Pillar 2 §4.6): failure never
+            // fails the scene and never pauses the batch. The scene is added
+            // with its speech actions missing audioId, and TTS is retried by
+            // the per-document background queue / the per-scene UI affordance.
             if (
               settings.ttsEnabled &&
               settings.ttsProviderId !== 'browser-native-tts' &&
@@ -734,11 +734,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
                   pausedByFailureOrAbort = true;
                   break;
                 }
-                store.getState().addFailedOutline(outline);
-                options.onSceneFailed?.(outline, ttsResult.error || 'TTS generation failed');
-                store.getState().setGenerationStatus('paused');
-                pausedByFailureOrAbort = true;
-                break;
+                log.warn(
+                  `TTS failed for scene "${outline.title}" — scene kept, audio pending (${ttsResult.failedCount} clip(s)): ${ttsResult.error ?? 'unknown error'}`,
+                );
+                options.onSceneTtsFailed?.(outline, ttsResult.error || 'TTS generation failed');
               }
             }
 
@@ -760,16 +759,16 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             }
             store.getState().addFailedOutline(outline);
             options.onSceneFailed?.(outline, actionsResult.error || 'Actions generation failed');
-            store.getState().setGenerationStatus('paused');
-            pausedByFailureOrAbort = true;
-            break;
+            // Surface and continue — retry/skip are user actions (Pillar 2 §4.8).
+            removeGeneratingOutline(outline.id);
+            continue;
           }
         }
 
         if (!abortRef.current && !pausedByFailureOrAbort) {
-          if (hadContentFailure) {
-            // Parallel content phase left some outlines failed but kept going;
-            // surface them for retry instead of signalling a clean completion.
+          if (hadContentFailure || store.getState().failedOutlines.length > 0) {
+            // Some outlines failed but the loop kept going; surface them for
+            // retry/skip instead of signalling a clean completion.
             store.getState().setGenerationStatus('paused');
           } else {
             store.getState().setGenerationStatus('completed');
