@@ -27,7 +27,7 @@ import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
-import { takeSceneDepthReport } from '@/lib/generation/content-depth';
+import { takeSceneDepthReport, takeSceneDepthSummary } from '@/lib/generation/content-depth';
 
 const log = createLogger('Scene Content API');
 
@@ -209,7 +209,15 @@ export async function POST(req: NextRequest) {
 
     log.info(`Content generated successfully: "${effectiveOutline.title}"`);
 
-    return apiSuccess({ content, effectiveOutline });
+    // Depth affordance: tell the client when the accepted content needed
+    // corrective re-prompting (or record a first-try pass for completeness).
+    const depthSummary =
+      takeSceneDepthSummary(effectiveOutline.id) ??
+      (content
+        ? { reworked: false, attempts: 1, findings: [] }
+        : undefined);
+
+    return apiSuccess({ content, effectiveOutline, depth: depthSummary });
   } catch (error) {
     log.error(
       `Scene content generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,
