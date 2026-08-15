@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   PanelLeftClose,
@@ -12,6 +12,7 @@ import {
   AlertCircle,
   RefreshCw,
   Trophy,
+  VolumeX,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
@@ -45,8 +46,29 @@ export function SceneSidebar({
   const { scenes, currentSceneId, setCurrentSceneId, generatingOutlines, generationStatus } =
     useStageStore();
   const failedOutlines = useStageStore.use.failedOutlines();
+  const blueprint = useStageStore.use.blueprint();
   const viewportSize = useCanvasStore.use.viewportSize();
   const viewportRatio = useCanvasStore.use.viewportRatio();
+
+  // Pillar 2 lesson progress (from the persisted blueprint): per-lesson
+  // done/total plus the audio-pending fill count — the "3/4 lessons
+  // complete, 2 audio pending" completion display.
+  const lessonProgress = useMemo(() => {
+    if (!blueprint) return null;
+    const lessons = blueprint.lessons.map((lesson) => {
+      const total = lesson.outlines.length;
+      const done = lesson.outlines.filter((outline) =>
+        scenes.some((scene) => scene.order === outline.order),
+      ).length;
+      return { title: lesson.title, total, done };
+    });
+    const audioPending = scenes.filter((scene) =>
+      (scene.actions ?? []).some(
+        (action) => action.type === 'speech' && !!action.text && !action.audioId,
+      ),
+    ).length;
+    return { lessons, audioPending };
+  }, [blueprint, scenes]);
 
   const [retryingOutlineId, setRetryingOutlineId] = useState<string | null>(null);
 
@@ -145,6 +167,38 @@ export function SceneSidebar({
           data-testid="scene-list"
           className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-2 scrollbar-hide pt-1"
         >
+          {/* Lesson progress strip (Pillar 2): per-lesson done/total + audio fill state */}
+          {lessonProgress && (
+            <div className="flex flex-col gap-1 pb-1 border-b border-gray-100 dark:border-gray-800">
+              <div className="flex flex-wrap gap-1">
+                {lessonProgress.lessons.map((lesson, index) => (
+                  <span
+                    key={`${lesson.title}-${index}`}
+                    title={lesson.title}
+                    className={cn(
+                      'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold ring-1',
+                      lesson.done === lesson.total
+                        ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 ring-emerald-200 dark:ring-emerald-800'
+                        : 'bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500 ring-gray-200 dark:ring-gray-700',
+                    )}
+                  >
+                    <span className="max-w-[72px] truncate">
+                      {lesson.title.replace(/^Lesson \d+: /, '')}
+                    </span>
+                    <span className="opacity-70">
+                      {lesson.done}/{lesson.total}
+                    </span>
+                  </span>
+                ))}
+              </div>
+              {lessonProgress.audioPending > 0 && (
+                <span className="inline-flex items-center gap-1 px-1 text-[9px] font-medium text-amber-500/90 dark:text-amber-400">
+                  <VolumeX className="w-3 h-3" />
+                  {t('generation.audioPendingCount', { count: lessonProgress.audioPending })}
+                </span>
+              )}
+            </div>
+          )}
           {scenes.map((scene, index) => {
             const isActive = currentSceneId === scene.id;
             const Icon = getSceneTypeIcon(scene.type);
