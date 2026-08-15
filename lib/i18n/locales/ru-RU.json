@@ -1087,7 +1087,8 @@
     "jumpToBlankTitle": "Перейти к разделу без заголовка",
     "analyzingMediaMaterial": "Анализ аудио/видео",
     "audioPendingCount": "{{count}} сцен без аудио",
-    "skipScene": "Пропустить сцену"
+    "skipScene": "Пропустить сцену",
+    "lessonCompletion": "{{done}}/{{total}} уроков · {{scenes}} сцен"
   },
   "settings": {
     "title": "Настройки",

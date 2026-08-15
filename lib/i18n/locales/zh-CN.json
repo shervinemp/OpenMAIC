@@ -1087,7 +1087,8 @@
     "jumpToBlankTitle": "跳到待补充标题的章节",
     "analyzingMediaMaterial": "解析音视频内容",
     "audioPendingCount": "{{count}} 个场景音频待生成",
-    "skipScene": "跳过此场景"
+    "skipScene": "跳过此场景",
+    "lessonCompletion": "{{done}}/{{total}} 节课 · {{scenes}} 个场景"
   },
   "settings": {
     "title": "设置",
