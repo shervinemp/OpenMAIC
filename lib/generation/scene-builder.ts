@@ -102,6 +102,7 @@ export async function buildSceneFromOutline(
     visionEnabled,
     agents,
     languageDirective: langText,
+    retrievalContext: outline.retrievalContext,
   });
   if (!content) {
     log.error(`Failed to generate content for: ${outline.title}`);

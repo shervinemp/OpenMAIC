@@ -32,6 +32,12 @@ import {
   generateTTSForClassroom,
 } from '@/lib/server/classroom-media-generation';
 import { withGenerationRetry } from '@/lib/generation/generation-retry';
+import {
+  chunkSourceText,
+  formatRetrievalContext,
+  retrieveChunks,
+  type PdfChunk,
+} from '@/lib/generation/pdf-retrieval';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
@@ -547,11 +553,28 @@ export async function generateClassroom(
   log.info('Stage 2: Generating scene content and actions...');
   let generatedScenes = 0;
 
+  // Pillar 3b: build the per-scene retrieval index once from the full
+  // source text, then retrieve the top-k chunks for each outline at
+  // content time so scenes are grounded in the actual source (not a
+  // single global summary). Skip for tiny sources (no retrieval signal).
+  const retrievalChunks: PdfChunk[] =
+    pdfText && pdfText.length > 2000 ? chunkSourceText(pdfText) : [];
+
   for (const [index, outline] of outlines.entries()) {
     const safeOutline = applyOutlineFallbacks(outline, true, {
       allowProceduralSkill: vocationalActive,
     });
     const progressStart = 30 + Math.floor((index / Math.max(outlines.length, 1)) * 60);
+
+    // Retrieval context for this scene (frozen on the outline so
+    // regenerations reuse the same cited chunks).
+    if (retrievalChunks.length > 0 && !safeOutline.retrievalContext) {
+      const query = `${safeOutline.title}\n${safeOutline.description}\n${(safeOutline.keyPoints ?? []).join('\n')}`;
+      const retrieved = retrieveChunks(query, retrievalChunks);
+      if (retrieved.length > 0) {
+        safeOutline.retrievalContext = formatRetrievalContext(retrieved);
+      }
+    }
 
     await options.onProgress?.({
       step: 'generating_scenes',
@@ -590,6 +613,7 @@ export async function generateClassroom(
           agents,
           languageDirective,
           allowProceduralSkill: vocationalActive,
+          retrievalContext: safeOutline.retrievalContext,
           // PBL scene content is driven by the model object, not the aiCall
           // closure, so both the routed model AND its thinking config must be
           // passed explicitly — otherwise a `scene-content:pbl` route with a

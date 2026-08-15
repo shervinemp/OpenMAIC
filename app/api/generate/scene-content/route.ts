@@ -180,6 +180,7 @@ export async function POST(req: NextRequest) {
       targetLanguage: userLocale || undefined,
       userRequirements: requirements,
       allowProceduralSkill: vocationalActive,
+      retrievalContext: effectiveOutline.retrievalContext,
     });
 
     if (!content) {

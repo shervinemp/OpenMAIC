@@ -135,6 +135,12 @@ export interface SceneOutline {
   /** Lesson membership (assigned during blueprint canonicalization; playback
       order remains the global `order`). */
   lessonId?: string;
+  /**
+   * Per-scene retrieval context rendered at the outline stage (Pillar 3b):
+   * top-k source chunks with `[source p.N]` citation markers. Injected into
+   * the content prompt and used as the citation ground-truth.
+   */
+  retrievalContext?: string;
   // Suggested image IDs (from PDF-extracted images)
   suggestedImageIds?: string[]; // e.g., ["img_1", "img_3"]
   // AI-generated media requests (when PDF images are insufficient)

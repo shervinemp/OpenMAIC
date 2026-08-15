@@ -51,6 +51,12 @@ import {
   type ParsedOutlineResponse,
 } from '@/lib/generation/blueprint';
 import { DEFAULT_DURATION_MINUTES } from '@/lib/constants/generation';
+import {
+  chunkSourceText,
+  formatRetrievalContext,
+  retrieveChunks,
+  type PdfChunk,
+} from '@/lib/generation/pdf-retrieval';
 import type { CourseBlueprint } from '@/lib/types/generation';
 const log = createLogger('Outlines Stream');
 
@@ -708,9 +714,25 @@ export async function POST(req: NextRequest) {
             // Contract path: the deck satisfied the blueprint contract. The
             // outlines carry lessonId and the done event carries the blueprint
             // for downstream job-model/UI consumers.
+            //
+            // Pillar 3b: attach per-scene retrieval context from the full
+            // source text (the outline stage is the one place the raw text
+            // exists), so scene content can cite the actual source instead of
+            // a global summary.
+            const retrievalChunks: PdfChunk[] =
+              pdfText && pdfText.length > 2000 ? chunkSourceText(pdfText) : [];
+            const doneOutlines = finalBlueprint.lessons.flatMap((lesson) =>
+              lesson.outlines.map((outline) => {
+                if (outline.retrievalContext || retrievalChunks.length === 0) return outline;
+                const query = `${outline.title}\n${outline.description}\n${(outline.keyPoints ?? []).join('\n')}`;
+                const retrieved = retrieveChunks(query, retrievalChunks);
+                if (retrieved.length === 0) return outline;
+                return { ...outline, retrievalContext: formatRetrievalContext(retrieved) };
+              }),
+            );
             const doneEvent = JSON.stringify({
               type: 'done',
-              outlines: finalBlueprint.lessons.flatMap((lesson) => lesson.outlines),
+              outlines: doneOutlines,
               languageDirective: finalBlueprint.languageDirective,
               courseTitle: finalBlueprint.title,
               taskEngineMode,
