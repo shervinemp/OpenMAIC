@@ -90,6 +90,18 @@ export { partitionImagesForVision } from './outline-formatters.js';
 export type { VisionImagePartition } from './outline-formatters.js';
 export { parseJsonResponse } from './json-repair.js';
 export type { JsonParsingOptions } from './json-repair.js';
+export {
+  extractSlideTexts,
+  isCaptionText,
+  isIntroSummaryOutline,
+  isSubstantiveText,
+  recordSceneDepthReport,
+  summarizeDepthFindings,
+  takeSceneDepthReport,
+  validateQuizDepth,
+  validateSlideDepth,
+} from './content-depth.js';
+export type { DepthReport, SlideDepthOptions } from './content-depth.js';
 export { noopGenerationLogger } from './logger.js';
 export type { GenerationLogger } from './logger.js';
 export {
