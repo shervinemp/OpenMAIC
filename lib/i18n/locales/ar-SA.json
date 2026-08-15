@@ -1012,7 +1012,8 @@
     "skipScene": "تخطي المشهد",
     "lessonCompletion": "{{done}}/{{total}} درس · {{scenes}} مشهد",
     "reworkedForDepth": "أعيدت للعمق",
-    "reworkedForDepthCount": "{{count}} مشهد أعيدت للعمق"
+    "reworkedForDepthCount": "{{count}} مشهد أعيدت للعمق",
+    "mediaFailedCount": "{{count}} مشهد بميديا فاشلة"
   },
   "settings": {
     "title": "الإعدادات",

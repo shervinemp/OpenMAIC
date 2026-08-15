@@ -1012,7 +1012,8 @@
     "skipScene": "Skip scene",
     "lessonCompletion": "{{done}}/{{total}} lessons · {{scenes}} scenes",
     "reworkedForDepth": "Reworked for depth",
-    "reworkedForDepthCount": "{{count}} scene(s) reworked for depth"
+    "reworkedForDepthCount": "{{count}} scene(s) reworked for depth",
+    "mediaFailedCount": "{{count}} scene(s) with failed media"
   },
   "settings": {
     "title": "Settings",

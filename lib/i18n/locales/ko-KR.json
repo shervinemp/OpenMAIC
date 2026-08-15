@@ -1012,7 +1012,8 @@
     "skipScene": "장면 건너뛰기",
     "lessonCompletion": "{{done}}/{{total}} 레슨 · {{scenes}} 장면",
     "reworkedForDepth": "깊이 보강됨",
-    "reworkedForDepthCount": "{{count}}개 장면 깊이 보강"
+    "reworkedForDepthCount": "{{count}}개 장면 깊이 보강",
+    "mediaFailedCount": "미디어 실패 {{count}}개 장면"
   },
   "settings": {
     "title": "설정",

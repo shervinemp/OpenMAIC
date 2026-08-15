@@ -1012,7 +1012,8 @@
     "skipScene": "シーンをスキップ",
     "lessonCompletion": "{{done}}/{{total}} レッスン · {{scenes}} シーン",
     "reworkedForDepth": "深さのため再生成",
-    "reworkedForDepthCount": "{{count}} シーンを深さのため再生成"
+    "reworkedForDepthCount": "{{count}} シーンを深さのため再生成",
+    "mediaFailedCount": "{{count}} シーンでメディア生成失敗"
   },
   "settings": {
     "title": "設定",
