@@ -1088,7 +1088,9 @@
     "analyzingMediaMaterial": "音声・動画を解析中",
     "audioPendingCount": "{{count}} シーンの音声が未生成",
     "skipScene": "シーンをスキップ",
-    "lessonCompletion": "{{done}}/{{total}} レッスン · {{scenes}} シーン"
+    "lessonCompletion": "{{done}}/{{total}} レッスン · {{scenes}} シーン",
+    "reworkedForDepth": "深さのため再生成",
+    "reworkedForDepthCount": "{{count}} シーンを深さのため再生成"
   },
   "settings": {
     "title": "設定",

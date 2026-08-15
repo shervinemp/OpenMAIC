@@ -1088,7 +1088,9 @@
     "analyzingMediaMaterial": "Analizando audio/video",
     "audioPendingCount": "{{count}} escenas con audio pendiente",
     "skipScene": "Omitir escena",
-    "lessonCompletion": "{{done}}/{{total}} lecciones · {{scenes}} escenas"
+    "lessonCompletion": "{{done}}/{{total}} lecciones · {{scenes}} escenas",
+    "reworkedForDepth": "Rehecho por profundidad",
+    "reworkedForDepthCount": "{{count}} escena(s) rehechas por profundidad"
   },
   "settings": {
     "title": "Configuración",

@@ -1088,7 +1088,9 @@
     "analyzingMediaMaterial": "오디오/비디오 분석 중",
     "audioPendingCount": "{{count}}개 장면 오디오 대기 중",
     "skipScene": "장면 건너뛰기",
-    "lessonCompletion": "{{done}}/{{total}} 레슨 · {{scenes}} 장면"
+    "lessonCompletion": "{{done}}/{{total}} 레슨 · {{scenes}} 장면",
+    "reworkedForDepth": "깊이 보강됨",
+    "reworkedForDepthCount": "{{count}}개 장면 깊이 보강"
   },
   "settings": {
     "title": "설정",

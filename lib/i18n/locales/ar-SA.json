@@ -1088,7 +1088,9 @@
     "analyzingMediaMaterial": "تحليل الصوت/الفيديو",
     "audioPendingCount": "{{count}} مشاهد بدون صوت",
     "skipScene": "تخطي المشهد",
-    "lessonCompletion": "{{done}}/{{total}} درس · {{scenes}} مشهد"
+    "lessonCompletion": "{{done}}/{{total}} درس · {{scenes}} مشهد",
+    "reworkedForDepth": "أعيدت للعمق",
+    "reworkedForDepthCount": "{{count}} مشهد أعيدت للعمق"
   },
   "settings": {
     "title": "الإعدادات",
