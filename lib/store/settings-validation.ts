@@ -14,6 +14,10 @@ export type ProviderCfgLike = {
   serverDisabled?: boolean;
 };
 
+// Client-safe: the pure workflow-filename predicate lives in a module whose
+// fs-dependent functions are dynamically imported (see lib/media/comfyui-workflows.ts).
+import { isComfyuiWorkflowFilename } from '@/lib/media/comfyui-workflows';
+
 /**
  * Check whether a provider has a usable *credential path* (server config or
  * client key/baseUrl). This is the store-level notion and deliberately does
@@ -82,6 +86,26 @@ export function resolveSelectedModel(
 ): string {
   if (availableModels.some((m) => m.id === currentModelId)) return currentModelId;
   return availableModels[0]?.id ?? '';
+}
+
+/**
+ * Model-selection resolution for MEDIA providers.
+ *
+ * ComfyUI image/video providers register `models: []` in the static
+ * registry because their selectable models are workflow JSON files
+ * discovered at runtime from `public/` (see lib/media/comfyui-workflows.ts).
+ * Resolving the selection against an empty static list would therefore wipe
+ * the user's chosen workflow to '' on every server-provider sync — exactly
+ * what happens after a server restart. When the static list is empty, keep
+ * the persisted id iff it is a plausible workflow filename; otherwise clear
+ * it (a stale non-workflow id from a different provider is not recoverable).
+ */
+export function resolveMediaModelSelection(
+  currentModelId: string,
+  staticModels: Array<{ id: string }>,
+): string {
+  if (staticModels.length > 0) return resolveSelectedModel(currentModelId, staticModels);
+  return isComfyuiWorkflowFilename(currentModelId) ? currentModelId : '';
 }
 
 export interface LLMProviderCfgLike {
