@@ -1086,7 +1086,8 @@
     "outlinesReadyCount": "Готово разделов: {{ready}} / {{total}}",
     "jumpToBlankTitle": "Перейти к разделу без заголовка",
     "analyzingMediaMaterial": "Анализ аудио/видео",
-    "audioPendingCount": "{{count}} сцен без аудио"
+    "audioPendingCount": "{{count}} сцен без аудио",
+    "skipScene": "Пропустить сцену"
   },
   "settings": {
     "title": "Настройки",

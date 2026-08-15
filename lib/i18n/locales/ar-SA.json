@@ -1086,7 +1086,8 @@
     "outlinesReadyCount": "{{ready}} / {{total}} أقسام جاهزة",
     "jumpToBlankTitle": "الانتقال إلى قسم بحاجة إلى عنوان",
     "analyzingMediaMaterial": "تحليل الصوت/الفيديو",
-    "audioPendingCount": "{{count}} مشاهد بدون صوت"
+    "audioPendingCount": "{{count}} مشاهد بدون صوت",
+    "skipScene": "تخطي المشهد"
   },
   "settings": {
     "title": "الإعدادات",

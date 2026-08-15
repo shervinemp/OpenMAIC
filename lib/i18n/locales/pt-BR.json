@@ -1086,7 +1086,8 @@
     "outlinesReadyCount": "{{ready}} / {{total}} seções prontas",
     "jumpToBlankTitle": "Ir para uma seção que ainda precisa de título",
     "analyzingMediaMaterial": "Analisando áudio/vídeo",
-    "audioPendingCount": "{{count}} cenas com áudio pendente"
+    "audioPendingCount": "{{count}} cenas com áudio pendente",
+    "skipScene": "Pular cena"
   },
   "settings": {
     "title": "Configurações",

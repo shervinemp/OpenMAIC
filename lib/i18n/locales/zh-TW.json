@@ -1071,7 +1071,8 @@
     "outlinesReadyCount": "{{ready}} / {{total}} 章節就緒",
     "jumpToBlankTitle": "跳至待補充標題的章節",
     "analyzingMediaMaterial": "解析音影片內容",
-    "audioPendingCount": "{{count}} 個場景音訊待生成"
+    "audioPendingCount": "{{count}} 個場景音訊待生成",
+    "skipScene": "跳過此場景"
   },
   "settings": {
     "title": "設定",

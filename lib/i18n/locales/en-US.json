@@ -1086,7 +1086,8 @@
     "outlinesReadyCount": "{{ready}} / {{total}} sections ready",
     "jumpToBlankTitle": "Jump to a section that still needs a title",
     "analyzingMediaMaterial": "Analyzing audio/video",
-    "audioPendingCount": "{{count}} scene audio pending"
+    "audioPendingCount": "{{count}} scene audio pending",
+    "skipScene": "Skip scene"
   },
   "settings": {
     "title": "Settings",

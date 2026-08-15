@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Trophy,
   VolumeX,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
@@ -27,6 +28,8 @@ interface SceneSidebarProps {
   readonly onCollapseChange: (collapsed: boolean) => void;
   readonly onSceneSelect?: (sceneId: string) => void;
   readonly onRetryOutline?: (outlineId: string) => Promise<void>;
+  /** Skip resolution (Pillar 2 §4.9): close a failed outline permanently. */
+  readonly onSkipOutline?: (outlineId: string) => void;
   readonly isCourseComplete?: boolean;
 }
 
@@ -39,6 +42,7 @@ export function SceneSidebar({
   onCollapseChange,
   onSceneSelect,
   onRetryOutline,
+  onSkipOutline,
   isCourseComplete,
 }: SceneSidebarProps) {
   const { t } = useI18n();
@@ -477,6 +481,19 @@ export function SceneSidebar({
                             </button>
                           ) : (
                             <AlertCircle className="w-3.5 h-3.5" />
+                          )}
+                          {onSkipOutline && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSkipOutline(outline.id);
+                              }}
+                              disabled={isRetrying}
+                              className="p-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors active:scale-95 disabled:opacity-50 disabled:active:scale-100"
+                              title={t('generation.skipScene')}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
                           )}
                           <span>
                             {isRetrying
