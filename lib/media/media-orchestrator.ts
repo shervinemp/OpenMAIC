@@ -62,6 +62,15 @@ export async function generateMediaForOutlines(
   }
   const currentRefs = collectStageAssetRefs(currentDocument, { mediaRows: [], audioRows: [] });
 
+  // Per-outline phase recording (Pillar 2): each request maps back to its
+  // owning outline so the orchestrator can drive the persisted `media` phase
+  // (running on first start, done/failed once the outline's batch settles).
+  const outlineByElement = new Map<string, string>();
+  for (const outline of outlines) {
+    if (!outline.mediaGenerations) continue;
+    for (const mg of outline.mediaGenerations) outlineByElement.set(mg.elementId, outline.id);
+  }
+
   // Collect all media requests
   const allRequests: MediaGenerationRequest[] = [];
   for (const outline of outlines) {
@@ -94,10 +103,40 @@ export async function generateMediaForOutlines(
   // Enqueue all as pending
   useMediaGenerationStore.getState().enqueueTasks(stageId, allRequests);
 
+  const mediaStats = new Map<string, { total: number; done: number; failed: number }>();
+  for (const req of allRequests) {
+    const outlineId = outlineByElement.get(req.elementId);
+    if (!outlineId) continue;
+    const stats = mediaStats.get(outlineId) ?? { total: 0, done: 0, failed: 0 };
+    stats.total += 1;
+    mediaStats.set(outlineId, stats);
+  }
+  const phaseStarted = new Set<string>();
+
   // Process requests serially — image/video APIs have limited concurrency
   for (const req of allRequests) {
     if (abortSignal?.aborted) break;
-    await generateSingleMedia(req, stageId, abortSignal);
+    const outlineId = outlineByElement.get(req.elementId);
+    if (outlineId && !phaseStarted.has(outlineId)) {
+      phaseStarted.add(outlineId);
+      useStageStore.getState().recordScenePhase(outlineId, 'media', { status: 'running' });
+    }
+    const assetId = await generateSingleMedia(req, stageId, abortSignal);
+    if (!outlineId) continue;
+    if (abortSignal?.aborted) break;
+    const stats = mediaStats.get(outlineId);
+    if (!stats) continue;
+    if (assetId) stats.done += 1;
+    else stats.failed += 1;
+    if (stats.done + stats.failed === stats.total) {
+      useStageStore.getState().recordScenePhase(
+        outlineId,
+        'media',
+        stats.failed === 0
+          ? { status: 'done' }
+          : { status: 'failed', error: `${stats.failed}/${stats.total} media item(s) failed` },
+      );
+    }
   }
 }
 

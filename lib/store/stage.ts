@@ -13,6 +13,12 @@ import { createSelectors } from '@/lib/utils/create-selectors';
 import type { ChatSession } from '@/lib/types/chat';
 import type { CourseBlueprint, SceneOutline } from '@/lib/types/generation';
 import type { SceneDepthSummary } from '@/lib/generation/content-depth';
+import { buildLessonGroupsFromBlueprint } from '@/lib/document-store/canonicalize';
+import type {
+  LessonJobGroup,
+  OutlinePhaseName,
+  OutlinePhaseState,
+} from '@/lib/document-store/persistence-types';
 import { createLogger } from '@/lib/logger';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -197,6 +203,7 @@ function clearedStageState(state: Pick<StageState, 'generationEpoch'>) {
     chatSnapshot: { sessions: [], restoreMarker: null },
     outlines: [],
     blueprint: undefined,
+    lessonGroups: [],
     generationComplete: false,
     generationEpoch: state.generationEpoch + 1,
     generationStatus: 'idle' as const,
@@ -291,6 +298,13 @@ interface StageState {
   // job-model projections.
   blueprint: CourseBlueprint | undefined;
 
+  // Persisted (with outlines): per-outline per-phase job state (Pillar 2).
+  // Built from the blueprint at outline-stage landing, mutated live at phase
+  // boundaries by `recordScenePhase` (content/actions/tts in the generator
+  // loop, media in the orchestrator), and recovered on load with stale
+  // `running` phases demoted to `pending`.
+  lessonGroups: LessonJobGroup[];
+
   // Persisted (with outlines): true once generation finished for this stage.
   // Gates resume-on-mount so an edited finished deck is not regenerated.
   generationComplete: boolean;
@@ -321,6 +335,16 @@ interface StageState {
   setGeneratingOutlines: (outlines: SceneOutline[]) => void;
   setOutlines: (outlines: SceneOutline[]) => void;
   setBlueprint: (blueprint: CourseBlueprint | undefined) => void;
+  /**
+   * Live phase transition (Pillar 2): record a phase outcome for an outline
+   * into the persisted lessonGroups. `status: 'running'` bumps attempts;
+   * every write stamps updatedAt and marks the outline record dirty.
+   */
+  recordScenePhase: (
+    outlineId: string,
+    phase: OutlinePhaseName,
+    patch: { status: OutlinePhaseState['status']; error?: string },
+  ) => void;
   setGenerationComplete: (complete: boolean) => void;
   /** Mark generation complete iff every outline has a scene and none failed. */
   markGenerationCompleteIfDone: () => void;
@@ -371,12 +395,22 @@ type StagePersistenceSnapshot = Pick<
   | 'chatSnapshot'
   | 'outlines'
   | 'blueprint'
+  | 'lessonGroups'
   | 'generationComplete'
 >;
 
 function persistenceSnapshot(state: StageState): StagePersistenceSnapshot {
-  const { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, blueprint, generationComplete } =
-    state;
+  const {
+    stage,
+    scenes,
+    currentSceneId,
+    chats,
+    chatSnapshot,
+    outlines,
+    blueprint,
+    lessonGroups,
+    generationComplete,
+  } = state;
   return {
     stage,
     scenes,
@@ -385,6 +419,7 @@ function persistenceSnapshot(state: StageState): StagePersistenceSnapshot {
     chatSnapshot,
     outlines,
     blueprint,
+    lessonGroups,
     generationComplete,
   };
 }
@@ -421,6 +456,7 @@ async function persistDirtySnapshot(
       outline: {
         outlines: snapshot.outlines,
         blueprint: snapshot.blueprint,
+        lessonGroups: snapshot.lessonGroups,
         generationComplete: snapshot.generationComplete,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -457,6 +493,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   generatingOutlines: [],
   outlines: [],
   blueprint: undefined,
+  lessonGroups: [],
   generationComplete: false,
   generationEpoch: 0,
   generationStatus: 'idle' as const,
@@ -749,8 +786,72 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   setBlueprint: (blueprint) => {
-    set({ blueprint });
+    // Rebuild job groups from the new contract but preserve any live phase
+    // history keyed by (outlineId, phase) so a corrective re-stream of the
+    // blueprint does not wipe attempts/status of outlines already generated.
+    const previousGroups = get().lessonGroups;
+    const fresh = blueprint ? buildLessonGroupsFromBlueprint(blueprint) : [];
+    const merged = fresh.map((group) => ({
+      ...group,
+      jobs: group.jobs.map((job) => {
+        const previousJob = previousGroups
+          .flatMap((g) => g.jobs)
+          .find((j) => j.outlineId === job.outlineId);
+        if (!previousJob) return job;
+        const phases = { ...job.phases };
+        for (const name of Object.keys(phases) as OutlinePhaseName[]) {
+          const previousPhase = previousJob.phases[name];
+          if (
+            previousPhase &&
+            (previousPhase.attempts > 0 ||
+              previousPhase.status === 'done' ||
+              previousPhase.status === 'failed')
+          ) {
+            phases[name] = previousPhase;
+          }
+        }
+        return { ...job, phases };
+      }),
+    }));
+    set({ blueprint, lessonGroups: blueprint ? merged : [] });
     markPendingChanges(get().stage?.id, { kind: 'outline' });
+  },
+
+  recordScenePhase: (outlineId, phase, patch) => {
+    const { blueprint, lessonGroups, stage } = get();
+    if (!blueprint || !stage) return;
+    const lessonIndex = blueprint.lessons.findIndex((lesson) =>
+      lesson.outlines.some((o) => o.id === outlineId),
+    );
+    if (lessonIndex < 0) return;
+    const lessonId = `lesson_${lessonIndex + 1}`;
+    const now = Date.now();
+    const groups = (
+      lessonGroups.length > 0 ? lessonGroups : buildLessonGroupsFromBlueprint(blueprint)
+    ).map((group) => {
+      if (group.lessonId !== lessonId) return group;
+      return {
+        ...group,
+        jobs: group.jobs.map((job) => {
+          if (job.outlineId !== outlineId) return job;
+          const previous = job.phases[phase];
+          return {
+            ...job,
+            phases: {
+              ...job.phases,
+              [phase]: {
+                ...previous,
+                ...patch,
+                attempts: patch.status === 'running' ? previous.attempts + 1 : previous.attempts,
+                updatedAt: now,
+              },
+            },
+          };
+        }),
+      };
+    });
+    set({ lessonGroups: groups });
+    markPendingChanges(stage.id, { kind: 'outline' });
   },
 
   setGenerationComplete: (generationComplete) => {
@@ -821,8 +922,17 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   // durability (e.g. setGenerationComplete) can avoid recording state that
   // outruns the scene data.
   saveToStorage: async () => {
-    const { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete } =
-      get();
+    const {
+      stage,
+      scenes,
+      currentSceneId,
+      chats,
+      chatSnapshot,
+      outlines,
+      blueprint,
+      lessonGroups,
+      generationComplete,
+    } = get();
     if (!stage?.id) {
       log.warn('Cannot save: stage.id is required');
       return false;
@@ -845,6 +955,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           chatSnapshot,
           outline: {
             outlines,
+            blueprint,
+            lessonGroups,
             generationComplete,
             createdAt: Date.now(),
             updatedAt: Date.now(),
@@ -1002,6 +1114,29 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       const persistedComplete = outlinesRecord?.generationComplete ?? false;
       const persistedBlueprint = outlinesRecord?.blueprint;
 
+      // Pillar 2 stale-running recovery: any phase persisted as `running` was
+      // interrupted by the reload — demote it to `pending` (attempts kept) so
+      // resume re-runs it instead of trusting a dead transition.
+      const recoveredLessonGroups = (
+        outlinesRecord?.lessonGroups ??
+        (persistedBlueprint ? buildLessonGroupsFromBlueprint(persistedBlueprint) : [])
+      ).map((group) => ({
+        ...group,
+        jobs: group.jobs.map((job) => ({
+          ...job,
+          phases: Object.fromEntries(
+            (Object.entries(job.phases) as [OutlinePhaseName, OutlinePhaseState][]).map(
+              ([name, phaseState]) => [
+                name,
+                phaseState.status === 'running'
+                  ? { ...phaseState, status: 'pending', updatedAt: Date.now() }
+                  : phaseState,
+              ],
+            ),
+          ) as Record<OutlinePhaseName, OutlinePhaseState>,
+        })),
+      }));
+
       if (data) {
         // Normalize legacy slide content (missing schemaVersion) at the load
         // boundary, same as setScenes/addScene — IndexedDB snapshots predate
@@ -1056,6 +1191,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           chatSnapshot: data.chatSnapshot ?? { sessions: [], restoreMarker: undefined },
           outlines,
           blueprint: persistedBlueprint,
+          lessonGroups: recoveredLessonGroups,
           generationComplete,
           // Compute generatingOutlines from persisted outlines minus completed
           // scenes. Once generation is complete the deck is frozen for editing,

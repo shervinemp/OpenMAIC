@@ -1090,7 +1090,8 @@
     "skipScene": "Пропустить сцену",
     "lessonCompletion": "{{done}}/{{total}} уроков · {{scenes}} сцен",
     "reworkedForDepth": "Доработано по глубине",
-    "reworkedForDepthCount": "{{count}} сцен доработано по глубине"
+    "reworkedForDepthCount": "{{count}} сцен доработано по глубине",
+    "mediaFailedCount": "{{count}} сцен с ошибкой медиа"
   },
   "settings": {
     "title": "Настройки",
