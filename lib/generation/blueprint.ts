@@ -16,6 +16,7 @@ import {
   COURSE_SIZE_PRESETS,
   DEFAULT_DURATION_MINUTES,
   DEFAULT_SIZE_PRESET,
+  LESSONS_PER_UNIT,
   LESSON_MINUTES,
   MAX_BLUEPRINT_ATTEMPTS,
   MIN_LESSONS,
@@ -26,7 +27,12 @@ import {
   resolveSizePreset,
   type CourseSizePreset,
 } from '@/lib/constants/generation';
-import type { CourseBlueprint, CourseType, SceneOutline } from '@/lib/types/generation';
+import type {
+  CourseBlueprint,
+  CourseType,
+  SceneOutline,
+  UnitBlueprint,
+} from '@/lib/types/generation';
 
 // ==================== Duration resolution ====================
 
@@ -88,6 +94,10 @@ export interface CourseContract {
   lessonCount: number;
   /** Per-lesson scene targets (sums to totalSceneTarget). */
   lessonSceneTargets: number[];
+  /** Number of units (chapters); 1 = today's single-unit shape. */
+  unitCount: number;
+  /** Per-unit lesson counts (sums to lessonCount). */
+  unitLessonCounts: number[];
   /** Quiz cadence (every N scenes, course-wide). */
   quizPlacement: number;
   /** The size preset the contract was derived under. */
@@ -150,11 +160,23 @@ export function deriveCourseContract(
 
   const quizPlacement = courseType === 'exam-prep' ? QUIZ_PLACEMENT_EXAM_PREP : QUIZ_PLACEMENT_DEFAULT;
 
+  // Unit split (Phase 2 §15.1): one unit per LESSONS_PER_UNIT lessons,
+  // greedy distribution of the remainder onto earlier units.
+  const unitCount = Math.max(1, Math.ceil(lessonCount / LESSONS_PER_UNIT));
+  const unitLessonCounts: number[] = [];
+  const baseLessons = Math.floor(lessonCount / unitCount);
+  const remainderLessons = lessonCount % unitCount;
+  for (let i = 0; i < unitCount; i++) {
+    unitLessonCounts.push(baseLessons + (i < remainderLessons ? 1 : 0));
+  }
+
   return {
     durationMinutes: duration,
     totalSceneTarget,
     lessonCount,
     lessonSceneTargets,
+    unitCount,
+    unitLessonCounts,
     quizPlacement,
     sizePreset: preset,
   };
@@ -198,6 +220,17 @@ export function renderCourseContract(contract: CourseContract, courseType: Cours
     )
     .join('\n');
 
+  // Phase 2 §15.1: unit (chapter) structure above the lessons. Lesson ranges
+  // are positional — unit i covers lessons [start, end] of the list above.
+  const units = contract.unitCount > 1
+    ? contract.unitLessonCounts
+        .map((count, index) => {
+          const start = contract.unitLessonCounts.slice(0, index).reduce((a, b) => a + b, 0) + 1;
+          return `  Unit ${index + 1}: exactly ${count} lessons (lessons #${start}-${start + count - 1} above). Invent a unit title and 1-2 unit-level objectives.`;
+        })
+        .join('\n')
+    : '';
+
   const typeMix =
     courseType === 'exam-prep'
       ? 'Exam-prep: quiz-heavy mix — one quiz every 3rd scene (course-wide), exam-objective phrasing in keyPoints, distractors mirroring real exam traps.'
@@ -208,10 +241,10 @@ export function renderCourseContract(contract: CourseContract, courseType: Cours
   return `Course contract (non-negotiable):
 - Produce EXACTLY ${contract.lessonCount} lessons (sections), in this order:
 ${lessons}
-- Total scenes: ${contract.totalSceneTarget} — the sum of the per-lesson targets; you may not produce fewer.
+${units ? `- Unit (chapter) structure — EXACTLY ${contract.unitCount} units:\n${units}\n` : ''}- Total scenes: ${contract.totalSceneTarget} — the sum of the per-lesson targets; you may not produce fewer.
 - Scene types: ${typeMix}
 - Quiz cadence (course-wide): a quiz at or near global outline #${quizPositions.join(', #')}.
-- Also emit "lessons": an array of ${contract.lessonCount} objects, each {"title": "...", "objectives": ["..."]} (1-2 objectives per lesson, teaching language), plus course-level "audience" (string) and "objectives" (2-5 strings).`;
+- Also emit "lessons": an array of ${contract.lessonCount} objects, each {"title": "...", "objectives": ["..."]} (1-2 objectives per lesson, teaching language)${contract.unitCount > 1 ? `, "units": an array of ${contract.unitCount} objects, each {"title": "...", "objectives": ["..."]} (1-2 objectives per unit, in order)` : ''}, plus course-level "audience" (string) and "objectives" (2-5 strings).`;
 }
 
 // ==================== Canonicalization ====================
@@ -224,6 +257,7 @@ export interface ParsedOutlineResponse {
   audience?: string;
   objectives?: string[];
   lessons?: Array<{ title?: string; objectives?: string[] }>;
+  units?: Array<{ title?: string; objectives?: string[] }>;
 }
 
 /**
@@ -289,10 +323,47 @@ export function splitIntoLessons(
 }
 
 /**
- * Assemble a CourseBlueprint from a parsed outline response.
- * Lesson membership is assigned positionally; lesson titles/objectives
- * come from the model when provided, else fall back to derived values.
+ * Split assigned lessons into UnitBlueprints (Phase 2 §15.1): positionally
+ * chunked by the contract's per-unit lesson counts. Model-provided unit
+ * titles/objectives win; otherwise derived fallbacks are used. For a
+ * single-unit contract the fallback unit title is the course title.
  */
+export function splitIntoUnits(
+  lessons: CourseBlueprint['lessons'],
+  contract: CourseContract,
+  parsed: ParsedOutlineResponse,
+  courseTitle: string,
+): UnitBlueprint[] {
+  const units: UnitBlueprint[] = [];
+  let offset = 0;
+
+  for (let i = 0; i < contract.unitCount; i++) {
+    const count = contract.unitLessonCounts[i];
+    const unitLessons = lessons.slice(offset, offset + count);
+    offset += count;
+
+    const parsedUnit = parsed.units?.[i];
+    const sceneTarget = unitLessons.reduce((sum, lesson) => sum + lesson.sceneTarget, 0);
+
+    units.push({
+      title:
+        parsedUnit?.title?.trim() ||
+        (contract.unitCount === 1 ? courseTitle : `Unit ${i + 1}: ${unitLessons[0]?.title ?? ''}`),
+      objectives:
+        parsedUnit?.objectives && parsedUnit.objectives.length > 0
+          ? parsedUnit.objectives.slice(0, 2)
+          : unitLessons[0]
+            ? [unitLessons[0].objectives[0] || unitLessons[0].title]
+            : [],
+      durationMinutes: Math.round(contract.durationMinutes / Math.max(1, contract.unitCount)),
+      sceneTarget,
+      lessons: unitLessons,
+    });
+  }
+
+  return units;
+}
+
 export function buildCourseBlueprint(
   parsed: ParsedOutlineResponse,
   requirement: string,
@@ -306,6 +377,7 @@ export function buildCourseBlueprint(
 
   const outlines = assignLessonIds(parsed.outlines ?? [], contract.lessonSceneTargets);
   const lessons = splitIntoLessons(outlines, contract, parsed);
+  const units = splitIntoUnits(lessons, contract, parsed, title);
 
   return {
     title,
@@ -321,6 +393,7 @@ export function buildCourseBlueprint(
     quizPlacement: contract.quizPlacement,
     sizePreset: contract.sizePreset,
     lessons,
+    ...(contract.unitCount > 1 ? { units } : {}),
   };
 }
 
@@ -455,6 +528,47 @@ export function validateBlueprint(
     errors.push(`course has ${total} scenes, above the ${blueprintPreset} cap of ${presetConfig.maxScenes}`);
   }
 
+  // Unit structure (Phase 2 §15.1): when the contract derives more than one
+  // unit, the blueprint must carry the unit level; otherwise the unit layer
+  // must stay absent (single-unit shape).
+  const expectedUnitCount = deriveCourseContract(
+    blueprint.durationMinutes,
+    blueprint.courseType,
+    blueprintPreset,
+  ).unitCount;
+  if (expectedUnitCount > 1 && (!blueprint.units || blueprint.units.length === 0)) {
+    errors.push(`course has ${expectedUnitCount} derived units but the unit structure is missing`);
+  } else if (blueprint.units && blueprint.units.length > 0) {
+    if (blueprint.units.length !== expectedUnitCount) {
+      errors.push(`unit count ${blueprint.units.length} does not match the derived split (${expectedUnitCount})`);
+    }
+    let expectedLessonOffset = 0;
+    blueprint.units.forEach((unit, unitIndex) => {
+      if (!unit.title || !unit.title.trim()) {
+        errors.push(`unit ${unitIndex + 1} missing title`);
+      }
+      const lessonCount = unit.lessons.length;
+      const expectedLessons = contractLessonCountForUnit(blueprint, unitIndex);
+      if (lessonCount !== expectedLessons) {
+        errors.push(`unit ${unitIndex + 1} has ${lessonCount} lessons, expected ${expectedLessons}`);
+      }
+      const unitTarget = unit.lessons.reduce((sum, lesson) => sum + lesson.sceneTarget, 0);
+      if (unit.sceneTarget !== unitTarget) {
+        errors.push(`unit ${unitIndex + 1} sceneTarget ${unit.sceneTarget} does not match its lessons' sum (${unitTarget})`);
+      }
+      for (let i = 0; i < lessonCount; i++) {
+        if (unit.lessons[i] !== blueprint.lessons[expectedLessonOffset + i]) {
+          errors.push(`unit ${unitIndex + 1} lessons do not match the flat lessons projection`);
+          break;
+        }
+      }
+      expectedLessonOffset += lessonCount;
+      if (unit.objectives.length < 1 || unit.objectives.length > 2) {
+        warnings.push(`unit ${unitIndex + 1} has ${unit.objectives.length} objectives (expected 1-2)`);
+      }
+    });
+  }
+
   // Placement advisories: quiz cadence + interactive/pbl caps.
   const quizCount = blueprint.lessons.flatMap((l) => l.outlines).filter((o) => o.type === 'quiz').length;
   const expectedQuizzes = Math.floor(total / blueprint.quizPlacement);
@@ -471,6 +585,16 @@ export function validateBlueprint(
   }
 
   return { valid: errors.length === 0, errors, warnings };
+}
+
+/**
+ * Expected lesson count for a unit in a validated blueprint: derive the
+ * contract under the blueprint's preset and read the positional split.
+ */
+function contractLessonCountForUnit(blueprint: CourseBlueprint, unitIndex: number): number {
+  const preset = resolveSizePreset(blueprint.sizePreset);
+  const contract = deriveCourseContract(blueprint.durationMinutes, blueprint.courseType, preset);
+  return contract.unitLessonCounts[unitIndex] ?? 0;
 }
 
 /**

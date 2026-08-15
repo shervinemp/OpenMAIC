@@ -204,6 +204,24 @@ export interface LessonBlueprint {
 }
 
 /**
+ * One unit (chapter) of a university-scale course (Phase 2 §15.1). A unit
+ * groups N lessons; single-unit courses (today's shape) remain valid when
+ * `units` is absent on the blueprint.
+ */
+export interface UnitBlueprint {
+  /** Unit/chapter title (teaching language). */
+  title: string;
+  /** 1-2 unit-level objectives. */
+  objectives: string[];
+  /** DERIVED — even split of the course duration across units. */
+  durationMinutes: number;
+  /** DERIVED — scene total for the unit (sums across units = course total). */
+  sceneTarget: number;
+  /** Lessons belonging to this unit, in order. */
+  lessons: LessonBlueprint[];
+}
+
+/**
  * The curriculum as a validated contract (Pillar 1). Produced by the
  * outline stage; consumed by the job model and the UI.
  */
@@ -231,6 +249,12 @@ export interface CourseBlueprint {
   sizePreset?: CourseSizePreset;
   /** The course, split into lessons (each validated against its target). */
   lessons: LessonBlueprint[];
+  /**
+   * Unit (chapter) level for university-scale courses (Phase 2 §15.1).
+   * Absent = single-unit course; `units[].lessons` always equals the flat
+   * `lessons` projection in order.
+   */
+  units?: UnitBlueprint[];
 }
 
 // ==================== Stage 3 Output: Generated Content ====================

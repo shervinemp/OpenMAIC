@@ -30,6 +30,10 @@ export const LESSON_MINUTES = 10;
 export const MIN_LESSONS = 1;
 export const MAX_LESSONS = 8;
 
+// Phase 2 §15.1: a unit (chapter) groups this many lessons. Below the
+// threshold the course stays single-unit (today's shape).
+export const LESSONS_PER_UNIT = 4;
+
 // Depth contract ⇒ each scene carries ~60-90 s of substantive content,
 // so one scene per minute (not 1.5-2) keeps the count honest.
 export const SCENES_PER_MINUTE = 1.0;

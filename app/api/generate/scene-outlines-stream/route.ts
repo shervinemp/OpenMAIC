@@ -123,7 +123,7 @@ function extractCourseTitleFromComplete(buffer: string): string | null {
 }
 
 /**
- * Recover the optional wrapper metadata (`lessons`, `audience`,
+ * Recover the optional wrapper metadata (`lessons`, `units`, `audience`,
  * `objectives`) from the completed stream. The incremental parser only
  * handles the `outlines` array, so a single full-buffer JSON.parse is paid
  * once at completion — the model emits a conforming wrapper per the prompt
@@ -134,6 +134,7 @@ function extractWrapperMeta(buffer: string): Partial<ParsedOutlineResponse> | nu
     const parsed = JSON.parse(buffer) as ParsedOutlineResponse;
     return {
       lessons: parsed.lessons,
+      units: parsed.units,
       audience: parsed.audience,
       objectives: parsed.objectives,
     };
@@ -630,6 +631,7 @@ export async function POST(req: NextRequest) {
                       audience: meta?.audience,
                       objectives: meta?.objectives,
                       lessons: meta?.lessons,
+                      units: meta?.units,
                     },
                     requirements.requirement,
                     courseContract,
