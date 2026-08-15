@@ -1084,7 +1084,14 @@
     "lessonCompletion": "{{done}}/{{total}} 堂課 · {{scenes}} 個場景",
     "reworkedForDepth": "因深度要求重做",
     "reworkedForDepthCount": "{{count}} 個場景因深度要求重做",
-    "mediaFailedCount": "{{count}} 個場景媒體生成失敗"
+    "mediaFailedCount": "{{count}} 個場景媒體生成失敗",
+    "sizePreset": {
+      "compact": "緊湊",
+      "standard": "標準",
+      "intensive": "密集",
+      "semester": "學期"
+    },
+    "sizePresetHint": "最多 {{scenes}} 個場景（約 {{minutes}} 分鐘）"
   },
   "settings": {
     "title": "設定",

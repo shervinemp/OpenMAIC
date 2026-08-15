@@ -4,7 +4,7 @@
  */
 
 import { nanoid } from 'nanoid';
-import { DEFAULT_DURATION_MINUTES, MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import type {
   UserRequirements,
   SceneOutline,
@@ -14,8 +14,7 @@ import type {
 } from '@/lib/types/generation';
 import {
   buildCourseBlueprint,
-  clampDurationMinutes,
-  deriveCourseContract,
+  deriveContractForRequest,
   inferCourseType,
   parseDurationFromText,
   renderCourseContract,
@@ -71,6 +70,8 @@ export async function generateSceneOutlinesFromRequirements(
     teacherContext?: string;
     /** Typed duration input (minutes). Falls back to text-parse, then default. */
     durationMinutes?: number;
+    /** Size preset ('compact' | 'standard' | 'intensive' | 'semester'). */
+    sizePreset?: unknown;
   },
 ): Promise<
   GenerationResult<{
@@ -81,14 +82,14 @@ export async function generateSceneOutlinesFromRequirements(
   }>
 > {
   // Resolve the course contract BEFORE the prompt: duration (typed input →
-  // requirement text → default) and course flavor from the requirement.
+  // requirement text → preset default) and course flavor from the
+  // requirement. The size preset sets the caps either way.
   const courseType = inferCourseType(requirements.requirement);
-  const durationMinutes = clampDurationMinutes(
-    options?.durationMinutes ??
-      parseDurationFromText(requirements.requirement) ??
-      DEFAULT_DURATION_MINUTES,
+  const contract = deriveContractForRequest(
+    options?.sizePreset,
+    courseType,
+    options?.durationMinutes ?? parseDurationFromText(requirements.requirement) ?? undefined,
   );
-  const contract = deriveCourseContract(durationMinutes, courseType);
   const courseContract = renderCourseContract(contract, courseType);
 
   // Build available images description for the prompt

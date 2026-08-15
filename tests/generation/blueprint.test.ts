@@ -3,15 +3,22 @@ import {
   assignLessonIds,
   buildCourseBlueprint,
   clampDurationMinutes,
+  deriveContractForRequest,
   deriveCourseContract,
   inferCourseType,
   parseDurationFromText,
+  perLessonSceneCap,
   renderCourseContract,
   splitIntoLessons,
   summarizeBlueprintValidation,
   validateBlueprint,
   type ParsedOutlineResponse,
 } from '@/lib/generation/blueprint';
+import {
+  COURSE_SIZE_PRESETS,
+  resolveSizePreset,
+  type CourseSizePreset,
+} from '@/lib/constants/generation';
 import type { CourseBlueprint, SceneOutline } from '@/lib/types/generation';
 
 function makeOutline(index: number, type: SceneOutline['type'] = 'slide'): SceneOutline {
@@ -127,6 +134,115 @@ describe('deriveCourseContract', () => {
   test('exam-prep uses the tighter quiz cadence', () => {
     expect(deriveCourseContract(20, 'exam-prep').quizPlacement).toBe(3);
     expect(deriveCourseContract(20, 'explainer').quizPlacement).toBe(4);
+  });
+});
+
+describe('size presets (Phase 2 §15.3)', () => {
+  test('preset table is the documented scale', () => {
+    expect(COURSE_SIZE_PRESETS.compact).toEqual({
+      durationMinutes: 20,
+      maxScenes: 30,
+      maxLessons: 8,
+      scenesPerMinute: 1.0,
+    });
+    expect(COURSE_SIZE_PRESETS.semester.maxScenes).toBe(600);
+    expect(COURSE_SIZE_PRESETS.intensive.maxScenes).toBe(360);
+    expect(COURSE_SIZE_PRESETS.standard.maxScenes).toBe(60);
+  });
+
+  test('resolveSizePreset normalizes garbage to compact', () => {
+    expect(resolveSizePreset('standard')).toBe('standard');
+    expect(resolveSizePreset('garbage')).toBe('compact');
+    expect(resolveSizePreset(undefined)).toBe('compact');
+    expect(resolveSizePreset(42)).toBe('compact');
+  });
+
+  test('compact is byte-for-byte today\'s behavior', () => {
+    const contract = deriveCourseContract(60, 'explainer', 'compact');
+    expect(contract.totalSceneTarget).toBe(30); // capped
+    expect(contract.lessonCount).toBe(6);
+    expect(contract.sizePreset).toBe('compact');
+  });
+
+  test('standard raises the scene cap', () => {
+    const contract = deriveCourseContract(60, 'explainer', 'standard');
+    expect(contract.totalSceneTarget).toBe(60);
+    expect(contract.lessonCount).toBe(6);
+    const sum = contract.lessonSceneTargets.reduce((a, b) => a + b, 0);
+    expect(sum).toBe(60);
+  });
+
+  test('intensive scales density to 2 scenes/min', () => {
+    const contract = deriveCourseContract(180, 'explainer', 'intensive');
+    expect(contract.totalSceneTarget).toBe(360);
+    expect(contract.lessonCount).toBe(18);
+  });
+
+  test('semester clamps lessons and totals at the preset caps', () => {
+    const contract = deriveCourseContract(600, 'explainer', 'semester');
+    expect(contract.totalSceneTarget).toBe(600);
+    expect(contract.lessonCount).toBe(48); // 60 lessons clamped to 48
+  });
+
+  test('deriveContractForRequest: explicit duration wins, preset caps stay', () => {
+    const explicit = deriveContractForRequest('compact', 'explainer', 40);
+    expect(explicit.durationMinutes).toBe(40);
+    expect(explicit.totalSceneTarget).toBe(30); // compact cap still binds
+    expect(explicit.sizePreset).toBe('compact');
+
+    const fallback = deriveContractForRequest('intensive', 'explainer', undefined);
+    expect(fallback.durationMinutes).toBe(180);
+    expect(fallback.totalSceneTarget).toBe(360);
+    expect(fallback.sizePreset).toBe('intensive');
+  });
+
+  test('per-lesson cap scales with the preset', () => {
+    expect(perLessonSceneCap('compact')).toBe(12);
+    expect(perLessonSceneCap('intensive')).toBeGreaterThanOrEqual(20);
+    expect(perLessonSceneCap('semester')).toBeGreaterThan(perLessonSceneCap('compact'));
+  });
+
+  test('buildCourseBlueprint stamps the preset onto the blueprint', () => {
+    const contract = deriveCourseContract(180, 'explainer', 'intensive');
+    const blueprint = buildCourseBlueprint(
+      makeParsed(360),
+      'requirement',
+      contract,
+      'explainer',
+      'Fallback',
+    );
+    expect(blueprint.sizePreset).toBe('intensive');
+    expect(blueprint.lessons).toHaveLength(18);
+  });
+
+  test('validateBlueprint accepts a preset-scaled blueprint', () => {
+    const contract = deriveCourseContract(180, 'explainer', 'intensive');
+    const blueprint = buildCourseBlueprint(
+      makeParsed(360),
+      'requirement',
+      contract,
+      'explainer',
+      'Fallback',
+    );
+    const report = validateBlueprint(blueprint);
+    expect(report.errors).toEqual([]);
+  });
+
+  test('validateBlueprint derives lesson count from the blueprint preset', () => {
+    const presets: CourseSizePreset[] = ['compact', 'standard', 'intensive', 'semester'];
+    for (const preset of presets) {
+      const config = COURSE_SIZE_PRESETS[preset];
+      const contract = deriveCourseContract(config.durationMinutes, 'explainer', preset);
+      const blueprint = buildCourseBlueprint(
+        makeParsed(contract.totalSceneTarget),
+        'requirement',
+        contract,
+        'explainer',
+        'Fallback',
+      );
+      const report = validateBlueprint(blueprint);
+      expect(report.errors).toEqual([]);
+    }
   });
 });
 

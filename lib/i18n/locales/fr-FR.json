@@ -1099,7 +1099,14 @@
     "lessonCompletion": "{{done}}/{{total}} leçons · {{scenes}} scènes",
     "reworkedForDepth": "Retravaillé pour la profondeur",
     "reworkedForDepthCount": "{{count}} scène(s) retravaillées pour la profondeur",
-    "mediaFailedCount": "{{count}} scène(s) avec médias échoués"
+    "mediaFailedCount": "{{count}} scène(s) avec médias échoués",
+    "sizePreset": {
+      "compact": "Compact",
+      "standard": "Standard",
+      "intensive": "Intensif",
+      "semester": "Semestre"
+    },
+    "sizePresetHint": "Jusqu’à {{scenes}} scènes (~{{minutes}} min)"
   },
   "settings": {
     "title": "Paramètres",

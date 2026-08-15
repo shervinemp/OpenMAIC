@@ -1099,7 +1099,14 @@
     "lessonCompletion": "{{done}}/{{total}} درس · {{scenes}} مشهد",
     "reworkedForDepth": "أعيدت للعمق",
     "reworkedForDepthCount": "{{count}} مشهد أعيدت للعمق",
-    "mediaFailedCount": "{{count}} مشهد بميديا فاشلة"
+    "mediaFailedCount": "{{count}} مشهد بميديا فاشلة",
+    "sizePreset": {
+      "compact": "مضغوط",
+      "standard": "قياسي",
+      "intensive": "مكثف",
+      "semester": "فصلي"
+    },
+    "sizePresetHint": "حتى {{scenes}} مشهد (~{{minutes}} دقيقة)"
   },
   "settings": {
     "title": "الإعدادات",
