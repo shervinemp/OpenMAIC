@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import { buildPrompt, PROMPT_IDS } from '@openmaic/generation';
+import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
+import { deriveCourseContract, renderCourseContract } from '@/lib/generation/blueprint';
 
 function outlinePromptText() {
+  const contract = deriveCourseContract(20);
   const prompt = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
     requirement: 'Create a role-play PBL where I practise comforting a stressed friend',
     pdfContent: 'None',
@@ -13,6 +15,8 @@ function outlinePromptText() {
     imageEnabled: false,
     videoEnabled: false,
     mediaEnabled: false,
+    courseContract: renderCourseContract(contract, 'explainer'),
+    resolvedDurationMinutes: contract.durationMinutes,
   });
   expect(prompt).not.toBeNull();
   return `${prompt!.system}\n${prompt!.user}`;

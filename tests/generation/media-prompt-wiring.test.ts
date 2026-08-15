@@ -3,16 +3,44 @@ import { generateSceneContent, generateSceneOutlinesFromRequirements } from '@op
 import type { SceneOutline, UserRequirements } from '@/lib/types/generation';
 import type { AICallFn } from '@openmaic/generation';
 
+/**
+ * The outline stage now enforces the course contract: a deck must satisfy
+ * the derived per-lesson scene targets or the run fails with a validation
+ * report. Mocks below therefore return conforming decks (default duration
+ * 20 min → 2 lessons × 10 scenes).
+ */
+function makeOutlines(count: number): SceneOutline[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `scene_${i + 1}`,
+    type: 'slide',
+    title: `Topic ${i + 1}`,
+    description: `Describe topic ${i + 1} with a concrete example.`,
+    keyPoints: [`Key point A for topic ${i + 1}`, `Key point B for topic ${i + 1}`],
+    order: i + 1,
+  }));
+}
+
+function conformingResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    languageDirective: 'Teach in English.',
+    courseTitle: 'Evaporation',
+    lessons: [
+      { title: 'Basics', objectives: ['Understand evaporation'] },
+      { title: 'Deeper', objectives: ['Apply evaporation'] },
+    ],
+    audience: 'General learners',
+    objectives: ['Define evaporation', 'Explain the process'],
+    outlines: makeOutlines(20),
+    ...overrides,
+  };
+}
+
 describe('media prompt condition wiring', () => {
   test('outline generation passes media enable flags into conditional snippets', async () => {
     let capturedPrompt = '';
     const aiCall: AICallFn = async (system, user) => {
       capturedPrompt = `${system}\n${user}`;
-      return JSON.stringify({
-        languageDirective: 'Teach in English.',
-        courseTitle: 'Evaporation',
-        outlines: [],
-      });
+      return JSON.stringify(conformingResponse());
     };
 
     const requirements: UserRequirements = {
@@ -32,6 +60,7 @@ describe('media prompt condition wiring', () => {
     expect(capturedPrompt).not.toContain('gen_img_');
     expect(capturedPrompt).not.toContain('suggestedImageIds');
     expect(capturedPrompt).not.toContain('{{');
+    expect(capturedPrompt).toContain('Course contract');
   });
 
   test('slide content generation exposes only media element rules backed by outline media', async () => {
@@ -95,23 +124,20 @@ describe('outline courseTitle parsing', () => {
   }
 
   test('adopts a string courseTitle from the wrapper object', async () => {
-    const result = await runWith({
-      languageDirective: 'Teach in English.',
-      courseTitle: 'Photosynthesis Basics',
-      outlines: [],
-    });
+    const result = await runWith(conformingResponse({ courseTitle: 'Photosynthesis Basics' }));
 
     expect(result.success).toBe(true);
     expect(result.data?.courseTitle).toBe('Photosynthesis Basics');
+    expect(result.data?.blueprint.title).toBe('Photosynthesis Basics');
   });
 
   test('trims whitespace and caps overlong courseTitle defensively', async () => {
     const long = 'A '.repeat(80); // 160 chars
-    const result = await runWith({
-      languageDirective: 'Teach in English.',
-      courseTitle: `  ${long}  `,
-      outlines: [],
-    });
+    const result = await runWith(
+      conformingResponse({
+        courseTitle: `  ${long}  `,
+      }),
+    );
 
     expect(result.success).toBe(true);
     expect(result.data?.courseTitle?.length).toBeLessThanOrEqual(120);
@@ -120,21 +146,22 @@ describe('outline courseTitle parsing', () => {
   });
 
   test('returns undefined courseTitle when the field is missing (graceful fallback)', async () => {
-    const result = await runWith({
-      languageDirective: 'Teach in English.',
-      outlines: [],
-    });
+    const result = await runWith(
+      conformingResponse({
+        courseTitle: undefined,
+      }),
+    );
 
     expect(result.success).toBe(true);
     expect(result.data?.courseTitle).toBeUndefined();
   });
 
   test('ignores a non-string / empty courseTitle', async () => {
-    const result = await runWith({
-      languageDirective: 'Teach in English.',
-      courseTitle: '   ',
-      outlines: [],
-    });
+    const result = await runWith(
+      conformingResponse({
+        courseTitle: '   ',
+      }),
+    );
 
     expect(result.success).toBe(true);
     expect(result.data?.courseTitle).toBeUndefined();

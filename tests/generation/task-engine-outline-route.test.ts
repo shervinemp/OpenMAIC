@@ -35,7 +35,7 @@ function parseSseEvents(text: string) {
     .map((line) => JSON.parse(line.slice(6)));
 }
 
-function mockRequest(requirements: Record<string, unknown>) {
+function mockRequest(requirements: Record<string, unknown>, body?: Record<string, unknown>) {
   return {
     json: async () => ({
       requirements,
@@ -43,11 +43,28 @@ function mockRequest(requirements: Record<string, unknown>) {
       pdfImages: [],
       imageMapping: {},
       researchContext: '',
+      ...body,
     }),
     headers: {
       get: () => null,
     },
   };
+}
+
+/**
+ * Non-task-engine paths enforce the course contract, so mocks must satisfy
+ * the derived targets. `durationMinutes: 5` yields one lesson of 5 scenes —
+ * the focused outline(s) under test plus padding fillers.
+ */
+function fillerOutlines(count: number, startOrder: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `filler_${startOrder + i}`,
+    type: 'slide',
+    title: `Filler ${startOrder + i}`,
+    description: `Filler scene ${startOrder + i}.`,
+    keyPoints: [`Filler A ${startOrder + i}`],
+    order: startOrder + i,
+  }));
 }
 
 describe('task-engine outline route', () => {
@@ -293,6 +310,7 @@ describe('task-engine outline route', () => {
               widgetType: 'simulation',
               widgetOutline: { concept: 'motion', keyVariables: ['speed'] },
             },
+            ...fillerOutlines(4, 2),
           ],
         });
       })(),
@@ -300,11 +318,14 @@ describe('task-engine outline route', () => {
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
     const response = await POST(
-      mockRequest({
-        requirement: 'Teach motion with interaction',
-        interactiveMode: true,
-        taskEngineMode: true,
-      }) as unknown as Parameters<typeof POST>[0],
+      mockRequest(
+        {
+          requirement: 'Teach motion with interaction',
+          interactiveMode: true,
+          taskEngineMode: true,
+        },
+        { durationMinutes: 5 },
+      ) as unknown as Parameters<typeof POST>[0],
     );
 
     const promptParams = streamLLMMock.mock.calls[0][0] as { system: string; prompt: string };
@@ -352,6 +373,7 @@ describe('task-engine outline route', () => {
                 successCriteria: ['Complete'],
               },
             },
+            ...fillerOutlines(4, 2),
           ],
         });
       })(),
@@ -359,10 +381,13 @@ describe('task-engine outline route', () => {
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
     const response = await POST(
-      mockRequest({
-        requirement: 'Teach a process interactively',
-        interactiveMode: true,
-      }) as unknown as Parameters<typeof POST>[0],
+      mockRequest(
+        {
+          requirement: 'Teach a process interactively',
+          interactiveMode: true,
+        },
+        { durationMinutes: 5 },
+      ) as unknown as Parameters<typeof POST>[0],
     );
 
     const events = parseSseEvents(await readStreamBody(response));
@@ -417,6 +442,7 @@ describe('task-engine outline route', () => {
                 scenarioBrief: '朋友压力很大，学习者练习倾听和支持。',
               },
             },
+            ...fillerOutlines(4, 2),
           ],
         });
       })(),
@@ -424,9 +450,12 @@ describe('task-engine outline route', () => {
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
     const response = await POST(
-      mockRequest({
-        requirement: '生成一个情景模拟 PBL，练习安慰压力很大的朋友',
-      }) as unknown as Parameters<typeof POST>[0],
+      mockRequest(
+        {
+          requirement: '生成一个情景模拟 PBL，练习安慰压力很大的朋友',
+        },
+        { durationMinutes: 5 },
+      ) as unknown as Parameters<typeof POST>[0],
     );
 
     const events = parseSseEvents(await readStreamBody(response));
@@ -475,6 +504,7 @@ describe('task-engine outline route', () => {
               keyPoints: ['B'],
               order: 2,
             },
+            ...fillerOutlines(3, 3),
           ],
         });
       })(),
@@ -482,9 +512,12 @@ describe('task-engine outline route', () => {
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
     const response = await POST(
-      mockRequest({
-        requirement: 'Teach a topic',
-      }) as unknown as Parameters<typeof POST>[0],
+      mockRequest(
+        {
+          requirement: 'Teach a topic',
+        },
+        { durationMinutes: 5 },
+      ) as unknown as Parameters<typeof POST>[0],
     );
 
     const events = parseSseEvents(await readStreamBody(response));
