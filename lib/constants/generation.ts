@@ -48,3 +48,14 @@ export const DEFAULT_DURATION_MINUTES = 20;
 // validate within this many attempts or the run fails with the report
 // (never fabricate).
 export const MAX_BLUEPRINT_ATTEMPTS = 3;
+
+// Corrective retry budget for the scene-content stage: beyond the first
+// call, this many depth-corrected re-prompts. On exhaustion the scene
+// fails with the depth report — shallow content is never accepted.
+export const MAX_CONTENT_ATTEMPTS = 2;
+
+// Depth contract defaults (lib/generation/content-depth.ts): a slide needs
+// at least this many substantive text elements (complete claims/sentences),
+// caption fragments may not dominate, and a concrete example/definition/
+// fact is required unless the outline is intro/summary.
+export const MIN_SUBSTANTIVE_ELEMENTS = 4;

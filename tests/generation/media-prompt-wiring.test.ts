@@ -68,6 +68,8 @@ describe('media prompt condition wiring', () => {
     let capturedPrompt = '';
     const aiCall: AICallFn = async (system, user) => {
       capturedPrompt = `${system}\n${user}`;
+      // Slide content now runs the depth contract: return 4 substantive text
+      // elements (the depth contract minimum) plus the outline's video element.
       return JSON.stringify({
         background: { type: 'solid', color: '#ffffff' },
         elements: [
@@ -78,7 +80,51 @@ describe('media prompt condition wiring', () => {
             top: 80,
             width: 880,
             height: 76,
-            content: '<p style="font-size: 28px;">Evaporation</p>',
+            content: '<p style="font-size: 28px;">Evaporation moves water from liquid into vapor.</p>',
+            defaultFontName: '',
+            defaultColor: '#333333',
+          },
+          {
+            id: 'body1',
+            type: 'text',
+            left: 60,
+            top: 160,
+            width: 880,
+            height: 60,
+            content: '<p>Molecules gain energy when the liquid is heated by the sun.</p>',
+            defaultFontName: '',
+            defaultColor: '#333333',
+          },
+          {
+            id: 'body2',
+            type: 'text',
+            left: 60,
+            top: 230,
+            width: 880,
+            height: 60,
+            content: '<p>For example, a puddle shrinks faster on a hot day than on a cold one.</p>',
+            defaultFontName: '',
+            defaultColor: '#333333',
+          },
+          {
+            id: 'body3',
+            type: 'text',
+            left: 60,
+            top: 300,
+            width: 880,
+            height: 60,
+            content: '<p>Condensation is the reverse process that returns vapor to water.</p>',
+            defaultFontName: '',
+            defaultColor: '#333333',
+          },
+          {
+            id: 'video1',
+            type: 'video',
+            left: 60,
+            top: 370,
+            width: 880,
+            height: 160,
+            mediaRef: 'gen_vid_unique1',
             defaultFontName: '',
             defaultColor: '#333333',
           },

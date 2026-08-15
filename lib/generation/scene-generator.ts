@@ -8,8 +8,14 @@
 import { nanoid } from 'nanoid';
 import katex from 'katex';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
-import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { MAX_CONTENT_ATTEMPTS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
+import {
+  recordSceneDepthReport,
+  summarizeDepthFindings,
+  validateQuizDepth,
+  validateSlideDepth,
+} from './content-depth';
 import type {
   SceneOutline,
   GeneratedSlideContent,
@@ -703,78 +709,123 @@ async function generateSlideContent(
       `Return the full updated slide content in the same schema.`;
   }
 
-  const response = await aiCall(prompts.system, userPrompt, visionImages);
-  const generatedData = parseJsonResponse<GeneratedSlideData>(response);
+  // Depth contract (Pillar 3): the generated slide must carry substantive
+  // content (complete claims), captions may not dominate, and a concrete
+  // example/definition/fact is required unless the outline is intro/summary.
+  // On failure the call re-prompts with the specific findings (bounded); on
+  // exhaustion the content is rejected with the report recorded for the
+  // job model/UI. Edit mode (MAIC Editor) is exempt — user-driven edits may
+  // intentionally be minimal.
+  const isEditMode = !!(editDirective || baselineContent);
+  const maxAttempts = MAX_CONTENT_ATTEMPTS + 1;
+  let depthFeedback: string | undefined;
 
-  if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {
-    log.error(`Failed to parse AI response for: ${outline.title}`);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const attemptUserPrompt =
+      depthFeedback && !isEditMode
+        ? `${userPrompt}\n\n## Depth Correction Required\n\n${depthFeedback}`
+        : userPrompt;
+
+    const response = await aiCall(prompts.system, attemptUserPrompt, visionImages);
+    const generatedData = parseJsonResponse<GeneratedSlideData>(response);
+
+    if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {
+      log.error(`Failed to parse AI response for: ${outline.title}`);
+      return null;
+    }
+
+    log.debug(`Got ${generatedData.elements.length} elements for: ${outline.title}`);
+
+    // Debug: Log image elements before resolution
+    const imageElements = generatedData.elements.filter((el) => el.type === 'image');
+    if (imageElements.length > 0) {
+      log.debug(
+        `Image elements before resolution:`,
+        imageElements.map((el) => ({
+          type: el.type,
+          src:
+            (el as Record<string, unknown>).src &&
+            String((el as Record<string, unknown>).src).substring(0, 50),
+        })),
+      );
+      log.debug(`imageMapping keys:`, imageMapping ? Object.keys(imageMapping).length : '0 keys');
+    }
+
+    // Fix elements with missing required fields + aspect ratio correction (while src is still img_id)
+    const fixedElements = fixElementDefaults(generatedData.elements, assignedImages);
+    log.debug(`After element fixing: ${fixedElements.length} elements`);
+
+    // Process LaTeX elements: render latex string → HTML via KaTeX
+    const latexProcessedElements = processLatexElements(fixedElements);
+    log.debug(`After LaTeX processing: ${latexProcessedElements.length} elements`);
+
+    // Resolve image_id references to actual URLs
+    const resolvedElements = resolveImageIds(
+      latexProcessedElements,
+      imageMapping,
+      generatedMediaMapping,
+    );
+    log.debug(`After image resolution: ${resolvedElements.length} elements`);
+
+    const videoNormalizedElements = normalizeGeneratedVideoRefs(
+      resolvedElements,
+      outline.mediaGenerations,
+    );
+    log.debug(`After video reference normalization: ${videoNormalizedElements.length} elements`);
+
+    // Process elements, assign unique IDs
+    const processedElements: PPTElement[] = videoNormalizedElements.map((el) => ({
+      ...el,
+      id: `${el.type}_${nanoid(8)}`,
+      rotate: 0,
+    })) as PPTElement[];
+
+    // Process background
+    let background: SlideBackground | undefined;
+    if (generatedData.background) {
+      if (generatedData.background.type === 'solid' && generatedData.background.color) {
+        background = { type: 'solid', color: generatedData.background.color };
+      } else if (generatedData.background.type === 'gradient' && generatedData.background.gradient) {
+        background = {
+          type: 'gradient',
+          gradient: generatedData.background.gradient,
+        };
+      }
+    }
+
+    if (isEditMode) {
+      return {
+        elements: processedElements,
+        background,
+        remark: generatedData.remark || outline.description,
+      };
+    }
+
+    const depthReport = validateSlideDepth(outline, processedElements);
+    if (depthReport.adequate) {
+      return {
+        elements: processedElements,
+        background,
+        remark: generatedData.remark || outline.description,
+      };
+    }
+
+    if (attempt < maxAttempts) {
+      depthFeedback = summarizeDepthFindings(depthReport);
+      log.warn(
+        `Slide depth contract not met for "${outline.title}" (attempt ${attempt}/${maxAttempts}); re-prompting with ${depthReport.findings.length} finding(s)`,
+      );
+      continue;
+    }
+
+    recordSceneDepthReport(outline.id, depthReport);
+    log.error(
+      `Slide depth contract not met for "${outline.title}" after ${maxAttempts} attempts: ${depthReport.findings.join('; ')}`,
+    );
     return null;
   }
 
-  log.debug(`Got ${generatedData.elements.length} elements for: ${outline.title}`);
-
-  // Debug: Log image elements before resolution
-  const imageElements = generatedData.elements.filter((el) => el.type === 'image');
-  if (imageElements.length > 0) {
-    log.debug(
-      `Image elements before resolution:`,
-      imageElements.map((el) => ({
-        type: el.type,
-        src:
-          (el as Record<string, unknown>).src &&
-          String((el as Record<string, unknown>).src).substring(0, 50),
-      })),
-    );
-    log.debug(`imageMapping keys:`, imageMapping ? Object.keys(imageMapping).length : '0 keys');
-  }
-
-  // Fix elements with missing required fields + aspect ratio correction (while src is still img_id)
-  const fixedElements = fixElementDefaults(generatedData.elements, assignedImages);
-  log.debug(`After element fixing: ${fixedElements.length} elements`);
-
-  // Process LaTeX elements: render latex string → HTML via KaTeX
-  const latexProcessedElements = processLatexElements(fixedElements);
-  log.debug(`After LaTeX processing: ${latexProcessedElements.length} elements`);
-
-  // Resolve image_id references to actual URLs
-  const resolvedElements = resolveImageIds(
-    latexProcessedElements,
-    imageMapping,
-    generatedMediaMapping,
-  );
-  log.debug(`After image resolution: ${resolvedElements.length} elements`);
-
-  const videoNormalizedElements = normalizeGeneratedVideoRefs(
-    resolvedElements,
-    outline.mediaGenerations,
-  );
-  log.debug(`After video reference normalization: ${videoNormalizedElements.length} elements`);
-
-  // Process elements, assign unique IDs
-  const processedElements: PPTElement[] = videoNormalizedElements.map((el) => ({
-    ...el,
-    id: `${el.type}_${nanoid(8)}`,
-    rotate: 0,
-  })) as PPTElement[];
-
-  // Process background
-  let background: SlideBackground | undefined;
-  if (generatedData.background) {
-    if (generatedData.background.type === 'solid' && generatedData.background.color) {
-      background = { type: 'solid', color: generatedData.background.color };
-    } else if (generatedData.background.type === 'gradient' && generatedData.background.gradient) {
-      background = {
-        type: 'gradient',
-        gradient: generatedData.background.gradient,
-      };
-    }
-  }
-
-  return {
-    elements: processedElements,
-    background,
-    remark: generatedData.remark || outline.description,
-  };
+  return null;
 }
 
 /**
@@ -806,29 +857,62 @@ async function generateQuizContent(
   }
 
   log.debug(`Generating quiz content for: ${outline.title}`);
-  const response = await aiCall(prompts.system, prompts.user);
-  const generatedQuestions = parseJsonResponse<QuizQuestion[]>(response);
 
-  if (!generatedQuestions || !Array.isArray(generatedQuestions)) {
-    log.error(`Failed to parse AI response for: ${outline.title}`);
+  // Depth contract: the quiz must carry its configured question count with
+  // substantive stems, plausible distractors, and explanations. Bounded
+  // corrective re-prompts; on exhaustion the content is rejected with the
+  // report recorded for the job model/UI.
+  const maxAttempts = MAX_CONTENT_ATTEMPTS + 1;
+  let depthFeedback: string | undefined;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const attemptUserPrompt = depthFeedback
+      ? `${prompts.user}\n\n## Depth Correction Required\n\n${depthFeedback}`
+      : prompts.user;
+
+    const response = await aiCall(prompts.system, attemptUserPrompt);
+    const generatedQuestions = parseJsonResponse<QuizQuestion[]>(response);
+
+    if (!generatedQuestions || !Array.isArray(generatedQuestions)) {
+      log.error(`Failed to parse AI response for: ${outline.title}`);
+      return null;
+    }
+
+    log.debug(`Got ${generatedQuestions.length} questions for: ${outline.title}`);
+
+    // Ensure each question has an ID and normalize options format
+    const questions: QuizQuestion[] = generatedQuestions.map((q) => {
+      const isText = q.type === 'short_answer';
+      return {
+        ...q,
+        id: q.id || `q_${nanoid(8)}`,
+        options: isText ? undefined : normalizeQuizOptions(q.options),
+        answer: isText ? undefined : normalizeQuizAnswer(q as unknown as Record<string, unknown>),
+        hasAnswer: isText ? false : true,
+      };
+    });
+
+    const depthReport = validateQuizDepth(outline, questions);
+    if (depthReport.adequate) {
+      return { questions };
+    }
+
+    if (attempt < maxAttempts) {
+      depthFeedback = summarizeDepthFindings(depthReport);
+      log.warn(
+        `Quiz depth contract not met for "${outline.title}" (attempt ${attempt}/${maxAttempts}); re-prompting with ${depthReport.findings.length} finding(s)`,
+      );
+      continue;
+    }
+
+    recordSceneDepthReport(outline.id, depthReport);
+    log.error(
+      `Quiz depth contract not met for "${outline.title}" after ${maxAttempts} attempts: ${depthReport.findings.join('; ')}`,
+    );
     return null;
   }
 
-  log.debug(`Got ${generatedQuestions.length} questions for: ${outline.title}`);
-
-  // Ensure each question has an ID and normalize options format
-  const questions: QuizQuestion[] = generatedQuestions.map((q) => {
-    const isText = q.type === 'short_answer';
-    return {
-      ...q,
-      id: q.id || `q_${nanoid(8)}`,
-      options: isText ? undefined : normalizeQuizOptions(q.options),
-      answer: isText ? undefined : normalizeQuizAnswer(q as unknown as Record<string, unknown>),
-      hasAnswer: isText ? false : true,
-    };
-  });
-
-  return { questions };
+  return null;
 }
 
 /**
