@@ -72,7 +72,6 @@ export interface OutlineCompletion {
  * as the compat projection for the stage-store load path and is kept in
  * sync by `flattenBlueprintOutlines` / `canonicalizeOutlineV2`.
  */
->>>>>>> 340aaaea (feat(persistence): AppDocumentOutline v2 with blueprint, job groups, and completion)
 export interface AppDocumentOutline {
   outlines: SceneOutline[];
   /**

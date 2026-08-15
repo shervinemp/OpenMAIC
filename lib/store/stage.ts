@@ -221,6 +221,7 @@ function clearedStageState(state: Pick<StageState, 'generationEpoch'>) {
     generationStatus: 'idle' as const,
     currentGeneratingOrder: -1,
     failedOutlines: [],
+    skippedOutlineIds: [],
     generatingOutlines: [],
   };
 }
@@ -376,6 +377,10 @@ interface StageState {
   addFailedOutline: (outline: SceneOutline) => void;
   clearFailedOutlines: () => void;
   retryFailedOutline: (outlineId: string) => void;
+  /** Skip resolution (Pillar 2 §4.9): close a permanently failed outline so
+      the deck can complete without it. Session-level (not persisted). */
+  skippedOutlineIds: string[];
+  skipFailedOutline: (outlineId: string) => void;
 
   // Getters
   getCurrentScene: () => Scene | null;
@@ -392,11 +397,13 @@ function isDeckComplete({
   outlines,
   scenes,
   failedOutlines,
-}: Pick<StageState, 'outlines' | 'scenes' | 'failedOutlines'>): boolean {
+  skippedOutlineIds = [],
+}: Pick<StageState, 'outlines' | 'scenes' | 'failedOutlines'> & { skippedOutlineIds?: string[] }): boolean {
+  const skipped = new Set(skippedOutlineIds);
   return (
     outlines.length > 0 &&
     failedOutlines.length === 0 &&
-    outlines.every((o) => scenes.some((s) => s.order === o.order))
+    outlines.every((o) => scenes.some((s) => s.order === o.order) || skipped.has(o.id))
   );
 }
 
@@ -505,6 +512,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   failedOutlines: [],
   serverManifestByStage: {},
   stageSyncRequest: 0,
+  skippedOutlineIds: [],
 
   // Actions
   setStage: (stage) => {
@@ -800,9 +808,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   markGenerationCompleteIfDone: () => {
-    const { outlines, scenes, failedOutlines, generationComplete } = get();
+    const { outlines, scenes, failedOutlines, skippedOutlineIds, generationComplete } = get();
     if (generationComplete) return;
-    if (isDeckComplete({ outlines, scenes, failedOutlines })) get().setGenerationComplete(true);
+    if (isDeckComplete({ outlines, scenes, failedOutlines, skippedOutlineIds })) {
+      get().setGenerationComplete(true);
+    }
   },
 
   setViewerAccess: ({ isOwner }) => {
@@ -827,6 +837,16 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     set({
       failedOutlines: get().failedOutlines.filter((o) => o.id !== outlineId),
     });
+  },
+
+  skipFailedOutline: (outlineId) => {
+    const { generatingOutlines, skippedOutlineIds } = get();
+    set({
+      failedOutlines: get().failedOutlines.filter((o) => o.id !== outlineId),
+      generatingOutlines: generatingOutlines.filter((o) => o.id !== outlineId),
+      skippedOutlineIds: [...skippedOutlineIds, outlineId],
+    });
+    get().markGenerationCompleteIfDone();
   },
 
   // Getters

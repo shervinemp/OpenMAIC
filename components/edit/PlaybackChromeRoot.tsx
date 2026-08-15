@@ -91,6 +91,9 @@ export interface PlaybackChromeRootHandle {
 
 interface PlaybackChromeRootProps {
   readonly onRetryOutline?: (outlineId: string) => Promise<void>;
+  /** Skip resolution (Pillar 2 §4.9): close a failed outline permanently.
+      Defaults to the store action when unset. */
+  readonly onSkipOutline?: (outlineId: string) => void;
   /** Whether the Pro Switch in Header should be enabled. */
   readonly canEnterProMode?: boolean;
   /** Pro Switch click handler — parent coordinates teardown + mode flip. */
@@ -114,6 +117,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
   function PlaybackChromeRoot(
     {
       onRetryOutline,
+      onSkipOutline,
       canEnterProMode,
       onEnterProMode,
       proModeActive,
@@ -1458,6 +1462,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           onCollapseChange={setSidebarCollapsed}
           onSceneSelect={gatedSceneSwitch}
           onRetryOutline={onRetryOutline}
+          onSkipOutline={onSkipOutline ?? ((outlineId) => useStageStore.getState().skipFailedOutline(outlineId))}
           isCourseComplete={isCourseComplete}
         />
 
