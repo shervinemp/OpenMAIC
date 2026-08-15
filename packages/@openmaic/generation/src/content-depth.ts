@@ -292,3 +292,29 @@ export function takeSceneDepthReport(outlineId: string): DepthReport | undefined
   if (report) sceneDepthReports.delete(outlineId);
   return report;
 }
+
+// ==================== Success side channel (depth affordance) ====================
+// Successful scenes that needed corrective re-prompting also record a
+// summary, so the UI can show "reworked for depth" instead of presenting
+// every accepted scene as first-try output.
+
+export interface SceneDepthSummary {
+  /** The content needed ≥1 corrective re-prompt before passing the contract. */
+  reworked: boolean;
+  /** Content-generation attempts used (1 = first-try acceptance). */
+  attempts: number;
+  /** Findings from the final (adequate) pass — empty when first-try. */
+  findings: string[];
+}
+
+const sceneDepthSummaries = new Map<string, SceneDepthSummary>();
+
+export function recordSceneDepthSummary(outlineId: string, summary: SceneDepthSummary): void {
+  sceneDepthSummaries.set(outlineId, summary);
+}
+
+export function takeSceneDepthSummary(outlineId: string): SceneDepthSummary | undefined {
+  const summary = sceneDepthSummaries.get(outlineId);
+  if (summary) sceneDepthSummaries.delete(outlineId);
+  return summary;
+}
