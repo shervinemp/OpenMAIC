@@ -1098,7 +1098,8 @@
     "skipScene": "Ignorer la scène",
     "lessonCompletion": "{{done}}/{{total}} leçons · {{scenes}} scènes",
     "reworkedForDepth": "Retravaillé pour la profondeur",
-    "reworkedForDepthCount": "{{count}} scène(s) retravaillées pour la profondeur"
+    "reworkedForDepthCount": "{{count}} scène(s) retravaillées pour la profondeur",
+    "mediaFailedCount": "{{count}} scène(s) avec médias échoués"
   },
   "settings": {
     "title": "Paramètres",

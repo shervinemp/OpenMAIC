@@ -1098,7 +1098,8 @@
     "skipScene": "Pular cena",
     "lessonCompletion": "{{done}}/{{total}} lições · {{scenes}} cenas",
     "reworkedForDepth": "Refeito por profundidade",
-    "reworkedForDepthCount": "{{count}} cena(s) refeitas por profundidade"
+    "reworkedForDepthCount": "{{count}} cena(s) refeitas por profundidade",
+    "mediaFailedCount": "{{count}} cena(s) com mídia falha"
   },
   "settings": {
     "title": "Configurações",

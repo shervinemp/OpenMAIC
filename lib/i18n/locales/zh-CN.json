@@ -1098,7 +1098,8 @@
     "skipScene": "跳过此场景",
     "lessonCompletion": "{{done}}/{{total}} 节课 · {{scenes}} 个场景",
     "reworkedForDepth": "因深度要求重做",
-    "reworkedForDepthCount": "{{count}} 个场景因深度要求重做"
+    "reworkedForDepthCount": "{{count}} 个场景因深度要求重做",
+    "mediaFailedCount": "{{count}} 个场景媒体生成失败"
   },
   "settings": {
     "title": "设置",

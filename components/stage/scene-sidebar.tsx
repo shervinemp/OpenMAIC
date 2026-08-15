@@ -53,6 +53,7 @@ export function SceneSidebar({
   const blueprint = useStageStore.use.blueprint();
   const generationPhase = useStageStore.use.generationPhase();
   const sceneDepth = useStageStore.use.sceneDepth();
+  const lessonGroups = useStageStore.use.lessonGroups();
   const viewportSize = useCanvasStore.use.viewportSize();
   const viewportRatio = useCanvasStore.use.viewportRatio();
 
@@ -61,6 +62,9 @@ export function SceneSidebar({
   // complete, 2 audio pending" completion display.
   const lessonProgress = useMemo(() => {
     if (!blueprint) return null;
+    const mediaStatusByOutline = new Map(
+      lessonGroups.flatMap((group) => group.jobs.map((job) => [job.outlineId, job.phases.media])),
+    );
     const lessons = blueprint.lessons.map((lesson) => {
       const total = lesson.outlines.length;
       const done = lesson.outlines.filter((outline) =>
@@ -69,7 +73,10 @@ export function SceneSidebar({
       const reworked = lesson.outlines.filter(
         (outline) => sceneDepth[String(outline.order)]?.reworked,
       ).length;
-      return { title: lesson.title, total, done, reworked };
+      const mediaFailed = lesson.outlines.filter(
+        (outline) => mediaStatusByOutline.get(outline.id)?.status === 'failed',
+      ).length;
+      return { title: lesson.title, total, done, reworked, mediaFailed };
     });
     const audioPending = scenes.filter((scene) =>
       (scene.actions ?? []).some(
@@ -77,7 +84,7 @@ export function SceneSidebar({
       ),
     ).length;
     return { lessons, audioPending };
-  }, [blueprint, scenes, sceneDepth]);
+  }, [blueprint, scenes, sceneDepth, lessonGroups]);
 
   const [retryingOutlineId, setRetryingOutlineId] = useState<string | null>(null);
 
@@ -203,6 +210,14 @@ export function SceneSidebar({
                         title={t('generation.reworkedForDepthCount', { count: lesson.reworked })}
                       >
                         {lesson.reworked}↻
+                      </span>
+                    )}
+                    {lesson.mediaFailed > 0 && (
+                      <span
+                        className="text-red-500/90 dark:text-red-400"
+                        title={t('generation.mediaFailedCount', { count: lesson.mediaFailed })}
+                      >
+                        {lesson.mediaFailed}!
                       </span>
                     )}
                   </span>
