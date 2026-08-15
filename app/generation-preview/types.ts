@@ -7,11 +7,14 @@ import type {
   ImageMapping,
   SessionDocumentSource,
 } from '@/lib/types/generation';
+import type { CourseSizePreset } from '@/lib/constants/generation';
 
 // Session state stored in sessionStorage
 export interface GenerationSessionState {
   sessionId: string;
   requirements: UserRequirements;
+  /** Course size preset selected on the home form (Phase 2 §15.3). */
+  sizePreset?: CourseSizePreset;
   pdfText: string;
   documentSources?: SessionDocumentSource[];
   pdfImages?: PdfImage[];

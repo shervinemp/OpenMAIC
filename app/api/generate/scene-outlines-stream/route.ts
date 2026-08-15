@@ -41,7 +41,7 @@ import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import {
   buildCourseBlueprint,
   clampDurationMinutes,
-  deriveCourseContract,
+  deriveContractForRequest,
   inferCourseType,
   parseDurationFromText,
   renderCourseContract,
@@ -341,7 +341,7 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Requirements are required');
     }
 
-    const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents, durationMinutes } = body as {
+    const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents, durationMinutes, sizePreset } = body as {
       requirements: UserRequirements;
       pdfText?: string;
       pdfImages?: PdfImage[];
@@ -349,6 +349,7 @@ export async function POST(req: NextRequest) {
       researchContext?: string;
       agents?: AgentInfo[];
       durationMinutes?: number;
+      sizePreset?: unknown;
     };
     requirementSnippet = requirements?.requirement?.substring(0, 60);
 
@@ -414,12 +415,16 @@ export async function POST(req: NextRequest) {
     // task-engine path has its own normalization and keeps legacy counts.
     const contractMode = !taskEngineMode;
     const courseType = inferCourseType(requirements.requirement);
-    const resolvedDuration = clampDurationMinutes(
+    const courseContract = contractMode
+      ? deriveContractForRequest(
+          sizePreset,
+          courseType,
+          durationMinutes ?? parseDurationFromText(requirements.requirement) ?? undefined,
+        )
+      : null;
+    const resolvedDuration = courseContract?.durationMinutes ?? clampDurationMinutes(
       durationMinutes ?? parseDurationFromText(requirements.requirement) ?? DEFAULT_DURATION_MINUTES,
     );
-    const courseContract = contractMode
-      ? deriveCourseContract(resolvedDuration, courseType)
-      : null;
     const courseContractText = courseContract
       ? renderCourseContract(courseContract, courseType)
       : '';

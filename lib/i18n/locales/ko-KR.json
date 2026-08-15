@@ -1091,7 +1091,14 @@
     "lessonCompletion": "{{done}}/{{total}} 레슨 · {{scenes}} 장면",
     "reworkedForDepth": "깊이 보강됨",
     "reworkedForDepthCount": "{{count}}개 장면 깊이 보강",
-    "mediaFailedCount": "미디어 실패 {{count}}개 장면"
+    "mediaFailedCount": "미디어 실패 {{count}}개 장면",
+    "sizePreset": {
+      "compact": "컴팩트",
+      "standard": "표준",
+      "intensive": "집중",
+      "semester": "학기"
+    },
+    "sizePresetHint": "최대 {{scenes}}개 장면 (~{{minutes}}분)"
   },
   "settings": {
     "title": "설정",

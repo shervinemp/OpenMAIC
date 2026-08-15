@@ -1091,7 +1091,14 @@
     "lessonCompletion": "{{done}}/{{total}} lecciones · {{scenes}} escenas",
     "reworkedForDepth": "Rehecho por profundidad",
     "reworkedForDepthCount": "{{count}} escena(s) rehechas por profundidad",
-    "mediaFailedCount": "{{count}} escena(s) con medios fallidos"
+    "mediaFailedCount": "{{count}} escena(s) con medios fallidos",
+    "sizePreset": {
+      "compact": "Compacto",
+      "standard": "Estándar",
+      "intensive": "Intensivo",
+      "semester": "Semestre"
+    },
+    "sizePresetHint": "Hasta {{scenes}} escenas (~{{minutes}} min)"
   },
   "settings": {
     "title": "Configuración",

@@ -1091,7 +1091,14 @@
     "lessonCompletion": "{{done}}/{{total}} レッスン · {{scenes}} シーン",
     "reworkedForDepth": "深さのため再生成",
     "reworkedForDepthCount": "{{count}} シーンを深さのため再生成",
-    "mediaFailedCount": "{{count}} シーンでメディア生成失敗"
+    "mediaFailedCount": "{{count}} シーンでメディア生成失敗",
+    "sizePreset": {
+      "compact": "コンパクト",
+      "standard": "標準",
+      "intensive": "集中",
+      "semester": "学期"
+    },
+    "sizePresetHint": "最大 {{scenes}} シーン（約 {{minutes}} 分）"
   },
   "settings": {
     "title": "設定",
