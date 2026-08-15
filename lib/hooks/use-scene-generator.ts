@@ -522,11 +522,25 @@ export async function drainPendingSceneTTS(
   for (const scene of pending) {
     if (signal?.aborted) break;
     try {
+      // generateTTSForScene clears audioId from ALL speech actions when the
+      // pass fails — including actions that already had working audio. Snapshot
+      // the existing ids and restore them on failure so a failed drain never
+      // strips audio the deck already had.
+      const previousAudioIds = new Map(
+        (scene.actions ?? [])
+          .filter((action) => action.type === 'speech')
+          .map((action) => [action.id, action.audioId] as const),
+      );
       const result = await generateTTSForScene(scene, language, signal);
       if (result.success) {
         useStageStore.getState().updateScene(scene.id, { actions: scene.actions });
         restored += 1;
       } else {
+        for (const action of scene.actions ?? []) {
+          if (action.type === 'speech' && previousAudioIds.has(action.id)) {
+            action.audioId = previousAudioIds.get(action.id);
+          }
+        }
         log.warn(
           `TTS drain failed for scene "${scene.title}" (${result.failedCount} clip(s)); audio stays pending`,
         );

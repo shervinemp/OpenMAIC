@@ -36,10 +36,10 @@ export function clampDurationMinutes(minutes: number): number {
   return Math.min(600, Math.max(1, Math.round(minutes)));
 }
 
-const DURATION_PATTERNS: RegExp[] = [
-  /(\d+(?:\.\d+)?)\s*(?:min|minutes|minute|mins|分钟|分)\b/i,
-  /(\d+(?:\.\d+)?)\s*(?:hour|hours|hr|hrs|小时|小时)\b/i,
-];
+// Hours checked FIRST: "1 hour 30 minutes" must resolve to 90, not 30
+// (a minutes-first scan would match the trailing "30 minutes").
+const HOURS_RE = /(\d+(?:\.\d+)?)\s*(?:hour|hours|hr|hrs|小时)\b/i;
+const MINUTES_RE = /(\d+(?:\.\d+)?)\s*(?:min|minutes|minute|mins|分钟|分)\b/i;
 
 /**
  * Extract an explicit duration (minutes) from free-form requirement text.
@@ -47,15 +47,15 @@ const DURATION_PATTERNS: RegExp[] = [
  */
 export function parseDurationFromText(text: string): number | null {
   if (!text) return null;
-  for (let i = 0; i < DURATION_PATTERNS.length; i++) {
-    const match = text.match(DURATION_PATTERNS[i]);
-    if (match) {
-      const value = Number.parseFloat(match[1]);
-      if (Number.isFinite(value) && value > 0) {
-        // Pattern 0 matches minutes, pattern 1 matches hours.
-        return i === 1 ? clampDurationMinutes(value * 60) : clampDurationMinutes(value);
-      }
-    }
+  const hours = text.match(HOURS_RE);
+  if (hours) {
+    const value = Number.parseFloat(hours[1]);
+    if (Number.isFinite(value) && value > 0) return clampDurationMinutes(value * 60);
+  }
+  const minutes = text.match(MINUTES_RE);
+  if (minutes) {
+    const value = Number.parseFloat(minutes[1]);
+    if (Number.isFinite(value) && value > 0) return clampDurationMinutes(value);
   }
   return null;
 }
