@@ -1013,7 +1013,14 @@
     "lessonCompletion": "{{done}}/{{total}} 节课 · {{scenes}} 个场景",
     "reworkedForDepth": "因深度要求重做",
     "reworkedForDepthCount": "{{count}} 个场景因深度要求重做",
-    "mediaFailedCount": "{{count}} 个场景媒体生成失败"
+    "mediaFailedCount": "{{count}} 个场景媒体生成失败",
+    "sizePreset": {
+      "compact": "紧凑",
+      "standard": "标准",
+      "intensive": "密集",
+      "semester": "学期"
+    },
+    "sizePresetHint": "最多 {{scenes}} 个场景（约 {{minutes}} 分钟）"
   },
   "settings": {
     "title": "设置",

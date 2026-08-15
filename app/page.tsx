@@ -30,6 +30,12 @@ import { createLogger } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
 import { InputGroup, InputGroupInput, InputGroupButton } from '@/components/ui/input-group';
 import { Textarea as UITextarea } from '@/components/ui/textarea';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { SettingsDialog } from '@/components/settings';
 import { GenerationToolbar } from '@/components/generation/generation-toolbar';
@@ -49,6 +55,10 @@ import type {
 import { useSettingsStore } from '@/lib/store/settings';
 import { hasUsableLLMProvider } from '@/lib/store/settings-validation';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
+import {
+  COURSE_SIZE_PRESETS,
+  type CourseSizePreset,
+} from '@/lib/constants/generation';
 import {
   StageListItem,
   listStages,
@@ -74,6 +84,7 @@ const log = createLogger('Home');
 const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
+const SIZE_PRESET_STORAGE_KEY = 'courseSizePreset';
 
 // PPTX import is still scaffolding: `useImportPptx` has no `onImported` consumer
 // yet, so the flow only logs the parsed slides. Hide the entry point behind a
@@ -86,6 +97,7 @@ interface FormState {
   webSearch: boolean;
   interactiveMode: boolean;
   vocationalTestMode: boolean;
+  sizePreset: CourseSizePreset;
 }
 
 const initialFormState: FormState = {
@@ -94,6 +106,7 @@ const initialFormState: FormState = {
   webSearch: false,
   interactiveMode: false,
   vocationalTestMode: false,
+  sizePreset: 'compact',
 };
 
 function HomePage() {
@@ -137,9 +150,13 @@ function HomePage() {
     try {
       const savedWebSearch = localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
       const savedInteractiveMode = localStorage.getItem(INTERACTIVE_MODE_STORAGE_KEY);
+      const savedSizePreset = localStorage.getItem(SIZE_PRESET_STORAGE_KEY);
       const updates: Partial<FormState> = {};
       if (savedWebSearch === 'true') updates.webSearch = true;
       if (savedInteractiveMode === 'true') updates.interactiveMode = true;
+      if (savedSizePreset && savedSizePreset in COURSE_SIZE_PRESETS) {
+        updates.sizePreset = savedSizePreset as CourseSizePreset;
+      }
       if (Object.keys(updates).length > 0) {
         setForm((prev) => ({ ...prev, ...updates }));
       }
@@ -280,6 +297,7 @@ function HomePage() {
       if (field === 'webSearch') localStorage.setItem(WEB_SEARCH_STORAGE_KEY, String(value));
       if (field === 'interactiveMode')
         localStorage.setItem(INTERACTIVE_MODE_STORAGE_KEY, String(value));
+      if (field === 'sizePreset') localStorage.setItem(SIZE_PRESET_STORAGE_KEY, String(value));
       if (field === 'requirement') updateRequirementCache(value as string);
     } catch {
       /* ignore */
@@ -387,6 +405,7 @@ function HomePage() {
       const sessionState = {
         sessionId: nanoid(),
         requirements,
+        sizePreset: form.sizePreset,
         pdfText: '',
         pdfImages: [],
         imageStorageIds: [],
@@ -629,6 +648,46 @@ function HomePage() {
                   onPdfError={setError}
                 />
               </div>
+
+              {/* Course size preset (Phase 2 §15.3) */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className={cn(
+                          'shrink-0 h-8 px-2.5 rounded-lg flex items-center gap-1 text-xs font-medium border transition-colors',
+                          form.sizePreset !== 'compact'
+                            ? 'border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300'
+                            : 'border-border/60 text-muted-foreground hover:bg-muted/60',
+                        )}
+                      >
+                        {t(`generation.sizePreset.${form.sizePreset}`)}
+                        <ChevronDown className="size-3" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-44">
+                      {(Object.keys(COURSE_SIZE_PRESETS) as CourseSizePreset[]).map((preset) => (
+                        <DropdownMenuItem
+                          key={preset}
+                          onSelect={() => updateForm('sizePreset', preset)}
+                          className="flex items-center justify-between"
+                        >
+                          <span>{t(`generation.sizePreset.${preset}`)}</span>
+                          {form.sizePreset === preset && <Check className="size-3.5" />}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {t('generation.sizePresetHint', {
+                    scenes: COURSE_SIZE_PRESETS[form.sizePreset].maxScenes,
+                    minutes: COURSE_SIZE_PRESETS[form.sizePreset].durationMinutes,
+                  })}
+                </TooltipContent>
+              </Tooltip>
 
               {/* Interactive mode toggle */}
               <Tooltip>

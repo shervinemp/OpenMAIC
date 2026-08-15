@@ -605,6 +605,7 @@ function GenerationPreviewContent() {
             body: JSON.stringify(
               withThinkingConfig({
                 requirements: currentSession.requirements,
+                sizePreset: currentSession.sizePreset ?? 'compact',
                 pdfText: currentSession.pdfText,
                 pdfImages: currentSession.pdfImages,
                 imageMapping,

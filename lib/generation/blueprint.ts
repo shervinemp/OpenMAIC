@@ -13,18 +13,18 @@
  */
 
 import {
+  COURSE_SIZE_PRESETS,
   DEFAULT_DURATION_MINUTES,
+  DEFAULT_SIZE_PRESET,
   LESSON_MINUTES,
   MAX_BLUEPRINT_ATTEMPTS,
-  MAX_LESSONS,
-  MAX_SCENES,
-  MAX_SCENES_PER_LESSON,
   MIN_LESSONS,
   MIN_SCENES,
   MIN_SCENES_PER_LESSON,
   QUIZ_PLACEMENT_DEFAULT,
   QUIZ_PLACEMENT_EXAM_PREP,
-  SCENES_PER_MINUTE,
+  resolveSizePreset,
+  type CourseSizePreset,
 } from '@/lib/constants/generation';
 import type { CourseBlueprint, CourseType, SceneOutline } from '@/lib/types/generation';
 
@@ -90,38 +90,59 @@ export interface CourseContract {
   lessonSceneTargets: number[];
   /** Quiz cadence (every N scenes, course-wide). */
   quizPlacement: number;
+  /** The size preset the contract was derived under. */
+  sizePreset: CourseSizePreset;
 }
 
 /**
- * Derive the course contract from a resolved duration.
+ * Per-lesson scene cap for a preset. Scales with the preset so a semester
+ * course can put a full lecture in each lesson; compact keeps today's 12.
+ */
+export function perLessonSceneCap(preset: CourseSizePreset): number {
+  const config = COURSE_SIZE_PRESETS[preset];
+  return Math.max(
+    MIN_SCENES_PER_LESSON,
+    Math.min(
+      config.maxScenes,
+      12 + Math.floor(Math.log2(Math.max(1, config.maxScenes / 30))) * 8,
+    ),
+  );
+}
+
+/**
+ * Derive the course contract from a resolved duration and size preset.
  *
  * Order matters: the course-wide total is computed first and then
  * distributed greedily, so the sum of lesson targets always equals the
- * total (a lesson-first derivation could overflow MAX_SCENES).
+ * total (a lesson-first derivation could overflow the preset's maxScenes).
+ * The preset raises the caps: compact keeps today's behavior (≤30 scenes,
+ * ≤8 lessons, 1.0 scenes/min); standard/intensive/semester scale up.
  */
 export function deriveCourseContract(
   durationMinutes: number,
   courseType: CourseType = 'explainer',
+  preset: CourseSizePreset = DEFAULT_SIZE_PRESET,
 ): CourseContract {
+  const config = COURSE_SIZE_PRESETS[preset];
   const duration = clampDurationMinutes(durationMinutes);
 
-  const rawTotal = Math.round(duration * SCENES_PER_MINUTE);
-  const totalSceneTarget = Math.min(MAX_SCENES, Math.max(MIN_SCENES, rawTotal));
+  const rawTotal = Math.round(duration * config.scenesPerMinute);
+  const totalSceneTarget = Math.min(config.maxScenes, Math.max(MIN_SCENES, rawTotal));
 
   const lessonCount = Math.min(
-    MAX_LESSONS,
+    config.maxLessons,
     Math.max(MIN_LESSONS, Math.ceil(duration / LESSON_MINUTES)),
   );
 
   // Greedy even split, larger parts first, each within the per-lesson
-  // bounds. With the shipped constants the clamp never binds (total ≤ 30,
-  // per-lesson max 12), but it stays defensive.
+  // bounds.
+  const maxScenesPerLesson = perLessonSceneCap(preset);
   const base = Math.floor(totalSceneTarget / lessonCount);
   const remainder = totalSceneTarget % lessonCount;
   const lessonSceneTargets: number[] = [];
   for (let i = 0; i < lessonCount; i++) {
     const target = Math.min(
-      MAX_SCENES_PER_LESSON,
+      maxScenesPerLesson,
       Math.max(MIN_SCENES_PER_LESSON, base + (i < remainder ? 1 : 0)),
     );
     lessonSceneTargets.push(target);
@@ -129,7 +150,32 @@ export function deriveCourseContract(
 
   const quizPlacement = courseType === 'exam-prep' ? QUIZ_PLACEMENT_EXAM_PREP : QUIZ_PLACEMENT_DEFAULT;
 
-  return { durationMinutes: duration, totalSceneTarget, lessonCount, lessonSceneTargets, quizPlacement };
+  return {
+    durationMinutes: duration,
+    totalSceneTarget,
+    lessonCount,
+    lessonSceneTargets,
+    quizPlacement,
+    sizePreset: preset,
+  };
+}
+
+/**
+ * Resolve the contract for a generation request: an explicit duration wins
+ * over the preset's fallback duration; the preset sets the caps either way.
+ */
+export function deriveContractForRequest(
+  presetValue: unknown,
+  courseType: CourseType,
+  explicitDurationMinutes?: number,
+): CourseContract {
+  const preset = resolveSizePreset(presetValue);
+  const config = COURSE_SIZE_PRESETS[preset];
+  return deriveCourseContract(
+    explicitDurationMinutes ?? config.durationMinutes,
+    courseType,
+    preset,
+  );
 }
 
 // ==================== Prompt contract rendering ====================
@@ -273,6 +319,7 @@ export function buildCourseBlueprint(
     courseType,
     lessonCount: contract.lessonCount,
     quizPlacement: contract.quizPlacement,
+    sizePreset: contract.sizePreset,
     lessons,
   };
 }
@@ -351,7 +398,12 @@ export function validateBlueprint(
   if (blueprint.lessons.length === 0) {
     errors.push('blueprint has no lessons');
   } else {
-    const expectedLessonCount = deriveCourseContract(blueprint.durationMinutes, blueprint.courseType).lessonCount;
+    const blueprintPreset = resolveSizePreset(blueprint.sizePreset);
+    const expectedLessonCount = deriveCourseContract(
+      blueprint.durationMinutes,
+      blueprint.courseType,
+      blueprintPreset,
+    ).lessonCount;
     if (blueprint.lessons.length !== expectedLessonCount) {
       errors.push(`lessonCount ${blueprint.lessons.length} does not match the derived split (${expectedLessonCount})`);
     }
@@ -359,6 +411,9 @@ export function validateBlueprint(
 
   let total = 0;
   const seenOrders = new Set<number>();
+  const blueprintPreset = resolveSizePreset(blueprint.sizePreset);
+  const presetConfig = COURSE_SIZE_PRESETS[blueprintPreset];
+  const presetLessonCap = perLessonSceneCap(blueprintPreset);
   blueprint.lessons.forEach((lesson, lessonIndex) => {
     const target = lesson.sceneTarget;
     const count = lesson.outlines.length;
@@ -370,8 +425,8 @@ export function validateBlueprint(
     if (count < MIN_SCENES_PER_LESSON) {
       errors.push(`lesson ${lessonIndex + 1} has ${count} scenes, below the floor of ${MIN_SCENES_PER_LESSON}`);
     }
-    if (count > MAX_SCENES_PER_LESSON) {
-      errors.push(`lesson ${lessonIndex + 1} has ${count} scenes, above the cap of ${MAX_SCENES_PER_LESSON}`);
+    if (count > presetLessonCap) {
+      errors.push(`lesson ${lessonIndex + 1} has ${count} scenes, above the ${blueprintPreset} cap of ${presetLessonCap}`);
     }
     if (options.tolerance) {
       if (Math.abs(count - target) > 1) {
@@ -396,8 +451,8 @@ export function validateBlueprint(
   if (total < MIN_SCENES) {
     errors.push(`course has ${total} scenes, below the floor of ${MIN_SCENES}`);
   }
-  if (total > MAX_SCENES) {
-    errors.push(`course has ${total} scenes, above the cap of ${MAX_SCENES}`);
+  if (total > presetConfig.maxScenes) {
+    errors.push(`course has ${total} scenes, above the ${blueprintPreset} cap of ${presetConfig.maxScenes}`);
   }
 
   // Placement advisories: quiz cadence + interactive/pbl caps.
@@ -460,6 +515,7 @@ export function legacyBlueprintFromOutlines(
     courseType: 'explainer',
     lessonCount: 1,
     quizPlacement: QUIZ_PLACEMENT_DEFAULT,
+    sizePreset: DEFAULT_SIZE_PRESET,
     lessons: [
       {
         title: `Lesson 1: ${title || 'Legacy Course'}`,

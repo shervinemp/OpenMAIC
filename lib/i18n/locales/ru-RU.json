@@ -1013,7 +1013,14 @@
     "lessonCompletion": "{{done}}/{{total}} уроков · {{scenes}} сцен",
     "reworkedForDepth": "Доработано по глубине",
     "reworkedForDepthCount": "{{count}} сцен доработано по глубине",
-    "mediaFailedCount": "{{count}} сцен с ошибкой медиа"
+    "mediaFailedCount": "{{count}} сцен с ошибкой медиа",
+    "sizePreset": {
+      "compact": "Компактный",
+      "standard": "Стандартный",
+      "intensive": "Интенсивный",
+      "semester": "Семестровый"
+    },
+    "sizePresetHint": "До {{scenes}} сцен (~{{minutes}} мин)"
   },
   "settings": {
     "title": "Настройки",

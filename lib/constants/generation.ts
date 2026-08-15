@@ -44,6 +44,44 @@ export const QUIZ_PLACEMENT_EXAM_PREP = 3;
 // the model choose).
 export const DEFAULT_DURATION_MINUTES = 20;
 
+// ==================== Course size presets (Phase 2 §15.3) ====================
+// A preset raises the contract's caps: scene totals, lesson counts, and the
+// scenes-per-minute density. Explicit durations always win over the preset's
+// duration; the preset duration only applies when nothing else was given.
+
+export type CourseSizePreset = 'compact' | 'standard' | 'intensive' | 'semester';
+
+export interface CourseSizePresetConfig {
+  /** Fallback course duration when no explicit duration was provided. */
+  durationMinutes: number;
+  /** Course-wide scene cap (cost guard). */
+  maxScenes: number;
+  /** Lesson-count cap for the deterministic split. */
+  maxLessons: number;
+  /** Scene density: scenes per minute of resolved duration. */
+  scenesPerMinute: number;
+}
+
+export const COURSE_SIZE_PRESETS: Record<CourseSizePreset, CourseSizePresetConfig> = {
+  // Today's behavior unchanged: 15-30 min, ≤30 scenes, ≤8 lessons.
+  compact: { durationMinutes: 20, maxScenes: 30, maxLessons: 8, scenesPerMinute: 1.0 },
+  // ~1 hour, ~60 scenes.
+  standard: { durationMinutes: 60, maxScenes: 60, maxLessons: 12, scenesPerMinute: 1.0 },
+  // 3-6 hours, up to 360 scenes.
+  intensive: { durationMinutes: 180, maxScenes: 360, maxLessons: 30, scenesPerMinute: 2.0 },
+  // Semester-scale: up to 10 hours / 600 scenes, generated over multiple sessions.
+  semester: { durationMinutes: 600, maxScenes: 600, maxLessons: 48, scenesPerMinute: 1.0 },
+};
+
+export const DEFAULT_SIZE_PRESET: CourseSizePreset = 'compact';
+
+/** Normalize an untrusted preset value to a valid one (compact on garbage). */
+export function resolveSizePreset(value: unknown): CourseSizePreset {
+  return typeof value === 'string' && value in COURSE_SIZE_PRESETS
+    ? (value as CourseSizePreset)
+    : DEFAULT_SIZE_PRESET;
+}
+
 // Corrective retry budget for the outline stage: the blueprint must
 // validate within this many attempts or the run fails with the report
 // (never fabricate).

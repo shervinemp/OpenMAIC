@@ -7,6 +7,7 @@
 
 import type { ActionType } from './action';
 import type { MediaGenerationRequest } from '@/lib/media/types';
+import type { CourseSizePreset } from '@/lib/constants/generation';
 
 // ==================== PDF Image Types ====================
 
@@ -223,6 +224,11 @@ export interface CourseBlueprint {
   lessonCount: number;
   /** DERIVED — quiz placement cadence (every N scenes, course-wide). */
   quizPlacement: number;
+  /**
+   * The size preset the contract was derived under (Phase 2 §15.3).
+   * Optional for backward compatibility; treated as 'compact' when absent.
+   */
+  sizePreset?: CourseSizePreset;
   /** The course, split into lessons (each validated against its target). */
   lessons: LessonBlueprint[];
 }
