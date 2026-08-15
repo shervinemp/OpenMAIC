@@ -285,7 +285,7 @@ interface StageState {
   // Persisted (with outlines): the validated curriculum contract (Pillar 1)
   // produced by the outline stage. Single source for lesson grouping and
   // job-model projections.
-  blueprint?: CourseBlueprint;
+  blueprint: CourseBlueprint | undefined;
 
   // Persisted (with outlines): true once generation finished for this stage.
   // Gates resume-on-mount so an edited finished deck is not regenerated.
