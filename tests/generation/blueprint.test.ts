@@ -244,6 +244,73 @@ describe('size presets (Phase 2 §15.3)', () => {
       expect(report.errors).toEqual([]);
     }
   });
+
+  test('unit split: below the threshold the course stays single-unit', () => {
+    const contract = deriveCourseContract(20, 'explainer', 'compact'); // 2 lessons
+    expect(contract.unitCount).toBe(1);
+    expect(contract.unitLessonCounts).toEqual([2]);
+
+    const blueprint = buildCourseBlueprint(
+      makeParsed(20),
+      'requirement',
+      contract,
+      'explainer',
+      'Fallback',
+    );
+    expect(blueprint.units).toBeUndefined();
+    expect(validateBlueprint(blueprint).errors).toEqual([]);
+  });
+
+  test('unit split: multi-unit courses carry the unit layer and validate', () => {
+    const contract = deriveCourseContract(180, 'explainer', 'intensive'); // 18 lessons
+    expect(contract.unitCount).toBe(5);
+    expect(contract.unitLessonCounts).toEqual([4, 4, 4, 3, 3]);
+
+    const blueprint = buildCourseBlueprint(
+      makeParsed(360),
+      'requirement',
+      contract,
+      'explainer',
+      'Fallback',
+    );
+    expect(blueprint.units).toHaveLength(5);
+    expect(blueprint.units?.[0].lessons).toHaveLength(4);
+    const unitScenes = blueprint.units!.reduce((sum, u) => sum + u.sceneTarget, 0);
+    expect(unitScenes).toBe(360);
+    const flat = blueprint.units!.flatMap((u) => u.lessons);
+    expect(flat).toEqual(blueprint.lessons);
+    expect(validateBlueprint(blueprint).errors).toEqual([]);
+  });
+
+  test('unit split: missing unit structure is a hard contract failure', () => {
+    const contract = deriveCourseContract(180, 'explainer', 'intensive');
+    const blueprint = buildCourseBlueprint(
+      makeParsed(360),
+      'requirement',
+      contract,
+      'explainer',
+      'Fallback',
+    );
+    const { units: _units, ...withoutUnits } = blueprint;
+    void _units;
+    const report = validateBlueprint(withoutUnits);
+    expect(report.errors).toContain(
+      'course has 5 derived units but the unit structure is missing',
+    );
+  });
+
+  test('renderCourseContract mentions the unit structure for multi-unit contracts', () => {
+    const contract = deriveCourseContract(180, 'explainer', 'intensive');
+    const text = renderCourseContract(contract, 'explainer');
+    expect(text).toContain('EXACTLY 5 units');
+    expect(text).toContain('"units": an array of 5 objects');
+
+    const compactText = renderCourseContract(
+      deriveCourseContract(20, 'explainer', 'compact'),
+      'explainer',
+    );
+    expect(compactText).not.toContain('Unit structure');
+  });
 });
 
 describe('assignLessonIds + splitIntoLessons', () => {

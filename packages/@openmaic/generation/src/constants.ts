@@ -87,3 +87,7 @@ export function resolveSizePreset(value: unknown): CourseSizePreset {
     ? (value as CourseSizePreset)
     : DEFAULT_SIZE_PRESET;
 }
+
+// Phase 2 15.1: a unit (chapter) groups this many lessons. Below the
+// threshold the course stays single-unit (today's shape).
+export const LESSONS_PER_UNIT = 4;

@@ -234,6 +234,7 @@ export async function generateSceneOutlinesFromRequirements(
       let audience: string | undefined;
       let courseObjectives: string[] | undefined;
       let lessons: ParsedOutlineResponse['lessons'];
+      let units: ParsedOutlineResponse['units'];
 
       if (Array.isArray(parsed)) {
         // Fallback: LLM returned old flat array format
@@ -251,6 +252,7 @@ export async function generateSceneOutlinesFromRequirements(
         audience = parsed.audience;
         courseObjectives = parsed.objectives;
         lessons = parsed.lessons;
+        units = parsed.units;
       } else {
         return { success: false, error: 'Failed to parse scene outlines response' };
       }
@@ -277,6 +279,7 @@ export async function generateSceneOutlinesFromRequirements(
           audience,
           objectives: courseObjectives,
           lessons,
+          units,
         },
         requirements.requirement,
         contract,
