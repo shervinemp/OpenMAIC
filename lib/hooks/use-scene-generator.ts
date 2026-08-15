@@ -803,6 +803,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
                 parallelConcurrency,
                 async (outline): Promise<SceneContentResult> => {
                   options.onPhaseChange?.('content', outline);
+                  store.getState().recordScenePhase(outline.id, 'content', { status: 'running' });
                   try {
                     return await fetchContent(outline);
                   } catch (err) {
@@ -843,6 +844,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           } else {
             options.onPhaseChange?.('content', outline);
             store.getState().setGenerationPhase('content');
+            store.getState().recordScenePhase(outline.id, 'content', { status: 'running' });
             contentResult = await fetchContent(outline);
           }
 
@@ -851,6 +853,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               pausedByFailureOrAbort = true;
               break;
             }
+            store.getState().recordScenePhase(outline.id, 'content', {
+              status: 'failed',
+              error: contentResult.error || 'Content generation failed',
+            });
             store.getState().addFailedOutline(outline);
             options.onSceneFailed?.(outline, contentResult.error || 'Content generation failed');
             // Surface and continue in both modes (Pillar 2 §4.8): a failure
@@ -866,6 +872,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           if (contentResult.depth) {
             store.getState().recordSceneDepth(outline.order, contentResult.depth);
           }
+          store.getState().recordScenePhase(outline.id, 'content', { status: 'done' });
 
           if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
             store.getState().setGenerationStatus('paused');
@@ -876,6 +883,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           // Step 2: Generate actions + assemble scene
           options.onPhaseChange?.('actions', outline);
           store.getState().setGenerationPhase('actions');
+          store.getState().recordScenePhase(outline.id, 'actions', { status: 'running' });
           const actionsResult = await fetchSceneActions(
             {
               outline: contentResult.effectiveOutline || outline,
@@ -893,6 +901,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           if (actionsResult.success && actionsResult.scene) {
             const scene = actionsResult.scene;
             const settings = useSettingsStore.getState();
+            store.getState().recordScenePhase(outline.id, 'actions', { status: 'done' });
 
             // TTS is a background fill phase (Pillar 2 §4.6): failure never
             // fails the scene and never pauses the batch. The scene is added
@@ -907,6 +916,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               )
             ) {
               store.getState().setGenerationPhase('tts');
+              store.getState().recordScenePhase(outline.id, 'tts', { status: 'running' });
               const ttsResult = await generateTTSForScene(
                 scene,
                 params.languageDirective || params.stageInfo.language,
@@ -920,7 +930,13 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
                 log.warn(
                   `TTS failed for scene "${outline.title}" — scene kept, audio pending (${ttsResult.failedCount} clip(s)): ${ttsResult.error ?? 'unknown error'}`,
                 );
+                store.getState().recordScenePhase(outline.id, 'tts', {
+                  status: 'failed',
+                  error: ttsResult.error || 'TTS generation failed',
+                });
                 options.onSceneTtsFailed?.(outline, ttsResult.error || 'TTS generation failed');
+              } else {
+                store.getState().recordScenePhase(outline.id, 'tts', { status: 'done' });
               }
             }
 
@@ -940,6 +956,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               pausedByFailureOrAbort = true;
               break;
             }
+            store.getState().recordScenePhase(outline.id, 'actions', {
+              status: 'failed',
+              error: actionsResult.error || 'Actions generation failed',
+            });
             store.getState().addFailedOutline(outline);
             options.onSceneFailed?.(outline, actionsResult.error || 'Actions generation failed');
             // Surface and continue — retry/skip are user actions (Pillar 2 §4.8).
@@ -1039,6 +1059,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
       try {
         // Step 1: Content
+        store.getState().recordScenePhase(outline.id, 'content', { status: 'running' });
         const contentResult = await fetchSceneContent(
           {
             outline,
@@ -1054,9 +1075,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         );
 
         if (!contentResult.success || !contentResult.content) {
+          store.getState().recordScenePhase(outline.id, 'content', {
+            status: 'failed',
+            error: contentResult.error || 'Content generation failed',
+          });
           store.getState().addFailedOutline(outline);
           return;
         }
+        store.getState().recordScenePhase(outline.id, 'content', { status: 'done' });
 
         // Step 2: Actions
         const sortedScenes = [...store.getState().scenes].sort((a, b) => a.order - b.order);
@@ -1067,6 +1093,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               .map((a) => a.text)
           : [];
 
+        store.getState().recordScenePhase(outline.id, 'actions', { status: 'running' });
         const actionsResult = await fetchSceneActions(
           {
             outline: contentResult.effectiveOutline || outline,
@@ -1082,9 +1109,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         );
 
         if (!actionsResult.success || !actionsResult.scene) {
+          store.getState().recordScenePhase(outline.id, 'actions', {
+            status: 'failed',
+            error: actionsResult.error || 'Actions generation failed',
+          });
           store.getState().addFailedOutline(outline);
           return;
         }
+        store.getState().recordScenePhase(outline.id, 'actions', { status: 'done' });
 
         // Step 3: TTS
         const settings = useSettingsStore.getState();
@@ -1096,15 +1128,21 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             settings.ttsProvidersConfig?.[settings.ttsProviderId],
           )
         ) {
+          store.getState().recordScenePhase(outline.id, 'tts', { status: 'running' });
           const ttsResult = await generateTTSForScene(
             actionsResult.scene,
             params.languageDirective || params.stageInfo.language,
             signal,
           );
           if (!ttsResult.success) {
+            store.getState().recordScenePhase(outline.id, 'tts', {
+              status: 'failed',
+              error: ttsResult.error || 'TTS generation failed',
+            });
             store.getState().addFailedOutline(outline);
             return;
           }
+          store.getState().recordScenePhase(outline.id, 'tts', { status: 'done' });
         }
 
         if (store.getState().generationEpoch !== retryEpoch) {
