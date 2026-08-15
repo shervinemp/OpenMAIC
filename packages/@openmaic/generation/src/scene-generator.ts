@@ -122,6 +122,13 @@ export interface SceneContentOptions {
   pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>;
   onFailure?: (failure: SceneContentFailure) => void;
   logger?: GenerationLogger;
+  /**
+   * Per-scene source retrieval context (Pillar 3b): retrieved chunks with
+   * `[source p.N]` citation markers. Injected into the slide/quiz prompt;
+   * generated content must cite ≥2 retrieved markers and may not cite
+   * anything outside the retrieved set (citation ground-truth).
+   */
+  retrievalContext?: string;
 }
 
 export interface SceneActionsOptions {
@@ -255,6 +262,7 @@ export async function generateSceneContent(
     allowProceduralSkill = false,
     editDirective,
     baselineContent,
+    retrievalContext,
   } = options;
 
   // Unified path for interactive scenes (both normal and ultra mode)
@@ -299,11 +307,12 @@ export async function generateSceneContent(
         languageDirective,
         editDirective,
         baselineContent,
+        options.retrievalContext,
         log,
         options.onFailure,
       );
     case 'quiz':
-      return generateQuizContent(outline, aiCall, languageDirective, log, options.onFailure);
+      return generateQuizContent(outline, aiCall, languageDirective, options.retrievalContext, log, options.onFailure);
     case 'pbl':
       return generatePBLSceneContent(
         outline,
@@ -617,6 +626,7 @@ async function generateSlideContent(
   languageDirective?: string,
   editDirective?: string,
   baselineContent?: GeneratedSlideContent,
+  retrievalContext?: string,
   log: GenerationLogger = noopGenerationLogger,
   onFailure?: (failure: SceneContentFailure) => void,
 ): Promise<GeneratedSlideContent | null> {
@@ -747,6 +757,9 @@ async function generateSlideContent(
   // the existing slide rather than generating from scratch. Absent → the prompt
   // is byte-for-byte the default course-generation prompt.
   let userPrompt = prompts.user;
+  if (retrievalContext) {
+    userPrompt = `${prompts.user}\n\n## Source Material (ground your content here)\n\n${retrievalContext}\n\nCitation requirements: cite the exact [source p.N] markers shown above for at least two of your claims. Never cite a marker that is not listed above.`;
+  }
   if (editDirective || baselineContent) {
     // The baseline handed here for whole-slide regeneration already carries small
     // image-ID references (`img_N`) instead of base64 payloads — the caller lifts
@@ -874,7 +887,7 @@ async function generateSlideContent(
       };
     }
 
-    const depthReport = validateSlideDepth(outline, processedElements);
+    const depthReport = validateSlideDepth(outline, processedElements, { retrievalContext });
     if (depthReport.adequate) {
       return {
         elements: processedElements,
@@ -908,6 +921,7 @@ async function generateQuizContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   languageDirective?: string,
+  retrievalContext?: string,
   log: GenerationLogger = noopGenerationLogger,
   onFailure?: (failure: SceneContentFailure) => void,
 ): Promise<GeneratedQuizContent | null> {
@@ -932,6 +946,11 @@ async function generateQuizContent(
     return null;
   }
 
+  let baseUserPrompt = prompts.user;
+  if (retrievalContext) {
+    baseUserPrompt = `${prompts.user}\n\n## Source Material (ground your questions here)\n\n${retrievalContext}\n\nCitation requirements: cite the exact [source p.N] markers shown above in at least two questions/analyses. Never cite a marker that is not listed above.`;
+  }
+
   log.debug(`Generating quiz content for: ${outline.title}`);
   // Depth contract: the quiz must carry its configured question count with
   // substantive stems, plausible distractors, and explanations. Bounded
@@ -942,8 +961,8 @@ async function generateQuizContent(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const attemptUserPrompt = depthFeedback
-      ? `${prompts.user}\n\n## Depth Correction Required\n\n${depthFeedback}`
-      : prompts.user;
+      ? `${baseUserPrompt}\n\n## Depth Correction Required\n\n${depthFeedback}`
+      : baseUserPrompt;
 
     const response = await aiCall(prompts.system, attemptUserPrompt);
 
@@ -969,8 +988,7 @@ async function generateQuizContent(
       };
     });
 
-
-    const depthReport = validateQuizDepth(outline, questions);
+    const depthReport = validateQuizDepth(outline, questions, retrievalContext);
     if (depthReport.adequate) {
       return { questions };
     }

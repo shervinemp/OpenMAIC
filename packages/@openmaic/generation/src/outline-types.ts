@@ -77,6 +77,15 @@ export interface SceneOutline {
   estimatedDuration?: number;
   order: number;
   languageNote?: string;
+  /** Lesson membership (assigned during blueprint canonicalization; playback
+      order remains the global `order`). */
+  lessonId?: string;
+  /**
+   * Per-scene retrieval context rendered at the outline stage (Pillar 3b):
+   * top-k source chunks with `[source p.N]` citation markers. Injected into
+   * the content prompt and used as the citation ground-truth.
+   */
+  retrievalContext?: string;
   suggestedImageIds?: string[];
   mediaGenerations?: MediaGenerationRequest[];
   quizConfig?: {

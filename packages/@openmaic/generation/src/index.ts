@@ -88,6 +88,28 @@ export { changeOutlineType } from './outline-type.js';
 export { uniquifyMediaElementIds } from './outline-media.js';
 export { partitionImagesForVision } from './outline-formatters.js';
 export type { VisionImagePartition } from './outline-formatters.js';
+export {
+  assignLessonIds,
+  buildCourseBlueprint,
+  clampDurationMinutes,
+  deriveCourseContract,
+  inferCourseType,
+  parseDurationFromText,
+  renderCourseContract,
+  splitIntoLessons,
+  summarizeBlueprintValidation,
+  validateBlueprint,
+  MAX_BLUEPRINT_ATTEMPTS,
+} from './blueprint.js';
+export type {
+  BlueprintValidationOptions,
+  BlueprintValidationResult,
+  CourseBlueprint,
+  CourseContract,
+  CourseType,
+  LessonBlueprint,
+  ParsedOutlineResponse,
+} from './blueprint.js';
 export { parseJsonResponse } from './json-repair.js';
 export type { JsonParsingOptions } from './json-repair.js';
 export {
@@ -102,6 +124,15 @@ export {
   validateSlideDepth,
 } from './content-depth.js';
 export type { DepthReport, SlideDepthOptions } from './content-depth.js';
+export type { ChunkOptions, PdfChunk, RetrieveOptions } from './pdf-retrieval.js';
+export {
+  chunkSourceText,
+  extractCitationMarkers,
+  formatRetrievalContext,
+  retrieveChunks,
+  scoreChunk,
+  validateCitations,
+} from './pdf-retrieval.js';
 export { noopGenerationLogger } from './logger.js';
 export type { GenerationLogger } from './logger.js';
 export {

@@ -25,8 +25,58 @@ import {
   QUIZ_PLACEMENT_DEFAULT,
   QUIZ_PLACEMENT_EXAM_PREP,
   SCENES_PER_MINUTE,
-} from '@/lib/constants/generation';
-import type { CourseBlueprint, CourseType, SceneOutline } from '@/lib/types/generation';
+} from './constants.js';
+import type { SceneOutline } from './outline-types.js';
+
+// ==================== Curriculum contract types ====================
+
+/**
+ * Course flavor inferred from the requirement text. Feeds the type mix and
+ * quiz cadence in the outline prompt contract.
+ */
+export type CourseType = 'explainer' | 'hands-on' | 'exam-prep';
+
+/**
+ * One lesson (section) of the course. Scene counts are derived from the
+ * resolved course duration and validated - see blueprint.ts.
+ */
+export interface LessonBlueprint {
+  /** Lesson/section title (teaching language). */
+  title: string;
+  /** 1-2 learning objectives for THIS lesson. */
+  objectives: string[];
+  /** DERIVED - informational: even split of the course duration. */
+  durationMinutes: number;
+  /** DERIVED - greedy even split of the course-wide total, clamped. */
+  sceneTarget: number;
+  /** The lesson's deck. Length validated against sceneTarget. */
+  outlines: SceneOutline[];
+}
+
+/**
+ * The curriculum as a validated contract (Pillar 1). Produced by the
+ * outline stage; consumed by the job model and the UI.
+ */
+export interface CourseBlueprint {
+  /** Display name for the course (≤ 30 chars, teaching language). */
+  title: string;
+  /** 2-5 sentence language directive (existing semantics). */
+  languageDirective: string;
+  /** RESOLVED course duration - never a model guess. */
+  durationMinutes: number;
+  /** Inferred audience; free text. */
+  audience: string;
+  /** 2-5 course-level learning objectives. */
+  objectives: string[];
+  /** DERIVED - course flavor from requirement keywords. */
+  courseType: CourseType;
+  /** DERIVED - lesson split: ceil(duration / LESSON_MINUTES), clamped. */
+  lessonCount: number;
+  /** DERIVED - quiz placement cadence (every N scenes, course-wide). */
+  quizPlacement: number;
+  /** The course, split into lessons (each validated against its target). */
+  lessons: LessonBlueprint[];
+}
 
 // ==================== Duration resolution ====================
 

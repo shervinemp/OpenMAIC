@@ -17,15 +17,14 @@ import { NextRequest } from 'next/server';
 import { streamLLM } from '@/lib/ai/llm';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import {
+  buildVisionUserContent,
   formatImageDescription,
   formatImagePlaceholder,
-  buildVisionUserContent,
-  buildOutlinePrompt,
-  uniquifyMediaElementIds,
   formatTeacherPersonaForPrompt,
+  uniquifyMediaElementIds,
+  DEFAULT_LANGUAGE_DIRECTIVE,
+  type AgentInfo,
 } from '@openmaic/generation';
-import type { AgentInfo } from '@openmaic/generation';
-import { DEFAULT_LANGUAGE_DIRECTIVE } from '@openmaic/generation';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { nanoid } from 'nanoid';
 import type {
@@ -40,6 +39,26 @@ import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVisionImagesForPrompt } from '@/lib/persistence/resolve-vision-images';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
+import {
+  buildCourseBlueprint,
+  clampDurationMinutes,
+  deriveCourseContract,
+  inferCourseType,
+  parseDurationFromText,
+  renderCourseContract,
+  summarizeBlueprintValidation,
+  validateBlueprint,
+  MAX_BLUEPRINT_ATTEMPTS,
+  type ParsedOutlineResponse,
+} from '@/lib/generation/blueprint';
+import { DEFAULT_DURATION_MINUTES } from '@/lib/constants/generation';
+import {
+  chunkSourceText,
+  formatRetrievalContext,
+  retrieveChunks,
+  type PdfChunk,
+} from '@openmaic/generation';
+import type { CourseBlueprint } from '@/lib/types/generation';
 const log = createLogger('Outlines Stream');
 
 export const maxDuration = 300;
@@ -47,13 +66,13 @@ export const maxDuration = 300;
 /**
  * Extract the languageDirective from the streamed wrapper JSON.
  * Matches `"languageDirective":"<value>"` in partial JSON like:
- *   {"languageDirective":"用中文授课...","outlines":[...
+ *   {"languageDirective":"τö¿Σ╕¡µûçµÄêΦ»╛...","outlines":[...
  */
 function extractLanguageDirective(buffer: string): string | null {
   // The directive is the first key of the wrapper object, so it can only ever
   // appear in the head of the buffer. Bound the scan to keep this O(1) per
-  // streamed chunk — it is called on the full, growing buffer on every chunk,
-  // which is otherwise O(n²) over the stream.
+  // streamed chunk ΓÇö it is called on the full, growing buffer on every chunk,
+  // which is otherwise O(n┬▓) over the stream.
   const head = buffer.length > 8192 ? buffer.slice(0, 8192) : buffer;
   const match = head.match(/"languageDirective"\s*:\s*"((?:[^"\\]|\\.)*)"/);
   if (!match) return null;
@@ -66,14 +85,14 @@ function extractLanguageDirective(buffer: string): string | null {
 
 /**
  * Extract the courseTitle from the streamed wrapper JSON.
- * Same head-bound scan as `extractLanguageDirective` — the title is a
+ * Same head-bound scan as `extractLanguageDirective` ΓÇö the title is a
  * top-level key near the start of the wrapper object, so it only appears in
  * the buffer head. Returns the decoded title, or null if not yet streamed.
  */
 const COURSE_TITLE_RE = /"courseTitle"\s*:\s*"((?:[^"\\]|\\.)*)"/;
 
 // Normalize a captured title identically to the non-streaming parser
-// (@openmaic/generation outline parser): ignore whitespace-only titles and cap
+// (lib/generation/outline-generator.ts): ignore whitespace-only titles and cap
 // length defensively so a hallucinating model cannot push a blank or unbounded
 // value into the stage name. Returning null lets callers fall back / keep scanning.
 function normalizeStreamedTitle(raw: string): string | null {
@@ -95,7 +114,7 @@ function extractCourseTitle(buffer: string): string | null {
 
 /**
  * Full-buffer fallback, run once after the stream completes: recovers a title
- * the model emitted after the `outlines` array or beyond the 8KB head window —
+ * the model emitted after the `outlines` array or beyond the 8KB head window ΓÇö
  * cases the head-bound `extractCourseTitle` scan would miss. Only invoked when
  * the streaming scan produced nothing, so the extra full-buffer regex is paid once.
  */
@@ -105,10 +124,30 @@ function extractCourseTitleFromComplete(buffer: string): string | null {
 }
 
 /**
+ * Recover the optional wrapper metadata (`lessons`, `audience`,
+ * `objectives`) from the completed stream. The incremental parser only
+ * handles the `outlines` array, so a single full-buffer JSON.parse is paid
+ * once at completion ΓÇö the model emits a conforming wrapper per the prompt
+ * contract, and any failure falls back to derived values.
+ */
+function extractWrapperMeta(buffer: string): Partial<ParsedOutlineResponse> | null {
+  try {
+    const parsed = JSON.parse(buffer) as ParsedOutlineResponse;
+    return {
+      lessons: parsed.lessons,
+      audience: parsed.audience,
+      objectives: parsed.objectives,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Incremental JSON array parser.
  * Extracts complete top-level objects from a partially-streamed JSON array,
  * resuming from `scanFrom` (an index into `buffer`) so the growing buffer is
- * scanned only ONCE across the whole stream — O(n) total instead of O(n²).
+ * scanned only ONCE across the whole stream ΓÇö O(n) total instead of O(n┬▓).
  * Supports both a flat array `[{...},{...}]` and a wrapper object
  * `{"languageDirective":"...","outlines":[{...},{...}]}`, with or without a
  * markdown ```json fence (the array is located by content, not by stripping).
@@ -166,7 +205,7 @@ function extractNewOutlines(
         try {
           results.push(JSON.parse(buffer.substring(objectStart, i + 1)));
         } catch {
-          // Incomplete or invalid JSON — skip
+          // Incomplete or invalid JSON ΓÇö skip
         }
         objectStart = -1;
         consumed = i + 1;
@@ -303,20 +342,21 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Requirements are required');
     }
 
-    const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents } = body as {
+    const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents, durationMinutes } = body as {
       requirements: UserRequirements;
       pdfText?: string;
       pdfImages?: PdfImage[];
       imageMapping?: ImageMapping;
       researchContext?: string;
       agents?: AgentInfo[];
+      durationMinutes?: number;
     };
     requirementSnippet = requirements?.requirement?.substring(0, 60);
 
     // Build user profile string for language inference context
     const userProfileText =
       requirements.userNickname || requirements.userBio
-        ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` — ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
+        ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` ΓÇö ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
         : '';
 
     // Detect vision capability
@@ -325,13 +365,6 @@ export async function POST(req: NextRequest) {
     // Build prompt (same logic as generateSceneOutlinesFromRequirements)
     let availableImagesText = 'No images available';
     let visionImages: Array<{ id: string; src: string }> | undefined;
-    // N3: the RESOLVED slice, threaded into the standard buildOutlinePrompt
-    // branch below. The vision resolution drops images the server cannot
-    // resolve; the standard branch must rebuild its placeholder text from the
-    // same resolved set so a dropped image drops its text mention AND its
-    // attachment there too.
-    let resolvedPdfImages: PdfImage[] | undefined;
-    let resolvedImageMapping: ImageMapping | undefined;
 
     if (pdfImages && pdfImages.length > 0) {
       if (hasVision && imageMapping) {
@@ -373,28 +406,6 @@ export async function POST(req: NextRequest) {
           ...(img.width !== undefined ? { width: img.width } : {}),
           ...(img.height !== undefined ? { height: img.height } : {}),
         }));
-
-        // N3: the standard branch (buildOutlinePrompt) rebuilds its own
-        // placeholder text from pdfImages × imageMapping — feed it the RESOLVED
-        // set: unresolvable vision images removed from the slice and a mapping
-        // naming only the resolved ids, so its `[see attached]` promises match
-        // the attachments this route attaches exactly.
-        const visionSliceIds = new Set(visionSlice.map((img) => img.id));
-        resolvedPdfImages = pdfImages.filter(
-          (img) => !visionSliceIds.has(img.id) || resolvedIds.has(img.id),
-        );
-        resolvedImageMapping = Object.fromEntries(
-          Object.entries(imageMapping).filter(([id]) => resolvedIds.has(id)),
-        );
-        // Shift-in is IMPOSSIBLE here by construction (unlike the scene-content
-        // route's re-slice): `visionImages` — the ONLY attachments this route
-        // sends — IS the resolved slice, resolved once from the original
-        // `visionSlice` and never re-sliced, so a dropped image admits NO new
-        // image into the attachments; and `resolvedImageMapping` names only
-        // the resolved slice's ids, so the standard branch's `[see attached]`
-        // text matches the attachments exactly (images beyond the slice and
-        // no-src images keep plain descriptions because their mapping entries
-        // are stripped).
       } else {
         // Text-only mode: full descriptions
         availableImagesText = pdfImages.map((img) => formatImageDescription(img)).join('\n');
@@ -413,39 +424,40 @@ export async function POST(req: NextRequest) {
     // Check if Interactive Mode or server-enabled Task Engine mode is enabled.
     const interactiveMode = requirements.interactiveMode ?? false;
     const taskEngineMode = resolveVocationalActive(requirements);
-    // Standard outline generation is byte-identical to the package path. The
-    // two app-only modes retain their own templates but share the same inputs.
-    // The standard branch receives the N3 RESOLVED slice (unresolvable vision
-    // images removed, mapping naming only resolved ids) so its placeholder
-    // text never promises an image this route will not attach.
-    let prompts: { system: string; user: string } | null = buildOutlinePrompt(requirements, {
-      pdfText,
-      pdfImages: resolvedPdfImages ?? pdfImages,
-      visionEnabled: hasVision,
-      imageMapping: resolvedImageMapping ?? imageMapping,
-      imageGenerationEnabled,
-      videoGenerationEnabled,
-      researchContext,
-      teacherContext,
-    });
+    const promptId = taskEngineMode
+      ? PROMPT_IDS.TASK_ENGINE_OUTLINES
+      : interactiveMode
+        ? PROMPT_IDS.INTERACTIVE_OUTLINES
+        : PROMPT_IDS.REQUIREMENTS_TO_OUTLINES;
 
-    if (taskEngineMode || interactiveMode) {
-      const promptId = taskEngineMode
-        ? PROMPT_IDS.TASK_ENGINE_OUTLINES
-        : PROMPT_IDS.INTERACTIVE_OUTLINES;
-      prompts = buildPrompt(promptId, {
-        requirement: requirements.requirement,
-        pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
-        availableImages: availableImagesText,
-        researchContext: researchContext || 'None',
-        hasSourceImages,
-        imageEnabled: imageGenerationEnabled,
-        videoEnabled: videoGenerationEnabled,
-        mediaEnabled: mediaGenerationEnabled,
-        teacherContext,
-        userProfile: userProfileText,
-      });
-    }
+    // The course contract governs the default and interactive paths. The
+    // task-engine path has its own normalization and keeps legacy counts.
+    const contractMode = !taskEngineMode;
+    const courseType = inferCourseType(requirements.requirement);
+    const resolvedDuration = clampDurationMinutes(
+      durationMinutes ?? parseDurationFromText(requirements.requirement) ?? DEFAULT_DURATION_MINUTES,
+    );
+    const courseContract = contractMode
+      ? deriveCourseContract(resolvedDuration, courseType)
+      : null;
+    const courseContractText = courseContract
+      ? renderCourseContract(courseContract, courseType)
+      : '';
+
+    const prompts = buildPrompt(promptId, {
+      requirement: requirements.requirement,
+      pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
+      availableImages: availableImagesText,
+      researchContext: researchContext || 'None',
+      hasSourceImages,
+      imageEnabled: imageGenerationEnabled,
+      videoEnabled: videoGenerationEnabled,
+      mediaEnabled: mediaGenerationEnabled,
+      teacherContext,
+      userProfile: userProfileText,
+      courseContract: courseContractText,
+      resolvedDurationMinutes: courseContract?.durationMinutes ?? resolvedDuration,
+    });
 
     if (!prompts) {
       return apiError('INTERNAL_ERROR', 500, 'Prompt template not found');
@@ -488,33 +500,13 @@ export async function POST(req: NextRequest) {
         try {
           startHeartbeat();
 
-          const streamParams = visionImages?.length
-            ? {
-                model: languageModel,
-                system: prompts.system,
-                messages: [
-                  {
-                    role: 'user' as const,
-                    content: buildVisionUserContent(prompts.user, visionImages),
-                  },
-                ],
-                maxOutputTokens: modelInfo?.outputWindow,
-                // Tear down the upstream LLM request when the client disconnects,
-                // instead of letting it run to completion for a dead connection.
-                abortSignal: req.signal,
-              }
-            : {
-                model: languageModel,
-                system: prompts.system,
-                prompt: prompts.user,
-                maxOutputTokens: modelInfo?.outputWindow,
-                abortSignal: req.signal,
-              };
-
           let parsedOutlines: SceneOutline[] = [];
           let languageDirective: string | null = null;
           let courseTitle: string | null = null;
           let lastError: string | undefined;
+          let correctiveFeedback: string | undefined;
+          let finalBlueprint: CourseBlueprint | null = null;
+          let contractFailed = false;
 
           for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
             try {
@@ -523,7 +515,37 @@ export async function POST(req: NextRequest) {
               parsedOutlines = [];
               languageDirective = null;
               courseTitle = null;
+              contractFailed = false;
               const usedOutlineIds = new Set<string>();
+
+              // Rebuild per attempt: corrective feedback is appended to the
+              // user prompt when the previous attempt missed the contract.
+              const userPrompt = correctiveFeedback
+                ? `${prompts.user}\n\n## Correction Required\n\n${correctiveFeedback}`
+                : prompts.user;
+              const streamParams = visionImages?.length
+                ? {
+                    model: languageModel,
+                    system: prompts.system,
+                    messages: [
+                      {
+                        role: 'user' as const,
+                        content: buildVisionUserContent(userPrompt, visionImages),
+                      },
+                    ],
+                    maxOutputTokens: modelInfo?.outputWindow,
+                    // Tear down the upstream LLM request when the client disconnects,
+                    // instead of letting it run to completion for a dead connection.
+                    abortSignal: req.signal,
+                  }
+                : {
+                    model: languageModel,
+                    system: prompts.system,
+                    prompt: userPrompt,
+                    maxOutputTokens: modelInfo?.outputWindow,
+                    abortSignal: req.signal,
+                  };
+
               const textStream = streamLLM(
                 streamParams,
                 'scene-outlines-stream',
@@ -531,7 +553,7 @@ export async function POST(req: NextRequest) {
               ).textStream;
 
               for await (const chunk of textStream) {
-                // Stop doing work the moment the client goes away — otherwise
+                // Stop doing work the moment the client goes away ΓÇö otherwise
                 // generation keeps running and buffering for a dead connection.
                 if (req.signal?.aborted) {
                   stopHeartbeat();
@@ -607,10 +629,60 @@ export async function POST(req: NextRequest) {
                   // recover it from the now-complete response before finalizing.
                   courseTitle = extractCourseTitleFromComplete(fullText);
                 }
+
+                // Contract mode: assemble the blueprint and hold it to the
+                // contract. A thin deck re-streams with corrective feedback
+                // (bounded); on final exhaustion the run fails with the report.
+                if (contractMode && courseContract) {
+                  const meta = extractWrapperMeta(fullText);
+                  // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
+                  const uniquifiedOutlines = uniquifyMediaElementIds(parsedOutlines);
+                  const blueprint = buildCourseBlueprint(
+                    {
+                      languageDirective: languageDirective || undefined,
+                      courseTitle: courseTitle || undefined,
+                      outlines: uniquifiedOutlines,
+                      audience: meta?.audience,
+                      objectives: meta?.objectives,
+                      lessons: meta?.lessons,
+                    },
+                    requirements.requirement,
+                    courseContract,
+                    courseType,
+                    courseTitle ?? requirements.requirement.slice(0, 30),
+                  );
+                  const report = validateBlueprint(blueprint, {
+                    tolerance: attempt === MAX_BLUEPRINT_ATTEMPTS,
+                  });
+                  if (report.valid) {
+                    finalBlueprint = blueprint;
+                    break;
+                  }
+                  correctiveFeedback = summarizeBlueprintValidation(report);
+                  lastError = correctiveFeedback;
+                  contractFailed = true;
+                  log.warn(
+                    `Blueprint contract not met (attempt ${attempt}/${MAX_BLUEPRINT_ATTEMPTS}): ${report.errors.length} error(s), ${report.warnings.length} warning(s)`,
+                  );
+                  if (attempt < MAX_BLUEPRINT_ATTEMPTS) {
+                    const retryEvent = JSON.stringify({
+                      type: 'retry',
+                      attempt,
+                      maxAttempts: MAX_BLUEPRINT_ATTEMPTS,
+                      reason: 'courseContract',
+                    });
+                    controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+                    continue;
+                  }
+                  // Exhausted: fall through to the error path (never accept
+                  // a broken deck).
+                  break;
+                }
+
                 break;
               }
 
-              // Empty result — retry if we have attempts left
+              // Empty result ΓÇö retry if we have attempts left
               lastError = fullText.trim()
                 ? 'LLM response could not be parsed into outlines'
                 : 'LLM returned empty response';
@@ -658,7 +730,36 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          if (parsedOutlines.length > 0) {
+          if (finalBlueprint) {
+            // Contract path: the deck satisfied the blueprint contract. The
+            // outlines carry lessonId and the done event carries the blueprint
+            // for downstream job-model/UI consumers.
+            //
+            // Pillar 3b: attach per-scene retrieval context from the full
+            // source text (the outline stage is the one place the raw text
+            // exists), so scene content can cite the actual source instead of
+            // a global summary.
+            const retrievalChunks: PdfChunk[] =
+              pdfText && pdfText.length > 2000 ? chunkSourceText(pdfText) : [];
+            const doneOutlines = finalBlueprint.lessons.flatMap((lesson) =>
+              lesson.outlines.map((outline) => {
+                if (outline.retrievalContext || retrievalChunks.length === 0) return outline;
+                const query = `${outline.title}\n${outline.description}\n${(outline.keyPoints ?? []).join('\n')}`;
+                const retrieved = retrieveChunks(query, retrievalChunks);
+                if (retrieved.length === 0) return outline;
+                return { ...outline, retrievalContext: formatRetrievalContext(retrieved) };
+              }),
+            );
+            const doneEvent = JSON.stringify({
+              type: 'done',
+              outlines: doneOutlines,
+              languageDirective: finalBlueprint.languageDirective,
+              courseTitle: finalBlueprint.title,
+              taskEngineMode,
+              blueprint: finalBlueprint,
+            });
+            controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));
+          } else if (parsedOutlines.length > 0 && !contractFailed) {
             // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
             const uniquifiedOutlines = uniquifyMediaElementIds(parsedOutlines);
             // Send done event with all outlines
@@ -671,13 +772,18 @@ export async function POST(req: NextRequest) {
             });
             controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));
           } else {
-            // All retries exhausted, no outlines produced
+            // All retries exhausted (no outlines, or the contract was never
+            // satisfied ΓÇö never accept a broken deck).
             log.error(
               `Outline generation failed after ${MAX_STREAM_RETRIES + 1} attempts: ${lastError}`,
             );
             const errorEvent = JSON.stringify({
               type: 'error',
-              error: lastError || 'Failed to generate outlines',
+              error:
+                lastError ||
+                (contractFailed
+                  ? 'Generated deck did not meet the course contract'
+                  : 'Failed to generate outlines'),
             });
             controller.enqueue(encoder.encode(`data: ${errorEvent}\n\n`));
           }
@@ -693,7 +799,7 @@ export async function POST(req: NextRequest) {
           try {
             controller.close();
           } catch {
-            // already closed — ignore
+            // already closed ΓÇö ignore
           }
         }
       },
