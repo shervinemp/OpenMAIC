@@ -185,6 +185,7 @@ export async function POST(req: NextRequest) {
               generatePBLV2Project(input, languageModel, callLLM, { logger: log }, thinkingConfig),
           }
         : {}),
+      retrievalContext: effectiveOutline.retrievalContext,
     });
 
     if (!content) {
