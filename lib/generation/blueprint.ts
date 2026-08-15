@@ -43,21 +43,23 @@ const MINUTES_RE = /(\d+(?:\.\d+)?)\s*(?:min|minutes|minute|mins|分钟|分)\b/i
 
 /**
  * Extract an explicit duration (minutes) from free-form requirement text.
- * Returns null when the text carries no duration signal.
+ * Returns null when the text carries no duration signal. Hours and minutes
+ * components are summed ("1 hour 30 minutes" → 90).
  */
 export function parseDurationFromText(text: string): number | null {
   if (!text) return null;
+  let total: number | null = null;
   const hours = text.match(HOURS_RE);
   if (hours) {
     const value = Number.parseFloat(hours[1]);
-    if (Number.isFinite(value) && value > 0) return clampDurationMinutes(value * 60);
+    if (Number.isFinite(value) && value > 0) total = value * 60;
   }
   const minutes = text.match(MINUTES_RE);
   if (minutes) {
     const value = Number.parseFloat(minutes[1]);
-    if (Number.isFinite(value) && value > 0) return clampDurationMinutes(value);
+    if (Number.isFinite(value) && value > 0) total = (total ?? 0) + value;
   }
-  return null;
+  return total === null ? null : clampDurationMinutes(total);
 }
 
 // ==================== Course type inference ====================
