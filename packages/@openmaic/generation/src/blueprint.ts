@@ -433,3 +433,39 @@ export function summarizeBlueprintValidation(result: BlueprintValidationResult):
 }
 
 export { MAX_BLUEPRINT_ATTEMPTS };
+
+// ==================== Legacy / job-model helpers ====================
+
+/**
+ * Wrap a legacy flat outline array into a single-lesson blueprint. Legacy
+ * decks were built before the contract, so their counts are NOT validated
+ * against it (validateBlueprint with `legacy: true`); the wrapper only
+ * exists so old documents can carry the v2 shape.
+ */
+export function legacyBlueprintFromOutlines(
+  outlines: SceneOutline[],
+  title: string,
+  languageDirective?: string,
+): CourseBlueprint {
+  const assigned = assignLessonIds(outlines, [Math.max(outlines.length, 1)]);
+  const objectives = assigned.slice(0, 5).map((o) => o.description).filter(Boolean);
+  return {
+    title: (title || 'Legacy Course').slice(0, 30),
+    languageDirective: languageDirective?.trim() || 'Teach in the language that matches the user requirement.',
+    durationMinutes: DEFAULT_DURATION_MINUTES,
+    audience: 'General learners',
+    objectives: objectives.length >= 2 ? objectives : [...objectives, 'Apply the covered concepts'],
+    courseType: 'explainer',
+    lessonCount: 1,
+    quizPlacement: QUIZ_PLACEMENT_DEFAULT,
+    lessons: [
+      {
+        title: `Lesson 1: ${title || 'Legacy Course'}`,
+        objectives: objectives.length > 0 ? [objectives[0]] : [],
+        durationMinutes: DEFAULT_DURATION_MINUTES,
+        sceneTarget: assigned.length,
+        outlines: assigned,
+      },
+    ],
+  };
+}
