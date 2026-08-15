@@ -12,6 +12,7 @@ import {
 import { createSelectors } from '@/lib/utils/create-selectors';
 import type { ChatSession } from '@/lib/types/chat';
 import type { CourseBlueprint, SceneOutline } from '@/lib/types/generation';
+import type { SceneDepthSummary } from '@/lib/generation/content-depth';
 import { createLogger } from '@/lib/logger';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -201,6 +202,7 @@ function clearedStageState(state: Pick<StageState, 'generationEpoch'>) {
     generationStatus: 'idle' as const,
     currentGeneratingOrder: -1,
     generationPhase: 'idle' as const,
+    sceneDepth: {},
     failedOutlines: [],
     skippedOutlineIds: [],
     generatingOutlines: [],
@@ -299,6 +301,9 @@ interface StageState {
   currentGeneratingOrder: number;
   /** Current phase of the generating scene (per-phase chips, Pillar 2 §4.2). */
   generationPhase: 'idle' | 'content' | 'actions' | 'tts' | 'media';
+  /** Depth summaries by scene order (reworked-for-depth affordance, Pillar 3).
+      Session-level, recorded as content lands. */
+  sceneDepth: Record<string, SceneDepthSummary>;
   failedOutlines: SceneOutline[];
 
   // Actions
@@ -322,6 +327,7 @@ interface StageState {
   setGenerationStatus: (status: 'idle' | 'generating' | 'paused' | 'completed' | 'error') => void;
   setCurrentGeneratingOrder: (order: number) => void;
   setGenerationPhase: (phase: 'idle' | 'content' | 'actions' | 'tts' | 'media') => void;
+  recordSceneDepth: (order: number, summary: SceneDepthSummary) => void;
   bumpGenerationEpoch: () => void;
   addFailedOutline: (outline: SceneOutline) => void;
   clearFailedOutlines: () => void;
@@ -456,6 +462,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   generationStatus: 'idle' as const,
   currentGeneratingOrder: -1,
   generationPhase: 'idle' as const,
+  sceneDepth: {},
   failedOutlines: [],
   skippedOutlineIds: [],
 
@@ -765,6 +772,9 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   setCurrentGeneratingOrder: (currentGeneratingOrder) => set({ currentGeneratingOrder }),
 
   setGenerationPhase: (generationPhase) => set({ generationPhase }),
+
+  recordSceneDepth: (order, summary) =>
+    set({ sceneDepth: { ...get().sceneDepth, [String(order)]: summary } }),
 
   bumpGenerationEpoch: () => set((s) => ({ generationEpoch: s.generationEpoch + 1 })),
 

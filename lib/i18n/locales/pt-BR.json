@@ -1010,7 +1010,9 @@
     "analyzingMediaMaterial": "Analisando áudio/vídeo",
     "audioPendingCount": "{{count}} cenas com áudio pendente",
     "skipScene": "Pular cena",
-    "lessonCompletion": "{{done}}/{{total}} lições · {{scenes}} cenas"
+    "lessonCompletion": "{{done}}/{{total}} lições · {{scenes}} cenas",
+    "reworkedForDepth": "Refeito por profundidade",
+    "reworkedForDepthCount": "{{count}} cena(s) refeitas por profundidade"
   },
   "settings": {
     "title": "Configurações",

@@ -56,6 +56,8 @@ interface SceneContentResult {
   error?: string;
   errorCode?: string;
   statusCode?: number;
+  /** Depth summary (reworked/attempts) from the depth-affordance transport. */
+  depth?: import('@/lib/generation/content-depth').SceneDepthSummary;
 }
 
 interface SceneActionsResult {
@@ -753,6 +755,12 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             hadContentFailure = true;
             removeGeneratingOutline(outline.id);
             continue;
+          }
+
+          // Depth affordance: record the depth summary (reworked/attempts) so
+          // the sidebar can badge scenes that needed corrective re-prompting.
+          if (contentResult.depth) {
+            store.getState().recordSceneDepth(outline.order, contentResult.depth);
           }
 
           if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
