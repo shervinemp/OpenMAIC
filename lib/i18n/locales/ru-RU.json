@@ -1093,7 +1093,8 @@
     "webSearchFailed": "Ошибка веб-поиска",
     "outlinesReadyCount": "Готово разделов: {{ready}} / {{total}}",
     "jumpToBlankTitle": "Перейти к разделу без заголовка",
-    "analyzingMediaMaterial": "Анализ аудио/видео"
+    "analyzingMediaMaterial": "Анализ аудио/видео",
+    "audioPendingCount": "{{count}} сцен без аудио"
   },
   "settings": {
     "title": "Настройки",
