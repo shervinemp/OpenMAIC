@@ -31,6 +31,7 @@ import { createLogger } from '@/lib/logger';
 import {
   validateProvider,
   resolveSelectedModel,
+  resolveMediaModelSelection,
   isLLMProviderConfigured,
   isProviderUsable,
 } from '@/lib/store/settings-validation';
@@ -1112,7 +1113,7 @@ export const useSettingsStore = create<SettingsState>()(
             return {
               imageProviderId: providerId,
               imageProvidersConfig,
-              imageModelId: resolveSelectedModel(
+              imageModelId: resolveMediaModelSelection(
                 state.imageModelId,
                 resolveMediaModels(provider?.models ?? [], imageProvidersConfig[providerId]),
               ),
@@ -1184,7 +1185,7 @@ export const useSettingsStore = create<SettingsState>()(
             return {
               videoProviderId: providerId,
               videoProvidersConfig,
-              videoModelId: resolveSelectedModel(
+              videoModelId: resolveMediaModelSelection(
                 state.videoModelId,
                 resolveMediaModels(provider?.models ?? [], videoProvidersConfig[providerId]),
               ),
@@ -1680,7 +1681,7 @@ export const useSettingsStore = create<SettingsState>()(
                   )
                 : [];
               const validImageModel = validImageProvider
-                ? resolveSelectedModel(state.imageModelId, imageModels)
+                ? resolveMediaModelSelection(state.imageModelId, imageModels)
                 : '';
               const videoModels = validVideoProvider
                 ? resolveMediaModels(
@@ -1689,7 +1690,7 @@ export const useSettingsStore = create<SettingsState>()(
                   )
                 : [];
               const validVideoModel = validVideoProvider
-                ? resolveSelectedModel(state.videoModelId, videoModels)
+                ? resolveMediaModelSelection(state.videoModelId, videoModels)
                 : '';
 
               const validTTSVoice =

@@ -4,6 +4,7 @@ import {
   validateProvider,
   validateModel,
   resolveSelectedModel,
+  resolveMediaModelSelection,
   hasUsableLLMProvider,
   isLLMProviderConfigured,
   type ProviderCfgLike,
@@ -183,6 +184,30 @@ describe('resolveSelectedModel', () => {
     for (const current of ['', 'unknown', 'glm-4']) {
       expect(resolveSelectedModel(current, [{ id: 'glm-4' }])).not.toBe('');
     }
+  });
+});
+
+describe('resolveMediaModelSelection (ComfyUI workflow persistence)', () => {
+  it('preserves a workflow selection when the static model list is empty', () => {
+    // ComfyUI providers register models: [] — workflows are discovered at
+    // runtime. Resolving against [] must NOT wipe the chosen workflow file
+    // (the "selection resets after server restart" bug).
+    expect(resolveMediaModelSelection('comfyui-workflow.json', [])).toBe('comfyui-workflow.json');
+    expect(resolveMediaModelSelection('comfyui-minimax-h3.json', [])).toBe(
+      'comfyui-minimax-h3.json',
+    );
+  });
+
+  it('clears a stale non-workflow id when the static model list is empty', () => {
+    // Switching to ComfyUI from a static-model provider: the persisted id is
+    // a model name, not a workflow file — it must not be preserved.
+    expect(resolveMediaModelSelection('doubao-seedream-5-0-260128', [])).toBe('');
+  });
+
+  it('delegates to resolveSelectedModel for static-model providers', () => {
+    const models = [{ id: 'image-01' }, { id: 'image-01-live' }];
+    expect(resolveMediaModelSelection('image-01', models)).toBe('image-01');
+    expect(resolveMediaModelSelection('stale-model', models)).toBe('image-01');
   });
 });
 
