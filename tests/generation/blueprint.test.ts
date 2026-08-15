@@ -63,6 +63,10 @@ describe('parseDurationFromText', () => {
     expect(parseDurationFromText('1.5 hours deep dive')).toBe(90);
   });
 
+  test('hours win over trailing minutes (1 hour 30 minutes → 90, not 30)', () => {
+    expect(parseDurationFromText('1 hour 30 minutes')).toBe(90);
+  });
+
   test('returns null when no duration signal', () => {
     expect(parseDurationFromText('teach me photosynthesis')).toBeNull();
     expect(parseDurationFromText('')).toBeNull();

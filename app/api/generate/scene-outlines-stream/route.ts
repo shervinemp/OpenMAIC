@@ -736,7 +736,18 @@ export async function POST(req: NextRequest) {
               languageDirective: finalBlueprint.languageDirective,
               courseTitle: finalBlueprint.title,
               taskEngineMode,
-              blueprint: finalBlueprint,
+              // Keep the blueprint consistent with the emitted outlines:
+              // retrieval context is attached to both, so persisted
+              // blueprint projections never lose the source grounding.
+              blueprint: {
+                ...finalBlueprint,
+                lessons: finalBlueprint.lessons.map((lesson) => ({
+                  ...lesson,
+                  outlines: lesson.outlines.map(
+                    (outline) => doneOutlines.find((o) => o.id === outline.id) ?? outline,
+                  ),
+                })),
+              },
             });
             controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));
           } else if (parsedOutlines.length > 0 && !contractFailed) {
