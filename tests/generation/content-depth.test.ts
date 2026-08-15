@@ -5,8 +5,10 @@ import {
   isIntroSummaryOutline,
   isSubstantiveText,
   recordSceneDepthReport,
+  recordSceneDepthSummary,
   summarizeDepthFindings,
   takeSceneDepthReport,
+  takeSceneDepthSummary,
   validateQuizDepth,
   validateSlideDepth,
 } from '@/lib/generation/content-depth';
@@ -192,5 +194,12 @@ describe('feedback + failure side channel', () => {
     recordSceneDepthReport('scene-1', report);
     expect(takeSceneDepthReport('scene-1')).toBe(report);
     expect(takeSceneDepthReport('scene-1')).toBeUndefined();
+  });
+
+  test('depth summary side channel round-trips once (reworked-for-depth affordance)', () => {
+    const summary = { reworked: true, attempts: 2, findings: [] };
+    recordSceneDepthSummary('scene-2', summary);
+    expect(takeSceneDepthSummary('scene-2')).toEqual(summary);
+    expect(takeSceneDepthSummary('scene-2')).toBeUndefined();
   });
 });

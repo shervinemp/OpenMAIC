@@ -12,6 +12,7 @@ import { MAX_CONTENT_ATTEMPTS, MAX_VISION_IMAGES } from '@/lib/constants/generat
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import {
   recordSceneDepthReport,
+  recordSceneDepthSummary,
   summarizeDepthFindings,
   validateQuizDepth,
   validateSlideDepth,
@@ -816,6 +817,10 @@ async function generateSlideContent(
 
     const depthReport = validateSlideDepth(outline, processedElements, { retrievalContext });
     if (depthReport.adequate) {
+      if (attempt > 1) {
+        // Depth affordance: this scene needed corrective re-prompting.
+        recordSceneDepthSummary(outline.id, { reworked: true, attempts: attempt, findings: [] });
+      }
       return {
         elements: processedElements,
         background,
@@ -913,6 +918,9 @@ async function generateQuizContent(
 
     const depthReport = validateQuizDepth(outline, questions, retrievalContext);
     if (depthReport.adequate) {
+      if (attempt > 1) {
+        recordSceneDepthSummary(outline.id, { reworked: true, attempts: attempt, findings: [] });
+      }
       return { questions };
     }
 
