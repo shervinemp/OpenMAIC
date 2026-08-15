@@ -489,6 +489,59 @@ export async function generateTTSForScene(
   };
 }
 
+/**
+ * Background fill queue (Pillar 2 §4.6): re-run TTS for scenes whose speech
+ * actions are missing audio (TTS failed while the loop ran). Drains once
+ * after the generation loop finishes; provider failures just leave the
+ * audio pending (retryable again via the per-scene affordance).
+ */
+export async function drainPendingSceneTTS(
+  scenes: Scene[],
+  language?: string,
+  signal?: AbortSignal,
+): Promise<number> {
+  const pending = scenes.filter((scene) =>
+    (scene.actions ?? []).some((action) => action.type === 'speech' && !!action.text && !action.audioId),
+  );
+  if (pending.length === 0) return 0;
+
+  const settings = useSettingsStore.getState();
+  if (
+    !settings.ttsEnabled ||
+    settings.ttsProviderId === 'browser-native-tts' ||
+    !isTTSProviderEnabled(
+      settings.ttsProviderId,
+      settings.ttsProvidersConfig?.[settings.ttsProviderId],
+    )
+  ) {
+    return 0;
+  }
+
+  log.info(`TTS background drain: ${pending.length} scene(s) with pending audio`);
+  let restored = 0;
+  for (const scene of pending) {
+    if (signal?.aborted) break;
+    try {
+      const result = await generateTTSForScene(scene, language, signal);
+      if (result.success) {
+        useStageStore.getState().updateScene(scene.id, { actions: scene.actions });
+        restored += 1;
+      } else {
+        log.warn(
+          `TTS drain failed for scene "${scene.title}" (${result.failedCount} clip(s)); audio stays pending`,
+        );
+      }
+    } catch (error) {
+      if (isAbortError(error)) break;
+      log.warn(`TTS drain error for scene "${scene.title}":`, error);
+    }
+  }
+  if (restored > 0) {
+    log.info(`TTS background drain restored audio for ${restored} scene(s)`);
+  }
+  return restored;
+}
+
 export interface UseSceneGeneratorOptions {
   onSceneGenerated?: (scene: Scene, index: number) => void;
   onSceneFailed?: (outline: SceneOutline, error: string) => void;
@@ -775,6 +828,12 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             store.getState().setGeneratingOutlines([]);
             store.getState().setGenerationComplete(true);
             options.onComplete?.();
+            // Fill-phase drain (Pillar 2 §4.6): scenes whose TTS failed
+            // during the loop get one background retry pass.
+            void drainPendingSceneTTS(
+              store.getState().scenes,
+              params.languageDirective || params.stageInfo.language,
+            );
           }
         }
       } catch (err: unknown) {
