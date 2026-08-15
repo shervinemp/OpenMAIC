@@ -45,6 +45,7 @@ import type {
   PdfImage,
   ImageMapping,
   SessionDocumentSource,
+  CourseBlueprint,
 } from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
@@ -579,6 +580,7 @@ function GenerationPreviewContent() {
       let outlines = currentSession.sceneOutlines;
       let languageDirective = currentSession.languageDirective;
       let courseTitle = currentSession.courseTitle;
+      let blueprint: CourseBlueprint | undefined;
 
       const outlineStepIdx = activeSteps.findIndex((s) => s.id === 'outline');
       setCurrentStepIndex(outlineStepIdx >= 0 ? outlineStepIdx : 0);
@@ -592,6 +594,7 @@ function GenerationPreviewContent() {
           languageDirective: string;
           courseTitle?: string;
           taskEngineMode: boolean;
+          blueprint?: CourseBlueprint;
         }>((resolve, reject) => {
           const collected: SceneOutline[] = [];
           let directive: string | undefined;
@@ -664,6 +667,7 @@ function GenerationPreviewContent() {
                               'Teach in the language that matches the user requirement.',
                             courseTitle: evt.courseTitle || title,
                             taskEngineMode: resolveTaskEngineModeFromOutlineDoneEvent(evt),
+                            blueprint: evt.blueprint,
                           });
                           return;
                         } else if (evt.type === 'error') {
@@ -704,6 +708,7 @@ function GenerationPreviewContent() {
         outlines = outlineResult.outlines;
         languageDirective = outlineResult.languageDirective;
         courseTitle = outlineResult.courseTitle;
+        blueprint = outlineResult.blueprint;
         const effectiveTaskEngineMode = outlineResult.taskEngineMode;
         setIsOutlineStreaming(false);
 
@@ -948,6 +953,9 @@ function GenerationPreviewContent() {
       stage.videoManifest = buildVideoManifestFromOutlines(outlines);
       store.setStage(stage);
       store.setOutlines(outlines);
+      if (blueprint) {
+        store.setBlueprint(blueprint);
+      }
 
       // Advance to slide-content step
       const contentStepIdx = activeSteps.findIndex((s) => s.id === 'slide-content');

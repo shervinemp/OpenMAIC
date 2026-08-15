@@ -11,7 +11,7 @@ import {
 } from '@/lib/types/stage';
 import { createSelectors } from '@/lib/utils/create-selectors';
 import type { ChatSession } from '@/lib/types/chat';
-import type { SceneOutline } from '@/lib/types/generation';
+import type { CourseBlueprint, SceneOutline } from '@/lib/types/generation';
 import { createLogger } from '@/lib/logger';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -195,6 +195,7 @@ function clearedStageState(state: Pick<StageState, 'generationEpoch'>) {
     chats: [],
     chatSnapshot: { sessions: [], restoreMarker: null },
     outlines: [],
+    blueprint: undefined,
     generationComplete: false,
     generationEpoch: state.generationEpoch + 1,
     generationStatus: 'idle' as const,
@@ -281,6 +282,11 @@ interface StageState {
   // Persisted outlines for resume-on-refresh
   outlines: SceneOutline[];
 
+  // Persisted (with outlines): the validated curriculum contract (Pillar 1)
+  // produced by the outline stage. Single source for lesson grouping and
+  // job-model projections.
+  blueprint?: CourseBlueprint;
+
   // Persisted (with outlines): true once generation finished for this stage.
   // Gates resume-on-mount so an edited finished deck is not regenerated.
   generationComplete: boolean;
@@ -305,6 +311,7 @@ interface StageState {
   setStageAgents: (configs: GeneratedAgentConfig[]) => void;
   setGeneratingOutlines: (outlines: SceneOutline[]) => void;
   setOutlines: (outlines: SceneOutline[]) => void;
+  setBlueprint: (blueprint: CourseBlueprint | undefined) => void;
   setGenerationComplete: (complete: boolean) => void;
   /** Mark generation complete iff every outline has a scene and none failed. */
   markGenerationCompleteIfDone: () => void;
@@ -346,13 +353,23 @@ type StagePersistenceSnapshot = Pick<
   | 'chats'
   | 'chatSnapshot'
   | 'outlines'
+  | 'blueprint'
   | 'generationComplete'
 >;
 
 function persistenceSnapshot(state: StageState): StagePersistenceSnapshot {
-  const { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete } =
+  const { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, blueprint, generationComplete } =
     state;
-  return { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete };
+  return {
+    stage,
+    scenes,
+    currentSceneId,
+    chats,
+    chatSnapshot,
+    outlines,
+    blueprint,
+    generationComplete,
+  };
 }
 
 function delay(ms: number): Promise<void> {
@@ -386,6 +403,7 @@ async function persistDirtySnapshot(
       chatSnapshot: snapshot.chatSnapshot,
       outline: {
         outlines: snapshot.outlines,
+        blueprint: snapshot.blueprint,
         generationComplete: snapshot.generationComplete,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -421,6 +439,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   toolbarState: 'ai',
   generatingOutlines: [],
   outlines: [],
+  blueprint: undefined,
   generationComplete: false,
   generationEpoch: 0,
   generationStatus: 'idle' as const,
@@ -709,6 +728,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     markPendingChanges(get().stage?.id, { kind: 'outline' });
   },
 
+  setBlueprint: (blueprint) => {
+    set({ blueprint });
+    markPendingChanges(get().stage?.id, { kind: 'outline' });
+  },
+
   setGenerationComplete: (generationComplete) => {
     set({ generationComplete });
     // Final scenes and the completion barrier commit in the same aggregate write.
@@ -939,6 +963,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       const outlinesRecord = data?.outline;
       const outlines = outlinesRecord?.outlines || [];
       const persistedComplete = outlinesRecord?.generationComplete ?? false;
+      const persistedBlueprint = outlinesRecord?.blueprint;
 
       if (data) {
         // Normalize legacy slide content (missing schemaVersion) at the load
@@ -993,6 +1018,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           chats: data.chats,
           chatSnapshot: data.chatSnapshot ?? { sessions: [], restoreMarker: undefined },
           outlines,
+          blueprint: persistedBlueprint,
           generationComplete,
           // Compute generatingOutlines from persisted outlines minus completed
           // scenes. Once generation is complete the deck is frozen for editing,
