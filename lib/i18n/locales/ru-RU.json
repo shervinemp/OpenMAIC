@@ -1096,7 +1096,9 @@
     "analyzingMediaMaterial": "Анализ аудио/видео",
     "audioPendingCount": "{{count}} сцен без аудио",
     "skipScene": "Пропустить сцену",
-    "lessonCompletion": "{{done}}/{{total}} уроков · {{scenes}} сцен"
+    "lessonCompletion": "{{done}}/{{total}} уроков · {{scenes}} сцен",
+    "reworkedForDepth": "Доработано по глубине",
+    "reworkedForDepthCount": "{{count}} сцен доработано по глубине"
   },
   "settings": {
     "title": "Настройки",

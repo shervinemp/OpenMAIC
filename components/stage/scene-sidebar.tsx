@@ -52,6 +52,7 @@ export function SceneSidebar({
   const failedOutlines = useStageStore.use.failedOutlines();
   const blueprint = useStageStore.use.blueprint();
   const generationPhase = useStageStore.use.generationPhase();
+  const sceneDepth = useStageStore.use.sceneDepth();
   const viewportSize = useCanvasStore.use.viewportSize();
   const viewportRatio = useCanvasStore.use.viewportRatio();
 
@@ -65,7 +66,10 @@ export function SceneSidebar({
       const done = lesson.outlines.filter((outline) =>
         scenes.some((scene) => scene.order === outline.order),
       ).length;
-      return { title: lesson.title, total, done };
+      const reworked = lesson.outlines.filter(
+        (outline) => sceneDepth[String(outline.order)]?.reworked,
+      ).length;
+      return { title: lesson.title, total, done, reworked };
     });
     const audioPending = scenes.filter((scene) =>
       (scene.actions ?? []).some(
@@ -73,7 +77,7 @@ export function SceneSidebar({
       ),
     ).length;
     return { lessons, audioPending };
-  }, [blueprint, scenes]);
+  }, [blueprint, scenes, sceneDepth]);
 
   const [retryingOutlineId, setRetryingOutlineId] = useState<string | null>(null);
 
@@ -193,6 +197,14 @@ export function SceneSidebar({
                     <span className="opacity-70">
                       {lesson.done}/{lesson.total}
                     </span>
+                    {lesson.reworked > 0 && (
+                      <span
+                        className="text-amber-500/90 dark:text-amber-400"
+                        title={t('generation.reworkedForDepthCount', { count: lesson.reworked })}
+                      >
+                        {lesson.reworked}↻
+                      </span>
+                    )}
                   </span>
                 ))}
               </div>
@@ -254,6 +266,14 @@ export function SceneSidebar({
                     >
                       {scene.title}
                     </span>
+                    {sceneDepth[String(scene.order)]?.reworked && (
+                      <span
+                        className="shrink-0 text-amber-500/90 dark:text-amber-400"
+                        title={t('generation.reworkedForDepth')}
+                      >
+                        ↻
+                      </span>
+                    )}
                   </div>
                 </div>
 

@@ -1096,7 +1096,9 @@
     "analyzingMediaMaterial": "Analyzing audio/video",
     "audioPendingCount": "{{count}} scene audio pending",
     "skipScene": "Skip scene",
-    "lessonCompletion": "{{done}}/{{total}} lessons · {{scenes}} scenes"
+    "lessonCompletion": "{{done}}/{{total}} lessons · {{scenes}} scenes",
+    "reworkedForDepth": "Reworked for depth",
+    "reworkedForDepthCount": "{{count}} scene(s) reworked for depth"
   },
   "settings": {
     "title": "Settings",
