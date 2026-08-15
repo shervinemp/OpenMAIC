@@ -21,6 +21,7 @@
 
 import type { PPTElement, QuizQuestion } from '@openmaic/dsl';
 import { MIN_SUBSTANTIVE_ELEMENTS } from '@/lib/constants/generation';
+import { extractCitationMarkers } from './pdf-retrieval';
 import type { SceneOutline } from '@/lib/types/generation';
 
 // ==================== Report ====================
@@ -42,6 +43,32 @@ export interface SlideDepthOptions {
   minSubstantive?: number;
   /** Require ≥1 concrete example/definition/fact (default true). */
   requireExample?: boolean;
+  /**
+   * Per-scene retrieval context (rendered `[source p.N]` chunks). When
+   * present, the content must cite ≥2 of its markers and may not cite
+   * anything outside the retrieved set (no hallucinated citations).
+   */
+  retrievalContext?: string;
+}
+
+/** Citation ground-truth checks shared by slide and quiz validation. */
+function citationFindings(combinedText: string, retrievalContext: string): string[] {
+  const findings: string[] = [];
+  const cited = extractCitationMarkers(combinedText);
+  const retrieved = new Set(extractCitationMarkers(retrievalContext));
+
+  if (cited.length < 2) {
+    findings.push(
+      `content cites ${cited.length} source marker(s) — cite at least two [source p.N] markers from the retrieved material below`,
+    );
+  }
+  const invalid = cited.filter((marker) => !retrieved.has(marker));
+  if (invalid.length > 0) {
+    findings.push(
+      `content cites source markers not present in the retrieved material: ${invalid.join(', ')} — only cite markers listed in the retrieval context`,
+    );
+  }
+  return findings;
 }
 
 // ==================== Text heuristics ====================
@@ -122,6 +149,7 @@ export function validateSlideDepth(
 ): DepthReport {
   const minSubstantive = options.minSubstantive ?? MIN_SUBSTANTIVE_ELEMENTS;
   const requireExample = options.requireExample ?? true;
+  const retrievalContext = options.retrievalContext;
 
   const texts = extractSlideTexts(elements);
   const total = texts.length;
@@ -163,6 +191,10 @@ export function validateSlideDepth(
     );
   }
 
+  if (retrievalContext) {
+    findings.push(...citationFindings(texts.join(' '), retrievalContext));
+  }
+
   return {
     adequate: findings.length === 0,
     depthValidated: true,
@@ -176,7 +208,11 @@ export function validateSlideDepth(
 
 // ==================== Quiz validation ====================
 
-export function validateQuizDepth(outline: SceneOutline, questions: QuizQuestion[]): DepthReport {
+export function validateQuizDepth(
+  outline: SceneOutline,
+  questions: QuizQuestion[],
+  retrievalContext?: string,
+): DepthReport {
   const findings: string[] = [];
   let substantiveCount = 0;
 
@@ -209,6 +245,13 @@ export function validateQuizDepth(outline: SceneOutline, questions: QuizQuestion
         findings.push(`question "${question.id}" is missing the explanation (analysis) field`);
       }
     }
+  }
+
+  if (retrievalContext) {
+    const combinedText = questions
+      .map((q) => `${q.question} ${q.analysis ?? ''} ${(q.options ?? []).map((o) => o.label).join(' ')}`)
+      .join(' ');
+    findings.push(...citationFindings(combinedText, retrievalContext));
   }
 
   return {
