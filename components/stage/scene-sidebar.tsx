@@ -634,6 +634,15 @@ export function SceneSidebar({
                       className="relative w-8 h-8 text-amber-500 dark:text-amber-400"
                       strokeWidth={1.6}
                     />
+                    {lessonProgress && (
+                      <span className="relative mt-1.5 text-[9px] font-semibold text-amber-600/90 dark:text-amber-400/90">
+                        {t('generation.lessonCompletion', {
+                          done: lessonProgress.lessons.filter((l) => l.done === l.total).length,
+                          total: lessonProgress.lessons.length,
+                          scenes: scenes.length,
+                        })}
+                      </span>
+                    )}
                   </div>
                 </div>
               );

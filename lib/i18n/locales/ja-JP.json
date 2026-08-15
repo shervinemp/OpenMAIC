@@ -1095,7 +1095,8 @@
     "jumpToBlankTitle": "タイトルが未入力のセクションへ移動",
     "analyzingMediaMaterial": "音声・動画を解析中",
     "audioPendingCount": "{{count}} シーンの音声が未生成",
-    "skipScene": "シーンをスキップ"
+    "skipScene": "シーンをスキップ",
+    "lessonCompletion": "{{done}}/{{total}} レッスン · {{scenes}} シーン"
   },
   "settings": {
     "title": "設定",
