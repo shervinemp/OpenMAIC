@@ -722,6 +722,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             };
           } else {
             options.onPhaseChange?.('content', outline);
+            store.getState().setGenerationPhase('content');
             contentResult = await fetchContent(outline);
           }
 
@@ -748,6 +749,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
           // Step 2: Generate actions + assemble scene
           options.onPhaseChange?.('actions', outline);
+          store.getState().setGenerationPhase('actions');
           const actionsResult = await fetchSceneActions(
             {
               outline: contentResult.effectiveOutline || outline,
@@ -778,6 +780,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
                 settings.ttsProvidersConfig?.[settings.ttsProviderId],
               )
             ) {
+              store.getState().setGenerationPhase('tts');
               const ttsResult = await generateTTSForScene(
                 scene,
                 params.languageDirective || params.stageInfo.language,
@@ -836,6 +839,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               params.languageDirective || params.stageInfo.language,
             );
           }
+          store.getState().setGenerationPhase('idle');
         }
       } catch (err: unknown) {
         // AbortError is expected when stop() is called — don't treat as failure
