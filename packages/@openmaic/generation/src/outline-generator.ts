@@ -12,8 +12,7 @@ import {
 } from './constants.js';
 import {
   buildCourseBlueprint,
-  clampDurationMinutes,
-  deriveCourseContract,
+  deriveContractForRequest,
   inferCourseType,
   parseDurationFromText,
   renderCourseContract,
@@ -61,6 +60,8 @@ export interface OutlineGenerationOptions extends Omit<
   logger?: GenerationLogger;
   /** Typed duration input (minutes). Falls back to text-parse, then default. */
   durationMinutes?: number;
+  /** Size preset ('compact' | 'standard' | 'intensive' | 'semester'). */
+  sizePreset?: unknown;
 }
 
 export interface OutlineFallbackOptions {
@@ -174,14 +175,14 @@ export async function generateSceneOutlinesFromRequirements(
   const context: OutlinePromptContext = { ...options, pdfText, pdfImages };
 
   // Resolve the course contract BEFORE the prompt: duration (typed input →
-  // requirement text → default) and course flavor from the requirement.
+  // requirement text → preset default) and course flavor from the
+  // requirement. The size preset sets the caps either way.
   const courseType = inferCourseType(requirements.requirement);
-  const durationMinutes = clampDurationMinutes(
-    options?.durationMinutes ??
-      parseDurationFromText(requirements.requirement) ??
-      DEFAULT_DURATION_MINUTES,
+  const contract: CourseContract = deriveContractForRequest(
+    options?.sizePreset,
+    courseType,
+    options?.durationMinutes ?? parseDurationFromText(requirements.requirement) ?? undefined,
   );
-  const contract: CourseContract = deriveCourseContract(durationMinutes, courseType);
   const courseContract = renderCourseContract(contract, courseType);
 
   const { visionImages } = buildAvailableImages(pdfImages, context);
