@@ -601,10 +601,11 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
       store.getState().setGenerationStatus('generating');
 
-      // Determine pending outlines
+      // Determine pending outlines (skipped outlines stay closed — Pillar 2 §4.9)
       const completedOrders = new Set(scenes.map((s) => s.order));
+      const skippedIds = new Set(state.skippedOutlineIds);
       const pending = outlines
-        .filter((o) => !completedOrders.has(o.order))
+        .filter((o) => !completedOrders.has(o.order) && !skippedIds.has(o.id))
         .sort((a, b) => a.order - b.order);
 
       if (pending.length === 0) {
