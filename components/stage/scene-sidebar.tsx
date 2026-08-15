@@ -51,6 +51,7 @@ export function SceneSidebar({
     useStageStore();
   const failedOutlines = useStageStore.use.failedOutlines();
   const blueprint = useStageStore.use.blueprint();
+  const generationPhase = useStageStore.use.generationPhase();
   const viewportSize = useCanvasStore.use.viewportSize();
   const viewportRatio = useCanvasStore.use.viewportRatio();
 
@@ -523,6 +524,22 @@ export function SceneSidebar({
                     </div>
                     {!isFailed && !isPaused && (
                       <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/40 dark:via-white/10 to-transparent" />
+                    )}
+                    {/* Phase chips (Pillar 2 §4.2): content → actions → tts → media */}
+                    {!isFailed && !isPaused && (
+                      <div className="absolute bottom-1 left-1 right-1 flex items-center gap-1">
+                        {(['content', 'actions', 'tts', 'media'] as const).map((phase) => (
+                          <span
+                            key={phase}
+                            className={cn(
+                              'flex-1 h-1 rounded-full transition-colors',
+                              generationPhase === phase
+                                ? 'bg-purple-500 dark:bg-purple-400 animate-pulse'
+                                : 'bg-gray-200 dark:bg-gray-700',
+                            )}
+                          />
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>
