@@ -1009,7 +1009,8 @@
     "jumpToBlankTitle": "Jump to a section that still needs a title",
     "analyzingMediaMaterial": "Analyzing audio/video",
     "audioPendingCount": "{{count}} scene audio pending",
-    "skipScene": "Skip scene"
+    "skipScene": "Skip scene",
+    "lessonCompletion": "{{done}}/{{total}} lessons · {{scenes}} scenes"
   },
   "settings": {
     "title": "Settings",

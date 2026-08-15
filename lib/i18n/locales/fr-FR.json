@@ -1009,7 +1009,8 @@
     "jumpToBlankTitle": "Aller à une section dont le titre manque encore",
     "analyzingMediaMaterial": "Analyse de l’audio et de la vidéo",
     "audioPendingCount": "{{count}} scènes audio en attente",
-    "skipScene": "Ignorer la scène"
+    "skipScene": "Ignorer la scène",
+    "lessonCompletion": "{{done}}/{{total}} leçons · {{scenes}} scènes"
   },
   "settings": {
     "title": "Paramètres",

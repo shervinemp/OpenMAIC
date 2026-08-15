@@ -1009,7 +1009,8 @@
     "jumpToBlankTitle": "الانتقال إلى قسم بحاجة إلى عنوان",
     "analyzingMediaMaterial": "تحليل الصوت/الفيديو",
     "audioPendingCount": "{{count}} مشاهد بدون صوت",
-    "skipScene": "تخطي المشهد"
+    "skipScene": "تخطي المشهد",
+    "lessonCompletion": "{{done}}/{{total}} درس · {{scenes}} مشهد"
   },
   "settings": {
     "title": "الإعدادات",
