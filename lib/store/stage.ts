@@ -220,6 +220,7 @@ function clearedStageState(state: Pick<StageState, 'generationEpoch'>) {
     generationEpoch: state.generationEpoch + 1,
     generationStatus: 'idle' as const,
     currentGeneratingOrder: -1,
+    generationPhase: 'idle' as const,
     failedOutlines: [],
     skippedOutlineIds: [],
     generatingOutlines: [],
@@ -335,6 +336,8 @@ interface StageState {
   generationEpoch: number;
   generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error';
   currentGeneratingOrder: number;
+  /** Current phase of the generating scene (per-phase chips, Pillar 2 §4.2). */
+  generationPhase: 'idle' | 'content' | 'actions' | 'tts' | 'media';
   failedOutlines: SceneOutline[];
 
   // Workbench canvas-freshness projections (Mono #1960 Part 2 port).
@@ -373,6 +376,7 @@ interface StageState {
   setViewerAccess: (access: { isOwner: boolean }) => void;
   setGenerationStatus: (status: 'idle' | 'generating' | 'paused' | 'completed' | 'error') => void;
   setCurrentGeneratingOrder: (order: number) => void;
+  setGenerationPhase: (phase: 'idle' | 'content' | 'actions' | 'tts' | 'media') => void;
   bumpGenerationEpoch: () => void;
   addFailedOutline: (outline: SceneOutline) => void;
   clearFailedOutlines: () => void;
@@ -509,6 +513,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   generationEpoch: 0,
   generationStatus: 'idle' as const,
   currentGeneratingOrder: -1,
+  generationPhase: 'idle' as const,
   failedOutlines: [],
   serverManifestByStage: {},
   stageSyncRequest: 0,
@@ -822,6 +827,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   setGenerationStatus: (generationStatus) => set({ generationStatus }),
 
   setCurrentGeneratingOrder: (currentGeneratingOrder) => set({ currentGeneratingOrder }),
+
+  setGenerationPhase: (generationPhase) => set({ generationPhase }),
 
   bumpGenerationEpoch: () => set((s) => ({ generationEpoch: s.generationEpoch + 1 })),
 
