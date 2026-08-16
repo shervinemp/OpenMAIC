@@ -606,11 +606,15 @@
   },
   "classroomComplete": {
     "title": "اكتملت الدورة",
-    "trailLabels": {
+        "trailLabels": {
       "slide": "صفحات",
       "quiz": "اختبارات",
-      "interactive": "تفاعلات",
-      "pbl": "مشاريع"
+      "interactive": "تفاعلية",
+      "pbl": "مشاريع",
+      "exercise": "تمارين",
+      "derivation": "اشتقاقات",
+      "glossary": "مسارد",
+      "reading": "قراءات"
     },
     "quizScoreLabel": "{{correct}} / {{total}} صحيحة",
     "encouragement": {

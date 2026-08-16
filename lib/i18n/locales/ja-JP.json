@@ -606,11 +606,15 @@
   },
   "classroomComplete": {
     "title": "コース完了",
-    "trailLabels": {
+        "trailLabels": {
       "slide": "ページ",
       "quiz": "クイズ",
       "interactive": "インタラクティブ",
-      "pbl": "プロジェクト"
+      "pbl": "プロジェクト",
+      "exercise": "演習",
+      "derivation": "導出",
+      "glossary": "用語集",
+      "reading": "参考文献"
     },
     "quizScoreLabel": "{{correct}} / {{total}} 正解",
     "encouragement": {

@@ -681,6 +681,7 @@ function SceneRow({
                   disabled={disabled}
                   label={sceneTypeLabel(outline.type)}
                   theme={theme}
+                  getLabel={sceneTypeLabel}
                   connected={
                     !disabled &&
                     (outline.type === 'quiz' ||
@@ -805,6 +806,7 @@ function TypePill({
   disabled,
   label,
   theme,
+  getLabel,
   connected = false,
 }: {
   type: SceneType;
@@ -812,10 +814,11 @@ function TypePill({
   disabled: boolean;
   label: string;
   theme: (typeof TYPE_THEME)[SceneType];
+  /** Explicit label lookup — no dynamic `sceneType${...}` i18n key construction. */
+  getLabel: (type: SceneType) => string;
   /** When part of a cascading group, drop own rounding so the wrapper clips it. */
   connected?: boolean;
 }) {
-  const { t } = useI18n();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={disabled}>
@@ -833,7 +836,7 @@ function TypePill({
           {!disabled && <ChevronDown className="size-3 opacity-70" />}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[140px]">
+      <DropdownMenuContent align="end" className="min-w-[140px] max-h-72 overflow-y-auto">
         {SCENE_TYPES.map((option) => {
           const optionTheme = TYPE_THEME[option];
           return (
@@ -844,7 +847,7 @@ function TypePill({
             >
               <span className="flex items-center gap-2">
                 <span className={cn('size-2 rounded-full', optionTheme.accent)} />
-                {t(`generation.sceneType${capitalize(option)}`)}
+                {getLabel(option)}
               </span>
               {option === type && <Check className="size-3.5 text-muted-foreground" />}
             </DropdownMenuItem>
@@ -1562,8 +1565,4 @@ function useAutoResize(ref: React.RefObject<HTMLTextAreaElement | null>, value: 
     });
     return () => cancelAnimationFrame(frame);
   }, [ref, value]);
-}
-
-function capitalize(input: string): string {
-  return input.charAt(0).toUpperCase() + input.slice(1);
 }

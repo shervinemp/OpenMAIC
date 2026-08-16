@@ -606,11 +606,15 @@
   },
   "classroomComplete": {
     "title": "강좌 완료",
-    "trailLabels": {
+        "trailLabels": {
       "slide": "페이지",
       "quiz": "퀴즈",
       "interactive": "인터랙티브",
-      "pbl": "프로젝트"
+      "pbl": "프로젝트",
+      "exercise": "연습문제",
+      "derivation": "유도",
+      "glossary": "용어집",
+      "reading": "추가 읽기"
     },
     "quizScoreLabel": "{{total}}문제 중 {{correct}}개 정답",
     "encouragement": {

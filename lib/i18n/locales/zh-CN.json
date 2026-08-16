@@ -606,11 +606,15 @@
   },
   "classroomComplete": {
     "title": "课程完成",
-    "trailLabels": {
+        "trailLabels": {
       "slide": "页",
       "quiz": "小测",
       "interactive": "互动",
-      "pbl": "项目"
+      "pbl": "项目",
+      "exercise": "习题",
+      "derivation": "推导",
+      "glossary": "术语表",
+      "reading": "拓展阅读"
     },
     "quizScoreLabel": "答对 {{correct}} / {{total}}",
     "encouragement": {

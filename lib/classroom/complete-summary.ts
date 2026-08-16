@@ -1,8 +1,11 @@
-import type { Scene, SceneType, QuizContent } from '@/lib/types/stage';
+import type { Scene, SceneOutlineKind, QuizContent } from '@/lib/types/stage';
 import { gradeChoiceQuestions } from '@/lib/quiz/grading';
 
+/** Scene kinds that can appear in the completion trail (incl. specialized). */
+export type SummarySceneKind = SceneOutlineKind;
+
 export interface CompleteSummary {
-  countsByType: Partial<Record<SceneType, number>>;
+  countsByType: Partial<Record<SummarySceneKind, number>>;
   quiz: { correct: number; total: number; pct: number } | null;
 }
 
@@ -14,7 +17,10 @@ export interface ResolvedCompleteSummary {
 export function pendingCompleteSummary(scenes: Scene[]): CompleteSummary {
   return {
     countsByType: scenes.reduce<CompleteSummary['countsByType']>((counts, scene) => {
-      counts[scene.type] = (counts[scene.type] ?? 0) + 1;
+      // Specialized kinds (exercise/derivation/glossary/reading) render as
+      // slide scenes but keep their pedagogical identity via sceneKind.
+      const kind = scene.sceneKind ?? scene.type;
+      counts[kind] = (counts[kind] ?? 0) + 1;
       return counts;
     }, {}),
     quiz: null,
@@ -52,9 +58,10 @@ export async function summarizeScenes(
   scenes: Scene[],
   readAnswers: AnswerReader,
 ): Promise<CompleteSummary> {
-  const countsByType: Partial<Record<SceneType, number>> = {};
+  const countsByType: Partial<Record<SummarySceneKind, number>> = {};
   for (const scene of scenes) {
-    countsByType[scene.type] = (countsByType[scene.type] ?? 0) + 1;
+    const kind = scene.sceneKind ?? scene.type;
+    countsByType[kind] = (countsByType[kind] ?? 0) + 1;
   }
 
   let correct = 0;

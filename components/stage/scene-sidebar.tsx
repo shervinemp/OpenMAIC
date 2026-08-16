@@ -14,13 +14,17 @@ import {
   Trophy,
   VolumeX,
   X,
+  Dumbbell,
+  Sigma,
+  BookMarked,
+  Library,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import { ThumbnailInteractive } from '@/components/slide-renderer/components/ThumbnailInteractive';
 import { useStageStore, useCanvasStore } from '@/lib/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import type { SceneType, SlideContent, InteractiveContent } from '@/lib/types/stage';
+import type { Scene, SlideContent, InteractiveContent } from '@/lib/types/stage';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
 
 interface SceneSidebarProps {
@@ -65,6 +69,7 @@ export function SceneSidebar({
     const mediaStatusByOutline = new Map(
       lessonGroups.flatMap((group) => group.jobs.map((job) => [job.outlineId, job.phases.media])),
     );
+    const sceneByOrder = new Map(scenes.map((scene) => [scene.order, scene]));
     const lessons = blueprint.lessons.map((lesson) => {
       const total = lesson.outlines.length;
       const done = lesson.outlines.filter((outline) =>
@@ -76,14 +81,18 @@ export function SceneSidebar({
       const mediaFailed = lesson.outlines.filter(
         (outline) => mediaStatusByOutline.get(outline.id)?.status === 'failed',
       ).length;
-      return { title: lesson.title, total, done, reworked, mediaFailed };
+      const audioPending = lesson.outlines.filter((outline) => {
+        const scene = sceneByOrder.get(outline.order);
+        return (
+          scene &&
+          (scene.actions ?? []).some(
+            (action) => action.type === 'speech' && !!action.text && !action.audioId,
+          )
+        );
+      }).length;
+      return { title: lesson.title, total, done, reworked, mediaFailed, audioPending };
     });
-    const audioPending = scenes.filter((scene) =>
-      (scene.actions ?? []).some(
-        (action) => action.type === 'speech' && !!action.text && !action.audioId,
-      ),
-    ).length;
-    return { lessons, audioPending };
+    return { lessons };
   }, [blueprint, scenes, sceneDepth, lessonGroups]);
 
   const [retryingOutlineId, setRetryingOutlineId] = useState<string | null>(null);
@@ -130,14 +139,19 @@ export function SceneSidebar({
     [sidebarWidth],
   );
 
-  const getSceneTypeIcon = (type: SceneType) => {
+  const getSceneTypeIcon = (scene: Scene) => {
+    const kind = scene.sceneKind ?? scene.type;
     const icons = {
       slide: BookOpen,
       quiz: PieChart,
       interactive: MousePointer2,
       pbl: Cpu,
+      exercise: Dumbbell,
+      derivation: Sigma,
+      glossary: BookMarked,
+      reading: Library,
     };
-    return icons[type] || BookOpen;
+    return icons[kind] || BookOpen;
   };
 
   const displayWidth = collapsed ? 0 : sidebarWidth;
@@ -220,20 +234,23 @@ export function SceneSidebar({
                         {lesson.mediaFailed}!
                       </span>
                     )}
+                    {lesson.audioPending > 0 && (
+                      <span
+                        className="text-amber-500/90 dark:text-amber-400"
+                        title={t('generation.audioPendingCount', { count: lesson.audioPending })}
+                      >
+                        <VolumeX className="w-2.5 h-2.5 inline -mt-0.5" />
+                        {lesson.audioPending}
+                      </span>
+                    )}
                   </span>
                 ))}
               </div>
-              {lessonProgress.audioPending > 0 && (
-                <span className="inline-flex items-center gap-1 px-1 text-[9px] font-medium text-amber-500/90 dark:text-amber-400">
-                  <VolumeX className="w-3 h-3" />
-                  {t('generation.audioPendingCount', { count: lessonProgress.audioPending })}
-                </span>
-              )}
             </div>
           )}
           {scenes.map((scene, index) => {
             const isActive = currentSceneId === scene.id;
-            const Icon = getSceneTypeIcon(scene.type);
+            const Icon = getSceneTypeIcon(scene);
             const isSlide = scene.type === 'slide';
             const isInteractive = scene.type === 'interactive';
             const slideContent = isSlide ? (scene.content as SlideContent) : null;
@@ -557,9 +574,6 @@ export function SceneSidebar({
                         </>
                       )}
                     </div>
-                    {!isFailed && !isPaused && (
-                      <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/40 dark:via-white/10 to-transparent" />
-                    )}
                     {/* Phase chips (Pillar 2 §4.2): content → actions → tts → media */}
                     {!isFailed && !isPaused && (
                       <div className="absolute bottom-1 left-1 right-1 flex items-center gap-1">

@@ -1830,11 +1830,15 @@
   },
   "classroomComplete": {
     "title": "課程完成",
-    "trailLabels": {
+        "trailLabels": {
       "slide": "頁面",
-      "quiz": "測驗",
+      "quiz": "小測",
       "interactive": "互動",
-      "pbl": "專題"
+      "pbl": "專案",
+      "exercise": "習題",
+      "derivation": "推導",
+      "glossary": "術語表",
+      "reading": "延伸閱讀"
     },
     "quizScoreLabel": "{{correct}} / {{total}} 正確",
     "encouragement": {

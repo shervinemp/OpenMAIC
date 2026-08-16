@@ -808,9 +808,10 @@ function HomePage() {
               rows={4}
             />
 
-            {/* Toolbar row */}
-            <div className="px-3 pb-3 flex items-end gap-2">
-              <div className="flex-1 min-w-0">
+            {/* Toolbar row — wraps so the fixed controls never collide with the
+                toolbar content on narrow viewports. */}
+            <div className="px-3 pb-3 flex flex-wrap items-end gap-2">
+              <div className="flex-1 min-w-[220px]">
                 <GenerationToolbar
                   webSearch={form.webSearch}
                   onWebSearchChange={(v) => updateForm('webSearch', v)}
@@ -825,6 +826,7 @@ function HomePage() {
                 />
               </div>
 
+              <div className="flex shrink-0 items-center gap-2 ml-auto">
               {/* Course size preset (Phase 2 §15.3) */}
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -905,6 +907,7 @@ function HomePage() {
                 <span className="text-xs font-medium">{t('toolbar.enterClassroom')}</span>
                 <ArrowUp className="size-3.5" />
               </button>
+              </div>
             </div>
           </div>
         </motion.div>
