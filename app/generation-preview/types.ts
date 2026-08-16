@@ -7,6 +7,7 @@ import type {
   ImageMapping,
   SessionDocumentSource,
 } from '@/lib/types/generation';
+import type { DocumentDigest } from '@/lib/generation/document-digest';
 import type { CourseSizePreset } from '@/lib/constants/generation';
 
 // Session state stored in sessionStorage
@@ -23,6 +24,17 @@ export interface GenerationSessionState {
   sceneOutlines?: SceneOutline[] | null;
   currentStep: 'generating' | 'complete';
   previewPhase?: 'preparing' | 'outline-ready' | 'review' | 'generating-content';
+  /** Server-side document index handle (Phase 2 §16). */
+  pdfHandle?: string;
+  /** Coverage digest returned by the indexing step. */
+  pdfDigest?: DocumentDigest;
+  /** Indexing summary for UI display. */
+  documentIndex?: {
+    tier: string;
+    chunkCount: number;
+    totalImageCount: number;
+    captionedCount: number;
+  };
   // PDF deferred parsing fields
   pdfStorageKey?: string;
   pdfFileName?: string;
