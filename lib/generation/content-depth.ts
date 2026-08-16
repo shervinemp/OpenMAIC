@@ -22,11 +22,18 @@
 import type { PPTElement, QuizQuestion } from '@openmaic/dsl';
 import {
   COURSE_DEPTH_FLOORS,
+  SPECIALTY_DEPTH_FLOORS,
   resolveDepthLevel,
   type CourseDepthLevel,
 } from '@/lib/constants/generation';
 import { extractCitationMarkers } from './pdf-retrieval';
-import type { SceneOutline } from '@/lib/types/generation';
+import type {
+  SceneOutline,
+  ExerciseProblem,
+  DerivationStep,
+  GlossaryTerm,
+  ReadingItem,
+} from '@/lib/types/generation';
 
 // ==================== Report ====================
 
@@ -283,6 +290,164 @@ export function validateQuizDepth(
     exampleCount: 0,
     findings,
   };
+}
+
+// ==================== Specialized scene validation (Phase 2 §15.4b) ====================
+// Exercise / derivation / glossary / reading scenes validate their
+// STRUCTURED payload (problems with worked solutions, latex steps with
+// explanations, term/definition pairs, annotated reading lists) against
+// floors that scale with the course depth level.
+
+function blankFindingsReport(total: number, findings: string[]): DepthReport {
+  return {
+    adequate: findings.length === 0,
+    depthValidated: true,
+    totalTextElements: total,
+    substantiveCount: 0,
+    captionCount: 0,
+    exampleCount: 0,
+    findings,
+  };
+}
+
+export function validateExerciseDepth(
+  outline: SceneOutline,
+  problems: ExerciseProblem[],
+  options: { retrievalContext?: string; depthLevel?: CourseDepthLevel } = {},
+): DepthReport {
+  const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
+  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const findings: string[] = [];
+
+  const worked = problems.filter((p) => (p.statement || '').trim() && (p.solution || '').trim());
+  if (worked.length < floor.minProblems) {
+    findings.push(
+      `exercise has ${worked.length} fully-worked problem(s); need at least ${floor.minProblems} (each with a concrete statement AND a worked solution)`,
+    );
+  }
+  for (const problem of problems) {
+    if (!problem.statement?.trim()) {
+      findings.push(`problem "${problem.id}" has an empty statement`);
+    } else if (isCaptionText(stripHtml(problem.statement))) {
+      findings.push(
+        `problem "${problem.id}" statement is a bare fragment ("${problem.statement.slice(0, 60)}") — state the full problem with concrete numbers`,
+      );
+    }
+    if (!problem.solution?.trim()) {
+      findings.push(`problem "${problem.id}" is missing the worked solution`);
+    }
+    if (depthLevel === 'university' && !problem.analysis?.trim()) {
+      findings.push(
+        `problem "${problem.id}" is missing the analysis field (why the method works / common pitfalls) — required at university depth`,
+      );
+    }
+  }
+
+  if (options.retrievalContext) {
+    const combinedText = problems
+      .map((p) => `${p.statement} ${p.hint ?? ''} ${p.solution} ${p.analysis ?? ''}`)
+      .join(' ');
+    findings.push(
+      ...citationFindings(combinedText, options.retrievalContext, COURSE_DEPTH_FLOORS[depthLevel].minCitations),
+    );
+  }
+
+  return blankFindingsReport(worked.length, findings);
+}
+
+export function validateDerivationDepth(
+  outline: SceneOutline,
+  steps: DerivationStep[],
+  options: { retrievalContext?: string; depthLevel?: CourseDepthLevel } = {},
+): DepthReport {
+  const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
+  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const findings: string[] = [];
+
+  const complete = steps.filter((s) => (s.latex || '').trim() && (s.explanation || '').trim());
+  if (complete.length < floor.minDerivationSteps) {
+    findings.push(
+      `derivation has ${complete.length} complete step(s); need at least ${floor.minDerivationSteps} (each with a formula AND a prose explanation)`,
+    );
+  }
+  for (const step of steps) {
+    if (!step.latex?.trim()) {
+      findings.push(`derivation step "${step.id}" is missing the latex formula`);
+    }
+    if (!step.explanation?.trim()) {
+      findings.push(`derivation step "${step.id}" is missing the explanation of why the step holds`);
+    } else if (isCaptionText(stripHtml(step.explanation))) {
+      findings.push(
+        `derivation step "${step.id}" explanation is a fragment ("${step.explanation.slice(0, 60)}") — write a complete sentence`,
+      );
+    }
+  }
+
+  if (options.retrievalContext) {
+    const combinedText = steps.map((s) => `${s.claim ?? ''} ${s.explanation}`).join(' ');
+    findings.push(
+      ...citationFindings(combinedText, options.retrievalContext, COURSE_DEPTH_FLOORS[depthLevel].minCitations),
+    );
+  }
+
+  return blankFindingsReport(complete.length, findings);
+}
+
+export function validateGlossaryDepth(
+  outline: SceneOutline,
+  terms: GlossaryTerm[],
+): DepthReport {
+  const depthLevel = resolveDepthLevel(outline.depthLevel);
+  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const findings: string[] = [];
+
+  const complete = terms.filter((t) => (t.term || '').trim() && (t.definition || '').trim());
+  if (complete.length < floor.minGlossaryTerms) {
+    findings.push(
+      `glossary has ${complete.length} complete term(s); need at least ${floor.minGlossaryTerms} (each with a definition)`,
+    );
+  }
+  for (const term of terms) {
+    if (!term.term?.trim()) {
+      findings.push(`glossary entry is missing the term`);
+    }
+    if (!term.definition?.trim()) {
+      findings.push(`glossary term "${term.term}" is missing its definition`);
+    } else if (isCaptionText(stripHtml(term.definition))) {
+      findings.push(
+        `glossary term "${term.term}" definition is a fragment ("${term.definition.slice(0, 60)}") — write a complete definition`,
+      );
+    }
+  }
+
+  return blankFindingsReport(complete.length, findings);
+}
+
+export function validateReadingDepth(
+  outline: SceneOutline,
+  items: ReadingItem[],
+  options: { retrievalContext?: string; depthLevel?: CourseDepthLevel } = {},
+): DepthReport {
+  const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
+  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const findings: string[] = [];
+
+  const complete = items.filter((i) => (i.title || '').trim() && (i.whyRead || '').trim());
+  if (complete.length < floor.minReadingItems) {
+    findings.push(
+      `reading list has ${complete.length} complete item(s); need at least ${floor.minReadingItems} (each with a title AND a why-read annotation)`,
+    );
+  }
+  for (const item of items) {
+    if (!item.title?.trim()) {
+      findings.push(`reading item is missing the title`);
+    }
+    if (!item.whyRead?.trim()) {
+      findings.push(`reading item "${item.title}" is missing the why-read annotation`);
+    }
+  }
+
+  return blankFindingsReport(complete.length, findings);
 }
 
 // ==================== Corrective feedback ====================

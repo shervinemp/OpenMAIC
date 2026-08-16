@@ -104,6 +104,8 @@ export interface CourseContract {
   quizPlacement: number;
   /** The size preset the contract was derived under. */
   sizePreset: CourseSizePreset;
+  /** Content depth level derived from the preset (Phase 2 §15.4). */
+  depthLevel: CourseDepthLevel;
 }
 
 /**
@@ -181,6 +183,7 @@ export function deriveCourseContract(
     unitLessonCounts,
     quizPlacement,
     sizePreset: preset,
+    depthLevel: depthLevelForPreset(preset),
   };
 }
 
@@ -240,11 +243,13 @@ export function renderCourseContract(contract: CourseContract, courseType: Cours
         ? 'Hands-on: allow 1-2 interactive scenes and at most 1 pbl; practice-oriented slides.'
         : 'Explainer: slide-heavy; at most 1-2 interactive scenes and at most 1 pbl per course.';
 
+  const specialization = contract.depthLevel === 'intro' ? '' : `\n- Specialized scene types (Phase 2 §15.4b):\n  * "exercise" — one or two fully-worked problems (statement + worked solution; analysis at university level) for computational/quantitative lessons.\n  * "derivation" — step-by-step proof/derivation scenes with LaTeX formulas, for formula-heavy lessons.\n  * "glossary" — one per unit: the unit's key terms with complete definitions.\n  * "reading" — one per unit: annotated further-reading list (title + why-read).`;
+
   return `Course contract (non-negotiable):
 - Produce EXACTLY ${contract.lessonCount} lessons (sections), in this order:
 ${lessons}
 ${units ? `- Unit (chapter) structure — EXACTLY ${contract.unitCount} units:\n${units}\n` : ''}- Total scenes: ${contract.totalSceneTarget} — the sum of the per-lesson targets; you may not produce fewer.
-- Scene types: ${typeMix}
+- Scene types: ${typeMix}${specialization}
 - Quiz cadence (course-wide): a quiz at or near global outline #${quizPositions.join(', #')}.
 - Also emit "lessons": an array of ${contract.lessonCount} objects, each {"title": "...", "objectives": ["..."]} (1-2 objectives per lesson, teaching language)${contract.unitCount > 1 ? `, "units": an array of ${contract.unitCount} objects, each {"title": "...", "objectives": ["..."]} (1-2 objectives per unit, in order)` : ''}, plus course-level "audience" (string) and "objectives" (2-5 strings).`;
 }
@@ -595,6 +600,28 @@ export function validateBlueprint(
     warnings.push(`pbl cap: ${pblCount} pbl scenes (max 1)`);
   }
 
+  // Specialized scene advisories (Phase 2 §15.4b): at intermediate/university
+  // depth the contract asks for per-unit glossary + further-reading and for
+  // exercises on quantitative lessons. Warnings only — the deck still
+  // validates without them, but the corrective loop passes the notes on.
+  const depthLevel = blueprint.depthLevel ?? 'intro';
+  if (depthLevel !== 'intro') {
+    const outlines = blueprint.lessons.flatMap((l) => l.outlines);
+    const unitCount = blueprint.units?.length ?? 1;
+    const glossaryCount = outlines.filter((o) => o.type === 'glossary').length;
+    if (glossaryCount < unitCount) {
+      warnings.push(
+        `specialized scenes: ${glossaryCount} glossary scene(s) for ${unitCount} unit(s) — include one key-term glossary per unit`,
+      );
+    }
+    const readingCount = outlines.filter((o) => o.type === 'reading').length;
+    if (readingCount < unitCount) {
+      warnings.push(
+        `specialized scenes: ${readingCount} reading scene(s) for ${unitCount} unit(s) — include one annotated further-reading scene per unit`,
+      );
+    }
+  }
+
   return { valid: errors.length === 0, errors, warnings };
 }
 
@@ -697,6 +724,7 @@ export function buildPerUnitContract(base: CourseContract, unitIndex: number): C
     unitLessonCounts: [count],
     quizPlacement: base.quizPlacement,
     sizePreset: base.sizePreset,
+    depthLevel: base.depthLevel,
   };
 }
 

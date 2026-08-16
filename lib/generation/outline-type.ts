@@ -10,6 +10,18 @@ const DEFAULT_QUIZ_CONFIG = {
 const MAX_TARGET_SKILLS = 6;
 
 /**
+ * Outline kinds that render as slide scenes (Phase 2 §15.4b). Exercise /
+ * derivation / glossary / reading scenes generate structured content which is
+ * rendered into slide elements — the resulting Scene is a standard `slide`,
+ * so everything downstream (rendering, playback, export) treats them as such.
+ */
+const SLIDE_LIKE_TYPES = new Set(['slide', 'exercise', 'derivation', 'glossary', 'reading']);
+
+export function isSlideLikeOutline(outline: SceneOutline): boolean {
+  return SLIDE_LIKE_TYPES.has(outline.type);
+}
+
+/**
  * Total constructor: returns a NEW outline of `newType` that is valid by
  * construction. It strips every foreign per-type config and seeds the target
  * type's required config from the shared fields (title / description /
@@ -90,6 +102,10 @@ export function changeOutlineType(outline: SceneOutline, newType: SceneType): Sc
     }
 
     case 'slide':
+    case 'exercise':
+    case 'derivation':
+    case 'glossary':
+    case 'reading':
     default:
       return baseOutline;
   }
