@@ -9,6 +9,47 @@ export const MAX_PDF_CONTENT_CHARS = 50000;
 // Maximum number of images to send as vision content parts
 export const MAX_VISION_IMAGES = 20;
 
+// ==================== Full-document coverage (Phase 2 §16) ====================
+// The outline stage must see the WHOLE source document, not the first N
+// characters. Below RAW_THRESHOLD the extracted text is injected as-is;
+// above it a coverage digest (enumerative section cards with page anchors)
+// replaces raw text in the outline prompt. The full text itself is chunked
+// once and retrieved per scene (lib/generation/pdf-retrieval.ts) — the
+// digest is only the map, retrieval is the terrain.
+//
+// Coverage commitments (no silent loss):
+// - Only extraction noise is stripped, never content paragraphs.
+// - Section cards are enumerative (every topic listed), not narrative.
+// - Chapters never merge; proportional render quotas, not uniform cuts.
+// - The lens pass may reorder emphasis but never removes sections.
+// - lib/generation/coverage-audit.ts reports chapters with zero cited
+//   pages after the outline stage so gaps are visible, not silent.
+
+// Total extracted chars at or below which the outline stage reads raw text.
+export const DIGEST_RAW_THRESHOLD_CHARS = 12_000;
+
+// Render budget for the coverage view injected into the outline prompt.
+export const DIGEST_TARGET_CHARS = 16_000;
+
+// Max raw chars sent per digest batch call (level-1 section cards).
+export const DIGEST_BATCH_CHARS = 4_500;
+
+// A section needs at least this many chars for its own card; smaller runs
+// merge into the preceding card (their headings are all preserved).
+export const DIGEST_MIN_SECTION_CHARS = 700;
+
+// Level-2: max level-1 section cards summarized per chapter-card call.
+export const DIGEST_LEVEL2_BATCH_CARDS = 24;
+
+// Upload-time captioning pass: images per vision call. All images are
+// captioned (cached by content hash) so every image carries a real text
+// description — no "metadata-only" image anywhere in the pipeline.
+export const CAPTION_BATCH_IMAGES = 10;
+
+// Per-call vision budget at scene content generation: only images relevant
+// to the scene (suggested ids) get vision; the rest use their captions.
+export const VISION_PER_SCENE_IMAGES = 6;
+
 // ==================== Course Blueprint Contract ====================
 // The curriculum shape is a validated contract (see
 // lib/generation/blueprint.ts): scene count is derived from a resolved

@@ -11,7 +11,7 @@ import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import {
   COURSE_DEPTH_FLOORS,
   MAX_CONTENT_ATTEMPTS,
-  MAX_VISION_IMAGES,
+  VISION_PER_SCENE_IMAGES,
   renderDepthDirective,
   resolveDepthLevel,
 } from '@/lib/constants/generation';
@@ -628,10 +628,12 @@ async function generateSlideContent(
   if (assignedImages && assignedImages.length > 0) {
     const sortedAssignedImages = sortDocumentImagesForVision(assignedImages);
     if (visionEnabled && imageMapping) {
-      // Vision mode: split into vision images and text-only
+      // Vision mode: per-scene relevant images get vision (the outline
+      // suggested these ids for THIS scene); the rest of the document uses
+      // captions. A per-call budget, not a document-wide first-N cut.
       const withSrc = sortedAssignedImages.filter((img) => imageMapping[img.id]);
-      const visionSlice = withSrc.slice(0, MAX_VISION_IMAGES);
-      const textOnlySlice = withSrc.slice(MAX_VISION_IMAGES);
+      const visionSlice = withSrc.slice(0, VISION_PER_SCENE_IMAGES);
+      const textOnlySlice = withSrc.slice(VISION_PER_SCENE_IMAGES);
       const noSrcImages = sortedAssignedImages.filter((img) => !imageMapping[img.id]);
 
       const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));

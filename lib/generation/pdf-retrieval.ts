@@ -107,6 +107,10 @@ export function chunkSourceText(text: string, options: ChunkOptions = {}): PdfCh
 
     const pageMatch = line.match(PAGE_RE);
     if (pageMatch && line.length <= 60) {
+      // A page marker ends the previous page: flush pending content first so
+      // each chunk carries ITS OWN page hint (otherwise the heading-flush
+      // below would stamp the next page onto the previous chunk).
+      if (current.length > 0) flush();
       currentPageHint = pageMatch[1];
       continue;
     }
