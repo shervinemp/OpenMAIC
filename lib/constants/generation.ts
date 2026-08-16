@@ -86,6 +86,67 @@ export function resolveSizePreset(value: unknown): CourseSizePreset {
     : DEFAULT_SIZE_PRESET;
 }
 
+// ==================== Content depth levels (Phase 2 §15.4) ====================
+// A depth level raises the depth contract's floor (Pillar 3). Derived from
+// the size preset at outline stage (compact → intro, standard →
+// intermediate, intensive/semester → university) and stamped onto the
+// blueprint and every outline so the content stage can enforce it.
+
+export type CourseDepthLevel = 'intro' | 'intermediate' | 'university';
+
+export interface CourseDepthFloor {
+  /** Minimum substantive slide text elements. */
+  minSubstantive: number;
+  /** Minimum cited source markers when retrieval context is present. */
+  minCitations: number;
+  /** Minimum quiz option count for choice questions (distractors). */
+  minOptions: number;
+}
+
+export const COURSE_DEPTH_FLOORS: Record<CourseDepthLevel, CourseDepthFloor> = {
+  intro: { minSubstantive: 4, minCitations: 2, minOptions: 2 },
+  intermediate: { minSubstantive: 5, minCitations: 2, minOptions: 2 },
+  university: { minSubstantive: 6, minCitations: 3, minOptions: 3 },
+};
+
+export function depthLevelForPreset(preset: CourseSizePreset): CourseDepthLevel {
+  if (preset === 'intensive' || preset === 'semester') return 'university';
+  if (preset === 'standard') return 'intermediate';
+  return 'intro';
+}
+
+/** Normalize an untrusted depth level to a valid one (intro on garbage). */
+export function resolveDepthLevel(value: unknown): CourseDepthLevel {
+  return typeof value === 'string' && value in COURSE_DEPTH_FLOORS
+    ? (value as CourseDepthLevel)
+    : 'intro';
+}
+
+/**
+ * Render the depth directive injected into the slide/quiz content prompts.
+ * Empty for intro (today's behavior unchanged); raises the floor for
+ * intermediate and university levels.
+ */
+export function renderDepthDirective(level: CourseDepthLevel): string {
+  if (level === 'intro') return '';
+  if (level === 'intermediate') {
+    return [
+      'Depth requirement: intermediate level.',
+      '- Every scene needs at least 5 substantive claims (complete sentences), not bullet captions.',
+      '- Cite at least 2 [source ...] markers from the source material.',
+      '- Prefer one concrete worked example with real numbers over two abstract restatements.',
+    ].join('\n');
+  }
+  return [
+    'Depth requirement: UNIVERSITY level. This is a full university course scene.',
+    '- Every scene needs at least 6 substantive claims (complete sentences), not bullet captions.',
+    '- Include at least one worked example or derivation with concrete numbers/formulas.',
+    '- Cite at least 3 [source ...] markers from the source material.',
+    '- Quizzes: every choice question needs at least 3 options, with distractors mirroring real student misconceptions.',
+    '- Definitions must state preconditions and edge cases, not one-liners.',
+  ].join('\n');
+}
+
 // Corrective retry budget for the outline stage: the blueprint must
 // validate within this many attempts or the run fails with the report
 // (never fabricate).

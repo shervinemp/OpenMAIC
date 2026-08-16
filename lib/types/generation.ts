@@ -7,7 +7,7 @@
 
 import type { ActionType } from './action';
 import type { MediaGenerationRequest } from '@/lib/media/types';
-import type { CourseSizePreset } from '@/lib/constants/generation';
+import type { CourseSizePreset, CourseDepthLevel } from '@/lib/constants/generation';
 
 // ==================== PDF Image Types ====================
 
@@ -142,6 +142,11 @@ export interface SceneOutline {
    * the content prompt and used as the citation ground-truth.
    */
   retrievalContext?: string;
+  /**
+   * Content depth level (Phase 2 §15.4), stamped at the outline stage from
+   * the blueprint's derived level. The content stage enforces its floor.
+   */
+  depthLevel?: CourseDepthLevel;
   // Suggested image IDs (from PDF-extracted images)
   suggestedImageIds?: string[]; // e.g., ["img_1", "img_3"]
   // AI-generated media requests (when PDF images are insufficient)
@@ -247,6 +252,11 @@ export interface CourseBlueprint {
    * Optional for backward compatibility; treated as 'compact' when absent.
    */
   sizePreset?: CourseSizePreset;
+  /**
+   * Content depth level (Phase 2 §15.4), derived from the size preset at
+   * outline stage. Optional for backward compatibility; treated as 'intro'.
+   */
+  depthLevel?: CourseDepthLevel;
   /** The course, split into lessons (each validated against its target). */
   lessons: LessonBlueprint[];
   /**
