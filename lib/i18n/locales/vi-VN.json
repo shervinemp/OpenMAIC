@@ -1162,6 +1162,8 @@
     "documentIndexed": "Đã lập chỉ mục: {{sections}} mục, {{images}} hình ảnh",
     "documentIndexFailed": "Lập chỉ mục thất bại — tiếp tục mà không phủ sóng toàn bộ tài liệu",
     "coverageGaps": "{{count}} mục nguồn không được bài học nào đề cập",
+    "pendingGenerationTitle": "Đang tạo khóa học",
+    "pendingGenerationDesc": "Tiếp tục từ chỗ bạn đã dừng — dàn ý của bạn vẫn được lưu an toàn.",
     "skipScene": "Bỏ qua cảnh"
   },
   "settings": {

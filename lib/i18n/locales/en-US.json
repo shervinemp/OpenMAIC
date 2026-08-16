@@ -1118,7 +1118,9 @@
     "captioningProgress": "Captioning images: {{done}}/{{total}}",
     "documentIndexed": "Document indexed: {{sections}} sections, {{images}} images captioned",
     "documentIndexFailed": "Document indexing failed — continuing without full-document coverage",
-    "coverageGaps": "{{count}} source section(s) are not covered by any lesson"
+    "coverageGaps": "{{count}} source section(s) are not covered by any lesson",
+    "pendingGenerationTitle": "Course generation in progress",
+    "pendingGenerationDesc": "Resume where you left off — your outlines are safe."
   },
   "settings": {
     "title": "Settings",

@@ -1099,7 +1099,9 @@
     "captioningProgress": "正在描述圖片: {{done}}/{{total}}",
     "documentIndexed": "文件索引完成: {{sections}} 個章節, {{images}} 張圖片",
     "documentIndexFailed": "文件索引失敗 — 將在缺少完整文件涵蓋範圍的情況下繼續",
-    "coverageGaps": "有 {{count}} 個來源章節未被任何課程涵蓋"
+    "coverageGaps": "有 {{count}} 個來源章節未被任何課程涵蓋",
+    "pendingGenerationTitle": "課程生成進行中",
+    "pendingGenerationDesc": "從上次中斷處繼續 — 你的大綱已安全保存。"
   },
   "settings": {
     "title": "設定",

@@ -22,14 +22,6 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OPENMAIC_CANDIDATE_PORTS = [3000, 3001, 3002, 3003, 3004];
 
 const SERVICES = {
-  ollama: {
-    label: 'Ollama',
-    cmd: 'C:\\Users\\sherv\\AppData\\Local\\Programs\\Ollama\\ollama.exe',
-    args: ['serve'],
-    cwd: 'C:\\Users\\sherv\\AppData\\Local\\Programs\\Ollama',
-    healthUrl: 'http://localhost:11434',
-    timeoutMs: 60_000,
-  },
   kokoro: {
     label: 'Kokoro TTS',
     cmd: 'C:\\Users\\sherv\\kokoro\\.venv\\Scripts\\python.exe',
@@ -148,9 +140,12 @@ async function stopAll() {
 }
 
 const only = process.argv.slice(2);
+// Ollama is intentionally NOT part of the stack: generation runs on remote
+// providers (e.g. deepseek:deepseek-v4-flash) and Ollama self-manages as a
+// standalone Windows app. Add it back here only if a local LLM is wanted.
 const names = only.length
   ? only
-  : ['ollama', 'kokoro', 'comfyui', 'openmaic'];
+  : ['kokoro', 'comfyui', 'openmaic'];
 let hadError = false;
 
 for (const name of names) {

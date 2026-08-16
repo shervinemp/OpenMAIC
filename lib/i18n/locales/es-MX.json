@@ -1118,7 +1118,9 @@
     "captioningProgress": "Describiendo imágenes: {{done}}/{{total}}",
     "documentIndexed": "Documento indexado: {{sections}} secciones, {{images}} imágenes descritas",
     "documentIndexFailed": "Falló el indexado del documento — continuando sin cobertura completa",
-    "coverageGaps": "{{count}} sección(es) del material no están cubiertas por ninguna lección"
+    "coverageGaps": "{{count}} sección(es) del material no están cubiertas por ninguna lección",
+    "pendingGenerationTitle": "Generación del curso en curso",
+    "pendingGenerationDesc": "Reanuda donde lo dejaste — tus esquemas están a salvo."
   },
   "settings": {
     "title": "Configuración",

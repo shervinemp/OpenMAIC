@@ -1118,7 +1118,9 @@
     "captioningProgress": "画像の説明を生成中: {{done}}/{{total}}",
     "documentIndexed": "インデックス完了: {{sections}} セクション、{{images}} 画像",
     "documentIndexFailed": "インデックスに失敗しました — 全体カバーなしで続行します",
-    "coverageGaps": "{{count}} 個のソースセクションがどのレッスンにも含まれていません"
+    "coverageGaps": "{{count}} 個のソースセクションがどのレッスンにも含まれていません",
+    "pendingGenerationTitle": "コース生成が進行中です",
+    "pendingGenerationDesc": "中断したところから再開できます — アウトラインは保存されています。"
   },
   "settings": {
     "title": "設定",

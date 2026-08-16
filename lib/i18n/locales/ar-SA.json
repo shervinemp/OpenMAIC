@@ -1118,7 +1118,9 @@
     "captioningProgress": "وصف الصور: {{done}}/{{total}}",
     "documentIndexed": "تمت فهرسة المستند: {{sections}} قسماً، {{images}} صورة",
     "documentIndexFailed": "فشلت فهرسة المستند — سيستمر العمل بدون تغطية كاملة",
-    "coverageGaps": "{{count}} قسم من المصدر غير مغطى بأي درس"
+    "coverageGaps": "{{count}} قسم من المصدر غير مغطى بأي درس",
+    "pendingGenerationTitle": "توليد الدورة قيد التقدم",
+    "pendingGenerationDesc": "استأنف من حيث توقفت — مخططك محفوظ."
   },
   "settings": {
     "title": "الإعدادات",

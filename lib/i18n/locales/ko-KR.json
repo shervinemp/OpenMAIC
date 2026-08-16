@@ -1118,7 +1118,9 @@
     "captioningProgress": "이미지 설명 생성: {{done}}/{{total}}",
     "documentIndexed": "인덱싱 완료: 섹션 {{sections}}개, 이미지 {{images}}개",
     "documentIndexFailed": "문서 인덱싱 실패 — 전체 문서 커버리지 없이 계속합니다",
-    "coverageGaps": "{{count}}개 원본 섹션이 어떤 레슨에서도 다루어지지 않았습니다"
+    "coverageGaps": "{{count}}개 원본 섹션이 어떤 레슨에서도 다루어지지 않았습니다",
+    "pendingGenerationTitle": "코스 생성 진행 중",
+    "pendingGenerationDesc": "중단한 지점에서 다시 시작하세요 — 개요는 안전하게 보관됩니다."
   },
   "settings": {
     "title": "설정",

@@ -1118,7 +1118,9 @@
     "captioningProgress": "Descrevendo imagens: {{done}}/{{total}}",
     "documentIndexed": "Documento indexado: {{sections}} seções, {{images}} imagens descritas",
     "documentIndexFailed": "Falha na indexação do documento — continuando sem cobertura completa",
-    "coverageGaps": "{{count}} seção(ões) do material não cobertas por nenhuma aula"
+    "coverageGaps": "{{count}} seção(ões) do material não cobertas por nenhuma aula",
+    "pendingGenerationTitle": "Geração do curso em andamento",
+    "pendingGenerationDesc": "Retome de onde parou — seus tópicos estão seguros."
   },
   "settings": {
     "title": "Configurações",
