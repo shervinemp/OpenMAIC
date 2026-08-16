@@ -247,7 +247,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
       <PopoverTrigger asChild>
         <button
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border',
+            'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border',
             enabledCount > 0
               ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border-violet-200/60 dark:border-violet-700/50'
               : 'text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 border-border/50',
