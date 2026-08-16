@@ -610,6 +610,26 @@ function GenerationPreviewContent() {
                 pdfImages: currentSession.pdfImages,
                 imageMapping,
                 researchContext: currentSession.researchContext,
+                // Phase 2 §15.2: per-unit web research for multi-unit courses.
+                webSearchConfig: currentSession.requirements.webSearch
+                  ? (() => {
+                      const ws = useSettingsStore.getState();
+                      const wsConfig =
+                        ws.webSearchProvidersConfig?.[ws.webSearchProviderId];
+                      return {
+                        providerId: ws.webSearchProviderId,
+                        apiKey: wsConfig?.apiKey || undefined,
+                        baseUrl:
+                          ws.webSearchProviderId === 'searxng'
+                            ? undefined
+                            : wsConfig?.baseUrl || undefined,
+                        baiduSubSources:
+                          ws.webSearchProviderId === 'baidu'
+                            ? ws.baiduSubSources
+                            : undefined,
+                      };
+                    })()
+                  : undefined,
               }),
             ),
             signal,
