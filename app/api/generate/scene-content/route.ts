@@ -28,6 +28,7 @@ import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { takeSceneDepthReport, takeSceneDepthSummary } from '@/lib/generation/content-depth';
+import { buildUnitContext } from '@/lib/generation/unit-context';
 
 const log = createLogger('Scene Content API');
 
@@ -187,6 +188,9 @@ export async function POST(req: NextRequest) {
           }
         : {}),
       retrievalContext: effectiveOutline.retrievalContext,
+      // Phase 2 §15.5: prerequisite coherence — thread what the unit has
+      // already taught so this scene builds on it instead of repeating it.
+      unitContext: buildUnitContext(effectiveOutline, allOutlines),
     });
 
     if (!content) {

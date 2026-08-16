@@ -9,6 +9,10 @@ Test Points: {{keyPoints}}
 {{depthDirective}}
 {{/if}}
 
+{{#if unitContext}}
+{{unitContext}}
+{{/if}}
+
 Output JSON directly (no explanation, no code blocks):
 
 {"items":[{"title":"Real reading item title","source":"Optional author or venue","whyRead":"One sentence on what this item adds to the scene.","citation":"Optional [source p.N] marker"}]}
