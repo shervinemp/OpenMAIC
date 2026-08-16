@@ -197,7 +197,9 @@ export function formatRetrievalContext(chunks: PdfChunk[]): string {
 
 // ==================== Citation ground-truth ====================
 
-const CITATION_RE = /\[source\s+(p\.\d+|ch\.\d+)\]/gi;
+// PDF chunks cite pages/chapters ("p.412", "ch.7"); web chunks cite source
+// indices ("1", "2", ...) — see lib/generation/web-retrieval.ts (§15.2).
+const CITATION_RE = /\[source\s+(p\.\d+|ch\.\d+|\d+)\]/gi;
 
 /** Extract citation markers present in generated content. */
 export function extractCitationMarkers(text: string): string[] {
