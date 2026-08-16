@@ -434,6 +434,17 @@ export interface BlueprintValidationOptions {
   legacy?: boolean;
 }
 
+const VALID_OUTLINE_TYPES = new Set<SceneOutline['type']>([
+  'slide',
+  'quiz',
+  'interactive',
+  'pbl',
+  'exercise',
+  'derivation',
+  'glossary',
+  'reading',
+]);
+
 function validateOutlineShape(outline: SceneOutline): string[] {
   const errors: string[] = [];
   if (!outline || typeof outline !== 'object') {
@@ -441,6 +452,15 @@ function validateOutlineShape(outline: SceneOutline): string[] {
     return errors;
   }
   if (!outline.title || !outline.title.trim()) errors.push(`outline #${outline.order} missing title`);
+  // The scene kind is REQUIRED. Without this check a model that leaks
+  // non-scene records (e.g. lesson summaries) into the `outlines` array
+  // passes validation, and the content stage rejects every such record
+  // downstream — a deck that validates but cannot generate.
+  if (!outline.type || !VALID_OUTLINE_TYPES.has(outline.type)) {
+    errors.push(
+      `outline "${outline.title || outline.order}" has an invalid scene type (${String(outline.type ?? 'missing')}) — use one of: slide, quiz, interactive, pbl, exercise, derivation, glossary, reading`,
+    );
+  }
   if (outline.type === 'quiz' && !outline.quizConfig) {
     errors.push(`quiz outline "${outline.title || outline.order}" missing quizConfig`);
   }
