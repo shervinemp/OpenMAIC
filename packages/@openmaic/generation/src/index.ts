@@ -99,6 +99,7 @@ export type {
   OutlinePromptContext,
 } from './outline-generator.js';
 export { changeOutlineType, isSlideLikeOutline } from './outline-type.js';
+export * from './unit-review.js';
 export type { SceneType } from './outline-type.js';
 export { uniquifyMediaElementIds } from './outline-media.js';
 export { partitionImagesForVision } from './outline-formatters.js';

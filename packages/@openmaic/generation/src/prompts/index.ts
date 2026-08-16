@@ -18,6 +18,7 @@ export const PROMPT_IDS = {
   DERIVATION_CONTENT: 'derivation-content',
   GLOSSARY_CONTENT: 'glossary-content',
   READING_CONTENT: 'reading-content',
+  UNIT_REVIEW: 'unit-review',
   SIMULATION_CONTENT: 'simulation-content',
   DIAGRAM_CONTENT: 'diagram-content',
   CODE_CONTENT: 'code-content',

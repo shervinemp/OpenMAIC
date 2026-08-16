@@ -8,6 +8,7 @@
 export type PromptId =
   | 'requirements-to-outlines'
   | 'course-syllabus'
+  | 'unit-review'
   | 'interactive-outlines'
   | 'task-engine-outlines'
   | 'web-search-query-rewrite'

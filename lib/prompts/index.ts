@@ -26,6 +26,7 @@ export {
 export const PROMPT_IDS = {
   REQUIREMENTS_TO_OUTLINES: 'requirements-to-outlines',
   COURSE_SYLLABUS: 'course-syllabus',
+  UNIT_REVIEW: 'unit-review',
   INTERACTIVE_OUTLINES: 'interactive-outlines',
   TASK_ENGINE_OUTLINES: 'task-engine-outlines',
   WEB_SEARCH_QUERY_REWRITE: 'web-search-query-rewrite',

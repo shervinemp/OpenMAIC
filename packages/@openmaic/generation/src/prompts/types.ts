@@ -11,6 +11,7 @@ export type PromptId =
   | 'derivation-content'
   | 'glossary-content'
   | 'reading-content'
+  | 'unit-review'
   | 'simulation-content'
   | 'diagram-content'
   | 'code-content'
