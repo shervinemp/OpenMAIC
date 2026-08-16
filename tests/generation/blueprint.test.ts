@@ -311,6 +311,31 @@ describe('size presets (Phase 2 §15.3)', () => {
     );
     expect(compactText).not.toContain('Unit structure');
   });
+
+  test('depth level is derived from the preset and stamped onto blueprint + outlines (§15.4)', () => {
+    const cases: Array<[CourseSizePreset, string]> = [
+      ['compact', 'intro'],
+      ['standard', 'intermediate'],
+      ['intensive', 'university'],
+      ['semester', 'university'],
+    ];
+    for (const [preset, expected] of cases) {
+      const contract = deriveCourseContract(60, 'explainer', preset);
+      const blueprint = buildCourseBlueprint(
+        makeParsed(contract.totalSceneTarget),
+        'requirement',
+        contract,
+        'explainer',
+        'Fallback',
+      );
+      expect(blueprint.depthLevel).toBe(expected);
+      for (const lesson of blueprint.lessons) {
+        for (const outline of lesson.outlines) {
+          expect(outline.depthLevel).toBe(expected);
+        }
+      }
+    }
+  });
 });
 
 describe('assignLessonIds + splitIntoLessons', () => {

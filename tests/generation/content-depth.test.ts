@@ -179,6 +179,86 @@ describe('validateQuizDepth', () => {
   });
 });
 
+describe('depth levels (Phase 2 §15.4)', () => {
+  const RETRIEVAL = [
+    '--- [source p.1] ---\nEvaporation moves molecules from liquid to vapor.',
+    '--- [source p.2] ---\nCondensation returns vapor to liquid water.',
+    '--- [source p.3] ---\nTranspiration releases vapor through plant leaves.',
+  ].join('\n');
+
+  function universitySubstantive(): PPTElement[] {
+    return [
+      ...SUBSTANTIVE,
+      textElement('t5', '<p>Transpiration releases additional vapor through plant leaves.</p>'),
+      textElement('t6', '<p>Groundwater reservoirs refill when precipitation exceeds evaporation.</p>'),
+    ];
+  }
+
+  test('university floor requires 6 substantive elements', () => {
+    const outline = { ...slideOutline('The Water Cycle'), depthLevel: 'university' as const };
+    const report = validateSlideDepth(outline, SUBSTANTIVE);
+    expect(report.adequate).toBe(false);
+    expect(report.findings.some((f) => f.includes('need at least 6'))).toBe(true);
+
+    const university = validateSlideDepth(outline, universitySubstantive());
+    expect(university.adequate).toBe(true);
+  });
+
+  test('university floor raises the citation minimum to 3', () => {
+    const outline = { ...slideOutline('The Water Cycle'), depthLevel: 'university' as const };
+    const twoCitations = universitySubstantive().map((el, i) =>
+      i === 5
+        ? textElement('t6', '<p>Groundwater reservoirs refill when precipitation exceeds evaporation. [source p.1] [source p.2]</p>')
+        : el,
+    );
+    const report = validateSlideDepth(outline, twoCitations, { retrievalContext: RETRIEVAL });
+    expect(report.adequate).toBe(false);
+    expect(report.findings.some((f) => f.includes('at least 3'))).toBe(true);
+
+    const threeCitations = twoCitations.map((el, i) =>
+      i === 5
+        ? textElement('t6', '<p>Groundwater reservoirs refill when precipitation exceeds evaporation. [source p.1] [source p.2] [source p.3]</p>')
+        : el,
+    );
+    expect(validateSlideDepth(outline, threeCitations, { retrievalContext: RETRIEVAL }).adequate).toBe(true);
+  });
+
+  test('university quizzes need at least 3 options per choice question', () => {
+    const outline: SceneOutline = {
+      id: 'uq1',
+      type: 'quiz',
+      title: 'University Checkpoint',
+      description: 'Assess understanding.',
+      keyPoints: ['a'],
+      order: 1,
+      depthLevel: 'university',
+      quizConfig: { questionCount: 1, difficulty: 'hard', questionTypes: ['single'] },
+    };
+    const twoOptions: QuizQuestion[] = [
+      {
+        id: 'q1',
+        type: 'single',
+        question: 'Which phase change requires the removal of latent heat?',
+        options: [
+          { value: 'A', label: 'Condensation' },
+          { value: 'B', label: 'Evaporation' },
+        ],
+        answer: ['A'],
+        analysis: 'Condensation releases latent heat.',
+        hasAnswer: true,
+      },
+    ];
+    const report = validateQuizDepth(outline, twoOptions);
+    expect(report.adequate).toBe(false);
+    expect(report.findings.some((f) => f.includes('at least 3'))).toBe(true);
+  });
+
+  test('intro depth level keeps today\'s floor', () => {
+    const outline = { ...slideOutline('The Water Cycle'), depthLevel: 'intro' as const };
+    expect(validateSlideDepth(outline, SUBSTANTIVE).adequate).toBe(true);
+  });
+});
+
 describe('feedback + failure side channel', () => {
   test('summarizeDepthFindings is concrete and actionable', () => {
     const report = validateSlideDepth(slideOutline('Delta Lake Architecture'), [

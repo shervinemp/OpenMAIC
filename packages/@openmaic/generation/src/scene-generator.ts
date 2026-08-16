@@ -16,7 +16,13 @@ import type {
   WidgetType,
 } from '@openmaic/dsl';
 import { isWidgetType, normalizeElement } from '@openmaic/dsl';
-import { MAX_CONTENT_ATTEMPTS, MAX_VISION_IMAGES } from './constants.js';
+import {
+  COURSE_DEPTH_FLOORS,
+  MAX_CONTENT_ATTEMPTS,
+  MAX_VISION_IMAGES,
+  renderDepthDirective,
+  resolveDepthLevel,
+} from './constants.js';
 import {
   formatImageDescription,
   formatImagePlaceholder,
@@ -723,6 +729,8 @@ async function generateSlideContent(
   const canvasHeight = 562.5;
 
   const teacherContext = formatTeacherPersonaForPrompt(agents);
+  const depthLevel = resolveDepthLevel(outline.depthLevel);
+  const depthFloor = COURSE_DEPTH_FLOORS[depthLevel];
 
   const prompts = buildPrompt(PROMPT_IDS.SLIDE_CONTENT, {
     title: outline.title,
@@ -734,6 +742,7 @@ async function generateSlideContent(
     canvas_height: canvasHeight,
     teacherContext,
     languageDirective: languageDirective || '',
+    depthDirective: renderDepthDirective(depthLevel),
     imageElementEnabled,
     generatedImageEnabled,
     generatedVideoEnabled,
@@ -759,7 +768,7 @@ async function generateSlideContent(
   // is byte-for-byte the default course-generation prompt.
   let userPrompt = prompts.user;
   if (retrievalContext) {
-    userPrompt = `${prompts.user}\n\n## Source Material (ground your content here)\n\n${retrievalContext}\n\nCitation requirements: cite the exact [source p.N] markers shown above for at least two of your claims. Never cite a marker that is not listed above.`;
+    userPrompt = `${prompts.user}\n\n## Source Material (ground your content here)\n\n${retrievalContext}\n\nCitation requirements: cite the exact [source p.N] markers shown above for at least ${depthFloor.minCitations} of your claims. Never cite a marker that is not listed above.`;
   }
   if (editDirective || baselineContent) {
     // The baseline handed here for whole-slide regeneration already carries small
@@ -888,7 +897,10 @@ async function generateSlideContent(
       };
     }
 
-    const depthReport = validateSlideDepth(outline, processedElements, { retrievalContext });
+    const depthReport = validateSlideDepth(outline, processedElements, {
+      retrievalContext,
+      depthLevel,
+    });
     if (depthReport.adequate) {
       if (attempt > 1) {
         // Depth affordance: this scene needed corrective re-prompting.
@@ -935,6 +947,8 @@ async function generateQuizContent(
     difficulty: 'medium',
     questionTypes: ['single'],
   };
+  const depthLevel = resolveDepthLevel(outline.depthLevel);
+  const depthFloor = COURSE_DEPTH_FLOORS[depthLevel];
 
   const prompts = buildPrompt(PROMPT_IDS.QUIZ_CONTENT, {
     title: outline.title,
@@ -944,6 +958,7 @@ async function generateQuizContent(
     difficulty: quizConfig.difficulty,
     questionTypes: quizConfig.questionTypes.join(', '),
     languageDirective: languageDirective || '',
+    depthDirective: renderDepthDirective(depthLevel),
   });
 
   if (!prompts) {
@@ -953,7 +968,7 @@ async function generateQuizContent(
 
   let baseUserPrompt = prompts.user;
   if (retrievalContext) {
-    baseUserPrompt = `${prompts.user}\n\n## Source Material (ground your questions here)\n\n${retrievalContext}\n\nCitation requirements: cite the exact [source p.N] markers shown above in at least two questions/analyses. Never cite a marker that is not listed above.`;
+    baseUserPrompt = `${prompts.user}\n\n## Source Material (ground your questions here)\n\n${retrievalContext}\n\nCitation requirements: cite the exact [source p.N] markers shown above in at least ${depthFloor.minCitations} questions/analyses. Never cite a marker that is not listed above.`;
   }
 
   log.debug(`Generating quiz content for: ${outline.title}`);

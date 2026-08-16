@@ -92,6 +92,8 @@ export {
   assignLessonIds,
   buildCourseBlueprint,
   clampDurationMinutes,
+  deriveContractForRequest,
+  perLessonSceneCap,
   deriveCourseContract,
   inferCourseType,
   parseDurationFromText,
@@ -120,10 +122,12 @@ export {
   recordSceneDepthReport,
   summarizeDepthFindings,
   takeSceneDepthReport,
+  recordSceneDepthSummary,
+  takeSceneDepthSummary,
   validateQuizDepth,
   validateSlideDepth,
 } from './content-depth.js';
-export type { DepthReport, SlideDepthOptions } from './content-depth.js';
+export type { DepthReport, SceneDepthSummary, SlideDepthOptions } from './content-depth.js';
 export type { ChunkOptions, PdfChunk, RetrieveOptions } from './pdf-retrieval.js';
 export {
   chunkSourceText,

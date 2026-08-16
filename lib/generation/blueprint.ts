@@ -10,6 +10,8 @@ export {
   assignLessonIds,
   buildCourseBlueprint,
   clampDurationMinutes,
+  deriveContractForRequest,
+  perLessonSceneCap,
   deriveCourseContract,
   inferCourseType,
   parseDurationFromText,
