@@ -29,6 +29,12 @@ export {
   withGenerationRetry,
 } from './generation-retry.js';
 export type { GenerationRetryEvent, GenerationRetryOptions } from './generation-retry.js';
+export {
+  renderDerivationToElements,
+  renderExerciseToElements,
+  renderGlossaryToElements,
+  renderReadingToElements,
+} from './specialized-scene-render.js';
 export { parseActionsFromStructuredOutput } from './action-parser.js';
 export { postProcessInteractiveHtml } from './interactive-post-processor.js';
 export { generatePBLV2ProjectSingleCall } from './pbl/planner-single-call.js';
@@ -70,6 +76,14 @@ export type {
   GeneratedSlideContent,
   ScientificModel,
   WidgetConfig,
+  GeneratedDerivationContent,
+  GeneratedExerciseContent,
+  GeneratedGlossaryContent,
+  GeneratedReadingContent,
+  DerivationStep,
+  ExerciseProblem,
+  GlossaryTerm,
+  ReadingItem,
 } from './scene-types.js';
 
 export {
@@ -84,7 +98,8 @@ export type {
   OutlineGenerationOptions,
   OutlinePromptContext,
 } from './outline-generator.js';
-export { changeOutlineType } from './outline-type.js';
+export { changeOutlineType, isSlideLikeOutline } from './outline-type.js';
+export type { SceneType } from './outline-type.js';
 export { uniquifyMediaElementIds } from './outline-media.js';
 export { partitionImagesForVision } from './outline-formatters.js';
 export type { VisionImagePartition } from './outline-formatters.js';
@@ -124,7 +139,11 @@ export {
   takeSceneDepthReport,
   recordSceneDepthSummary,
   takeSceneDepthSummary,
+  validateDerivationDepth,
+  validateExerciseDepth,
+  validateGlossaryDepth,
   validateQuizDepth,
+  validateReadingDepth,
   validateSlideDepth,
 } from './content-depth.js';
 export type { DepthReport, SceneDepthSummary, SlideDepthOptions } from './content-depth.js';

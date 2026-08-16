@@ -70,7 +70,15 @@ export interface MediaGenerationRequest {
 /** A generation-ready description of one course scene. */
 export interface SceneOutline {
   id: string;
-  type: 'slide' | 'quiz' | 'interactive' | 'pbl';
+  type:
+    | 'slide'
+    | 'quiz'
+    | 'interactive'
+    | 'pbl'
+    | 'exercise'
+    | 'derivation'
+    | 'glossary'
+    | 'reading';
   title: string;
   description: string;
   keyPoints: string[];

@@ -18,6 +18,7 @@ import type { Slide, SlideTheme } from '@openmaic/dsl';
 import type { Scene } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import { applyOutlineFallbacks } from './outline-generator';
+import { isSlideLikeOutline } from './outline-type';
 import { generateSceneContent, generateSceneActions } from './scene-generator';
 import type { AgentInfo, SceneGenerationContext, AICallFn } from './pipeline-types';
 import { buildLanguageText } from './prompt-formatters';
@@ -157,7 +158,10 @@ function buildCompleteSceneInner(
 ): Scene | null {
   const sceneId = nanoid();
 
-  if (outline.type === 'slide' && 'elements' in content) {
+  // Slide-like kinds (slide + exercise/derivation/glossary/reading — Phase 2
+  // §15.4b) all render as standard slide scenes; the depth contract is what
+  // distinguishes them at the outline stage.
+  if (isSlideLikeOutline(outline) && 'elements' in content) {
     // Build Slide object
     const defaultTheme: SlideTheme = {
       backgroundColor: '#ffffff',

@@ -153,3 +153,32 @@ export function renderDepthDirective(level: CourseDepthLevel): string {
   ].join('\n');
 }
 
+// Size cap for one course material document (bytes), enforced by the extract
+// route on both the multipart and asset-id forms and by the vision-image
+// resolution (`resolveVisionImagesForPrompt`) so an oversized asset is
+// rejected at `identify` — before any bytes are materialized.
+export const MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+
+// ==================== Specialized scene floors (Phase 2 §15.4b) ====================
+// Floors for the structured scene kinds (exercise / derivation / glossary /
+// reading). Each kind has its own count floor that scales with the course
+// depth level; citation minimums reuse the shared floor above.
+
+export interface SpecialtyDepthFloor {
+  /** Minimum fully-worked problems on an exercise scene (statement + solution). */
+  minProblems: number;
+  /** Minimum derivation steps (latex + explanation). */
+  minDerivationSteps: number;
+  /** Minimum glossary terms. */
+  minGlossaryTerms: number;
+  /** Minimum further-reading items. */
+  minReadingItems: number;
+}
+
+export const SPECIALTY_DEPTH_FLOORS: Record<CourseDepthLevel, SpecialtyDepthFloor> = {
+  intro: { minProblems: 1, minDerivationSteps: 2, minGlossaryTerms: 4, minReadingItems: 3 },
+  intermediate: { minProblems: 1, minDerivationSteps: 3, minGlossaryTerms: 5, minReadingItems: 4 },
+  university: { minProblems: 2, minDerivationSteps: 4, minGlossaryTerms: 6, minReadingItems: 5 },
+};
+
+

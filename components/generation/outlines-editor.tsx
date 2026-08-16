@@ -47,7 +47,16 @@ interface OutlinesEditorProps {
   onCollapse?: () => void;
 }
 
-const SCENE_TYPES: SceneType[] = ['slide', 'quiz', 'interactive', 'pbl'];
+const SCENE_TYPES: SceneType[] = [
+  'slide',
+  'quiz',
+  'interactive',
+  'pbl',
+  'exercise',
+  'derivation',
+  'glossary',
+  'reading',
+];
 
 const TYPE_THEME: Record<
   SceneType,
@@ -82,6 +91,30 @@ const TYPE_THEME: Record<
     accent: 'bg-amber-500',
     dot: 'bg-amber-400',
   },
+  exercise: {
+    chip: 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300',
+    chipHover: 'hover:bg-teal-100/80 dark:hover:bg-teal-500/15',
+    accent: 'bg-teal-500',
+    dot: 'bg-teal-400',
+  },
+  derivation: {
+    chip: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300',
+    chipHover: 'hover:bg-indigo-100/80 dark:hover:bg-indigo-500/15',
+    accent: 'bg-indigo-500',
+    dot: 'bg-indigo-400',
+  },
+  glossary: {
+    chip: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300',
+    chipHover: 'hover:bg-rose-100/80 dark:hover:bg-rose-500/15',
+    accent: 'bg-rose-500',
+    dot: 'bg-rose-400',
+  },
+  reading: {
+    chip: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300',
+    chipHover: 'hover:bg-cyan-100/80 dark:hover:bg-cyan-500/15',
+    accent: 'bg-cyan-500',
+    dot: 'bg-cyan-400',
+  },
 };
 
 function normalizeOrder(outlines: SceneOutline[]): SceneOutline[] {
@@ -101,6 +134,14 @@ function useSceneTypeLabel() {
         return t('generation.sceneTypeInteractive');
       case 'pbl':
         return t('generation.sceneTypePbl');
+      case 'exercise':
+        return t('generation.sceneTypeExercise');
+      case 'derivation':
+        return t('generation.sceneTypeDerivation');
+      case 'glossary':
+        return t('generation.sceneTypeGlossary');
+      case 'reading':
+        return t('generation.sceneTypeReading');
       case 'slide':
       default:
         return t('generation.sceneTypeSlide');
@@ -640,7 +681,12 @@ function SceneRow({
                   disabled={disabled}
                   label={sceneTypeLabel(outline.type)}
                   theme={theme}
-                  connected={!disabled && outline.type !== 'slide'}
+                  connected={
+                    !disabled &&
+                    (outline.type === 'quiz' ||
+                      outline.type === 'interactive' ||
+                      outline.type === 'pbl')
+                  }
                 />
               </div>
               {!disabled && <DeleteSceneButton onConfirm={onRemove} />}
