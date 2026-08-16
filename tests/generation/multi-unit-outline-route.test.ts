@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 const streamLLMMock = vi.hoisted(() => vi.fn());
 const callLLMMock = vi.hoisted(() => vi.fn());
 const resolveModelFromRequestMock = vi.hoisted(() => vi.fn());
+const searchWebMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/ai/llm', () => ({
   streamLLM: streamLLMMock,
@@ -12,6 +13,14 @@ vi.mock('@/lib/ai/llm', () => ({
 vi.mock('@/lib/server/resolve-model', () => ({
   resolveModelFromRequest: resolveModelFromRequestMock,
 }));
+
+vi.mock('@/lib/web-search', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/web-search')>('@/lib/web-search');
+  return {
+    ...actual,
+    searchWeb: searchWebMock,
+  };
+});
 
 async function readStreamBody(response: Response) {
   const reader = response.body?.getReader();
@@ -110,6 +119,7 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     resolveModelFromRequestMock.mockReset();
     streamLLMMock.mockReset();
     callLLMMock.mockReset();
+    searchWebMock.mockReset();
     resolveModelFromRequestMock.mockResolvedValue({
       model: { provider: 'openai', modelId: 'gpt-test' },
       modelInfo: { outputWindow: 4096, capabilities: {} },
@@ -238,8 +248,83 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(callLLMMock).toHaveBeenCalledTimes(4);
   });
 
-  test('compact courses (single unit) keep the single-call streaming path', async () => {
-    streamLLMMock.mockImplementation(() => ({
+  test('per-unit web research grounds unit outlines with [source N] citations (Phase 2 §15.2)', async () => {
+    searchWebMock.mockImplementation(async (params: { query: string }) => ({
+      answer: 'summary',
+      query: params.query,
+      responseTime: 1,
+      sources: [
+        {
+          title: 'Result A',
+          url: 'https://example.com/a',
+          content:
+            'A process is a running program instance with its own address space. The scheduler assigns CPU time to ready processes.',
+          score: 0.9,
+        },
+      ],
+    }));
+    callLLMMock
+      .mockResolvedValueOnce({ text: JSON.stringify(syllabusResponse()), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(0)), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(1)), usage: {} });
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        requirements: REQUIREMENTS,
+        sizePreset: 'standard',
+        pdfText: '',
+        pdfImages: [],
+        imageMapping: {},
+        researchContext: '',
+        webSearchConfig: { providerId: 'tavily', apiKey: 'k' },
+      }) as unknown as Parameters<typeof POST>[0],
+    );
+
+    const text = await readStreamBody(response);
+    const events = parseSseEvents(text);
+    const done = events.find((e) => e.type === 'done');
+    expect(done).toBeDefined();
+
+    // One search per unit, queried from the unit title + objectives.
+    expect(searchWebMock).toHaveBeenCalledTimes(2);
+    expect(searchWebMock.mock.calls[0][0].query).toContain('Processes and Threads');
+    expect(searchWebMock.mock.calls[1][0].query).toContain('Memory Management');
+
+    // Unit 0 outlines carry retrieval context with web citations.
+    const firstOutline = done.outlines[0];
+    expect(firstOutline.retrievalContext).toBeDefined();
+    expect(firstOutline.retrievalContext).toContain('[source 1]');
+  });
+
+  test('per-unit web research failure falls back to the global context without failing the run', async () => {
+    searchWebMock.mockRejectedValue(new Error('search down'));
+    callLLMMock
+      .mockResolvedValueOnce({ text: JSON.stringify(syllabusResponse()), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(0)), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(1)), usage: {} });
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        requirements: REQUIREMENTS,
+        sizePreset: 'standard',
+        pdfText: '',
+        pdfImages: [],
+        imageMapping: {},
+        researchContext: 'Global research fallback text',
+        webSearchConfig: { providerId: 'tavily', apiKey: 'k' },
+      }) as unknown as Parameters<typeof POST>[0],
+    );
+
+    const text = await readStreamBody(response);
+    const events = parseSseEvents(text);
+    const done = events.find((e) => e.type === 'done');
+    expect(done).toBeDefined();
+    expect(done.outlines).toHaveLength(TOTAL_SCENES);
+  });
+
+  test('compact courses (single unit) keep the single-call streaming path', async () => {    streamLLMMock.mockImplementation(() => ({
       textStream: (async function* () {
         yield JSON.stringify({
           languageDirective: 'Teach in English.',
