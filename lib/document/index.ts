@@ -30,7 +30,6 @@ export {
 export {
   MAX_DOCUMENT_BUNDLE_FILES,
   MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES,
-  allocateDocumentTextBudgets,
   buildDocumentBundle,
   sortDocumentImagesForVision,
 } from './bundle';

@@ -1013,8 +1013,6 @@
     "goBackAndRetry": "돌아가서 다시 시도",
     "classroomReady": "맞춤형 AI 학습 환경이 성공적으로 생성되었습니다.",
     "aiWorking": "AI 에이전트 작동 중...",
-    "textTruncated": "문서 텍스트가 길어 처음 {{n}}자만 사용하여 생성합니다",
-    "imageTruncated": "{{total}}개의 이미지가 발견되었으나 {{max}}개 제한을 초과했습니다. 초과 이미지는 텍스트 설명으로 대체됩니다",
     "agentGeneration": "교실 역할 생성 중",
     "agentGenerationDesc": "강좌 내용을 바탕으로 역할을 생성하고 있어요...",
     "agentRevealTitle": "교실 역할 소개",
@@ -1114,7 +1112,13 @@
       "intensive": "집중",
       "semester": "학기"
     },
-    "sizePresetHint": "최대 {{scenes}}개 장면 (~{{minutes}}분)"
+    "sizePresetHint": "최대 {{scenes}}개 장면 (~{{minutes}}분)",
+    "indexingDocument": "문서 인덱싱 중…",
+    "indexingProgress": "문서 인덱싱: {{done}}/{{total}}",
+    "captioningProgress": "이미지 설명 생성: {{done}}/{{total}}",
+    "documentIndexed": "인덱싱 완료: 섹션 {{sections}}개, 이미지 {{images}}개",
+    "documentIndexFailed": "문서 인덱싱 실패 — 전체 문서 커버리지 없이 계속합니다",
+    "coverageGaps": "{{count}}개 원본 섹션이 어떤 레슨에서도 다루어지지 않았습니다"
   },
   "settings": {
     "title": "설정",

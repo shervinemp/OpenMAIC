@@ -1013,8 +1013,6 @@
     "goBackAndRetry": "Voltar e Tentar de Novo",
     "classroomReady": "Seu ambiente de aprendizagem com IA foi gerado com sucesso.",
     "aiWorking": "Agentes de IA Trabalhando...",
-    "textTruncated": "O texto do documento é longo; usando os primeiros {{n}} caracteres",
-    "imageTruncated": "{{total}} imagens encontradas, excedendo o limite de {{max}}. As imagens excedentes usarão apenas descrições em texto",
     "agentGeneration": "Gerando os Papéis da Sala",
     "agentGenerationDesc": "Gerando papéis com base no conteúdo do curso...",
     "agentRevealTitle": "Seus Papéis da Sala",
@@ -1114,7 +1112,13 @@
       "intensive": "Intensivo",
       "semester": "Semestre"
     },
-    "sizePresetHint": "Até {{scenes}} cenas (~{{minutes}} min)"
+    "sizePresetHint": "Até {{scenes}} cenas (~{{minutes}} min)",
+    "indexingDocument": "Indexando documento…",
+    "indexingProgress": "Indexando documento: {{done}}/{{total}}",
+    "captioningProgress": "Descrevendo imagens: {{done}}/{{total}}",
+    "documentIndexed": "Documento indexado: {{sections}} seções, {{images}} imagens descritas",
+    "documentIndexFailed": "Falha na indexação do documento — continuando sem cobertura completa",
+    "coverageGaps": "{{count}} seção(ões) do material não cobertas por nenhuma aula"
   },
   "settings": {
     "title": "Configurações",

@@ -1013,8 +1013,6 @@
     "goBackAndRetry": "العودة وإعادة المحاولة",
     "classroomReady": "تم توليد بيئة التعلم الذكية المخصصة لك بنجاح.",
     "aiWorking": "وكلاء الذكاء الاصطناعي يعملون...",
-    "textTruncated": "نص المستند طويل، سيتم استخدام أول {{n}} حرف للتوليد",
-    "imageTruncated": "تم العثور على {{total}} صورة، متجاوزة الحد الأقصى البالغ {{max}} صورة. الصور الإضافية ستستخدم الأوصاف النصية فقط",
     "agentGeneration": "توليد أدوار الفصل",
     "agentGenerationDesc": "جارٍ توليد الأدوار بناءً على محتوى المقرر...",
     "agentRevealTitle": "أدوار فصلك",
@@ -1114,7 +1112,13 @@
       "intensive": "مكثف",
       "semester": "فصلي"
     },
-    "sizePresetHint": "حتى {{scenes}} مشهد (~{{minutes}} دقيقة)"
+    "sizePresetHint": "حتى {{scenes}} مشهد (~{{minutes}} دقيقة)",
+    "indexingDocument": "جارٍ فهرسة المستند…",
+    "indexingProgress": "فهرسة المستند: {{done}}/{{total}}",
+    "captioningProgress": "وصف الصور: {{done}}/{{total}}",
+    "documentIndexed": "تمت فهرسة المستند: {{sections}} قسماً، {{images}} صورة",
+    "documentIndexFailed": "فشلت فهرسة المستند — سيستمر العمل بدون تغطية كاملة",
+    "coverageGaps": "{{count}} قسم من المصدر غير مغطى بأي درس"
   },
   "settings": {
     "title": "الإعدادات",

@@ -64,6 +64,17 @@ import {
   formatWebSourceLegend,
   webSourcesToChunks,
 } from '@/lib/generation/web-retrieval';
+import {
+  renderDocumentDigest,
+  type DocumentDigest,
+} from '@/lib/generation/document-digest';
+import {
+  auditDigestCoverage,
+  collectCitedMarkers,
+  renderCoverageReport,
+} from '@/lib/generation/coverage-audit';
+import { loadDocumentIndex } from '@/lib/server/document-index-store';
+import { DIGEST_TARGET_CHARS } from '@/lib/constants/generation';
 import type { WebSearchProviderId, BaiduSubSources } from '@/lib/web-search/types';
 import { DEFAULT_DURATION_MINUTES } from '@/lib/constants/generation';
 import {
@@ -736,7 +747,7 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Requirements are required');
     }
 
-    const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents, durationMinutes, sizePreset, webSearchConfig } = body as {
+    const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents, durationMinutes, sizePreset, webSearchConfig, pdfHandle, pdfDigest } = body as {
       requirements: UserRequirements;
       pdfText?: string;
       pdfImages?: PdfImage[];
@@ -745,6 +756,8 @@ export async function POST(req: NextRequest) {
       agents?: AgentInfo[];
       durationMinutes?: number;
       sizePreset?: unknown;
+      pdfHandle?: string;
+      pdfDigest?: DocumentDigest;
       webSearchConfig?: {
         providerId?: string;
         apiKey?: string;
@@ -753,6 +766,27 @@ export async function POST(req: NextRequest) {
       };
     };
     requirementSnippet = requirements?.requirement?.substring(0, 60);
+
+    // ── Full-document coverage (Phase 2 §16) ──
+    // With a handle, the outline prompt gets the coverage DIGEST (the whole
+    // document as an enumerative map) and per-scene retrieval runs over the
+    // FULL text loaded from the index store — no truncation anywhere.
+    const storedIndex = pdfHandle ? await loadDocumentIndex(pdfHandle) : null;
+    const indexChunks = storedIndex?.chunks ?? [];
+    const digestText = pdfDigest
+      ? renderDocumentDigest(pdfDigest, { maxChars: DIGEST_TARGET_CHARS }).text
+      : storedIndex && storedIndex.digest.sections.length > 0
+        ? renderDocumentDigest(storedIndex.digest, { maxChars: DIGEST_TARGET_CHARS }).text
+        : '';
+    const rawTierText =
+      storedIndex && storedIndex.digest.sections.length === 0 ? storedIndex.text : '';
+    const effectivePdfContent = digestText
+      ? digestText
+      : rawTierText
+        ? rawTierText
+        : pdfText
+          ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS)
+          : 'None';
 
     // Build user profile string for language inference context
     const userProfileText =
@@ -832,7 +866,7 @@ export async function POST(req: NextRequest) {
 
     const baseVariables = {
       requirement: requirements.requirement,
-      pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
+      pdfContent: effectivePdfContent,
       availableImages: availableImagesText,
       researchContext: researchContext || 'None',
       hasSourceImages,
@@ -1177,9 +1211,14 @@ export async function POST(req: NextRequest) {
             // Pillar 3b: attach per-scene retrieval context from the full
             // source text (the outline stage is the one place the raw text
             // exists), so scene content can cite the actual source instead of
-            // a global summary.
-            const retrievalChunks: PdfChunk[] =
-              pdfText && pdfText.length > 2000 ? chunkSourceText(pdfText) : [];
+            // a global summary. With a document handle the chunks come from
+            // the server-side index — the ENTIRE document, not a truncated
+            // prefix.
+            const retrievalChunks: PdfChunk[] = indexChunks.length > 0
+              ? indexChunks
+              : pdfText && pdfText.length > 2000
+                ? chunkSourceText(pdfText)
+                : [];
             const doneOutlines = finalBlueprint.lessons.flatMap((lesson) =>
               lesson.outlines.map((outline) => {
                 if (outline.retrievalContext || retrievalChunks.length === 0) return outline;
@@ -1209,6 +1248,28 @@ export async function POST(req: NextRequest) {
               },
             });
             controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));
+
+            // Coverage audit (§16): sections of the source document that no
+            // lesson cites are reported, not silently dropped. The client
+            // surfaces the report (gap-fill or intentional exclusion).
+            if (storedIndex && storedIndex.digest.sections.length > 0) {
+              const citedMarkers = collectCitedMarkers(doneOutlines);
+              const audit = auditDigestCoverage(
+                storedIndex.digest,
+                indexChunks,
+                citedMarkers,
+              );
+              const coverageEvent = JSON.stringify({
+                type: 'coverage',
+                data: {
+                  report: renderCoverageReport(audit),
+                  coverageRatio: audit.coverageRatio,
+                  gapCount: audit.gaps.length,
+                  uncoveredChapters: audit.uncoveredChapters,
+                },
+              });
+              controller.enqueue(encoder.encode(`data: ${coverageEvent}\n\n`));
+            }
           } else if (parsedOutlines.length > 0 && !contractFailed) {
             // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
             const uniquifiedOutlines = uniquifyMediaElementIds(parsedOutlines);

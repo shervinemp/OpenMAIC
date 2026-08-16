@@ -1013,8 +1013,6 @@
     "goBackAndRetry": "Вернуться и повторить",
     "classroomReady": "Ваша персонализированная AI-среда обучения успешно создана.",
     "aiWorking": "AI-агенты работают...",
-    "textTruncated": "Текст документа слишком длинный, используются первые {{n}} символов",
-    "imageTruncated": "Найдено {{total}} изображений, что превышает лимит в {{max}}. Лишние будут описаны текстом",
     "agentGeneration": "Генерация ролей в классе",
     "agentGenerationDesc": "Создание ролей на основе содержания курса...",
     "agentRevealTitle": "Роли в вашем классе",
@@ -1114,7 +1112,13 @@
       "intensive": "Интенсивный",
       "semester": "Семестровый"
     },
-    "sizePresetHint": "До {{scenes}} сцен (~{{minutes}} мин)"
+    "sizePresetHint": "До {{scenes}} сцен (~{{minutes}} мин)",
+    "indexingDocument": "Индексируем документ…",
+    "indexingProgress": "Индексирование документа: {{done}}/{{total}}",
+    "captioningProgress": "Описание изображений: {{done}}/{{total}}",
+    "documentIndexed": "Документ проиндексирован: {{sections}} разделов, {{images}} изображений",
+    "documentIndexFailed": "Не удалось проиндексировать документ — продолжаем без полного охвата",
+    "coverageGaps": "{{count}} раздел(а/ов) источника не охвачены ни одним уроком"
   },
   "settings": {
     "title": "Настройки",

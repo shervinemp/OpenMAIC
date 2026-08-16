@@ -58,6 +58,41 @@ describe('chunkSourceText', () => {
     const chunks = chunkSourceText('Page 42', { minChunkChars: 40 });
     expect(chunks).toHaveLength(0);
   });
+
+  test('flushes pending content before a page marker so chunks keep their own page', () => {
+    const text = 'Page 1\n\nAlpha\n\nContent on page one.\n\nPage 2\n\nBeta\n\nContent on page two.';
+    const chunks = chunkSourceText(text, { minChunkChars: 1 });
+    const alpha = chunks.find((c) => c.text.includes('Alpha'));
+    const beta = chunks.find((c) => c.text.includes('Beta'));
+    expect(alpha).toBeDefined();
+    expect(beta).toBeDefined();
+    expect(alpha!.pageHint).toBe('1');
+    expect(beta!.pageHint).toBe('2');
+  });
+
+  test('indexes material far beyond the old 50k truncation boundary (§16)', () => {
+    // ~120k chars: forty 3k-char pages, the interesting one on p.412.
+    const pages: string[] = [];
+    for (let page = 1; page <= 40; page += 1) {
+      const filler =
+        page === 40
+          ? 'The Minix kernel led directly to Linux. '
+          : 'Routine coverage of page material for the course. ';
+      pages.push(`Page ${page}\n\n${filler.repeat(50)}`);
+    }
+    const source = pages.join('\n\n');
+    expect(source.length).toBeGreaterThan(80_000);
+
+    const chunks = chunkSourceText(source, { maxChunkChars: 900 });
+    expect(chunks.length).toBeGreaterThanOrEqual(40);
+    // The material past the old 50k boundary is indexed and retrievable.
+    const deep = retrieveChunks('Minix kernel Linux', chunks, { topK: 3 });
+    expect(deep.length).toBeGreaterThan(0);
+    expect(deep[0].text).toContain('Minix');
+    expect(deep[0].pageHint).toBe('40');
+    const cited = new Set(deep.map((chunk) => chunk.citation));
+    expect(cited).toContain('p.40');
+  });
 });
 
 describe('retrieval', () => {

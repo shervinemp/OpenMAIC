@@ -1059,8 +1059,6 @@
     "goBackAndRetry": "Quay lại và thử lại",
     "classroomReady": "Môi trường học tập AI riêng của bạn đã được tạo xong.",
     "aiWorking": "Các tác nhân AI đang làm việc…",
-    "textTruncated": "Tài liệu khá dài, chỉ dùng {{n}} ký tự đầu để tạo bài",
-    "imageTruncated": "Tìm thấy {{total}} ảnh, vượt giới hạn {{max}} ảnh. Số ảnh dư sẽ chỉ dùng mô tả bằng chữ",
     "agentGeneration": "Đang tạo vai trò trong lớp",
     "agentGenerationDesc": "Đang tạo vai trò dựa trên nội dung bài học…",
     "agentRevealTitle": "Các vai trò trong lớp của bạn",
@@ -1158,6 +1156,12 @@
     "sizePreset.semester": "Học kỳ",
     "sizePreset.standard": "Tiêu chuẩn",
     "sizePresetHint": "Tối đa {{scenes}} cảnh, ~{{minutes}} phút",
+    "indexingDocument": "Đang lập chỉ mục tài liệu…",
+    "indexingProgress": "Đang lập chỉ mục: {{done}}/{{total}}",
+    "captioningProgress": "Đang mô tả hình ảnh: {{done}}/{{total}}",
+    "documentIndexed": "Đã lập chỉ mục: {{sections}} mục, {{images}} hình ảnh",
+    "documentIndexFailed": "Lập chỉ mục thất bại — tiếp tục mà không phủ sóng toàn bộ tài liệu",
+    "coverageGaps": "{{count}} mục nguồn không được bài học nào đề cập",
     "skipScene": "Bỏ qua cảnh"
   },
   "settings": {

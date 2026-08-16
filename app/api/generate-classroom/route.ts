@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
     const body: GenerateClassroomInput = {
       requirement: rawBody.requirement || '',
       ...(rawBody.pdfContent ? { pdfContent: rawBody.pdfContent } : {}),
+      ...(rawBody.pdfHandle ? { pdfHandle: rawBody.pdfHandle } : {}),
 
       ...(rawBody.enableWebSearch != null ? { enableWebSearch: rawBody.enableWebSearch } : {}),
       ...(rawBody.webSearchProviderId ? { webSearchProviderId: rawBody.webSearchProviderId } : {}),

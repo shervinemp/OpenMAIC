@@ -30,13 +30,13 @@ import {
   storeImages,
 } from '@/lib/utils/image-storage';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
-import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import {
   MAX_DOCUMENT_BUNDLE_FILES,
   MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES,
   buildDocumentBundle,
   type ParsedDocumentPart,
 } from '@/lib/document/bundle';
+import type { DocumentDigest } from '@/lib/generation/document-digest';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import { nanoid } from 'nanoid';
 import type { GeneratedAgentConfig, Stage } from '@/lib/types/stage';
@@ -452,7 +452,7 @@ function GenerationPreviewContent() {
         const bundle = buildDocumentBundle(parsedParts);
         const imageStorageIds = await storeImages(bundle.images);
 
-        const pdfImages: PdfImage[] = bundle.images.map((img, i) => ({
+        let pdfImages: PdfImage[] = bundle.images.map((img, i) => ({
           id: img.id,
           src: '',
           pageNumber: img.pageNumber,
@@ -467,33 +467,156 @@ function GenerationPreviewContent() {
           storageId: imageStorageIds[i],
         }));
 
+        // ── Document indexing (Phase 2 §16) ──
+        // The FULL extracted text + every image go to the server-side index
+        // (sha256-handled, cached): coverage digest for the outline stage,
+        // batched vision captions for ALL images, full-text retrieval chunks.
+        // Failure degrades gracefully to the legacy truncated-prefix path.
+        const notices: string[] = [];
+        let pdfHandle: string | undefined;
+        let pdfDigest: DocumentDigest | undefined;
+        let documentIndex: GenerationSessionState['documentIndex'] | undefined;
+        if (bundle.text.length > 0) {
+          try {
+            setStatusMessage(t('generation.indexingDocument'));
+            const indexData = await new Promise<{
+              handle: string;
+              tier: string;
+              digest: DocumentDigest;
+              captions: Record<string, { caption: string; kind: string }>;
+              chunkCount: number;
+              totalImageCount: number;
+              captionedCount: number;
+            }>((resolve, reject) => {
+              fetch('/api/documents/index', {
+                method: 'POST',
+                headers: getApiHeaders(),
+                body: JSON.stringify({
+                  text: bundle.text,
+                  images: bundle.images.map((img) => ({
+                    id: img.id,
+                    src: img.src,
+                    pageNumber: img.pageNumber,
+                    width: img.width,
+                    height: img.height,
+                  })),
+                }),
+                signal,
+              })
+                .then((res) => {
+                  if (!res.ok) {
+                    return res.json().then((d) => {
+                      reject(new Error(d.error || t('generation.documentIndexFailed')));
+                    });
+                  }
+                  const reader = res.body?.getReader();
+                  if (!reader) {
+                    reject(new Error(t('generation.documentIndexFailed')));
+                    return;
+                  }
+                  const decoder = new TextDecoder();
+                  let sseBuffer = '';
+                  const pump = (): Promise<void> =>
+                    reader.read().then(({ done, value }) => {
+                      if (value) {
+                        sseBuffer += decoder.decode(value, { stream: !done });
+                        const lines = sseBuffer.split('\n');
+                        sseBuffer = lines.pop() || '';
+                        for (const line of lines) {
+                          if (!line.startsWith('data: ')) continue;
+                          try {
+                            const evt = JSON.parse(line.slice(6));
+                            if (evt.type === 'progress') {
+                              const { phase, done: progressDone, total } = evt;
+                              setStatusMessage(
+                                phase === 'captions'
+                                  ? t('generation.captioningProgress', {
+                                      done: progressDone,
+                                      total,
+                                    })
+                                  : t('generation.indexingProgress', {
+                                      done: progressDone,
+                                      total,
+                                    }),
+                              );
+                            } else if (evt.type === 'done') {
+                              resolve(evt.data);
+                              return;
+                            } else if (evt.type === 'error') {
+                              reject(new Error(evt.error));
+                              return;
+                            }
+                          } catch (e) {
+                            log.error('Failed to parse document index SSE:', line, e);
+                          }
+                        }
+                      }
+                      if (done) return;
+                      return pump();
+                    });
+                  pump().catch(reject);
+                })
+                .catch(reject);
+            });
+
+            pdfHandle = indexData.handle;
+            pdfDigest = indexData.digest;
+            documentIndex = {
+              tier: indexData.tier,
+              chunkCount: indexData.chunkCount,
+              totalImageCount: indexData.totalImageCount,
+              captionedCount: indexData.captionedCount,
+            };
+
+            // Captions enrich every image — no metadata-only image anywhere.
+            if (indexData.captions && Object.keys(indexData.captions).length > 0) {
+              pdfImages = pdfImages.map((img) => {
+                const caption = indexData.captions[img.id];
+                if (!caption) return img;
+                const captionText = `${caption.caption} (${caption.kind})`;
+                return {
+                  ...img,
+                  description: img.description
+                    ? `${img.description} | ${captionText}`
+                    : captionText,
+                };
+              });
+            }
+
+            setStatusMessage(
+              t('generation.documentIndexed', {
+                sections: indexData.digest.sections.length,
+                images: indexData.captionedCount,
+              }),
+            );
+          } catch (indexError) {
+            if (signal?.aborted) throw indexError;
+            log.warn('Document indexing failed; continuing without coverage index:', indexError);
+            notices.push(t('generation.documentIndexFailed'));
+          }
+        }
+
         // Update session with extracted document data
-        const updatedSession = {
+        const updatedSession: GenerationSessionState = {
           ...currentSession,
           documentSources,
           pdfText: bundle.text,
           pdfImages,
           imageStorageIds,
           pdfStorageKey: undefined, // Clear so we don't re-parse
+          pdfHandle,
+          pdfDigest,
+          documentIndex,
         };
         setSession(updatedSession);
-        sessionStorage.setItem('generationSession', JSON.stringify(updatedSession));
+        try {
+          sessionStorage.setItem('generationSession', JSON.stringify(updatedSession));
+        } catch (storageError) {
+          log.warn('Session storage failed (document too large for sessionStorage):', storageError);
+        }
 
-        // Truncation warnings
-        const warnings: string[] = [];
-        if (bundle.totalRawTextLength > bundle.textContentBudget) {
-          warnings.push(t('generation.textTruncated', { n: bundle.textContentBudget }));
-        }
-        if (bundle.totalImageCount > MAX_VISION_IMAGES) {
-          warnings.push(
-            t('generation.imageTruncated', {
-              total: bundle.totalImageCount,
-              max: MAX_VISION_IMAGES,
-            }),
-          );
-        }
-        if (warnings.length > 0) {
-          setTruncationWarnings(warnings);
+        if (notices.length > 0) {
+          setTruncationWarnings(notices);
         }
 
         // Reassign local reference for subsequent steps
@@ -607,7 +730,12 @@ function GenerationPreviewContent() {
               withThinkingConfig({
                 requirements: currentSession.requirements,
                 sizePreset: currentSession.sizePreset ?? 'compact',
-                pdfText: currentSession.pdfText,
+                // Phase 2 §16: with a handle the outline prompt gets the
+                // coverage digest and the server loads the full text itself —
+                // no giant pdfText payload, no truncated prefix.
+                pdfText: currentSession.pdfHandle ? undefined : currentSession.pdfText,
+                pdfHandle: currentSession.pdfHandle,
+                pdfDigest: currentSession.pdfDigest,
                 pdfImages: currentSession.pdfImages,
                 imageMapping,
                 researchContext: currentSession.researchContext,
@@ -691,6 +819,25 @@ function GenerationPreviewContent() {
                             blueprint: evt.blueprint,
                           });
                           return;
+                        } else if (evt.type === 'coverage') {
+                          // §16 coverage audit: sections of the source document
+                          // no lesson cites — surfaced, never silently dropped.
+                          const coverage = evt.data as {
+                            report?: string;
+                            coverageRatio?: number;
+                            gapCount?: number;
+                            uncoveredChapters?: string[];
+                          };
+                          if (coverage.gapCount && coverage.gapCount > 0) {
+                            const gapText = t('generation.coverageGaps', {
+                              count: coverage.gapCount,
+                            });
+                            setTruncationWarnings((prev) => [
+                              ...prev,
+                              gapText,
+                              ...(coverage.report ? [coverage.report] : []),
+                            ]);
+                          }
                         } else if (evt.type === 'error') {
                           reject(new Error(evt.error));
                           return;

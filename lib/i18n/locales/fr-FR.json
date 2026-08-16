@@ -1013,8 +1013,6 @@
     "goBackAndRetry": "Revenir en arrière et réessayer",
     "classroomReady": "Votre environnement d’apprentissage IA personnalisé a été généré avec succès.",
     "aiWorking": "Les agents IA travaillent…",
-    "textTruncated": "Le texte du document est long, les {{n}} premiers caractères seront utilisés pour la génération",
-    "imageTruncated": "{{total}} images trouvées, au-delà de la limite de {{max}} images. Les images excédentaires seront réduites à une description textuelle",
     "agentGeneration": "Génération des rôles de la classe",
     "agentGenerationDesc": "Création des rôles à partir du contenu du cours…",
     "agentRevealTitle": "Les rôles de votre classe",
@@ -1114,7 +1112,13 @@
       "intensive": "Intensif",
       "semester": "Semestre"
     },
-    "sizePresetHint": "Jusqu’à {{scenes}} scènes (~{{minutes}} min)"
+    "sizePresetHint": "Jusqu’à {{scenes}} scènes (~{{minutes}} min)",
+    "indexingDocument": "Indexation du document…",
+    "indexingProgress": "Indexation du document : {{done}}/{{total}}",
+    "captioningProgress": "Description des images : {{done}}/{{total}}",
+    "documentIndexed": "Document indexé : {{sections}} sections, {{images}} images décrites",
+    "documentIndexFailed": "Échec de l'indexation — poursuite sans couverture complète",
+    "coverageGaps": "{{count}} section(s) du document source non couverte(s) par une leçon"
   },
   "settings": {
     "title": "Paramètres",

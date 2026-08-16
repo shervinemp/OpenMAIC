@@ -994,8 +994,6 @@
     "goBackAndRetry": "返回重試",
     "classroomReady": "你的個人化AI學習環境已成功生成。",
     "aiWorking": "AI智能體工作中...",
-    "textTruncated": "文件文字較長，已擷取前 {{n}} 字元用於生成",
-    "imageTruncated": "文件含 {{total}} 張圖片，超出上限 {{max}} 張，多餘圖片將僅以文字描述傳遞",
     "agentGeneration": "生成課堂角色",
     "agentGenerationDesc": "正在依據課程內容生成角色...",
     "agentRevealTitle": "你的課堂角色",
@@ -1095,7 +1093,13 @@
       "intensive": "密集",
       "semester": "學期"
     },
-    "sizePresetHint": "最多 {{scenes}} 個場景（約 {{minutes}} 分鐘）"
+    "sizePresetHint": "最多 {{scenes}} 個場景（約 {{minutes}} 分鐘）",
+    "indexingDocument": "正在建立文件索引…",
+    "indexingProgress": "建立文件索引: {{done}}/{{total}}",
+    "captioningProgress": "正在描述圖片: {{done}}/{{total}}",
+    "documentIndexed": "文件索引完成: {{sections}} 個章節, {{images}} 張圖片",
+    "documentIndexFailed": "文件索引失敗 — 將在缺少完整文件涵蓋範圍的情況下繼續",
+    "coverageGaps": "有 {{count}} 個來源章節未被任何課程涵蓋"
   },
   "settings": {
     "title": "設定",

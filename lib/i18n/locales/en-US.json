@@ -1013,8 +1013,6 @@
     "goBackAndRetry": "Go Back and Retry",
     "classroomReady": "Your personalized AI learning environment has been generated successfully.",
     "aiWorking": "AI Agents Working...",
-    "textTruncated": "Document text is long, using first {{n}} characters for generation",
-    "imageTruncated": "{{total}} images found, exceeding the {{max}} image limit. Extra images will use text descriptions only",
     "agentGeneration": "Generating Classroom Roles",
     "agentGenerationDesc": "Generating roles based on course content...",
     "agentRevealTitle": "Your Classroom Roles",
@@ -1114,7 +1112,13 @@
       "intensive": "Intensive",
       "semester": "Semester"
     },
-    "sizePresetHint": "Up to {{scenes}} scenes (~{{minutes}} min)"
+    "sizePresetHint": "Up to {{scenes}} scenes (~{{minutes}} min)",
+    "indexingDocument": "Indexing document…",
+    "indexingProgress": "Indexing document: {{done}}/{{total}}",
+    "captioningProgress": "Captioning images: {{done}}/{{total}}",
+    "documentIndexed": "Document indexed: {{sections}} sections, {{images}} images captioned",
+    "documentIndexFailed": "Document indexing failed — continuing without full-document coverage",
+    "coverageGaps": "{{count}} source section(s) are not covered by any lesson"
   },
   "settings": {
     "title": "Settings",

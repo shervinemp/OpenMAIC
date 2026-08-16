@@ -1013,8 +1013,6 @@
     "goBackAndRetry": "返回重试",
     "classroomReady": "你的个性化AI学习环境已成功生成。",
     "aiWorking": "AI智能体工作中...",
-    "textTruncated": "文档文本较长，已截取前 {{n}} 字符用于生成",
-    "imageTruncated": "文档含 {{total}} 张图片，超出上限 {{max}} 张，多余图片将仅以文字描述传递",
     "agentGeneration": "生成课堂角色",
     "agentGenerationDesc": "正在根据课程内容生成角色...",
     "agentRevealTitle": "你的课堂角色",
@@ -1114,7 +1112,13 @@
       "intensive": "密集",
       "semester": "学期"
     },
-    "sizePresetHint": "最多 {{scenes}} 个场景（约 {{minutes}} 分钟）"
+    "sizePresetHint": "最多 {{scenes}} 个场景（约 {{minutes}} 分钟）",
+    "indexingDocument": "正在索引文档…",
+    "indexingProgress": "正在索引文档: {{done}}/{{total}}",
+    "captioningProgress": "正在描述图片: {{done}}/{{total}}",
+    "documentIndexed": "文档索引完成: {{sections}} 个章节, {{images}} 张图片",
+    "documentIndexFailed": "文档索引失败 — 将缺少完整文档覆盖继续生成",
+    "coverageGaps": "有 {{count}} 个来源章节未被任何课程覆盖"
   },
   "settings": {
     "title": "设置",

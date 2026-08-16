@@ -39,6 +39,9 @@ import {
   retrieveChunks,
   type PdfChunk,
 } from '@/lib/generation/pdf-retrieval';
+import { renderDocumentDigest } from '@/lib/generation/document-digest';
+import { loadDocumentIndex } from '@/lib/server/document-index-store';
+import { DIGEST_TARGET_CHARS } from '@/lib/constants/generation';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
@@ -49,6 +52,8 @@ const log = createLogger('Classroom');
 export interface GenerateClassroomInput {
   requirement: string;
   pdfContent?: { text: string; images: string[] };
+  /** Document index handle (Phase 2 §16) — full text lives server-side. */
+  pdfHandle?: string;
   enableWebSearch?: boolean;
   webSearchProviderId?: WebSearchProviderId;
   webSearchApiKey?: string;
@@ -403,7 +408,18 @@ export async function generateClassroom(
     requirement,
   };
   const vocationalActive = resolveVocationalActive(requirements);
-  const pdfText = pdfContent?.text || undefined;
+
+  // ── Full-document coverage (Phase 2 §16) ──
+  // With a handle: the FULL text (for retrieval + search excerpts) and the
+  // coverage DIGEST (for the outline prompt) come from the server-side index
+  // — never a truncated prefix.
+  const storedIndex = input.pdfHandle ? await loadDocumentIndex(input.pdfHandle) : null;
+  const pdfText = storedIndex?.text || pdfContent?.text || undefined;
+  const outlineSourceText = storedIndex
+    ? storedIndex.digest.sections.length > 0
+      ? renderDocumentDigest(storedIndex.digest, { maxChars: DIGEST_TARGET_CHARS }).text
+      : storedIndex.text
+    : pdfText;
 
   await options.onProgress?.({
     step: 'researching',
@@ -473,7 +489,7 @@ export async function generateClassroom(
 
   const outlinesResult = await generateSceneOutlinesFromRequirements(
     requirements,
-    pdfText,
+    outlineSourceText,
     undefined,
     aiCall,
     {
@@ -559,8 +575,13 @@ export async function generateClassroom(
   // source text, then retrieve the top-k chunks for each outline at
   // content time so scenes are grounded in the actual source (not a
   // single global summary). Skip for tiny sources (no retrieval signal).
+  // With a document handle the index covers the ENTIRE document.
   const retrievalChunks: PdfChunk[] =
-    pdfText && pdfText.length > 2000 ? chunkSourceText(pdfText) : [];
+    storedIndex && storedIndex.chunks.length > 0
+      ? storedIndex.chunks
+      : pdfText && pdfText.length > 2000
+        ? chunkSourceText(pdfText)
+        : [];
 
   for (const [index, outline] of outlines.entries()) {
     const safeOutline = applyOutlineFallbacks(outline, true, {
