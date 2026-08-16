@@ -430,6 +430,41 @@ describe('validateBlueprint', () => {
     expect(report.warnings.some((w) => w.includes('quiz cadence'))).toBe(true);
   });
 
+  test('accepts specialized scene types and advises per-unit glossary/reading at higher depth (§15.4b)', () => {
+    const contract = deriveCourseContract(20, 'explainer', 'intensive');
+    const parsed: ParsedOutlineResponse = {
+      languageDirective: 'Teach in English.',
+      lessons: Array.from({ length: 2 }, (_, i) => ({
+        title: `Lesson ${i + 1}`,
+        objectives: [`Objective ${i + 1}`],
+      })),
+      audience: 'General learners',
+      objectives: ['a', 'b'],
+      outlines: Array.from({ length: contract.totalSceneTarget }, (_, i) => {
+        if (i === 0) return makeOutline(i + 1, 'exercise');
+        if (i === 1) return makeOutline(i + 1, 'derivation');
+        if (i === 2) return makeOutline(i + 1, 'glossary');
+        if (i === 3) return makeOutline(i + 1, 'reading');
+        return makeOutline(i + 1);
+      }),
+    };
+    const blueprint = buildCourseBlueprint(parsed, 'req', contract, 'explainer', 'F');
+    const report = validateBlueprint(blueprint);
+    expect(report.valid).toBe(true);
+    expect(blueprint.depthLevel).toBe('university');
+  });
+
+  test('contract text documents the specialized scene types at higher presets', () => {
+    const text = renderCourseContract(deriveCourseContract(20, 'explainer', 'intensive'), 'explainer');
+    expect(text).toContain('"exercise"');
+    expect(text).toContain('"derivation"');
+    expect(text).toContain('"glossary"');
+    expect(text).toContain('"reading"');
+
+    const compactText = renderCourseContract(deriveCourseContract(20), 'explainer');
+    expect(compactText).not.toContain('Specialized scene types');
+  });
+
   test('legacy mode accepts any count with a single lesson', () => {
     const blueprint = validBlueprint();
     blueprint.lessons = [

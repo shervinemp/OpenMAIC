@@ -20,15 +20,30 @@ import {
   recordSceneDepthReport,
   recordSceneDepthSummary,
   summarizeDepthFindings,
+  validateDerivationDepth,
+  validateExerciseDepth,
+  validateGlossaryDepth,
   validateQuizDepth,
+  validateReadingDepth,
   validateSlideDepth,
+  type DepthReport,
 } from './content-depth';
+import {
+  renderDerivationToElements,
+  renderExerciseToElements,
+  renderGlossaryToElements,
+  renderReadingToElements,
+} from './specialized-scene-render';
 import type {
   SceneOutline,
   GeneratedSlideContent,
   GeneratedQuizContent,
   GeneratedInteractiveContent,
   GeneratedPBLContent,
+  GeneratedExerciseContent,
+  GeneratedDerivationContent,
+  GeneratedGlossaryContent,
+  GeneratedReadingContent,
   UserRequirements,
   PdfImage,
   ImageMapping,
@@ -47,6 +62,7 @@ import { projectV2ToLegacyProjectConfig } from '@/lib/pbl/v2/compat';
 import type { PBLPlannerV2Input, PBLProjectV2 } from '@/lib/pbl/v2/types';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator';
+import { isSlideLikeOutline } from './outline-type';
 import { postProcessInteractiveHtml } from './interactive-post-processor';
 import { parseActionsFromStructuredOutput } from './action-parser';
 import { parseJsonResponse } from './json-repair';
@@ -286,6 +302,14 @@ export async function generateSceneContent(
       );
     case 'quiz':
       return generateQuizContent(outline, aiCall, languageDirective, retrievalContext);
+    case 'exercise':
+      return generateExerciseContent(outline, aiCall, languageDirective, retrievalContext);
+    case 'derivation':
+      return generateDerivationContent(outline, aiCall, languageDirective, retrievalContext);
+    case 'glossary':
+      return generateGlossaryContent(outline, aiCall, languageDirective);
+    case 'reading':
+      return generateReadingContent(outline, aiCall, languageDirective);
     case 'pbl':
       return generatePBLSceneContent(
         outline,
@@ -955,6 +979,170 @@ async function generateQuizContent(
   }
 
   return null;
+}
+
+// ==================== Specialized scene content (Phase 2 §15.4b) ====================
+// Exercise / derivation / glossary / reading scenes generate a STRUCTURED
+// payload (problems with worked solutions, latex steps, term pairs, annotated
+// reading items), validate it against the kind's depth floor with the same
+// bounded corrective loop as slides/quizzes, then render it into slide
+// elements via lib/generation/specialized-scene-render.ts. The resulting
+// scene is a standard slide; the depth contract is what distinguishes the
+// kinds.
+
+interface StructuredSceneOptions {
+  languageDirective?: string;
+  retrievalContext?: string;
+}
+
+/**
+ * Shared driver: build the kind's prompt, run the bounded depth-corrective
+ * loop against the structured validator, and return the accepted payload
+ * (or null with the report recorded on exhaustion).
+ */
+async function generateValidatedStructured<T>(
+  outline: SceneOutline,
+  promptId: PromptId,
+  aiCall: AICallFn,
+  validate: (payload: T) => DepthReport,
+  options: StructuredSceneOptions,
+): Promise<T | null> {
+  const depthLevel = resolveDepthLevel(outline.depthLevel);
+  const prompts = buildPrompt(promptId, {
+    title: outline.title,
+    description: outline.description,
+    keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
+    languageDirective: options.languageDirective || '',
+    depthDirective: renderDepthDirective(depthLevel),
+  });
+  if (!prompts) return null;
+
+  let baseUserPrompt = prompts.user;
+  if (options.retrievalContext) {
+    baseUserPrompt = `${prompts.user}\n\n## Source Material (ground your content here)\n\n${options.retrievalContext}\n\nCitation requirements: cite the exact [source p.N] markers shown above for at least ${COURSE_DEPTH_FLOORS[depthLevel].minCitations} of your claims. Never cite a marker that is not listed above.`;
+  }
+
+  const maxAttempts = MAX_CONTENT_ATTEMPTS + 1;
+  let depthFeedback: string | undefined;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const attemptUserPrompt = depthFeedback
+      ? `${baseUserPrompt}\n\n## Depth Correction Required\n\n${depthFeedback}`
+      : baseUserPrompt;
+
+    const response = await aiCall(prompts.system, attemptUserPrompt);
+    const payload = parseJsonResponse<T>(response);
+    if (!payload || typeof payload !== 'object') {
+      log.error(`Failed to parse AI response for: ${outline.title}`);
+      return null;
+    }
+
+    const depthReport = validate(payload);
+    if (depthReport.adequate) {
+      if (attempt > 1) {
+        recordSceneDepthSummary(outline.id, { reworked: true, attempts: attempt, findings: [] });
+      }
+      return payload;
+    }
+
+    if (attempt < maxAttempts) {
+      depthFeedback = summarizeDepthFindings(depthReport);
+      log.warn(
+        `Specialized depth contract not met for "${outline.title}" (attempt ${attempt}/${maxAttempts}); re-prompting with ${depthReport.findings.length} finding(s)`,
+      );
+      continue;
+    }
+
+    recordSceneDepthReport(outline.id, depthReport);
+    log.error(
+      `Specialized depth contract not met for "${outline.title}" after ${maxAttempts} attempts: ${depthReport.findings.join('; ')}`,
+    );
+    return null;
+  }
+
+  return null;
+}
+
+/** Run the rendered elements through the standard slide post-pipeline. */
+function finalizeRenderedElements(
+  rawElements: GeneratedSlideData['elements'],
+): GeneratedSlideContent {
+  const fixedElements = fixElementDefaults(rawElements);
+  const latexProcessedElements = processLatexElements(fixedElements);
+  const processedElements: PPTElement[] = latexProcessedElements.map((el) => ({
+    ...el,
+    id: `${el.type}_${nanoid(8)}`,
+    rotate: 0,
+  })) as PPTElement[];
+  return { elements: processedElements };
+}
+
+async function generateExerciseContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  retrievalContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedExerciseContent>(
+    outline,
+    PROMPT_IDS.EXERCISE_CONTENT,
+    aiCall,
+    (parsed) =>
+      validateExerciseDepth(outline, parsed.problems ?? [], { retrievalContext }),
+    { languageDirective, retrievalContext },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderExerciseToElements(outline, payload.problems ?? []));
+}
+
+async function generateDerivationContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  retrievalContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedDerivationContent>(
+    outline,
+    PROMPT_IDS.DERIVATION_CONTENT,
+    aiCall,
+    (parsed) =>
+      validateDerivationDepth(outline, parsed.steps ?? [], { retrievalContext }),
+    { languageDirective, retrievalContext },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderDerivationToElements(outline, payload.steps ?? []));
+}
+
+async function generateGlossaryContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedGlossaryContent>(
+    outline,
+    PROMPT_IDS.GLOSSARY_CONTENT,
+    aiCall,
+    (parsed) => validateGlossaryDepth(outline, parsed.terms ?? []),
+    { languageDirective },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderGlossaryToElements(outline, payload.terms ?? []));
+}
+
+async function generateReadingContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedReadingContent>(
+    outline,
+    PROMPT_IDS.READING_CONTENT,
+    aiCall,
+    (parsed) => validateReadingDepth(outline, parsed.items ?? [], {}),
+    { languageDirective },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderReadingToElements(outline, payload.items ?? []));
 }
 
 /**
@@ -1650,7 +1838,10 @@ export async function generateSceneActions(
     );
   }
 
-  if (outline.type === 'slide' && 'elements' in content) {
+  // Slide-like kinds (slide + exercise/derivation/glossary/reading — Phase 2
+  // §15.4b) share the slide-action pipeline; the action parser sees 'slide'
+  // so slide-only actions (spotlight, laser, whiteboard) are not stripped.
+  if (isSlideLikeOutline(outline) && 'elements' in content) {
     // Format element list for AI to select from
     const elementsText = formatElementsForPrompt(content.elements);
 
@@ -1670,7 +1861,7 @@ export async function generateSceneActions(
     }
 
     const response = await aiCall(prompts.system, prompts.user);
-    const actions = parseActionsFromStructuredOutput(response, outline.type);
+    const actions = parseActionsFromStructuredOutput(response, 'slide');
 
     if (actions.length > 0) {
       // Validate and fill in Action IDs
