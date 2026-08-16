@@ -16,6 +16,7 @@ import {
   COURSE_SIZE_PRESETS,
   DEFAULT_DURATION_MINUTES,
   DEFAULT_SIZE_PRESET,
+  depthLevelForPreset,
   LESSONS_PER_UNIT,
   LESSON_MINUTES,
   MAX_BLUEPRINT_ATTEMPTS,
@@ -25,6 +26,7 @@ import {
   QUIZ_PLACEMENT_DEFAULT,
   QUIZ_PLACEMENT_EXAM_PREP,
   resolveSizePreset,
+  type CourseDepthLevel,
   type CourseSizePreset,
 } from '@/lib/constants/generation';
 import type {
@@ -380,7 +382,11 @@ export function buildCourseBlueprint(
   const title = (rawTitle || fallbackTitle || requirement.slice(0, 30) || 'Course').slice(0, 30);
 
   const outlines = assignLessonIds(parsed.outlines ?? [], contract.lessonSceneTargets);
-  const lessons = splitIntoLessons(outlines, contract, parsed);
+  // Phase 2 §15.4: stamp the derived depth level onto the blueprint and
+  // every outline so the content stage can enforce the matching floor.
+  const depthLevel: CourseDepthLevel = depthLevelForPreset(contract.sizePreset);
+  const leveledOutlines = outlines.map((outline) => ({ ...outline, depthLevel }));
+  const lessons = splitIntoLessons(leveledOutlines, contract, parsed);
   const units = splitIntoUnits(lessons, contract, parsed, title);
 
   return {
@@ -391,11 +397,12 @@ export function buildCourseBlueprint(
     objectives:
       parsed.objectives && parsed.objectives.length > 0
         ? parsed.objectives.filter((o) => typeof o === 'string' && o.trim()).slice(0, 5)
-        : outlines.slice(0, 5).map((o) => o.description).filter(Boolean),
+        : leveledOutlines.slice(0, 5).map((o) => o.description).filter(Boolean),
     courseType,
     lessonCount: contract.lessonCount,
     quizPlacement: contract.quizPlacement,
     sizePreset: contract.sizePreset,
+    depthLevel,
     lessons,
     ...(contract.unitCount > 1 ? { units } : {}),
   };
@@ -718,6 +725,7 @@ export function legacyBlueprintFromOutlines(
     lessonCount: 1,
     quizPlacement: QUIZ_PLACEMENT_DEFAULT,
     sizePreset: DEFAULT_SIZE_PRESET,
+    depthLevel: 'intro' as const,
     lessons: [
       {
         title: `Lesson 1: ${title || 'Legacy Course'}`,

@@ -20,7 +20,11 @@
  */
 
 import type { PPTElement, QuizQuestion } from '@openmaic/dsl';
-import { MIN_SUBSTANTIVE_ELEMENTS } from '@/lib/constants/generation';
+import {
+  COURSE_DEPTH_FLOORS,
+  resolveDepthLevel,
+  type CourseDepthLevel,
+} from '@/lib/constants/generation';
 import { extractCitationMarkers } from './pdf-retrieval';
 import type { SceneOutline } from '@/lib/types/generation';
 
@@ -39,27 +43,37 @@ export interface DepthReport {
 }
 
 export interface SlideDepthOptions {
-  /** Minimum substantive text elements (default MIN_SUBSTANTIVE_ELEMENTS). */
+  /** Minimum substantive text elements (default: the depth level's floor). */
   minSubstantive?: number;
   /** Require ≥1 concrete example/definition/fact (default true). */
   requireExample?: boolean;
   /**
    * Per-scene retrieval context (rendered `[source p.N]` chunks). When
-   * present, the content must cite ≥2 of its markers and may not cite
-   * anything outside the retrieved set (no hallucinated citations).
+   * present, the content must cite ≥ the floor's minimum of its markers
+   * and may not cite anything outside the retrieved set (no hallucinated
+   * citations).
    */
   retrievalContext?: string;
+  /**
+   * Content depth level (Phase 2 §15.4). Raises the substantive floor and
+   * the citation minimum; 'intro' keeps today's behavior.
+   */
+  depthLevel?: CourseDepthLevel;
 }
 
 /** Citation ground-truth checks shared by slide and quiz validation. */
-function citationFindings(combinedText: string, retrievalContext: string): string[] {
+function citationFindings(
+  combinedText: string,
+  retrievalContext: string,
+  minCitations = 2,
+): string[] {
   const findings: string[] = [];
   const cited = extractCitationMarkers(combinedText);
   const retrieved = new Set(extractCitationMarkers(retrievalContext));
 
-  if (cited.length < 2) {
+  if (cited.length < minCitations) {
     findings.push(
-      `content cites ${cited.length} source marker(s) — cite at least two [source p.N] markers from the retrieved material below`,
+      `content cites ${cited.length} source marker(s) — cite at least ${minCitations} [source p.N] markers from the retrieved material below`,
     );
   }
   const invalid = cited.filter((marker) => !retrieved.has(marker));
@@ -147,7 +161,9 @@ export function validateSlideDepth(
   elements: PPTElement[],
   options: SlideDepthOptions = {},
 ): DepthReport {
-  const minSubstantive = options.minSubstantive ?? MIN_SUBSTANTIVE_ELEMENTS;
+  const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
+  const floor = COURSE_DEPTH_FLOORS[depthLevel];
+  const minSubstantive = options.minSubstantive ?? floor.minSubstantive;
   const requireExample = options.requireExample ?? true;
   const retrievalContext = options.retrievalContext;
 
@@ -192,7 +208,7 @@ export function validateSlideDepth(
   }
 
   if (retrievalContext) {
-    findings.push(...citationFindings(texts.join(' '), retrievalContext));
+    findings.push(...citationFindings(texts.join(' '), retrievalContext, floor.minCitations));
   }
 
   return {
@@ -213,6 +229,8 @@ export function validateQuizDepth(
   questions: QuizQuestion[],
   retrievalContext?: string,
 ): DepthReport {
+  const depthLevel = resolveDepthLevel(outline.depthLevel);
+  const floor = COURSE_DEPTH_FLOORS[depthLevel];
   const findings: string[] = [];
   let substantiveCount = 0;
 
@@ -238,8 +256,10 @@ export function validateQuizDepth(
 
     if (question.type !== 'short_answer') {
       const optionCount = question.options?.length ?? 0;
-      if (optionCount < 2) {
-        findings.push(`question "${question.id}" has ${optionCount} option(s); need at least 2 plausible distractors`);
+      if (optionCount < floor.minOptions) {
+        findings.push(
+          `question "${question.id}" has ${optionCount} option(s); need at least ${floor.minOptions} plausible distractors`,
+        );
       }
       if (!question.analysis || !question.analysis.trim()) {
         findings.push(`question "${question.id}" is missing the explanation (analysis) field`);
@@ -251,7 +271,7 @@ export function validateQuizDepth(
     const combinedText = questions
       .map((q) => `${q.question} ${q.analysis ?? ''} ${(q.options ?? []).map((o) => o.label).join(' ')}`)
       .join(' ');
-    findings.push(...citationFindings(combinedText, retrievalContext));
+    findings.push(...citationFindings(combinedText, retrievalContext, floor.minCitations));
   }
 
   return {
