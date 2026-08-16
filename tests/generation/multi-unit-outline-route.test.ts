@@ -114,6 +114,11 @@ function unitOutlines(unitIndex: number) {
   return { outlines };
 }
 
+/** The unit review gate's accept verdict (Phase 2 §15.5). */
+function unitReviewPass() {
+  return { adequate: true, findings: [] };
+}
+
 describe('multi-unit outline route (Phase 2 §15.8)', () => {
   beforeEach(() => {
     resolveModelFromRequestMock.mockReset();
@@ -142,7 +147,9 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     callLLMMock
       .mockResolvedValueOnce({ text: JSON.stringify(syllabusResponse()), usage: {} })
       .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(0)), usage: {} })
-      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(1)), usage: {} });
+      .mockResolvedValueOnce({ text: JSON.stringify(unitReviewPass()), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(1)), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitReviewPass()), usage: {} });
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
     const response = await POST(
@@ -167,6 +174,11 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
 
     const unitEvents = events.filter((e) => e.type === 'unit');
     expect(unitEvents.map((e) => e.title)).toEqual(['Processes and Threads', 'Memory Management']);
+
+    // Phase 2 §15.5: one review event per unit, both accepted.
+    const reviewEvents = events.filter((e) => e.type === 'unitReview');
+    expect(reviewEvents).toHaveLength(2);
+    expect(reviewEvents.map((e) => e.adequate)).toEqual([true, true]);
 
     const outlineEvents = events.filter((e) => e.type === 'outline');
     expect(outlineEvents).toHaveLength(TOTAL_SCENES);
@@ -198,7 +210,9 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
       .mockResolvedValueOnce({ text: JSON.stringify(wrongSyllabus), usage: {} })
       .mockResolvedValueOnce({ text: JSON.stringify(syllabusResponse()), usage: {} })
       .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(0)), usage: {} })
-      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(1)), usage: {} });
+      .mockResolvedValueOnce({ text: JSON.stringify(unitReviewPass()), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(1)), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitReviewPass()), usage: {} });
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
     const response = await POST(
@@ -215,8 +229,8 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     const text = await readStreamBody(response);
     const events = parseSseEvents(text);
     expect(events.find((e) => e.type === 'done')).toBeDefined();
-    // Syllabus retry + 2 unit calls.
-    expect(callLLMMock).toHaveBeenCalledTimes(4);
+    // Syllabus retry + 2 unit calls + 2 unit reviews.
+    expect(callLLMMock).toHaveBeenCalledTimes(6);
   });
 
   test('per-unit corrective loop re-calls a unit that missed its counts', async () => {
@@ -225,7 +239,9 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
       .mockResolvedValueOnce({ text: JSON.stringify(syllabusResponse()), usage: {} })
       .mockResolvedValueOnce({ text: JSON.stringify(shortUnit), usage: {} })
       .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(0)), usage: {} })
-      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(1)), usage: {} });
+      .mockResolvedValueOnce({ text: JSON.stringify(unitReviewPass()), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(1)), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitReviewPass()), usage: {} });
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
     const response = await POST(
@@ -244,8 +260,8 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     const done = events.find((e) => e.type === 'done');
     expect(done).toBeDefined();
     expect(done.outlines).toHaveLength(TOTAL_SCENES);
-    // Syllabus + unit0 retry + unit0 + unit1.
-    expect(callLLMMock).toHaveBeenCalledTimes(4);
+    // Syllabus + unit0 retry + unit0 + review0 + unit1 + review1.
+    expect(callLLMMock).toHaveBeenCalledTimes(6);
   });
 
   test('per-unit web research grounds unit outlines with [source N] citations (Phase 2 §15.2)', async () => {
@@ -266,7 +282,9 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     callLLMMock
       .mockResolvedValueOnce({ text: JSON.stringify(syllabusResponse()), usage: {} })
       .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(0)), usage: {} })
-      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(1)), usage: {} });
+      .mockResolvedValueOnce({ text: JSON.stringify(unitReviewPass()), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(1)), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitReviewPass()), usage: {} });
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
     const response = await POST(
@@ -302,7 +320,9 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     callLLMMock
       .mockResolvedValueOnce({ text: JSON.stringify(syllabusResponse()), usage: {} })
       .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(0)), usage: {} })
-      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(1)), usage: {} });
+      .mockResolvedValueOnce({ text: JSON.stringify(unitReviewPass()), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(1)), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitReviewPass()), usage: {} });
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
     const response = await POST(
@@ -314,6 +334,79 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
         imageMapping: {},
         researchContext: 'Global research fallback text',
         webSearchConfig: { providerId: 'tavily', apiKey: 'k' },
+      }) as unknown as Parameters<typeof POST>[0],
+    );
+
+    const text = await readStreamBody(response);
+    const events = parseSseEvents(text);
+    const done = events.find((e) => e.type === 'done');
+    expect(done).toBeDefined();
+    expect(done.outlines).toHaveLength(TOTAL_SCENES);
+  });
+
+  test('unit review gate rejects a unit and feeds the corrective loop (Phase 2 §15.5)', async () => {
+    const rejectVerdict = {
+      adequate: false,
+      findings: ['Objective "Model process lifecycles" is not taught by any scene'],
+    };
+    callLLMMock
+      .mockResolvedValueOnce({ text: JSON.stringify(syllabusResponse()), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(0)), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(rejectVerdict), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(0)), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitReviewPass()), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(1)), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitReviewPass()), usage: {} });
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        requirements: REQUIREMENTS,
+        sizePreset: 'standard',
+        pdfText: '',
+        pdfImages: [],
+        imageMapping: {},
+        researchContext: '',
+      }) as unknown as Parameters<typeof POST>[0],
+    );
+
+    const text = await readStreamBody(response);
+    const events = parseSseEvents(text);
+    const done = events.find((e) => e.type === 'done');
+    expect(done).toBeDefined();
+    expect(done.outlines).toHaveLength(TOTAL_SCENES);
+
+    // syllabus + unit0 + reject-review + unit0-retry + pass-review + unit1 + review1.
+    expect(callLLMMock).toHaveBeenCalledTimes(7);
+
+    // The re-run's prompt carried the gate's findings.
+    const retryPrompt = callLLMMock.mock.calls[3][0].prompt as string;
+    expect(retryPrompt).toContain('unit review gate REJECTED');
+    expect(retryPrompt).toContain('Model process lifecycles');
+
+    // The gate's events surfaced the rejection and the acceptance.
+    const reviewEvents = events.filter((e) => e.type === 'unitReview');
+    expect(reviewEvents.map((e) => e.adequate)).toEqual([false, true, true]);
+    expect(reviewEvents[0].findings[0]).toContain('Model process lifecycles');
+  });
+
+  test('unit review judge infra failure accepts the unit (best-effort gate)', async () => {
+    callLLMMock
+      .mockResolvedValueOnce({ text: JSON.stringify(syllabusResponse()), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(0)), usage: {} })
+      .mockRejectedValueOnce(new Error('judge model down'))
+      .mockResolvedValueOnce({ text: JSON.stringify(unitOutlines(1)), usage: {} })
+      .mockResolvedValueOnce({ text: JSON.stringify(unitReviewPass()), usage: {} });
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        requirements: REQUIREMENTS,
+        sizePreset: 'standard',
+        pdfText: '',
+        pdfImages: [],
+        imageMapping: {},
+        researchContext: '',
       }) as unknown as Parameters<typeof POST>[0],
     );
 
