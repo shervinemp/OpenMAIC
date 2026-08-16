@@ -3,9 +3,14 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  recordScenePhase: vi.fn(),
   settings: vi.fn(),
   mediaPut: vi.fn(),
   mediaDelete: vi.fn(),
+}));
+
+vi.mock('@/lib/store/stage', () => ({
+  useStageStore: { getState: () => ({ recordScenePhase: mocks.recordScenePhase }) },
 }));
 
 vi.mock('@/lib/store/settings', () => ({

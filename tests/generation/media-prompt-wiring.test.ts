@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest';
-import { generateSceneContent, generateSceneOutlinesFromRequirements } from '@openmaic/generation';
+import { generateSceneOutlinesFromRequirements } from '@/lib/generation/outline-generator';
+import { generateSceneContent } from '@/lib/generation/scene-generator';
 import type { SceneOutline, UserRequirements } from '@/lib/types/generation';
-import type { AICallFn } from '@openmaic/generation';
+import type { AICallFn } from '@/lib/generation/pipeline-types';
 
 /**
  * The outline stage now enforces the course contract: a deck must satisfy

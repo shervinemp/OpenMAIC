@@ -13,8 +13,8 @@ import {
   generateSceneContent,
   buildVisionUserContent,
   partitionImagesForVision,
+  type AgentInfo,
 } from '@openmaic/generation';
-import type { AgentInfo } from '@openmaic/generation';
 import type {
   SceneOutline,
   PdfImage,
@@ -326,20 +326,16 @@ export async function POST(req: NextRequest) {
     const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
       imageMapping: visionImageMapping,
+      languageModel: effectiveOutline.type === 'pbl' ? languageModel : undefined,
       visionEnabled: hasVision,
       generatedMediaMapping,
       resolvedVisionImages,
       agents,
       languageDirective,
+      thinkingConfig,
       targetLanguage: userLocale || undefined,
       userRequirements: requirements,
       allowProceduralSkill: vocationalActive,
-      ...(effectiveOutline.type === 'pbl'
-        ? {
-            pblLoopFallback: (input) =>
-              generatePBLV2Project(input, languageModel, callLLM, { logger: log }, thinkingConfig),
-          }
-        : {}),
       retrievalContext: effectiveOutline.retrievalContext,
       // Phase 2 §15.5: prerequisite coherence — thread what the unit has
       // already taught so this scene builds on it instead of repeating it.

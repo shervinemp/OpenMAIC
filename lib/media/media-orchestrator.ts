@@ -7,6 +7,7 @@
  */
 
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
+import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
 import { db, mediaFileKey } from '@/lib/utils/database';
 import type { SceneOutline } from '@/lib/types/generation';

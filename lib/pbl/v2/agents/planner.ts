@@ -23,7 +23,7 @@ import { tool, stepCountIs } from 'ai';
 import { z } from 'zod';
 
 import { createLogger } from '@/lib/logger';
-import { normalizeProjectRuntime, normalizeScenario } from '@openmaic/generation';
+import { normalizeProjectRuntime, normalizeScenario } from '../operations/kernel/progress';
 import type { ThinkingConfig } from '@/lib/types/provider';
 
 import {
@@ -37,7 +37,7 @@ import {
   normalizeSynthesisChecks,
   plannerCompletionGaps,
   type PlannerV2Callbacks,
-} from '@openmaic/generation';
+} from './planner-core';
 
 import type {
   PBLProjectV2,

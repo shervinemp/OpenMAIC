@@ -72,13 +72,14 @@ export interface SceneOutline {
   id: string;
   type:
     | 'slide'
-    | 'quiz'
-    | 'interactive'
-    | 'pbl'
-    | 'exercise'
-    | 'derivation'
-    | 'glossary'
-    | 'reading';
+      | 'quiz'
+      | 'interactive'
+      | 'pbl'
+      // Specialized university-level kinds (Phase 2 §15.4b): render as slides.
+      | 'exercise'
+      | 'derivation'
+      | 'glossary'
+      | 'reading';
   title: string;
   description: string;
   keyPoints: string[];
