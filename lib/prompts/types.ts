@@ -6,14 +6,29 @@
  * Prompt template identifier
  */
 export type PromptId =
+  | 'requirements-to-outlines'
+  | 'course-syllabus'
   | 'interactive-outlines'
   | 'task-engine-outlines'
   | 'web-search-query-rewrite'
+  | 'slide-content'
+  | 'quiz-content'
+  | 'slide-actions'
+  | 'quiz-actions'
+  | 'interactive-actions'
+  | 'simulation-content'
+  | 'diagram-content'
+  | 'code-content'
+  | 'game-content'
+  | 'visualization3d-content'
+  | 'procedural-skill-content'
+  | 'pbl-actions'
   | 'agent-system'
   | 'agent-system-wb-teacher'
   | 'agent-system-wb-assistant'
   | 'agent-system-wb-student'
-  | 'director';
+  | 'director'
+  | 'pbl-design';
 
 /**
  * Snippet identifier
@@ -39,5 +54,3 @@ export interface LoadedPrompt {
   systemPrompt: string;
   userPromptTemplate: string;
 }
-
-export type PromptVariableDefaults = Partial<Record<PromptId, Readonly<Record<string, unknown>>>>;
