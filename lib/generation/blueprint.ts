@@ -257,7 +257,11 @@ export interface ParsedOutlineResponse {
   audience?: string;
   objectives?: string[];
   lessons?: Array<{ title?: string; objectives?: string[] }>;
-  units?: Array<{ title?: string; objectives?: string[] }>;
+  units?: Array<{
+    title?: string;
+    objectives?: string[];
+    lessons?: Array<{ title?: string; objectives?: string[] }>;
+  }>;
 }
 
 /**
@@ -614,6 +618,80 @@ export function summarizeBlueprintValidation(result: BlueprintValidationResult):
 }
 
 export { MAX_BLUEPRINT_ATTEMPTS };
+
+/**
+ * Validate the syllabus (structure-only) output of the multi-unit syllabus
+ * stage (Phase 2 §15.8): unit count, per-unit lesson counts, and title
+ * presence. Lesson counts are read from the unit entries (the syllabus
+ * shape nests lessons under units; a redundant flat list is optional).
+ * Concrete findings feed the bounded corrective loop.
+ */
+export function validateSyllabusStructure(
+  parsed: ParsedOutlineResponse,
+  contract: CourseContract,
+): string[] {
+  const errors: string[] = [];
+  if (!parsed.units || parsed.units.length === 0) {
+    errors.push(`syllabus must include ${contract.unitCount} units`);
+    return errors;
+  }
+  if (parsed.units.length !== contract.unitCount) {
+    errors.push(`syllabus has ${parsed.units.length} units, expected ${contract.unitCount}`);
+  }
+  const nestedLessons = parsed.units.flatMap((unit) => unit?.lessons ?? []);
+  const lessonTotal = (parsed.lessons ?? nestedLessons).length;
+  if (lessonTotal !== contract.lessonCount) {
+    errors.push(`syllabus has ${lessonTotal} lessons, expected ${contract.lessonCount}`);
+  }
+  parsed.units.forEach((unit, unitIndex) => {
+    if (!unit?.title?.trim()) errors.push(`unit ${unitIndex + 1} missing title`);
+    const lessons = unit?.lessons ?? [];
+    const expected = contract.unitLessonCounts[unitIndex] ?? 0;
+    if (lessons.length !== expected) {
+      errors.push(`unit ${unitIndex + 1} has ${lessons.length} lessons, expected ${expected}`);
+    }
+    lessons.forEach((lesson, lessonIndex) => {
+      if (!lesson?.title?.trim()) {
+        errors.push(`unit ${unitIndex + 1} lesson ${lessonIndex + 1} missing title`);
+      }
+    });
+  });
+  return errors;
+}
+
+/**
+ * Render the syllabus contract block for the multi-unit syllabus stage
+ * (Phase 2 §15.8): unit count and per-unit lesson counts only — the
+ * syllabus call produces structure, never outlines.
+ */
+export function renderSyllabusContract(contract: CourseContract): string {
+  const units = contract.unitLessonCounts
+    .map((count, index) => `  Unit ${index + 1}: EXACTLY ${count} lessons.`)
+    .join('\n');
+  return `- Produce EXACTLY ${contract.unitCount} units (chapters) containing EXACTLY ${contract.lessonCount} lessons, in this order:\n${units}`;
+}
+
+/**
+ * Scope the course-wide contract down to one unit (Phase 2 §15.8): the
+ * unit's lesson targets. Per-unit outline calls render this instead of the
+ * full contract, bounding each LLM call's output size; the caller keeps
+ * global outline numbering via its own offset.
+ */
+export function buildPerUnitContract(base: CourseContract, unitIndex: number): CourseContract {
+  const start = base.unitLessonCounts.slice(0, unitIndex).reduce((a, b) => a + b, 0);
+  const count = base.unitLessonCounts[unitIndex];
+  const lessonSceneTargets = base.lessonSceneTargets.slice(start, start + count);
+  return {
+    durationMinutes: base.durationMinutes,
+    totalSceneTarget: lessonSceneTargets.reduce((a, b) => a + b, 0),
+    lessonCount: count,
+    lessonSceneTargets,
+    unitCount: 1,
+    unitLessonCounts: [count],
+    quizPlacement: base.quizPlacement,
+    sizePreset: base.sizePreset,
+  };
+}
 
 // ==================== Legacy / job-model helpers ====================
 
