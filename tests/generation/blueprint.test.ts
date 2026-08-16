@@ -424,6 +424,29 @@ describe('validateBlueprint', () => {
     expect(report.errors.some((e) => e.includes('duplicate outline order'))).toBe(true);
   });
 
+  test('rejects outlines with a missing or invalid scene type (lesson-summary leak)', () => {
+    const blueprint = validBlueprint();
+    const leaked = {
+      title: 'Lesson summary record',
+      objectives: 'Objectives leaked as a string.',
+      order: 1,
+      id: 'leak_1',
+      lessonId: 'lesson_1',
+      depthLevel: 'intro',
+    } as unknown as SceneOutline;
+    blueprint.lessons[0].outlines[0] = leaked;
+    const report = validateBlueprint(blueprint);
+    expect(report.valid).toBe(false);
+    expect(report.errors.some((e) => e.includes('invalid scene type'))).toBe(true);
+
+    const unknownType = { ...makeOutline(1), type: 'lesson' as unknown as SceneOutline['type'] };
+    const blueprint2 = validBlueprint();
+    blueprint2.lessons[0].outlines[0] = unknownType;
+    const report2 = validateBlueprint(blueprint2);
+    expect(report2.valid).toBe(false);
+    expect(report2.errors.some((e) => e.includes('invalid scene type'))).toBe(true);
+  });
+
   test('emits placement warnings (quiz cadence, caps)', () => {
     const blueprint = validBlueprint();
     const report = validateBlueprint(blueprint);
