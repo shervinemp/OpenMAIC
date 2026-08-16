@@ -457,7 +457,7 @@ export async function importClassroomZip(
   }
 }
 
-export function useImportClassroom(onSuccess?: () => void) {
+export function useImportClassroom(onSuccess?: (importedStageId: string) => void) {
   const [importing, setImporting] = useState(false);
   const [phase, setPhase] = useState<ImportPhase>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -486,10 +486,11 @@ export function useImportClassroom(onSuccess?: () => void) {
       }
 
       let success = false;
+      let importedStageId = '';
       try {
         const JSZip = (await import('jszip')).default;
         const zip = await JSZip.loadAsync(file);
-        await importClassroomZip(zip, (phase) => {
+        importedStageId = await importClassroomZip(zip, (phase) => {
           setPhase(phase);
           if (phase === 'validating') toast.loading(t('import.validating'), { id: toastId });
           else if (phase === 'writingMedia')
@@ -518,7 +519,7 @@ export function useImportClassroom(onSuccess?: () => void) {
       // cannot make a fully committed classroom lose its already-owned assets.
       if (success) {
         toast.success(t('import.success'), { id: toastId });
-        onSuccess?.();
+        onSuccess?.(importedStageId);
       }
     },
     [t, onSuccess],

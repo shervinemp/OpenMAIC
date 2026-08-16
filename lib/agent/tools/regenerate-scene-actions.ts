@@ -24,7 +24,7 @@ import {
   generateSceneActions,
   type SceneGenerationContext,
   type AgentInfo,
-} from '@openmaic/generation';
+} from '@/lib/generation/generation-pipeline';
 import type { Action } from '@/lib/types/action';
 import type {
   SceneOutline,
@@ -35,7 +35,6 @@ import type {
 } from '@/lib/types/generation';
 import type { SceneContent } from '@/lib/types/stage';
 import type { LlmStage } from '@/lib/server/model-routes';
-import { normalizeLegacyPBLContent } from '@/lib/pbl/legacy/read';
 
 // ── Scene context shape (client-sourced, injected via deps) ──────────────────
 
@@ -99,7 +98,7 @@ export interface RegenerateActionsDeps {
 //   GeneratedSlideContent    { elements, background?, remark? }
 //   GeneratedQuizContent     { questions }
 //   GeneratedInteractiveContent { html, ... }
-//   GeneratedPBLContent      { projectV2 }
+//   GeneratedPBLContent      { projectConfig }
 //
 // The ONLY mismatch is `SlideContent` (runtime) vs `GeneratedSlideContent`:
 //   SlideContent  = { type: 'slide', canvas: Slide }  — elements at canvas.elements
@@ -109,7 +108,7 @@ export interface RegenerateActionsDeps {
 // If we pass SlideContent directly, that check is FALSE → falls through → returns [].
 //
 // For quiz/interactive/pbl the runtime shapes already have the discriminant field
-// at the top level ('questions', 'html', 'projectV2'), so they pass through as-is.
+// at the top level ('questions', 'html', 'projectConfig'), so they pass through as-is.
 
 function toGenerationContent(
   content: SceneContent,
@@ -125,9 +124,6 @@ function toGenerationContent(
       background: content.canvas.background,
       // remark is not stored in the runtime canvas; omit it
     } satisfies GeneratedSlideContent;
-  }
-  if (content.type === 'pbl') {
-    return normalizeLegacyPBLContent(content) as GeneratedPBLContent;
   }
   // quiz, interactive, pbl runtime shapes already satisfy the generation type
   return content as GeneratedQuizContent | GeneratedInteractiveContent | GeneratedPBLContent;

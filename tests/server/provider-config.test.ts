@@ -34,7 +34,6 @@ const ENV_PREFIXES_TO_CLEAR = [
   'TTS_DOUBAO',
   'TTS_ELEVENLABS',
   'TTS_MINIMAX',
-  'TTS_VOXCPM',
   'ASR_OPENAI',
   'ASR_QWEN',
   'ASR_FUNASR',
@@ -55,7 +54,6 @@ const ENV_PREFIXES_TO_CLEAR = [
   'VIDEO_GROK',
   'BOCHA',
   'WEB_SEARCH_MINIMAX',
-  'WEB_SEARCH_CLAUDE',
 ];
 
 function clearProviderEnv() {
@@ -63,7 +61,6 @@ function clearProviderEnv() {
     delete process.env[`${prefix}_API_KEY`];
     delete process.env[`${prefix}_BASE_URL`];
     delete process.env[`${prefix}_MODELS`];
-    delete process.env[`${prefix}_ENABLED`];
   }
   delete process.env.TAVILY_API_KEY;
   delete process.env.BOCHA_API_KEY;
@@ -428,31 +425,6 @@ providers:
       expect(resolveWebSearchBaseUrl('minimax')).toBe('https://proxy.example.com/minimax');
       expect(getServerWebSearchProviders().minimax).toEqual({});
     });
-
-    it('resolves Claude web search key, base URL, and pinned model from dedicated env vars', async () => {
-      vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'claude-env-key');
-      vi.stubEnv('WEB_SEARCH_CLAUDE_BASE_URL', 'https://proxy.example.com/anthropic');
-      vi.stubEnv('WEB_SEARCH_CLAUDE_MODELS', 'claude-sonnet-5,claude-opus-5');
-      const {
-        getServerWebSearchProviders,
-        resolveWebSearchApiKey,
-        resolveWebSearchBaseUrl,
-        resolveWebSearchModel,
-      } = await import('@/lib/server/provider-config');
-
-      expect(resolveWebSearchApiKey('claude', undefined)).toBe('claude-env-key');
-      expect(resolveWebSearchBaseUrl('claude')).toBe('https://proxy.example.com/anthropic');
-      // Server-pinned model (first entry) is authoritative over the client model.
-      expect(resolveWebSearchModel('claude', 'claude-haiku-4-5')).toBe('claude-sonnet-5');
-      expect(getServerWebSearchProviders().claude).toEqual({});
-    });
-
-    it('lets the client model win when no Claude model is pinned server-side', async () => {
-      const { resolveWebSearchModel } = await import('@/lib/server/provider-config');
-
-      expect(resolveWebSearchModel('claude', 'claude-opus-5')).toBe('claude-opus-5');
-      expect(resolveWebSearchModel('claude')).toBeUndefined();
-    });
   });
 
   describe('baseUrl-only providers (e.g. mineru)', () => {
@@ -572,6 +544,9 @@ pdf:
 
   describe('getServerTTSProviders force-disable (#665)', () => {
     it('reports nothing when no TTS provider is configured or disabled', async () => {
+      // The local .env.local declares a lemonade TTS base URL; the assertion
+      // targets "no configuration", so neutralize the host-file leak.
+      vi.stubEnv('TTS_LEMONADE_BASE_URL', '');
       const { getServerTTSProviders } = await import('@/lib/server/provider-config');
       expect(getServerTTSProviders()).toEqual({});
     });
