@@ -309,6 +309,15 @@ function GenerationPreviewContent() {
     const generationSession = sessionOverride ?? session;
     if (!generationSession) return;
 
+    // The course was already persisted (user backed out mid-content
+    // generation). Don't re-run the outline/first-scene flow — hand off to
+    // the classroom page, which resumes generation for every pending
+    // outline (including scene 1).
+    if (generationSession.stageId) {
+      router.push(`/classroom/${generationSession.stageId}`);
+      return;
+    }
+
     // Create AbortController for this generation run
     abortControllerRef.current?.abort();
     const controller = new AbortController();
@@ -1121,6 +1130,28 @@ function GenerationPreviewContent() {
         store.setBlueprint(blueprint);
       }
 
+      // Persist the course EARLY — before any scene exists — so "back to
+      // requirements" leaves a live item in the classroom list. The
+      // classroom page's resume path regenerates every pending outline
+      // (including scene 1), so nothing is lost.
+      const userProfile =
+        currentSession.requirements.userNickname || currentSession.requirements.userBio
+          ? `Student: ${currentSession.requirements.userNickname || 'Unknown'}${currentSession.requirements.userBio ? ` — ${currentSession.requirements.userBio}` : ''}`
+          : undefined;
+      store.setGeneratingOutlines(outlines);
+      sessionStorage.setItem(
+        'generationParams',
+        JSON.stringify({
+          pdfImages: currentSession.pdfImages,
+          agents,
+          userProfile,
+          languageDirective,
+        }),
+      );
+      await store.saveToStorage();
+      currentSession = { ...currentSession, stageId: stage.id };
+      persistSession(currentSession);
+
       // Advance to slide-content step
       const contentStepIdx = activeSteps.findIndex((s) => s.id === 'slide-content');
       if (contentStepIdx >= 0) setCurrentStepIndex(contentStepIdx);
@@ -1131,11 +1162,6 @@ function GenerationPreviewContent() {
         description: stage.description,
         style: stage.style,
       };
-
-      const userProfile =
-        currentSession.requirements.userNickname || currentSession.requirements.userBio
-          ? `Student: ${currentSession.requirements.userNickname || 'Unknown'}${currentSession.requirements.userBio ? ` — ${currentSession.requirements.userBio}` : ''}`
-          : undefined;
 
       // Generate ONLY the first scene
       store.setGeneratingOutlines(outlines);
@@ -1213,17 +1239,6 @@ function GenerationPreviewContent() {
       const remaining = outlines.filter((o) => o.order !== firstScene.order);
       store.setGeneratingOutlines(remaining);
 
-      // Store generation params for classroom to continue generation
-      sessionStorage.setItem(
-        'generationParams',
-        JSON.stringify({
-          pdfImages: currentSession.pdfImages,
-          agents,
-          userProfile,
-          languageDirective,
-        }),
-      );
-
       sessionStorage.removeItem('generationSession');
       await store.saveToStorage();
       router.push(`/classroom/${stage.id}`);
@@ -1232,6 +1247,12 @@ function GenerationPreviewContent() {
       // AbortError is expected when navigating away — don't show as error
       if (isAbortError(err)) {
         log.info('[GenerationPreview] Generation aborted');
+        return;
+      }
+      // A failed run still has the course persisted (early persist) — the
+      // classroom list keeps it and the classroom page can retry.
+      if (currentSession?.stageId) {
+        router.push(`/classroom/${currentSession.stageId}`);
         return;
       }
       sessionStorage.removeItem('generationSession');
@@ -1251,7 +1272,18 @@ function GenerationPreviewContent() {
     abortControllerRef.current?.abort();
     clearOutlineReviewTimer();
     outlineReviewIntentRef.current = false;
-    sessionStorage.removeItem('generationSession');
+    // A persisted course (stageId in the session) lives in the classroom
+    // list — drop the session so the home page doesn't offer a redundant
+    // "resume" prompt. Otherwise (outline phase) keep it so generation can
+    // be resumed from the home page.
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('generationSession') ?? 'null');
+      if (saved?.stageId) {
+        sessionStorage.removeItem('generationSession');
+      }
+    } catch {
+      sessionStorage.removeItem('generationSession');
+    }
     router.push('/');
   };
 
