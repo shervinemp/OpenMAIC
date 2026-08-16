@@ -107,8 +107,28 @@ export type AppScene = DslScene<Action, SceneContent> & {
    * scene-derived outline.
    */
   outlineId?: string;
+  /**
+   * The outline kind this scene was generated from (Phase 2 §15.4b). The
+   * specialized kinds (exercise / derivation / glossary / reading) render as
+   * standard `slide` scenes; this annotation keeps their pedagogical identity
+   * visible in the sidebar and the completion summary instead of collapsing
+   * them into "slide". Absent on inserted scenes and pre-existing data, where
+   * callers fall back to `scene.type`.
+   */
+  sceneKind?: SceneOutlineKind;
 };
 export type Scene = AppScene;
+
+/** The full outline-kind union, incl. the specialized slide-like kinds. */
+export type SceneOutlineKind =
+  | 'slide'
+  | 'quiz'
+  | 'interactive'
+  | 'pbl'
+  | 'exercise'
+  | 'derivation'
+  | 'glossary'
+  | 'reading';
 
 /**
  * A partial update for {@link AppScene} — the patch shape used by `updateScene` /

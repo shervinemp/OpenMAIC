@@ -143,7 +143,7 @@ export function buildCompleteScene(
   stageId: string,
 ): Scene | null {
   const scene = buildCompleteSceneInner(outline, content, actions, stageId);
-  return scene && { ...scene, outlineId: outline.id };
+  return scene && { ...scene, outlineId: outline.id, sceneKind: outline.type };
 }
 
 function buildCompleteSceneInner(
