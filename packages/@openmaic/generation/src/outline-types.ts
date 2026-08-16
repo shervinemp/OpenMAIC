@@ -69,7 +69,16 @@ export interface MediaGenerationRequest {
 /** A generation-ready description of one course scene. */
 export interface SceneOutline {
   id: string;
-  type: 'slide' | 'quiz' | 'interactive' | 'pbl';
+  type:
+    | 'slide'
+    | 'quiz'
+    | 'interactive'
+    | 'pbl'
+    // Specialized university-level kinds (Phase 2 §15.4b): render as slides.
+    | 'exercise'
+    | 'derivation'
+    | 'glossary'
+    | 'reading';
   title: string;
   description: string;
   keyPoints: string[];
@@ -77,6 +86,18 @@ export interface SceneOutline {
   estimatedDuration?: number;
   order: number;
   languageNote?: string;
+  /** Lesson membership (assigned during blueprint canonicalization). */
+  lessonId?: string;
+  /**
+   * Per-scene retrieval context with `[source p.N]` citation markers
+   * (Pillar 3b).
+   */
+  retrievalContext?: string;
+  /**
+   * Content depth level (Phase 2 §15.4), stamped from the blueprint's
+   * derived level.
+   */
+  depthLevel?: 'intro' | 'intermediate' | 'university';
   suggestedImageIds?: string[];
   mediaGenerations?: MediaGenerationRequest[];
   quizConfig?: {

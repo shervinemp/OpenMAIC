@@ -69,8 +69,8 @@ export type InteractiveContent = DslInteractiveContent<WidgetConfig>;
  * the app retains its read-only typed view of that record and widens
  * `projectV2` with learner/runtime state.
  */
-export type PBLContent = DslPBLContent & {
-  projectConfig?: PBLProjectConfig & Record<string, unknown>;
+export type PBLContent = Omit<DslPBLContent, 'projectConfig'> & {
+  projectConfig?: PBLProjectConfig;
   projectV2?: PBLProjectV2;
 };
 

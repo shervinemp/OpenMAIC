@@ -12,10 +12,6 @@ import fs from 'fs';
 import path from 'path';
 import type { PromptId, LoadedPrompt, SnippetId } from './types';
 import { createLogger } from '@/lib/logger';
-import {
-  loadSnippet as loadGenerationSnippet,
-  type SnippetId as GenerationSnippetId,
-} from '@openmaic/generation';
 const log = createLogger('PromptLoader');
 
 /**
@@ -35,9 +31,9 @@ export function loadSnippet(snippetId: SnippetId): string {
   try {
     return fs.readFileSync(snippetPath, 'utf-8').trim();
   } catch {
-    // App-only templates can reuse package-owned generation snippets without
-    // retaining a second on-disk copy.
-    return loadGenerationSnippet(snippetId as GenerationSnippetId);
+    // Fail loud rather than silently shipping `{{snippet:foo}}` to the LLM.
+    // A missing snippet is always a config/typo bug — surface at load time.
+    throw new Error(`Snippet not found: ${snippetId}`);
   }
 }
 
@@ -121,13 +117,6 @@ export function interpolateVariables(template: string, variables: Record<string,
   });
 }
 
-function applyPromptVariableDefaults(
-  _promptId: PromptId,
-  variables: Record<string, unknown>,
-): Record<string, unknown> {
-  return variables;
-}
-
 /**
  * Build a complete prompt with variables.
  *
@@ -142,16 +131,15 @@ export function buildPrompt(
 ): { system: string; user: string } | null {
   const prompt = loadPrompt(promptId);
   if (!prompt) return null;
-  const resolvedVariables = applyPromptVariableDefaults(promptId, variables);
 
   return {
     system: interpolateVariables(
-      processConditionalBlocks(prompt.systemPrompt, resolvedVariables),
-      resolvedVariables,
+      processConditionalBlocks(prompt.systemPrompt, variables),
+      variables,
     ),
     user: interpolateVariables(
-      processConditionalBlocks(prompt.userPromptTemplate, resolvedVariables),
-      resolvedVariables,
+      processConditionalBlocks(prompt.userPromptTemplate, variables),
+      variables,
     ),
   };
 }

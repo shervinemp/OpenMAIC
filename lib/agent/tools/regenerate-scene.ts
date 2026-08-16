@@ -20,11 +20,8 @@
 
 import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
-import {
-  generateSceneActions,
-  generateSceneContent,
-  type SceneGenerationContext,
-} from '@openmaic/generation';
+import { generateSceneContent, generateSceneActions } from '@/lib/generation/scene-generator';
+import type { SceneGenerationContext } from '@/lib/generation/generation-pipeline';
 import type { Action } from '@/lib/types/action';
 import type { GeneratedSlideContent, PdfImage, ImageMapping } from '@/lib/types/generation';
 import type { SceneContent } from '@/lib/types/stage';

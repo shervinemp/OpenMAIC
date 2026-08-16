@@ -8,6 +8,7 @@ import type { MediaFileRecord } from '@/lib/utils/database';
 
 const mocks = vi.hoisted(() => ({
   probePresence: vi.fn(),
+  recordScenePhase: vi.fn(),
   settings: vi.fn(),
   mediaPut: vi.fn(),
   mediaGet: vi.fn(),
@@ -82,7 +83,7 @@ vi.mock('@/lib/document-store', () => ({
 
 vi.mock('@/lib/store/stage', () => ({
   useStageStore: {
-    getState: () => mocks.stageState,
+    getState: () => ({ ...mocks.stageState, recordScenePhase: mocks.recordScenePhase }),
     setState: mocks.stageSetState,
   },
   markStagePersistenceDirty: mocks.markStagePersistenceDirty,

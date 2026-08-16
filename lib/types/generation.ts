@@ -364,15 +364,18 @@ export interface GeneratedReadingContent {
 
 // ==================== PBL Generation Types ====================
 
+import type { PBLProjectConfig } from '@/lib/pbl/types';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 
 /**
  * AI-generated PBL content.
  *
- * PBL generation produces only the v2 project payload.
+ * PBL v2 generation returns a legacy-compatible `projectConfig` plus the full
+ * v2 payload so existing storage/rendering paths can migrate incrementally.
  */
 export interface GeneratedPBLContent {
-  projectV2: PBLProjectV2;
+  projectConfig: PBLProjectConfig;
+  projectV2?: PBLProjectV2;
 }
 
 // ==================== Interactive Generation Types ====================
