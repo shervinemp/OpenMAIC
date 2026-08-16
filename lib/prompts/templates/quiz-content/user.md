@@ -10,5 +10,9 @@ Question Count: {{questionCount}}, Difficulty: {{difficulty}}, Question Types: {
 {{depthDirective}}
 {{/if}}
 
+{{#if unitContext}}
+{{unitContext}}
+{{/if}}
+
 Output JSON array directly (no explanation, no code blocks, no LaTeX):
 [{"id":"q1","type":"single","question":"Question text","options":["Option A","Option B","Option C","Option D"],"correctAnswer":"Option A"}]

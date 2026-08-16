@@ -59,7 +59,7 @@ import {
   type CourseContract,
   type ParsedOutlineResponse,
 } from '@/lib/generation/blueprint';
-import { parseJsonResponse } from '@/lib/generation/json-repair';
+import { parseJsonResponse } from '@openmaic/generation';
 import { searchWeb, formatSearchResultsAsContext } from '@/lib/web-search';
 import {
   formatWebSourceLegend,

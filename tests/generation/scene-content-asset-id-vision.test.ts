@@ -25,6 +25,34 @@ vi.mock('@/lib/persistence/resolve-vision-images', () => ({
  * `buildVisionUserContent`), and `resolveImageIds` writes the ALLOCATED ID
  * into `PPTImageElement.src` for the renderer to resolve through the pool.
  */
+
+/**
+ * Substantive slide text elements (depth contract floor): complete-sentence
+ * claims with one concrete worked example, so the deck passes
+ * validateSlideDepth on the first attempt. The transport assertions below are
+ * orthogonal to the depth gate - these claims only keep the single-shot mock
+ * contract intact (one aiCall per test).
+ */
+function substantiveClaims() {
+  const claim = (id: string, content: string) => ({
+    type: 'text',
+    id,
+    left: 40,
+    top: 80,
+    width: 520,
+    height: 60,
+    rotate: 0,
+    content,
+  });
+  return [
+    claim('claim_1', '<p>A lockout tagout procedure isolates every energy source before maintenance begins, which prevents unexpected machine startup.</p>'),
+    claim('claim_2', '<p>Each authorized employee applies a personal lock to the isolation device, so the machine cannot be re-energized while anyone is working.</p>'),
+    claim('claim_3', '<p>For example, a conveyor with three energy sources (electrical, pneumatic, and gravity) requires three locks and one documented release plan.</p>'),
+    claim('claim_4', '<p>Verification of zero energy - attempting a start after isolation - is mandatory before any hands enter the danger zone.</p>'),
+    claim('claim_5', '<p>Definitions matter here: an authorized employee is trained in lockout, while an affected employee only operates the machine.</p>'),
+  ];
+}
+
 describe('scene-content route — asset-id image transport', () => {
   beforeEach(() => {
     callLLMMock.mockReset();
@@ -59,6 +87,7 @@ describe('scene-content route — asset-id image transport', () => {
             height: 300,
             rotate: 0,
           },
+          ...substantiveClaims(),
         ],
         remark: '',
       }),
@@ -119,6 +148,7 @@ describe('scene-content route — asset-id image transport', () => {
             height: 300,
             rotate: 0,
           },
+          ...substantiveClaims(),
         ],
         remark: '',
       }),
@@ -170,6 +200,7 @@ describe('scene-content route — asset-id image transport', () => {
             height: 300,
             rotate: 0,
           },
+          ...substantiveClaims(),
         ],
         remark: '',
       }),
@@ -237,6 +268,7 @@ describe('scene-content route — asset-id image transport', () => {
             height: 300,
             rotate: 0,
           },
+          ...substantiveClaims(),
         ],
         remark: '',
       }),
@@ -285,6 +317,7 @@ describe('scene-content route — asset-id image transport', () => {
       text: JSON.stringify({
         elements: [
           { type: 'image', src: 'img_1', left: 100, top: 100, width: 400, height: 300, rotate: 0 },
+          ...substantiveClaims(),
         ],
         remark: '',
       }),
@@ -348,7 +381,7 @@ describe('scene-content route — asset-id image transport', () => {
     const { ids, pdfImages, imageMapping } = manyCandidateImages(25);
     resolveVisionImagesMock.mockResolvedValue([]);
     callLLMMock.mockResolvedValueOnce({
-      text: JSON.stringify({ elements: [], remark: '' }),
+      text: JSON.stringify({ elements: substantiveClaims(), remark: '' }),
     });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
@@ -386,7 +419,7 @@ describe('scene-content route — asset-id image transport', () => {
     const { ids, pdfImages, imageMapping } = manyCandidateImages(25);
     resolveVisionImagesMock.mockImplementation(() => new Promise(() => undefined));
     callLLMMock.mockResolvedValueOnce({
-      text: JSON.stringify({ elements: [], remark: '' }),
+      text: JSON.stringify({ elements: substantiveClaims(), remark: '' }),
     });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
@@ -428,6 +461,7 @@ describe('scene-content route — asset-id image transport', () => {
         elements: [
           { type: 'image', src: 'img_1', left: 100, top: 100, width: 400, height: 300, rotate: 0 },
           { type: 'image', src: 'img_2', left: 100, top: 420, width: 400, height: 300, rotate: 0 },
+          ...substantiveClaims(),
         ],
         remark: '',
       }),
@@ -448,10 +482,13 @@ describe('scene-content route — asset-id image transport', () => {
     expect(body.success).toBe(true);
 
     // img_2 was STRIPPED from the mapping passed to the generator, so
-    // resolveImageIds takes the clean "no mapping → remove element" path
-    // instead of writing the dangling allocated id into src.
-    expect(body.content.elements).toHaveLength(1);
-    expect(body.content.elements[0].src).toBe('ast_ok');
+    // resolveImageIds takes the clean "no mapping  remove element" path
+    // instead of writing the dangling allocated id into src. The substantive
+    // claims (depth contract floor) survive untouched - only the hallucinated
+    // image element is gone.
+    expect(body.content.elements).toHaveLength(6);
+    expect(body.content.elements.some((el: { src?: string }) => el.src === 'ast_ok')).toBe(true);
+    expect(body.content.elements.some((el: { src?: string }) => el.src === 'img_2')).toBe(false);
   });
 
   test('browser-backed mode is unaffected: >cap data-URL images all keep their promises', async () => {
@@ -467,6 +504,7 @@ describe('scene-content route — asset-id image transport', () => {
       text: JSON.stringify({
         elements: [
           { type: 'image', src: 'img_1', left: 100, top: 100, width: 400, height: 300, rotate: 0 },
+          ...substantiveClaims(),
         ],
         remark: '',
       }),

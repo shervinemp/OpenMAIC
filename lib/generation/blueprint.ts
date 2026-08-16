@@ -9,6 +9,7 @@
 export {
   assignLessonIds,
   buildCourseBlueprint,
+  buildPerUnitContract,
   clampDurationMinutes,
   deriveContractForRequest,
   perLessonSceneCap,
@@ -16,7 +17,9 @@ export {
   inferCourseType,
   parseDurationFromText,
   renderCourseContract,
+  renderSyllabusContract,
   splitIntoLessons,
+  validateSyllabusStructure,
   summarizeBlueprintValidation,
   validateBlueprint,
   MAX_BLUEPRINT_ATTEMPTS,

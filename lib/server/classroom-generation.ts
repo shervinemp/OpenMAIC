@@ -7,13 +7,14 @@ import {
   generateSceneOutlinesFromRequirements,
   generateSceneActions,
   generateSceneContent,
-  PBLGenerationError,
-  withGenerationRetry,
-  type AICallFn,
-  type AgentInfo,
-} from '@openmaic/generation';
+} from '@/lib/generation/scene-generator';
+import { PBLGenerationError } from '@openmaic/generation';
 import { createSceneWithActions } from '@/lib/server/scene-generation';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
+import { buildUnitContext } from '@/lib/generation/unit-context';
+import { withGenerationRetry } from '@/lib/generation/generation-retry';
+import type { AICallFn } from '@/lib/generation/pipeline-types';
+import type { AgentInfo } from '@/lib/generation/pipeline-types';
 import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
@@ -622,6 +623,9 @@ export async function generateClassroom(
               languageDirective,
               allowProceduralSkill: vocationalActive,
               retrievalContext: safeOutline.retrievalContext,
+              // Phase 2 §15.5: prerequisite coherence — thread what the unit has
+              // already taught so this scene builds on it instead of repeating it.
+              unitContext: buildUnitContext(safeOutline, outlines),
               ...(safeOutline.type === 'pbl'
                 ? {
                     pblLoopFallback: (input) =>
