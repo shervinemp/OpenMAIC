@@ -823,7 +823,7 @@ function HomePage() {
             {/* Toolbar row — wraps so the fixed controls never collide with the
                 toolbar content on narrow viewports. */}
             <div className="px-3 pb-3 flex flex-wrap items-end gap-2">
-              <div className="flex-1 min-w-[220px]">
+              <div className="flex-1 min-w-0">
                 <GenerationToolbar
                   webSearch={form.webSearch}
                   onWebSearchChange={(v) => updateForm('webSearch', v)}

@@ -210,13 +210,16 @@ export function GenerationToolbar({
   };
 
   // ─── Pill button helper ─────────────────────────────
+  // `shrink-0`: pills never compress (compressed nowrap text spills into
+  // the next pill — the "pushed onto each other" overlap). Wrapping is the
+  // only reflow mechanism, handled by the wrap-friendly parents below.
   const pillCls =
-    'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border';
+    'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border';
   const pillMuted = `${pillCls} border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60`;
   const pillActive = `${pillCls} border-violet-200/60 dark:border-violet-700/50 bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300`;
 
   return (
-    <div className="flex items-center gap-1 flex-wrap">
+    <div className="flex min-w-0 items-center gap-1 flex-wrap">
       {/* ── Model selector ── */}
       {configuredProviders.length > 0 ? (
         <ModelSettingsPopover
@@ -251,7 +254,7 @@ export function GenerationToolbar({
         </Tooltip>
       )}
 
-      <div className="flex min-w-0 items-center gap-1">
+      <div className="flex min-w-0 items-center gap-1 flex-wrap">
         {/* ── Separator ── */}
         <div className="w-px h-4 bg-border/60 mx-1" />
 
@@ -841,7 +844,7 @@ function ModelSettingsPopover({
             <button
               aria-label={`${currentProviderName} / ${currentModelLabel}`}
               className={cn(
-                'inline-flex h-8 min-w-0 items-center gap-1.5 rounded-full border px-2 text-xs font-medium transition-all',
+                'inline-flex h-8 min-w-0 shrink-0 items-center gap-1.5 rounded-full border px-2 text-xs font-medium transition-all',
                 'border-violet-200/70 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-800/70 dark:bg-violet-950/30 dark:text-violet-300',
                 currentModelId &&
                   'shadow-[0_0_0_1px_rgba(124,58,237,0.12)] dark:shadow-[0_0_0_1px_rgba(167,139,250,0.16)]',
