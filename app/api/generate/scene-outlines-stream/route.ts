@@ -59,6 +59,12 @@ import {
   type ParsedOutlineResponse,
 } from '@/lib/generation/blueprint';
 import { parseJsonResponse } from '@/lib/generation/json-repair';
+import { searchWeb, formatSearchResultsAsContext } from '@/lib/web-search';
+import {
+  formatWebSourceLegend,
+  webSourcesToChunks,
+} from '@/lib/generation/web-retrieval';
+import type { WebSearchProviderId, BaiduSubSources } from '@/lib/web-search/types';
 import { DEFAULT_DURATION_MINUTES } from '@/lib/constants/generation';
 import {
   chunkSourceText,
@@ -344,6 +350,15 @@ interface MultiUnitOutlineRun {
   promptId: string;
   /** Prompt variables shared with the single-call path. */
   baseVariables: Record<string, unknown>;
+  /** Global research context from the client's web-search step (may be empty). */
+  researchContext: string;
+  /** Per-unit web research config (Phase 2 §15.2); absent = no unit research. */
+  webSearchConfig?: {
+    providerId?: string;
+    apiKey?: string;
+    baseUrl?: string;
+    baiduSubSources?: BaiduSubSources;
+  };
   courseContract: CourseContract;
   courseType: CourseBlueprint['courseType'];
   callModel: (params: { system: string; user: string }) => Promise<string>;
@@ -427,6 +442,45 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
     checkAborted();
     const unit = syllabus.units![unitIndex];
     const perUnitContract = buildPerUnitContract(courseContract, unitIndex);
+
+    // Phase 2 §15.2: per-unit web research. Query from the unit title +
+    // objectives; chunk the results; inject as the unit's research context
+    // and attach per-scene retrieval context with [source N] citations once
+    // the unit's outlines validate. Best-effort — a failed search falls
+    // back to the global research context and never blocks generation.
+    let unitResearchContext = run.researchContext || 'None';
+    let unitChunks: PdfChunk[] = [];
+    const wsConfig = run.webSearchConfig;
+    if (wsConfig?.providerId) {
+      try {
+        const query =
+          (`${unit.title} ${(unit.objectives ?? []).join(' ')}`.trim() || unit.title) as string;
+        const result = await searchWeb({
+          providerId: wsConfig.providerId as WebSearchProviderId,
+          query,
+          apiKey: wsConfig.apiKey,
+          baseUrl: wsConfig.baseUrl,
+          maxResults: 6,
+          baiduSubSources: wsConfig.baiduSubSources,
+        });
+        unitChunks = webSourcesToChunks(result);
+        unitResearchContext = [
+          run.researchContext || '',
+          formatWebSourceLegend(result),
+          '',
+          'Search results:',
+          formatSearchResultsAsContext(result),
+        ]
+          .filter(Boolean)
+          .join('\n');
+      } catch (error) {
+        log.warn(
+          `Per-unit web research failed for unit ${unitIndex + 1}; falling back to global context:`,
+          error,
+        );
+      }
+    }
+
     const unitLessonList = (unit.lessons ?? [])
       .map((lesson, index) => `  ${index + 1}. ${lesson.title}`)
       .join('\n');
@@ -445,6 +499,7 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
     const unitPrompts = buildPrompt(run.promptId as Parameters<typeof buildPrompt>[0], {
       ...run.baseVariables,
       requirement: `${run.requirement}\n\n${unitContext}`,
+      researchContext: unitResearchContext,
       courseContract: renderCourseContract(perUnitContract, run.courseType),
     });
     if (!unitPrompts) throw new Error('Unit outline prompt template not found');
@@ -516,11 +571,21 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
       throw new Error(`Unit ${unitIndex + 1} outlines did not meet the contract after ${MAX_BLUEPRINT_ATTEMPTS} attempts`);
     }
 
-    for (const outline of unitOutlines) {
+    // Attach per-scene retrieval context from the unit's web research —
+    // same machinery as the PDF path (Pillar 3b), citation markers "[source N]".
+    const groundedOutlines = unitOutlines.map((outline) => {
+      if (outline.retrievalContext || unitChunks.length === 0) return outline;
+      const query = `${outline.title}\n${outline.description}\n${(outline.keyPoints ?? []).join('\n')}`;
+      const retrieved = retrieveChunks(query, unitChunks);
+      if (retrieved.length === 0) return outline;
+      return { ...outline, retrievalContext: formatRetrievalContext(retrieved) };
+    });
+
+    for (const outline of groundedOutlines) {
       allOutlines.push(outline);
       enqueue({ type: 'outline', data: outline, index: allOutlines.length - 1 });
     }
-    globalOffset += unitOutlines.length;
+    globalOffset += groundedOutlines.length;
   }
 
   // ---- Phase C: assemble + full contract validation ----
@@ -573,7 +638,7 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Requirements are required');
     }
 
-    const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents, durationMinutes, sizePreset } = body as {
+    const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents, durationMinutes, sizePreset, webSearchConfig } = body as {
       requirements: UserRequirements;
       pdfText?: string;
       pdfImages?: PdfImage[];
@@ -582,6 +647,12 @@ export async function POST(req: NextRequest) {
       agents?: AgentInfo[];
       durationMinutes?: number;
       sizePreset?: unknown;
+      webSearchConfig?: {
+        providerId?: string;
+        apiKey?: string;
+        baseUrl?: string;
+        baiduSubSources?: BaiduSubSources;
+      };
     };
     requirementSnippet = requirements?.requirement?.substring(0, 60);
 
@@ -752,6 +823,8 @@ export async function POST(req: NextRequest) {
                 requirement: requirements.requirement,
                 promptId,
                 baseVariables,
+                researchContext: researchContext || '',
+                webSearchConfig,
                 courseContract,
                 courseType,
                 callModel,
