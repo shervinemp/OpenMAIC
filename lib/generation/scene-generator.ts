@@ -129,6 +129,12 @@ export interface SceneContentOptions {
    * anything outside the retrieved set (citation ground-truth).
    */
   retrievalContext?: string;
+  /**
+   * Prerequisite coherence threading (Phase 2 §15.5): a compact "what was
+   * taught so far in this unit" block injected into the content prompts so
+   * scenes build on earlier material instead of repeating it.
+   */
+  unitContext?: string;
 }
 
 export interface SceneActionsOptions {
@@ -259,6 +265,7 @@ export async function generateSceneContent(
     editDirective,
     baselineContent,
     retrievalContext,
+    unitContext,
   } = options;
 
   // Unified path for interactive scenes (both normal and ultra mode)
@@ -299,17 +306,18 @@ export async function generateSceneContent(
         editDirective,
         baselineContent,
         retrievalContext,
+        unitContext,
       );
     case 'quiz':
-      return generateQuizContent(outline, aiCall, languageDirective, retrievalContext);
+      return generateQuizContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
     case 'exercise':
-      return generateExerciseContent(outline, aiCall, languageDirective, retrievalContext);
+      return generateExerciseContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
     case 'derivation':
-      return generateDerivationContent(outline, aiCall, languageDirective, retrievalContext);
+      return generateDerivationContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
     case 'glossary':
-      return generateGlossaryContent(outline, aiCall, languageDirective);
+      return generateGlossaryContent(outline, aiCall, languageDirective, unitContext);
     case 'reading':
-      return generateReadingContent(outline, aiCall, languageDirective);
+      return generateReadingContent(outline, aiCall, languageDirective, unitContext);
     case 'pbl':
       return generatePBLSceneContent(
         outline,
@@ -611,6 +619,7 @@ async function generateSlideContent(
   editDirective?: string,
   baselineContent?: GeneratedSlideContent,
   retrievalContext?: string,
+  unitContext?: string,
 ): Promise<GeneratedSlideContent | null> {
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
@@ -700,6 +709,7 @@ async function generateSlideContent(
     teacherContext,
     languageDirective: languageDirective || '',
     depthDirective: renderDepthDirective(depthLevel),
+    unitContext: unitContext || '',
     imageElementEnabled,
     generatedImageEnabled,
     generatedVideoEnabled,
@@ -890,6 +900,7 @@ async function generateQuizContent(
   aiCall: AICallFn,
   languageDirective?: string,
   retrievalContext?: string,
+  unitContext?: string,
 ): Promise<GeneratedQuizContent | null> {
   const quizConfig = outline.quizConfig || {
     questionCount: 3,
@@ -908,6 +919,7 @@ async function generateQuizContent(
     questionTypes: quizConfig.questionTypes.join(', '),
     languageDirective: languageDirective || '',
     depthDirective: renderDepthDirective(depthLevel),
+    unitContext: unitContext || '',
   });
 
   if (!prompts) {
@@ -993,6 +1005,7 @@ async function generateQuizContent(
 interface StructuredSceneOptions {
   languageDirective?: string;
   retrievalContext?: string;
+  unitContext?: string;
 }
 
 /**
@@ -1014,6 +1027,7 @@ async function generateValidatedStructured<T>(
     keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
     languageDirective: options.languageDirective || '',
     depthDirective: renderDepthDirective(depthLevel),
+    unitContext: options.unitContext || '',
   });
   if (!prompts) return null;
 
@@ -1082,6 +1096,7 @@ async function generateExerciseContent(
   aiCall: AICallFn,
   languageDirective?: string,
   retrievalContext?: string,
+  unitContext?: string,
 ): Promise<GeneratedSlideContent | null> {
   const payload = await generateValidatedStructured<GeneratedExerciseContent>(
     outline,
@@ -1089,7 +1104,7 @@ async function generateExerciseContent(
     aiCall,
     (parsed) =>
       validateExerciseDepth(outline, parsed.problems ?? [], { retrievalContext }),
-    { languageDirective, retrievalContext },
+    { languageDirective, retrievalContext, unitContext },
   );
   if (!payload) return null;
   return finalizeRenderedElements(renderExerciseToElements(outline, payload.problems ?? []));
@@ -1100,6 +1115,7 @@ async function generateDerivationContent(
   aiCall: AICallFn,
   languageDirective?: string,
   retrievalContext?: string,
+  unitContext?: string,
 ): Promise<GeneratedSlideContent | null> {
   const payload = await generateValidatedStructured<GeneratedDerivationContent>(
     outline,
@@ -1107,7 +1123,7 @@ async function generateDerivationContent(
     aiCall,
     (parsed) =>
       validateDerivationDepth(outline, parsed.steps ?? [], { retrievalContext }),
-    { languageDirective, retrievalContext },
+    { languageDirective, retrievalContext, unitContext },
   );
   if (!payload) return null;
   return finalizeRenderedElements(renderDerivationToElements(outline, payload.steps ?? []));
@@ -1117,13 +1133,14 @@ async function generateGlossaryContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   languageDirective?: string,
+  unitContext?: string,
 ): Promise<GeneratedSlideContent | null> {
   const payload = await generateValidatedStructured<GeneratedGlossaryContent>(
     outline,
     PROMPT_IDS.GLOSSARY_CONTENT,
     aiCall,
     (parsed) => validateGlossaryDepth(outline, parsed.terms ?? []),
-    { languageDirective },
+    { languageDirective, unitContext },
   );
   if (!payload) return null;
   return finalizeRenderedElements(renderGlossaryToElements(outline, payload.terms ?? []));
@@ -1133,13 +1150,14 @@ async function generateReadingContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   languageDirective?: string,
+  unitContext?: string,
 ): Promise<GeneratedSlideContent | null> {
   const payload = await generateValidatedStructured<GeneratedReadingContent>(
     outline,
     PROMPT_IDS.READING_CONTENT,
     aiCall,
     (parsed) => validateReadingDepth(outline, parsed.items ?? [], {}),
-    { languageDirective },
+    { languageDirective, unitContext },
   );
   if (!payload) return null;
   return finalizeRenderedElements(renderReadingToElements(outline, payload.items ?? []));

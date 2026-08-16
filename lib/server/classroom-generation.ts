@@ -11,6 +11,7 @@ import {
   generateSceneActions,
   generateSceneContent,
 } from '@/lib/generation/scene-generator';
+import { buildUnitContext } from '@/lib/generation/unit-context';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
 import type { AgentInfo } from '@/lib/generation/pipeline-types';
 import { getDefaultAgents } from '@/lib/orchestration/registry/store';
@@ -614,6 +615,9 @@ export async function generateClassroom(
           languageDirective,
           allowProceduralSkill: vocationalActive,
           retrievalContext: safeOutline.retrievalContext,
+          // Phase 2 §15.5: prerequisite coherence — thread what the unit has
+          // already taught so this scene builds on it instead of repeating it.
+          unitContext: buildUnitContext(safeOutline, outlines),
           // PBL scene content is driven by the model object, not the aiCall
           // closure, so both the routed model AND its thinking config must be
           // passed explicitly — otherwise a `scene-content:pbl` route with a

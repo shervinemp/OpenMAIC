@@ -9,6 +9,10 @@ Test Points: {{keyPoints}}
 {{depthDirective}}
 {{/if}}
 
+{{#if unitContext}}
+{{unitContext}}
+{{/if}}
+
 Output JSON directly (no explanation, no code blocks):
 
 {"terms":[{"term":"Term name","definition":"Complete definition sentence identifying the category and distinguishing property."}]}
