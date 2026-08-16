@@ -14,7 +14,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { streamLLM } from '@/lib/ai/llm';
+import { streamLLM, callLLM } from '@/lib/ai/llm';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import {
   formatImageDescription,
@@ -25,7 +25,11 @@ import {
 } from '@/lib/generation/generation-pipeline';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from '@/lib/generation/outline-generator';
-import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import {
+  LESSON_MINUTES,
+  MAX_PDF_CONTENT_CHARS,
+  MAX_VISION_IMAGES,
+} from '@/lib/constants/generation';
 import { nanoid } from 'nanoid';
 import type {
   UserRequirements,
@@ -40,16 +44,21 @@ import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import {
   buildCourseBlueprint,
+  buildPerUnitContract,
   clampDurationMinutes,
   deriveContractForRequest,
   inferCourseType,
   parseDurationFromText,
   renderCourseContract,
+  renderSyllabusContract,
   summarizeBlueprintValidation,
   validateBlueprint,
+  validateSyllabusStructure,
   MAX_BLUEPRINT_ATTEMPTS,
+  type CourseContract,
   type ParsedOutlineResponse,
 } from '@/lib/generation/blueprint';
+import { parseJsonResponse } from '@/lib/generation/json-repair';
 import { DEFAULT_DURATION_MINUTES } from '@/lib/constants/generation';
 import {
   chunkSourceText,
@@ -323,6 +332,228 @@ function ensureUniqueOutlineId(outline: SceneOutline, usedIds: Set<string>): Sce
   return { ...outline, id };
 }
 
+// ==================== Multi-unit outline generation (Phase 2 §15.8) ====================
+// For contracts deriving more than one unit, the outline stage splits into a
+// bounded syllabus call (structure only) followed by one outline call per
+// unit, each with its own corrective loop. Each LLM call stays small even
+// for semester-scale courses; the assembled deck still passes the full
+// blueprint validation exactly.
+
+interface MultiUnitOutlineRun {
+  requirement: string;
+  promptId: string;
+  /** Prompt variables shared with the single-call path. */
+  baseVariables: Record<string, unknown>;
+  courseContract: CourseContract;
+  courseType: CourseBlueprint['courseType'];
+  callModel: (params: { system: string; user: string }) => Promise<string>;
+  signal: AbortSignal | undefined;
+  controller: ReadableStreamDefaultController<Uint8Array>;
+  encoder: TextEncoder;
+}
+
+interface MultiUnitOutlineResult {
+  blueprint: CourseBlueprint;
+  outlines: SceneOutline[];
+  languageDirective: string | null;
+  courseTitle: string | null;
+}
+
+async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<MultiUnitOutlineResult> {
+  const { controller, encoder, signal, courseContract } = run;
+  const enqueue = (event: Record<string, unknown>) => {
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+  };
+  const checkAborted = () => {
+    if (signal?.aborted) throw new Error('Client disconnected');
+  };
+
+  // ---- Phase A: syllabus (unit/lesson structure only) ----
+  const syllabusPrompt = buildPrompt(PROMPT_IDS.COURSE_SYLLABUS, {
+    ...run.baseVariables,
+    courseContract: renderSyllabusContract(courseContract),
+  });
+  if (!syllabusPrompt) throw new Error('Syllabus prompt template not found');
+
+  let syllabus: ParsedOutlineResponse | null = null;
+  let syllabusFeedback: string | undefined;
+  for (let attempt = 1; attempt <= MAX_BLUEPRINT_ATTEMPTS; attempt++) {
+    checkAborted();
+    const userPrompt = syllabusFeedback
+      ? `${syllabusPrompt.user}\n\n## Correction Required\n\n${syllabusFeedback}`
+      : syllabusPrompt.user;
+    try {
+      const text = await run.callModel({ system: syllabusPrompt.system, user: userPrompt });
+      const parsed = parseJsonResponse<ParsedOutlineResponse>(text);
+      if (!parsed || !Array.isArray(parsed.units)) {
+        syllabusFeedback = 'Return the syllabus JSON object with a "units" array as specified.';
+        continue;
+      }
+      const errors = validateSyllabusStructure(parsed, courseContract);
+      if (errors.length === 0) {
+        // Normalize: the flat lessons list drives lesson titles during
+        // assembly; the syllabus shape nests them under units.
+        syllabus = {
+          ...parsed,
+          lessons: parsed.lessons ?? parsed.units.flatMap((unit) => unit.lessons ?? []),
+        };
+        break;
+      }
+      syllabusFeedback = `Your previous response did NOT meet the syllabus contract:\n${errors.map((e) => `- ${e}`).join('\n')}\nFix the structure and return the corrected JSON.`;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      log.warn(`Syllabus attempt ${attempt} failed:`, error);
+      if (attempt >= MAX_BLUEPRINT_ATTEMPTS) throw error;
+    }
+  }
+  if (!syllabus) {
+    throw new Error(`Syllabus did not meet the contract after ${MAX_BLUEPRINT_ATTEMPTS} attempts`);
+  }
+  checkAborted();
+  enqueue({
+    type: 'syllabus',
+    units: syllabus.units,
+    lessons: syllabus.lessons,
+    languageDirective: syllabus.languageDirective,
+    courseTitle: syllabus.courseTitle,
+  });
+
+  // ---- Phase B: one outline call per unit ----
+  const allOutlines: SceneOutline[] = [];
+  const usedOutlineIds = new Set<string>();
+  let globalOffset = 0;
+
+  for (let unitIndex = 0; unitIndex < courseContract.unitCount; unitIndex++) {
+    checkAborted();
+    const unit = syllabus.units![unitIndex];
+    const perUnitContract = buildPerUnitContract(courseContract, unitIndex);
+    const unitLessonList = (unit.lessons ?? [])
+      .map((lesson, index) => `  ${index + 1}. ${lesson.title}`)
+      .join('\n');
+    const unitContext = [
+      `## Syllabus Context (Unit ${unitIndex + 1} of ${courseContract.unitCount})`,
+      '',
+      `Unit title: ${unit.title}`,
+      `Unit objectives: ${(unit.objectives ?? []).join('; ')}`,
+      '',
+      'Lessons in this unit (generate outlines for exactly these, in order):',
+      unitLessonList,
+      '',
+      `The scenes you generate belong to this unit. Global outline numbering continues from #${globalOffset + 1}.`,
+    ].join('\n');
+
+    const unitPrompts = buildPrompt(run.promptId as Parameters<typeof buildPrompt>[0], {
+      ...run.baseVariables,
+      requirement: `${run.requirement}\n\n${unitContext}`,
+      courseContract: renderCourseContract(perUnitContract, run.courseType),
+    });
+    if (!unitPrompts) throw new Error('Unit outline prompt template not found');
+
+    enqueue({ type: 'unit', index: unitIndex, title: unit.title, total: courseContract.unitCount });
+
+    let unitOutlines: SceneOutline[] | null = null;
+    let unitFeedback: string | undefined;
+    for (let attempt = 1; attempt <= MAX_BLUEPRINT_ATTEMPTS; attempt++) {
+      checkAborted();
+      const userPrompt = unitFeedback
+        ? `${unitPrompts.user}\n\n## Correction Required\n\n${unitFeedback}`
+        : unitPrompts.user;
+      try {
+        const text = await run.callModel({ system: unitPrompts.system, user: userPrompt });
+        const parsed = parseJsonResponse<ParsedOutlineResponse | SceneOutline[]>(text);
+        const rawOutlines = Array.isArray(parsed) ? parsed : parsed?.outlines;
+        if (!Array.isArray(rawOutlines) || rawOutlines.length === 0) {
+          unitFeedback = 'Return the wrapper JSON object with the "outlines" array as specified.';
+          continue;
+        }
+
+        // Global ids + global orders, then the single-call sanitization.
+        const enriched = rawOutlines.map((outline, index) =>
+          sanitizeNonTaskEngineOutline({
+            ...outline,
+            id: outline.id || nanoid(),
+            order: globalOffset + index + 1,
+          }),
+        );
+        const uniquified = enriched.map((outline) => ensureUniqueOutlineId(outline, usedOutlineIds));
+
+        // Validate the unit against its scoped contract by assembling a
+        // single-unit mini blueprint — reuses all shape/count checks. The
+        // mini contract's duration is scoped to the unit's lesson count so
+        // the derived lesson split matches the unit's lesson slice.
+        const miniContract: CourseContract = {
+          ...perUnitContract,
+          durationMinutes: perUnitContract.lessonCount * LESSON_MINUTES,
+        };
+        const miniBlueprint = buildCourseBlueprint(
+          {
+            outlines: uniquified,
+            lessons: unit.lessons,
+            units: [unit],
+            audience: syllabus!.audience,
+            objectives: syllabus!.objectives,
+          },
+          run.requirement,
+          miniContract,
+          run.courseType,
+          syllabus!.courseTitle ?? run.requirement.slice(0, 30),
+        );
+        const report = validateBlueprint(miniBlueprint, {
+          tolerance: attempt === MAX_BLUEPRINT_ATTEMPTS,
+        });
+        if (report.valid) {
+          unitOutlines = miniBlueprint.lessons.flatMap((lesson) => lesson.outlines);
+          break;
+        }
+        unitFeedback = summarizeBlueprintValidation(report);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        log.warn(`Unit ${unitIndex + 1} outline attempt ${attempt} failed:`, error);
+        if (attempt >= MAX_BLUEPRINT_ATTEMPTS) throw error;
+      }
+    }
+    if (!unitOutlines) {
+      throw new Error(`Unit ${unitIndex + 1} outlines did not meet the contract after ${MAX_BLUEPRINT_ATTEMPTS} attempts`);
+    }
+
+    for (const outline of unitOutlines) {
+      allOutlines.push(outline);
+      enqueue({ type: 'outline', data: outline, index: allOutlines.length - 1 });
+    }
+    globalOffset += unitOutlines.length;
+  }
+
+  // ---- Phase C: assemble + full contract validation ----
+  const blueprint = buildCourseBlueprint(
+    {
+      languageDirective: syllabus.languageDirective,
+      courseTitle: syllabus.courseTitle,
+      outlines: allOutlines,
+      audience: syllabus.audience,
+      objectives: syllabus.objectives,
+      lessons: syllabus.lessons,
+      units: syllabus.units,
+    },
+    run.requirement,
+    courseContract,
+    run.courseType,
+    syllabus.courseTitle ?? run.requirement.slice(0, 30),
+  );
+  const fullReport = validateBlueprint(blueprint, { tolerance: true });
+  if (!fullReport.valid) {
+    throw new Error(
+      `Assembled deck did not meet the course contract: ${fullReport.errors.slice(0, 5).join('; ')}`,
+    );
+  }
+
+  return {
+    blueprint,
+    outlines: blueprint.lessons.flatMap((lesson) => lesson.outlines),
+    languageDirective: syllabus.languageDirective ?? null,
+    courseTitle: syllabus.courseTitle ?? null,
+  };
+}
+
 export async function POST(req: NextRequest) {
   let requirementSnippet: string | undefined;
   let resolvedModelString: string | undefined;
@@ -430,7 +661,7 @@ export async function POST(req: NextRequest) {
       ? renderCourseContract(courseContract, courseType)
       : '';
 
-    const prompts = buildPrompt(promptId, {
+    const baseVariables = {
       requirement: requirements.requirement,
       pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
       availableImages: availableImagesText,
@@ -443,7 +674,10 @@ export async function POST(req: NextRequest) {
       userProfile: userProfileText,
       courseContract: courseContractText,
       resolvedDurationMinutes: courseContract?.durationMinutes ?? resolvedDuration,
-    });
+    };
+
+    const prompts = buildPrompt(promptId, baseVariables);
+    const multiUnit = contractMode && courseContract !== null && courseContract.unitCount > 1;
 
     if (!prompts) {
       return apiError('INTERNAL_ERROR', 500, 'Prompt template not found');
@@ -494,6 +728,52 @@ export async function POST(req: NextRequest) {
           let finalBlueprint: CourseBlueprint | null = null;
           let contractFailed = false;
 
+          if (multiUnit && courseContract) {
+            // Multi-unit path (Phase 2 §15.8): syllabus call + per-unit
+            // outline calls, each bounded. No per-unit 'retry' events are
+            // emitted — the client keeps already-collected unit outlines.
+            try {
+              const callModel = async ({ system, user }: { system: string; user: string }) => {
+                const result = await callLLM(
+                  {
+                    model: languageModel,
+                    system,
+                    prompt: user,
+                    maxOutputTokens: modelInfo?.outputWindow,
+                    abortSignal: req.signal,
+                  },
+                  'scene-outlines-stream-multi-unit',
+                  undefined,
+                  thinkingConfig,
+                );
+                return result.text;
+              };
+              const multiResult = await generateMultiUnitOutlines({
+                requirement: requirements.requirement,
+                promptId,
+                baseVariables,
+                courseContract,
+                courseType,
+                callModel,
+                signal: req.signal,
+                controller,
+                encoder,
+              });
+              finalBlueprint = multiResult.blueprint;
+              parsedOutlines = multiResult.outlines;
+              languageDirective = multiResult.languageDirective;
+              courseTitle = multiResult.courseTitle;
+            } catch (error) {
+              // Client disconnected: stop immediately.
+              if (req.signal?.aborted) {
+                stopHeartbeat();
+                return;
+              }
+              lastError = error instanceof Error ? error.message : String(error);
+              contractFailed = true;
+              log.error(`Multi-unit outline generation failed:`, error);
+            }
+          } else {
           for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
             try {
               let fullText = '';
@@ -715,6 +995,7 @@ export async function POST(req: NextRequest) {
                 continue;
               }
             }
+          }
           }
 
           if (finalBlueprint) {
