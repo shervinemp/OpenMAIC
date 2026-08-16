@@ -72,6 +72,12 @@ import {
   retrieveChunks,
   type PdfChunk,
 } from '@/lib/generation/pdf-retrieval';
+import {
+  buildUnitReviewSummary,
+  summarizeUnitReviewFindings,
+  validateUnitReviewVerdict,
+  type UnitReviewVerdict,
+} from '@/lib/generation/unit-review';
 import type { CourseBlueprint } from '@/lib/types/generation';
 const log = createLogger('Outlines Stream');
 
@@ -374,6 +380,76 @@ interface MultiUnitOutlineResult {
   courseTitle: string | null;
 }
 
+/**
+ * Phase 2 §15.5 — the unit review gate. Runs an LLM-as-judge verdict on the
+ * unit's outline deck against the unit's objectives.
+ *
+ * Returns null when the deck is ACCEPTED: the verdict was adequate, or the
+ * judge infrastructure failed (the gate is best-effort against model/network
+ * errors, mirroring the per-unit web-research fallback, so a semester run
+ * never dies on the reviewer). Returns corrective feedback to feed the
+ * unit's bounded retry loop when the verdict is inadequate or unparseable.
+ */
+async function reviewUnitOutlines(
+  unit: { title?: string; objectives?: string[]; lessons?: Array<{ title?: string }> },
+  outlines: SceneOutline[],
+  unitIndex: number,
+  run: MultiUnitOutlineRun,
+  enqueue: (event: Record<string, unknown>) => void,
+): Promise<string | null> {
+  const reviewPrompt = buildPrompt(PROMPT_IDS.UNIT_REVIEW, {
+    unitSummary: buildUnitReviewSummary(
+      {
+        title: unit.title ?? `Unit ${unitIndex + 1}`,
+        objectives: unit.objectives ?? [],
+        lessons: (unit.lessons ?? []).map((lesson, index) => ({
+          title: lesson.title ?? `Lesson ${index + 1}`,
+          objectives: [],
+          durationMinutes: 0,
+          sceneTarget: 0,
+          outlines: [],
+        })),
+      },
+      outlines,
+    ),
+  });
+  if (!reviewPrompt) {
+    log.warn(`Unit review prompt template not found for unit ${unitIndex + 1}; accepting the unit`);
+    return null;
+  }
+
+  try {
+    const text = await run.callModel({ system: reviewPrompt.system, user: reviewPrompt.user });
+    const parsed = parseJsonResponse<UnitReviewVerdict>(text);
+    const { verdict, errors } = validateUnitReviewVerdict(parsed);
+    enqueue({
+      type: 'unitReview',
+      index: unitIndex,
+      unit: unit.title ?? `Unit ${unitIndex + 1}`,
+      adequate: verdict?.adequate ?? false,
+      findings: verdict ? verdict.findings : errors,
+    });
+    if (verdict?.adequate) {
+      return null;
+    }
+    const findings = verdict ? verdict.findings : errors;
+    return summarizeUnitReviewFindings({
+      adequate: false,
+      findings:
+        findings.length > 0
+          ? findings
+          : ['The verdict was unparseable — verify every unit objective is taught by at least one concrete scene.'],
+    });
+  } catch (error) {
+    if (run.signal?.aborted) throw error;
+    log.warn(
+      `Unit review judge failed for unit ${unitIndex + 1}; accepting the unit (best-effort gate):`,
+      error,
+    );
+    return null;
+  }
+}
+
 async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<MultiUnitOutlineResult> {
   const { controller, encoder, signal, courseContract } = run;
   const enqueue = (event: Record<string, unknown>) => {
@@ -557,8 +633,30 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
           tolerance: attempt === MAX_BLUEPRINT_ATTEMPTS,
         });
         if (report.valid) {
-          unitOutlines = miniBlueprint.lessons.flatMap((lesson) => lesson.outlines);
-          break;
+          const candidateOutlines = miniBlueprint.lessons.flatMap((lesson) => lesson.outlines);
+
+          // Phase 2 §15.5: unit review gate. An LLM-as-judge pass against the
+          // unit's objectives; a failing verdict feeds this same bounded loop.
+          const reviewFeedback = await reviewUnitOutlines(
+            unit,
+            candidateOutlines,
+            unitIndex,
+            run,
+            enqueue,
+          );
+          if (reviewFeedback === null) {
+            unitOutlines = candidateOutlines;
+            break;
+          }
+          unitFeedback = reviewFeedback;
+          if (attempt >= MAX_BLUEPRINT_ATTEMPTS) {
+            // The gate exhausted its budget with the structural contract —
+            // never accept a unit the reviewer rejected.
+            throw new Error(
+              `Unit ${unitIndex + 1} did not pass the unit review gate after ${MAX_BLUEPRINT_ATTEMPTS} attempts`,
+            );
+          }
+          continue;
         }
         unitFeedback = summarizeBlueprintValidation(report);
       } catch (error) {
