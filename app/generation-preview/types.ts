@@ -35,6 +35,10 @@ export interface GenerationSessionState {
     totalImageCount: number;
     captionedCount: number;
   };
+  /** Stage id once the course is persisted (content phase) — lets a
+   *  re-entered session resume on the classroom page instead of
+   *  duplicating the stage. */
+  stageId?: string;
   // PDF deferred parsing fields
   pdfStorageKey?: string;
   pdfFileName?: string;
