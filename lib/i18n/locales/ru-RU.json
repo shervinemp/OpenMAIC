@@ -614,11 +614,15 @@
   },
   "classroomComplete": {
     "title": "Курс завершён",
-    "trailLabels": {
+        "trailLabels": {
       "slide": "страниц",
       "quiz": "тестов",
       "interactive": "интерактивов",
-      "pbl": "проектов"
+      "pbl": "проектов",
+      "exercise": "упражнений",
+      "derivation": "выводов",
+      "glossary": "глоссариев",
+      "reading": "материалов"
     },
     "quizScoreLabel": "Верно {{correct}} из {{total}}",
     "encouragement": {

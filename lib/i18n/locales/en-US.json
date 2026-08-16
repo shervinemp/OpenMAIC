@@ -614,11 +614,15 @@
   },
   "classroomComplete": {
     "title": "Course complete",
-    "trailLabels": {
+        "trailLabels": {
       "slide": "pages",
       "quiz": "quizzes",
       "interactive": "interactives",
-      "pbl": "projects"
+      "pbl": "projects",
+      "exercise": "exercises",
+      "derivation": "derivations",
+      "glossary": "glossaries",
+      "reading": "readings"
     },
     "quizScoreLabel": "{{correct}} / {{total}} correct",
     "encouragement": {
