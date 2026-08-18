@@ -1119,6 +1119,7 @@
     "documentIndexed": "Documento indexado: {{sections}} seções, {{images}} imagens descritas",
     "documentIndexFailed": "Falha na indexação do documento — continuando sem cobertura completa",
     "coverageGaps": "{{count}} seção(ões) do material não cobertas por nenhuma aula",
+    "coverageDigestTrimmed": "{{count}} tópico(s) foram removidos do mapa de cobertura para caber no orçamento do esboço",
     "pendingGenerationTitle": "Geração do curso em andamento",
     "pendingGenerationDesc": "Retome de onde parou — seus tópicos estão seguros."
   },

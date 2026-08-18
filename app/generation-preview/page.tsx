@@ -61,6 +61,19 @@ import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
 
+// Multi-unit outline checkpoint (§16 recovery): the syllabus + completed unit
+// outlines, persisted as units finish so a mid-run failure can resume instead
+// of regenerating everything. Keyed by session id so a fresh run never reuses
+// a stale checkpoint.
+const OUTLINE_CHECKPOINT_KEY = 'outlineCheckpoint';
+
+interface OutlineCheckpoint {
+  sessionId: string;
+  syllabus: unknown;
+  outlines: SceneOutline[];
+  completedUnitCount: number;
+}
+
 type ParsedDocumentResponseImage = {
   id: string;
   src?: string;
@@ -508,6 +521,7 @@ function GenerationPreviewContent() {
                     pageNumber: img.pageNumber,
                     width: img.width,
                     height: img.height,
+                    description: img.description,
                   })),
                 }),
                 signal,
@@ -731,6 +745,30 @@ function GenerationPreviewContent() {
           const collected: SceneOutline[] = [];
           let directive: string | undefined;
           let title: string | undefined;
+          let checkpointSyllabus: unknown = null;
+
+          // Read a prior partial-run checkpoint (matched by session id) so a
+          // failed multi-unit run resumes from its last completed unit instead
+          // of regenerating everything.
+          let resumeSyllabus: unknown;
+          let resumeOutlines: SceneOutline[] | undefined;
+          let resumeFromUnitIndex: number | undefined;
+          try {
+            const raw = sessionStorage.getItem(OUTLINE_CHECKPOINT_KEY);
+            if (raw) {
+              const checkpoint = JSON.parse(raw) as OutlineCheckpoint;
+              if (
+                checkpoint.sessionId === currentSession.sessionId &&
+                checkpoint.completedUnitCount > 0
+              ) {
+                resumeSyllabus = checkpoint.syllabus;
+                resumeOutlines = checkpoint.outlines;
+                resumeFromUnitIndex = checkpoint.completedUnitCount;
+              }
+            }
+          } catch (e) {
+            log.warn('Failed to read outline checkpoint:', e);
+          }
 
           fetch('/api/generate/scene-outlines-stream', {
             method: 'POST',
@@ -748,6 +786,9 @@ function GenerationPreviewContent() {
                 pdfImages: currentSession.pdfImages,
                 imageMapping,
                 researchContext: currentSession.researchContext,
+                resumeSyllabus,
+                resumeOutlines,
+                resumeFromUnitIndex,
                 // Phase 2 §15.2: per-unit web research for multi-unit courses.
                 webSearchConfig: currentSession.requirements.webSearch
                   ? (() => {
@@ -803,9 +844,25 @@ function GenerationPreviewContent() {
                           directive = evt.data;
                         } else if (evt.type === 'courseTitle') {
                           title = evt.data;
+                        } else if (evt.type === 'syllabus') {
+                          checkpointSyllabus = evt;
                         } else if (evt.type === 'outline') {
                           collected.push(evt.data);
                           setStreamingOutlines([...collected]);
+                        } else if (evt.type === 'unitDone') {
+                          // Multi-unit checkpoint: persist this unit's completed
+                          // outlines so a mid-run failure can resume here.
+                          try {
+                            const checkpoint: OutlineCheckpoint = {
+                              sessionId: currentSession.sessionId,
+                              syllabus: checkpointSyllabus,
+                              outlines: [...collected],
+                              completedUnitCount: Number(evt.index) + 1,
+                            };
+                            sessionStorage.setItem(OUTLINE_CHECKPOINT_KEY, JSON.stringify(checkpoint));
+                          } catch (e) {
+                            log.warn('Failed to persist outline checkpoint:', e);
+                          }
                         } else if (evt.type === 'retry') {
                           collected.length = 0;
                           // Drop any directive/title latched from the failed
@@ -818,6 +875,12 @@ function GenerationPreviewContent() {
                           setStatusMessage(t('generation.outlineRetrying'));
                         } else if (evt.type === 'done') {
                           directive = evt.languageDirective || directive;
+                          // The full deck completed — the checkpoint is obsolete.
+                          try {
+                            sessionStorage.removeItem(OUTLINE_CHECKPOINT_KEY);
+                          } catch {
+                            /* ignore */
+                          }
                           resolve({
                             outlines: evt.outlines || collected,
                             languageDirective:
@@ -836,6 +899,7 @@ function GenerationPreviewContent() {
                             coverageRatio?: number;
                             gapCount?: number;
                             uncoveredChapters?: string[];
+                            trimmedTopics?: number;
                           };
                           if (coverage.gapCount && coverage.gapCount > 0) {
                             const gapText = t('generation.coverageGaps', {
@@ -845,6 +909,14 @@ function GenerationPreviewContent() {
                               ...prev,
                               gapText,
                               ...(coverage.report ? [coverage.report] : []),
+                            ]);
+                          }
+                          if (coverage.trimmedTopics && coverage.trimmedTopics > 0) {
+                            setTruncationWarnings((prev) => [
+                              ...prev,
+                              t('generation.coverageDigestTrimmed', {
+                                count: coverage.trimmedTopics,
+                              }),
                             ]);
                           }
                         } else if (evt.type === 'error') {

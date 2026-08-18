@@ -1119,6 +1119,7 @@
     "documentIndexed": "تمت فهرسة المستند: {{sections}} قسماً، {{images}} صورة",
     "documentIndexFailed": "فشلت فهرسة المستند — سيستمر العمل بدون تغطية كاملة",
     "coverageGaps": "{{count}} قسم من المصدر غير مغطى بأي درس",
+    "coverageDigestTrimmed": "تم تقليص {{count}} موضوع من خريطة التغطية لتناسب ميزانية المخطط",
     "pendingGenerationTitle": "توليد الدورة قيد التقدم",
     "pendingGenerationDesc": "استأنف من حيث توقفت — مخططك محفوظ."
   },

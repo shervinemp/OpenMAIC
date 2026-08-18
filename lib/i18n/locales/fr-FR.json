@@ -1119,6 +1119,7 @@
     "documentIndexed": "Document indexé : {{sections}} sections, {{images}} images décrites",
     "documentIndexFailed": "Échec de l'indexation — poursuite sans couverture complète",
     "coverageGaps": "{{count}} section(s) du document source non couverte(s) par une leçon",
+    "coverageDigestTrimmed": "{{count}} sujet(s) ont été retiré(s) de la carte de couverture pour tenir dans le budget du plan",
     "pendingGenerationTitle": "Génération du cours en cours",
     "pendingGenerationDesc": "Reprenez où vous vous êtes arrêté — votre plan est conservé."
   },

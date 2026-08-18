@@ -205,6 +205,35 @@ export function deriveContractForRequest(
   );
 }
 
+/**
+ * Resolve the request's effective duration with an explicit source. A TYPED
+ * duration (a duration field) always wins. Free-text duration signals are
+ * only honored for the DEFAULT `compact` preset — a user who explicitly
+ * picked a larger preset (standard/intensive/semester) must not have the
+ * course silently shrunk by a stray "20 min" in the requirement text. Callers
+ * log the source so a surprising resolution is visible, not silent.
+ */
+export interface ResolvedRequestDuration {
+  minutes?: number;
+  source: 'typed' | 'text' | 'preset';
+}
+
+export function resolveRequestDuration(
+  presetValue: unknown,
+  explicitDurationMinutes: number | undefined,
+  requirement: string | undefined,
+): ResolvedRequestDuration {
+  const preset = resolveSizePreset(presetValue);
+  if (explicitDurationMinutes != null && Number.isFinite(explicitDurationMinutes)) {
+    return { minutes: clampDurationMinutes(explicitDurationMinutes), source: 'typed' };
+  }
+  if (preset === 'compact' && requirement) {
+    const fromText = parseDurationFromText(requirement);
+    if (fromText != null) return { minutes: fromText, source: 'text' };
+  }
+  return { minutes: undefined, source: 'preset' };
+}
+
 // ==================== Prompt contract rendering ====================
 
 /**

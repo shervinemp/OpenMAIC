@@ -54,13 +54,17 @@ const HEADING_RE = /^(?:#{1,6}\s*|\d+(?:\.\d+)*\s+)(.+)$/;
 function looksLikeHeading(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed) return false;
-  if (trimmed.length > 80) return false;
+  if (trimmed.length > 64) return false;
   // Short line that does not end with sentence punctuation and is not a
   // page marker → heading-like (section titles in extracted text).
   if (HEADING_RE.test(trimmed)) return true;
   if (/[.!?;:,]$/.test(trimmed)) return false;
   if (PAGE_RE.test(trimmed)) return false;
-  return trimmed.split(/\s+/).length <= 12;
+  // Fallback: a short, capitalized fragment with no sentence punctuation. A
+  // lowercase-leading line is far more likely a continuation than a heading,
+  // and a long fragment is more likely a full sentence that lost its period.
+  if (/^[a-z]/.test(trimmed)) return false;
+  return trimmed.split(/\s+/).length <= 8;
 }
 
 /**

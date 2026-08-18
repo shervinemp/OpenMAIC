@@ -1119,6 +1119,7 @@
     "documentIndexed": "文档索引完成: {{sections}} 个章节, {{images}} 张图片",
     "documentIndexFailed": "文档索引失败 — 将缺少完整文档覆盖继续生成",
     "coverageGaps": "有 {{count}} 个来源章节未被任何课程覆盖",
+    "coverageDigestTrimmed": "为适配大纲预算，从覆盖图中精简了 {{count}} 个主题",
     "pendingGenerationTitle": "课程生成进行中",
     "pendingGenerationDesc": "从上次中断处继续 — 你的大纲已安全保存。"
   },
