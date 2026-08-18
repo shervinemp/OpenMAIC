@@ -20,6 +20,7 @@ import { buildVisionUserContent } from '@/lib/generation/generation-pipeline';
 import {
   buildDocumentDigest,
   resolveDigestTier,
+  stripExtractionNoise,
   type DocumentDigest,
 } from '@/lib/generation/document-digest';
 import {
@@ -46,6 +47,7 @@ interface IndexImageInput {
   pageNumber?: number;
   width?: number;
   height?: number;
+  description?: string;
 }
 
 interface IndexRequestBody {
@@ -155,7 +157,9 @@ export async function POST(req: NextRequest) {
           let digest: DocumentDigest;
           let chunks: PdfChunk[];
           if (tier === 'raw') {
-            chunks = chunkSourceText(text);
+            // Raw tier still strips extraction noise before chunking so page
+            // headers/footers don't pollute the retrieval chunks and citations.
+            chunks = chunkSourceText(stripExtractionNoise(text));
             digest = { level: 'single', sections: [], totalChars: text.length };
           } else {
             const result = await buildDocumentDigest(text, {
@@ -191,6 +195,18 @@ export async function POST(req: NextRequest) {
               captions[id] = caption;
             }
             captionedCount = pass.size;
+          } else if (images.length > 0) {
+            // No vision model: fall back to the extractor's metadata
+            // descriptions so images are never fully metadata-only. (unpdf
+            // extracts no descriptions, so this only enriches images when the
+            // extractor provides them.)
+            for (const image of images) {
+              const description = image.description?.trim();
+              if (description) {
+                captions[image.id] = { id: image.id, caption: description, kind: 'other' };
+                captionedCount += 1;
+              }
+            }
           }
 
           await saveDocumentIndex({

@@ -9,6 +9,7 @@ import {
   parseDurationFromText,
   perLessonSceneCap,
   renderCourseContract,
+  resolveRequestDuration,
   splitIntoLessons,
   summarizeBlueprintValidation,
   validateBlueprint,
@@ -77,6 +78,42 @@ describe('parseDurationFromText', () => {
   test('returns null when no duration signal', () => {
     expect(parseDurationFromText('teach me photosynthesis')).toBeNull();
     expect(parseDurationFromText('')).toBeNull();
+  });
+});
+
+describe('resolveRequestDuration', () => {
+  test('typed duration always wins', () => {
+    expect(resolveRequestDuration('semester', 30, 'teach me X in 20 min')).toEqual({
+      minutes: 30,
+      source: 'typed',
+    });
+  });
+
+  test('free-text duration only applies to the default compact preset', () => {
+    expect(resolveRequestDuration('compact', undefined, 'teach me X in 20 min')).toEqual({
+      minutes: 20,
+      source: 'text',
+    });
+    // An explicitly selected larger preset is not shrunk by stray text.
+    expect(resolveRequestDuration('semester', undefined, 'teach me X in 20 min')).toEqual({
+      minutes: undefined,
+      source: 'preset',
+    });
+    expect(resolveRequestDuration('standard', undefined, '2 hours of OS')).toEqual({
+      minutes: undefined,
+      source: 'preset',
+    });
+  });
+
+  test('falls back to the preset when there is no duration signal', () => {
+    expect(resolveRequestDuration('semester', undefined, 'teach me data engineering')).toEqual({
+      minutes: undefined,
+      source: 'preset',
+    });
+    expect(resolveRequestDuration(undefined, undefined, 'teach me data engineering')).toEqual({
+      minutes: undefined,
+      source: 'preset',
+    });
   });
 });
 

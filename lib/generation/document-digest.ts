@@ -25,6 +25,7 @@
 
 import { tryParseJson } from './json-repair';
 import { chunkSourceText, type PdfChunk } from './pdf-retrieval';
+import { mapWithConcurrency, DEFAULT_LLM_CONCURRENCY } from './concurrency';
 import type { AICallFn } from './pipeline-types';
 import {
   DIGEST_BATCH_CHARS,
@@ -689,21 +690,29 @@ export async function buildDocumentDigest(
   const level = planDigestLevel(groups, targetChars);
   const batches = planDigestBatches(groups);
 
-  // Level 1: section cards.
+  // Level 1: section cards. The per-group LLM calls are independent, so run
+  // them with bounded concurrency — a 16-chapter book's cards otherwise
+  // serialize into a long indexing pass.
   const cardsBySection = new Map<string, ParsedDigestSection[]>();
   let batchCalls = 0;
+
+  const groupJobs: DigestSectionGroup[] = [];
   for (const batch of batches) {
-    for (const group of batch.groups) {
-      const prompt = buildDigestSectionPrompt(group, language);
-      const response = await options.aiCall(prompt.system, prompt.user);
-      const card = parseDigestSectionResponse(response);
-      if (!card) continue;
-      const list = cardsBySection.get(group.id) ?? [];
-      list.push(card);
-      cardsBySection.set(group.id, list);
-      batchCalls += 1;
-    }
-    options.onProgress?.('digest', batchCalls, batches.length);
+    for (const group of batch.groups) groupJobs.push(group);
+  }
+
+  const results = await mapWithConcurrency(groupJobs, DEFAULT_LLM_CONCURRENCY, async (group) => {
+    const prompt = buildDigestSectionPrompt(group, language);
+    const response = await options.aiCall(prompt.system, prompt.user);
+    return { groupId: group.id, card: parseDigestSectionResponse(response) };
+  });
+  for (const { groupId, card } of results) {
+    if (!card) continue;
+    const list = cardsBySection.get(groupId) ?? [];
+    list.push(card);
+    cardsBySection.set(groupId, list);
+    batchCalls += 1;
+    options.onProgress?.('digest', batchCalls, groupJobs.length);
   }
 
   const sections: DigestSectionCard[] = [];
