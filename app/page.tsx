@@ -820,10 +820,11 @@ function HomePage() {
               rows={4}
             />
 
-            {/* Toolbar row — wraps so the fixed controls never collide with the
-                toolbar content on narrow viewports. */}
+            {/* Toolbar row — the toolbar keeps a minimum width so its pills never
+                collapse into a vertical stack; the fixed controls wrap to their
+                own right-aligned line first when the viewport tightens. */}
             <div className="px-3 pb-3 flex flex-wrap items-end gap-2">
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-[260px]">
                 <GenerationToolbar
                   webSearch={form.webSearch}
                   onWebSearchChange={(v) => updateForm('webSearch', v)}
@@ -838,7 +839,7 @@ function HomePage() {
                 />
               </div>
 
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 max-w-full">
+              <div className="flex flex-wrap items-center justify-end gap-2 ml-auto max-w-full">
               {/* Course size preset (Phase 2 §15.3) */}
               <Tooltip>
                 <TooltipTrigger asChild>

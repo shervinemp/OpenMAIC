@@ -252,10 +252,17 @@ async function parseWithUnpdf(pdfBuffer: Buffer): Promise<ParsedPdfContent> {
   const pdf = await getDocumentProxy(uint8Array);
   const numPages = pdf.numPages;
 
-  // Extract text using the document proxy
-  const { text: pdfText } = await extractText(pdf, {
-    mergePages: true,
-  });
+  // Extract per-page text. Do NOT use `mergePages: true` — unpdf's merge path
+  // runs `.replace(/\s+/g, " ")`, which collapses every newline (and multi-space
+  // run) into a single space, turning a 400-page book into ONE line. That breaks
+  // the chunker (2 chunks instead of ~1000) and the coverage digest (1 section
+  // instead of the real chapters), so the outline stage never sees the material.
+  // Join pages ourselves with explicit page markers instead, preserving
+  // intra-page line breaks and giving the chunker page anchors for citations.
+  const { text: pageTexts } = await extractText(pdf);
+  const pdfText = pageTexts
+    .map((pageText, index) => `\n\n[Page ${index + 1}]\n\n${pageText}`)
+    .join('');
 
   // Extract images using the same document proxy
   const images: string[] = [];
