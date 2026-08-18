@@ -116,12 +116,14 @@ export {
   parseDurationFromText,
   renderCourseContract,
   renderSyllabusContract,
+  resolveRequestDuration,
   splitIntoLessons,
   validateSyllabusStructure,
   summarizeBlueprintValidation,
   validateBlueprint,
   MAX_BLUEPRINT_ATTEMPTS,
 } from './blueprint.js';
+export type { ResolvedRequestDuration } from './blueprint.js';
 export type {
   BlueprintValidationOptions,
   BlueprintValidationResult,

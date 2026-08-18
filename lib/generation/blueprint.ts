@@ -18,12 +18,14 @@ export {
   parseDurationFromText,
   renderCourseContract,
   renderSyllabusContract,
+  resolveRequestDuration,
   splitIntoLessons,
   validateSyllabusStructure,
   summarizeBlueprintValidation,
   validateBlueprint,
   MAX_BLUEPRINT_ATTEMPTS,
 } from '@openmaic/generation';
+export type { ResolvedRequestDuration } from '@openmaic/generation';
 export type {
   BlueprintValidationOptions,
   BlueprintValidationResult,

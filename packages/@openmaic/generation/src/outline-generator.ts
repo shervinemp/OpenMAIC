@@ -14,8 +14,8 @@ import {
   buildCourseBlueprint,
   deriveContractForRequest,
   inferCourseType,
-  parseDurationFromText,
   renderCourseContract,
+  resolveRequestDuration,
   summarizeBlueprintValidation,
   validateBlueprint,
   type BlueprintValidationResult,
@@ -178,10 +178,15 @@ export async function generateSceneOutlinesFromRequirements(
   // requirement text → preset default) and course flavor from the
   // requirement. The size preset sets the caps either way.
   const courseType = inferCourseType(requirements.requirement);
+  const requestDuration = resolveRequestDuration(
+    options?.sizePreset,
+    options?.durationMinutes,
+    requirements.requirement,
+  );
   const contract: CourseContract = deriveContractForRequest(
     options?.sizePreset,
     courseType,
-    options?.durationMinutes ?? parseDurationFromText(requirements.requirement) ?? undefined,
+    requestDuration.minutes,
   );
   const courseContract = renderCourseContract(contract, courseType);
 
