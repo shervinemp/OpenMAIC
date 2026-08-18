@@ -424,6 +424,33 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(reviewEvents[0].findings[0]).toContain('Model process lifecycles');
   });
 
+  test('unparseable judge verdict accepts the unit (best-effort gate)', async () => {
+    // A non-conforming judge response is a schema failure, not a rejection:
+    // the unit is accepted without feeding the corrective loop.
+    setupMultiUnitFlow({ review: { 0: () => ({ garbage: true }) } });
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        requirements: REQUIREMENTS,
+        sizePreset: 'standard',
+        pdfText: '',
+        pdfImages: [],
+        imageMapping: {},
+        researchContext: '',
+      }) as unknown as Parameters<typeof POST>[0],
+    );
+
+    const text = await readStreamBody(response);
+    const events = parseSseEvents(text);
+    const done = events.find((e) => e.type === 'done');
+    expect(done).toBeDefined();
+    expect(done.outlines).toHaveLength(TOTAL_SCENES);
+
+    // No retry for the unparseable verdict: syllabus + 2 outlines + 2 reviews.
+    expect(callLLMMock).toHaveBeenCalledTimes(5);
+  });
+
   test('unit review judge infra failure accepts the unit (best-effort gate)', async () => {
     setupMultiUnitFlow({ review: { 0: () => { throw new Error('judge model down'); } } });
 
