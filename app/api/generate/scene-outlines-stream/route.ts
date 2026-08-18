@@ -404,11 +404,12 @@ interface MultiUnitOutlineResult {
  * Phase 2 §15.5 — the unit review gate. Runs an LLM-as-judge verdict on the
  * unit's outline deck against the unit's objectives.
  *
- * Returns null when the deck is ACCEPTED: the verdict was adequate, or the
- * judge infrastructure failed (the gate is best-effort against model/network
- * errors, mirroring the per-unit web-research fallback, so a semester run
- * never dies on the reviewer). Returns corrective feedback to feed the
- * unit's bounded retry loop when the verdict is inadequate or unparseable.
+ * Returns null when the deck is ACCEPTED: the verdict was adequate, the judge
+ * infrastructure failed, or the verdict was unparseable (a judge schema
+ * failure, not a quality signal). All three are best-effort — mirroring the
+ * per-unit web-research fallback — so a semester run never dies on the
+ * reviewer. Returns corrective feedback to feed the unit's bounded retry loop
+ * ONLY for a parseable `adequate: false` verdict with concrete findings.
  */
 async function reviewUnitOutlines(
   unit: { title?: string; objectives?: string[]; lessons?: Array<{ title?: string }> },
@@ -452,14 +453,18 @@ async function reviewUnitOutlines(
     if (verdict?.adequate) {
       return null;
     }
-    const findings = verdict ? verdict.findings : errors;
-    return summarizeUnitReviewFindings({
-      adequate: false,
-      findings:
-        findings.length > 0
-          ? findings
-          : ['The verdict was unparseable — verify every unit objective is taught by at least one concrete scene.'],
-    });
+    // An unparseable verdict (null) is a judge SCHEMA failure — the model did
+    // not return the required {adequate, findings} shape — not a quality
+    // signal. Accept the unit rather than feeding a spurious corrective loop
+    // that, after MAX_BLUEPRINT_ATTEMPTS, would kill the whole run. Only a
+    // parseable `adequate: false` verdict with concrete findings drives a retry.
+    if (!verdict) {
+      log.warn(
+        `Unit review judge returned an unparseable verdict for unit ${unitIndex + 1}; accepting the unit (best-effort gate): ${errors.join('; ') || 'unknown schema error'}`,
+      );
+      return null;
+    }
+    return summarizeUnitReviewFindings({ adequate: false, findings: verdict.findings });
   } catch (error) {
     if (run.signal?.aborted) throw error;
     log.warn(
