@@ -27,6 +27,7 @@ import {
 } from '@openmaic/generation';
 import {
   LESSON_MINUTES,
+  LLM_CALL_CONCURRENCY,
   MAX_PDF_CONTENT_CHARS,
   MAX_VISION_IMAGES,
 } from '@/lib/constants/generation';
@@ -85,10 +86,7 @@ import {
   retrieveChunks,
   type PdfChunk,
 } from '@openmaic/generation';
-import {
-  mapWithConcurrency,
-  DEFAULT_LLM_CONCURRENCY,
-} from '@/lib/generation/concurrency';
+import { mapWithConcurrency } from '@/lib/utils/concurrency';
 import {
   buildUnitReviewSummary,
   summarizeUnitReviewFindings,
@@ -560,7 +558,7 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
     (syllabus!.units ?? [])
       .map((unit, index) => ({ unit, index }))
       .slice(resumeFrom),
-    DEFAULT_LLM_CONCURRENCY,
+    LLM_CALL_CONCURRENCY,
     async ({ unit, index: unitIndex }) => {
       checkAborted();
       const perUnitContract = buildPerUnitContract(courseContract, unitIndex);
@@ -756,6 +754,7 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
   }
 
   unitResults.forEach((result, offsetIndex) => {
+    if (!result) return;
     const unitIndex = resumeFrom + offsetIndex;
     for (const event of result.events) enqueue(event);
     for (const outline of result.outlines) {
