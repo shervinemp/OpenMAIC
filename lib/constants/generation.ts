@@ -220,6 +220,12 @@ export const MAX_BLUEPRINT_ATTEMPTS = 3;
 // fails with the depth report — shallow content is never accepted.
 export const MAX_CONTENT_ATTEMPTS = 2;
 
+// Bounded concurrency for the independent LLM calls of the coverage digest
+// and the multi-unit outline stage (see lib/utils/concurrency.ts). Caps
+// in-flight calls so a semester run parallelizes without hammering the model
+// API / rate limits.
+export const LLM_CALL_CONCURRENCY = 3;
+
 // Depth contract defaults (lib/generation/content-depth.ts): a slide needs
 // at least this many substantive text elements (complete claims/sentences),
 // caption fragments may not dominate, and a concrete example/definition/

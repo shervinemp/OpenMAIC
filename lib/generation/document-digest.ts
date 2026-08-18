@@ -25,7 +25,7 @@
 
 import { tryParseJson } from './json-repair';
 import { chunkSourceText, type PdfChunk } from './pdf-retrieval';
-import { mapWithConcurrency, DEFAULT_LLM_CONCURRENCY } from './concurrency';
+import { mapWithConcurrency } from '@/lib/utils/concurrency';
 import type { AICallFn } from './pipeline-types';
 import {
   DIGEST_BATCH_CHARS,
@@ -33,6 +33,7 @@ import {
   DIGEST_MIN_SECTION_CHARS,
   DIGEST_RAW_THRESHOLD_CHARS,
   DIGEST_TARGET_CHARS,
+  LLM_CALL_CONCURRENCY,
 } from '@/lib/constants/generation';
 
 // ==================== Types ====================
@@ -701,12 +702,14 @@ export async function buildDocumentDigest(
     for (const group of batch.groups) groupJobs.push(group);
   }
 
-  const results = await mapWithConcurrency(groupJobs, DEFAULT_LLM_CONCURRENCY, async (group) => {
+  const results = await mapWithConcurrency(groupJobs, LLM_CALL_CONCURRENCY, async (group) => {
     const prompt = buildDigestSectionPrompt(group, language);
     const response = await options.aiCall(prompt.system, prompt.user);
     return { groupId: group.id, card: parseDigestSectionResponse(response) };
   });
-  for (const { groupId, card } of results) {
+  for (const result of results) {
+    if (!result) continue;
+    const { groupId, card } = result;
     if (!card) continue;
     const list = cardsBySection.get(groupId) ?? [];
     list.push(card);
