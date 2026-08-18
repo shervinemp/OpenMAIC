@@ -1259,7 +1259,11 @@ function GenerationPreviewContent() {
         router.push(`/classroom/${currentSession.stageId}`);
         return;
       }
-      sessionStorage.removeItem('generationSession');
+      // The course was NOT yet persisted (outline stage failed). Keep the
+      // session in sessionStorage so the user can resume from the home page
+      // "resume generation" prompt instead of re-typing and re-uploading
+      // everything. The resume path re-runs generation with the original
+      // inputs (document blobs are still in IndexedDB).
       setError(err instanceof Error ? err.message : String(err));
     }
   };

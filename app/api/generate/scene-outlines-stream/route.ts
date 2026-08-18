@@ -889,6 +889,9 @@ export async function POST(req: NextRequest) {
     log.info(
       `Generating outlines: "${requirements.requirement.substring(0, 50)}" [model=${modelString}]`,
     );
+    log.info(
+      `Outline contract [preset=${courseContract?.sizePreset ?? 'none'}, duration=${courseContract?.durationMinutes ?? resolvedDuration}min, lessons=${courseContract?.lessonCount ?? 'n/a'}, units=${courseContract?.unitCount ?? 'n/a'}, scenes=${courseContract?.totalSceneTarget ?? 'n/a'}, multiUnit=${multiUnit}, digestSections=${storedIndex?.digest.sections.length ?? 0}]`,
+    );
 
     // Create SSE stream with heartbeat to prevent connection timeout
     const encoder = new TextEncoder();
