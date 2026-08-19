@@ -2,10 +2,13 @@
  * In-memory TTS audio cache.
  *
  * TTS is the most expensive per-scene step and is purely deterministic for a
- * given (text, voice, provider, model, speed, options) tuple, so re-requesting
- * the same narration (scene retries, voice previews, repeated speech actions)
- * re-runs the provider for no reason. Cache the base64 result keyed by a hash
- * of that tuple; bounded LRU so a long course cannot grow it without limit.
+ * given (text, voice, provider, model, speed, apiKey, baseUrl, options) tuple,
+ * so re-requesting the same narration (scene retries, voice previews, repeated
+ * speech actions) re-runs the provider for no reason. Cache the base64 result
+ * keyed by a hash of that tuple; bounded LRU so a long course cannot grow it
+ * without limit. apiKey/baseUrl are part of the key because the cache is
+ * process-global: a different self-hosted instance or per-account voice
+ * library must never serve another tenant's audio for the same tuple.
  *
  * Process-local only: survives retries within a run, resets on server restart
  * (TTS is never persisted here — completed scenes already store their audio in
@@ -28,6 +31,8 @@ export function ttsCacheKey(params: {
   modelId?: string;
   voice: string;
   speed: number;
+  apiKey?: string;
+  baseUrl?: string;
   providerOptions?: Record<string, unknown>;
 }): string {
   const canonical = JSON.stringify([
@@ -36,6 +41,8 @@ export function ttsCacheKey(params: {
     params.modelId ?? '',
     params.voice,
     params.speed,
+    params.apiKey ?? '',
+    params.baseUrl ?? '',
     params.providerOptions ?? {},
   ]);
   return createHash('sha256').update(canonical, 'utf8').digest('hex');
