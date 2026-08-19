@@ -29,7 +29,6 @@ import { mapWithConcurrency } from '@/lib/utils/concurrency';
 import type { AICallFn } from './pipeline-types';
 import {
   DIGEST_BATCH_CHARS,
-  DIGEST_LEVEL2_BATCH_CARDS,
   DIGEST_MIN_SECTION_CHARS,
   DIGEST_RAW_THRESHOLD_CHARS,
   DIGEST_TARGET_CHARS,
@@ -748,6 +747,14 @@ export async function buildDocumentDigest(
   const level = planDigestLevel(groups, targetChars);
   const batches = planDigestBatches(groups);
 
+  // Total LLM calls across BOTH levels drives one continuous progress bar, so
+  // a long index never looks stuck between the section and chapter phases.
+  const chapterCount =
+    level === 'two-level'
+      ? new Set(groups.map((group) => group.chapter ?? 'none')).size
+      : 0;
+  const totalCalls = batches.length + chapterCount;
+
   // Level 1: section cards. One LLM call per BATCH (a batch packs several
   // small sections up to DIGEST_BATCH_CHARS, so a 400-page book is indexed in
   // a few dozen calls instead of one call per detected heading). Batches run
@@ -762,7 +769,7 @@ export async function buildDocumentDigest(
     // Incremental progress: report as each batch lands (not only after the
     // whole parallel run finishes) so a long digest stays visibly alive.
     batchCalls += 1;
-    options.onProgress?.('digest', batchCalls, batches.length);
+    options.onProgress?.('digest', batchCalls, totalCalls);
     return { cards: parseDigestBatchResponse(response, groupIds) };
   });
   for (const result of results) {
@@ -813,31 +820,37 @@ export async function buildDocumentDigest(
   }
 
   const chapterEntries = Array.from(byChapter.entries()).sort(([a], [b]) => a.localeCompare(b));
-  const chapterBatches: Array<Array<[string, DigestSectionCard[]]>> = [];
-  for (let i = 0; i < chapterEntries.length; i += DIGEST_LEVEL2_BATCH_CARDS) {
-    chapterBatches.push(chapterEntries.slice(i, i + DIGEST_LEVEL2_BATCH_CARDS));
-  }
+  const chapterJobs = chapterEntries.map(([chapterKey, cards]) => ({ chapterKey, cards }));
 
-  const chapters: DigestChapterCard[] = [];
-  for (const [batchIndex, batch] of chapterBatches.entries()) {
-    for (const [chapterKey, cards] of batch) {
-      const prompt = buildChapterCardPrompt(chapterKey, cards, language);
+  // Level-2 chapter cards are independent too — run them with the same
+  // bounded concurrency instead of serializing one chapter at a time.
+  const chapterResults = await mapWithConcurrency(
+    chapterJobs,
+    LLM_CALL_CONCURRENCY,
+    async (job) => {
+      const prompt = buildChapterCardPrompt(job.chapterKey, job.cards, language);
       const response = await options.aiCall(prompt.system, prompt.user);
       const card = parseChapterCardResponse(response);
-      if (!card) continue;
-      chapters.push({
-        id: `ch_${String(batchIndex + 1).padStart(2, '0')}`,
-        chapter: chapterKey,
-        heading: cards[0]?.heading ?? `Chapter ${chapterKey}`,
-        pageStart: cards[0]?.pageStart,
-        pageEnd: cards[cards.length - 1]?.pageEnd ?? cards[0]?.pageEnd,
-        sectionHeadings: cards.map((c) => c.heading),
-        teaches: card.teaches,
-        keyTerms: card.keyTerms,
-      });
       batchCalls += 1;
-    }
-  }
+      options.onProgress?.('digest', batchCalls, totalCalls);
+      return { ...job, card };
+    },
+  );
+
+  const chapters: DigestChapterCard[] = [];
+  chapterResults.forEach((job, index) => {
+    if (!job || !job.card) return;
+    chapters.push({
+      id: `ch_${String(index + 1).padStart(2, '0')}`,
+      chapter: job.chapterKey,
+      heading: job.cards[0]?.heading ?? `Chapter ${job.chapterKey}`,
+      pageStart: job.cards[0]?.pageStart,
+      pageEnd: job.cards[job.cards.length - 1]?.pageEnd ?? job.cards[0]?.pageEnd,
+      sectionHeadings: job.cards.map((c) => c.heading),
+      teaches: job.card.teaches,
+      keyTerms: job.card.keyTerms,
+    });
+  });
 
   return {
     digest: { level: 'two-level', sections, chapters, totalChars },
