@@ -131,7 +131,7 @@ async function searchWithBraveApi(
   });
 
   if (!res.ok) {
-    const errorText = await res.text().catch(() => '');
+    const errorText = (await res.text().catch(() => '')).slice(0, 200);
     throw new Error(`Brave API error (${res.status}): ${errorText || res.statusText}`);
   }
 
@@ -172,7 +172,14 @@ async function searchWithBraveScrape(
   });
 
   if (!res.ok) {
-    const errorText = await res.text().catch(() => '');
+    const errorText = (await res.text().catch(() => '')).slice(0, 200);
+    // Rate-limited or bot-blocked: degrade to empty results rather than failing
+    // the request with a 429/403 and an HTML dump in the error message. The web
+    // search step is advisory — an empty result set just skips the research
+    // context instead of aborting generation.
+    if (res.status === 429 || res.status === 403) {
+      return [];
+    }
     throw new Error(`Brave Search error (${res.status}): ${errorText || res.statusText}`);
   }
 
