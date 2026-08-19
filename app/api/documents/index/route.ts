@@ -170,6 +170,9 @@ export async function POST(req: NextRequest) {
             });
             digest = result.digest;
             chunks = result.chunks;
+            log.info(
+              `Document digest built: ${digest.sections.length} section(s), ${result.batchCalls} card call(s), ${chunks.length} chunk(s), level=${digest.level}`,
+            );
           }
 
           // 2) Batch-caption EVERY image (one-time, cached with the index).
