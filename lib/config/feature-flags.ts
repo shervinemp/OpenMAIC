@@ -96,14 +96,14 @@ export function isVideoExportEnabled(): boolean {
 }
 
 /**
- * Unit review gate mode for multi-unit outline generation (Phase 2 §15.5).
+ * Review gate mode for per-lesson outline generation (Phase 2 §15.5).
  *
  * - `tolerant` (default): the gate drives up to `MAX_BLUEPRINT_ATTEMPTS - 1`
- *   corrective passes; on the final rejection the unit is accepted anyway
+ *   corrective passes; on the final rejection the lesson is accepted anyway
  *   (findings are logged and the review event is marked `acceptedAfterBudget`).
  *   A lone over-strict judge never sinks a whole course.
- * - `strict`: a unit rejected on the final attempt fails the entire run.
- * - `off`: skip the unit review gate entirely.
+ * - `strict`: a lesson rejected on the final attempt fails the entire run.
+ * - `off`: skip the review gate entirely.
  */
 export type OutlineReviewMode = 'strict' | 'tolerant' | 'off';
 

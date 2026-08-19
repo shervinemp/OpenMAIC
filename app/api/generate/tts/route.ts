@@ -119,12 +119,16 @@ export async function POST(req: NextRequest) {
 
     // Deterministic for a given tuple — reuse cached audio instead of paying the
     // provider again (scene retries, voice previews, repeated speech actions).
+    // apiKey/baseUrl are part of the key: the cache is process-global, so a
+    // different tenant's provider key or self-hosted base URL must not collide.
     const cacheKey = ttsCacheKey({
       text,
       providerId: ttsProviderId,
       modelId: config.modelId,
       voice: ttsVoice,
       speed: ttsSpeed ?? 1.0,
+      apiKey,
+      baseUrl,
       providerOptions: ttsProviderOptions,
     });
     const cached = getCachedTTS(cacheKey);
