@@ -22,6 +22,7 @@ import {
   generateTTSForScene,
 } from '@/lib/hooks/use-scene-generator';
 import { isAbortError } from '@openmaic/generation';
+import { BrowserKVStore } from '@openmaic/storage';
 import { FOREGROUND_SCENE_RETRY_OPTIONS } from './foreground-retry';
 import {
   loadImageMapping,
@@ -72,6 +73,35 @@ interface OutlineCheckpoint {
   syllabus: unknown;
   outlines: SceneOutline[];
   completedUnitCount: number;
+}
+
+function outlineCheckpointStore(): BrowserKVStore {
+  return new BrowserKVStore();
+}
+
+async function readOutlineCheckpoint(): Promise<OutlineCheckpoint | null> {
+  try {
+    return await outlineCheckpointStore().get<OutlineCheckpoint>(OUTLINE_CHECKPOINT_KEY, 'device');
+  } catch (e) {
+    log.warn('Failed to read outline checkpoint:', e);
+    return null;
+  }
+}
+
+async function writeOutlineCheckpoint(checkpoint: OutlineCheckpoint): Promise<void> {
+  try {
+    await outlineCheckpointStore().set(OUTLINE_CHECKPOINT_KEY, checkpoint, 'device');
+  } catch (e) {
+    log.warn('Failed to persist outline checkpoint:', e);
+  }
+}
+
+async function clearOutlineCheckpoint(): Promise<void> {
+  try {
+    await outlineCheckpointStore().remove(OUTLINE_CHECKPOINT_KEY, 'device');
+  } catch {
+    /* ignore */
+  }
 }
 
 type ParsedDocumentResponseImage = {
@@ -740,6 +770,28 @@ function GenerationPreviewContent() {
         setStreamingOutlines([]);
         setIsOutlineStreaming(true);
 
+        // Read a prior partial-run checkpoint (matched by session id) so a
+        // failed multi-unit run resumes from its last completed unit instead of
+        // regenerating everything. Durable (device KV) so a tab close or browser
+        // restart doesn't lose the partial outline.
+        let resumeSyllabus: unknown;
+        let resumeOutlines: SceneOutline[] | undefined;
+        let resumeFromUnitIndex: number | undefined;
+        try {
+          const checkpoint = await readOutlineCheckpoint();
+          if (
+            checkpoint &&
+            checkpoint.sessionId === currentSession.sessionId &&
+            checkpoint.completedUnitCount > 0
+          ) {
+            resumeSyllabus = checkpoint.syllabus;
+            resumeOutlines = checkpoint.outlines;
+            resumeFromUnitIndex = checkpoint.completedUnitCount;
+          }
+        } catch (e) {
+          log.warn('Failed to read outline checkpoint:', e);
+        }
+
         const outlineResult = await new Promise<{
           outlines: SceneOutline[];
           languageDirective: string;
@@ -751,29 +803,6 @@ function GenerationPreviewContent() {
           let directive: string | undefined;
           let title: string | undefined;
           let checkpointSyllabus: unknown = null;
-
-          // Read a prior partial-run checkpoint (matched by session id) so a
-          // failed multi-unit run resumes from its last completed unit instead
-          // of regenerating everything.
-          let resumeSyllabus: unknown;
-          let resumeOutlines: SceneOutline[] | undefined;
-          let resumeFromUnitIndex: number | undefined;
-          try {
-            const raw = sessionStorage.getItem(OUTLINE_CHECKPOINT_KEY);
-            if (raw) {
-              const checkpoint = JSON.parse(raw) as OutlineCheckpoint;
-              if (
-                checkpoint.sessionId === currentSession.sessionId &&
-                checkpoint.completedUnitCount > 0
-              ) {
-                resumeSyllabus = checkpoint.syllabus;
-                resumeOutlines = checkpoint.outlines;
-                resumeFromUnitIndex = checkpoint.completedUnitCount;
-              }
-            }
-          } catch (e) {
-            log.warn('Failed to read outline checkpoint:', e);
-          }
 
           fetch('/api/generate/scene-outlines-stream', {
             method: 'POST',
@@ -864,7 +893,7 @@ function GenerationPreviewContent() {
                               outlines: [...collected],
                               completedUnitCount: Number(evt.index) + 1,
                             };
-                            sessionStorage.setItem(OUTLINE_CHECKPOINT_KEY, JSON.stringify(checkpoint));
+                            void writeOutlineCheckpoint(checkpoint);
                           } catch (e) {
                             log.warn('Failed to persist outline checkpoint:', e);
                           }
@@ -882,7 +911,7 @@ function GenerationPreviewContent() {
                           directive = evt.languageDirective || directive;
                           // The full deck completed — the checkpoint is obsolete.
                           try {
-                            sessionStorage.removeItem(OUTLINE_CHECKPOINT_KEY);
+                            void clearOutlineCheckpoint();
                           } catch {
                             /* ignore */
                           }

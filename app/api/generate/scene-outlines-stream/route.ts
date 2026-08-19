@@ -1070,6 +1070,11 @@ export async function POST(req: NextRequest) {
               log.error(`Multi-unit outline generation failed:`, error);
             }
           } else {
+          // Single-unit (streaming) path. Unlike the multi-unit path above, this
+          // STREAMS text to the client, so there is no server-side result to
+          // persist — aborting the upstream request the moment the client goes
+          // away (rather than completing it) is the correct behaviour here, not
+          // an inconsistency: buffering for a dead connection is pure waste.
           for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
             try {
               let fullText = '';
