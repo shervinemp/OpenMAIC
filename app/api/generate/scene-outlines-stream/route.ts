@@ -662,21 +662,27 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
     return promise;
   };
 
-  // Build the flat list of pending lessons (skipping units already checkpointed).
+  // Build per-unit lesson chains (skipping units already checkpointed). Units
+  // generate their lessons SEQUENTIALLY so each lesson sees the unit's prior
+  // scenes ("covered so far") for continuity; units themselves run in parallel.
   const syllabusUnits = syllabus!.units ?? [];
   const syllabusLessons = syllabus!.lessons ?? [];
-  const pendingLessons: PendingLesson[] = [];
-  for (let lessonIndex = resumeLessonIndex; lessonIndex < lessonTargets.length; lessonIndex++) {
-    const unitIndex = unitIndexOfLesson(lessonIndex);
-    const lessonIndexInUnit = lessonIndex - unitStartLesson[unitIndex];
-    const unit = syllabusUnits[unitIndex] ?? {};
-    const lesson =
-      unit.lessons?.[lessonIndexInUnit] ??
-      syllabusLessons[lessonIndex] ?? {
-        title: `Lesson ${lessonIndex + 1}`,
-        objectives: [],
-      };
-    pendingLessons.push({ lessonIndex, unitIndex, lessonIndexInUnit, unit, lesson });
+  const pendingUnits: Array<{ unitIndex: number; lessons: PendingLesson[] }> = [];
+  for (let unitIndex = resumeFrom; unitIndex < courseContract.unitCount; unitIndex++) {
+    const lessons: PendingLesson[] = [];
+    const first = unitStartLesson[unitIndex];
+    for (let li = 0; li < unitLessonTotal[unitIndex]; li++) {
+      const lessonIndex = first + li;
+      const unit = syllabusUnits[unitIndex] ?? {};
+      const lesson =
+        unit.lessons?.[li] ??
+        syllabusLessons[lessonIndex] ?? {
+          title: `Lesson ${lessonIndex + 1}`,
+          objectives: [],
+        };
+      lessons.push({ lessonIndex, unitIndex, lessonIndexInUnit: li, unit, lesson });
+    }
+    pendingUnits.push({ unitIndex, lessons });
   }
 
   const completedLessons = new Map<
@@ -711,169 +717,199 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
     }
   };
 
-  const lessonPromises = lazyBoundedMap(
-    pendingLessons,
-    LLM_CALL_CONCURRENCY,
-    async ({ lessonIndex, unitIndex, lessonIndexInUnit, unit, lesson }) => {
-      checkAborted();
-      const target = lessonTargets[lessonIndex];
-      const globalStart = lessonStartOffsets[lessonIndex];
-      const { context: unitResearchContext, chunks: unitChunks } = await getUnitResearch(
+  // Generate ONE lesson's outline deck, handed its unit's "covered so far"
+  // summary so scenes stay continuous and non-redundant within the unit.
+  const generateLessonOutline = async (
+    entry: PendingLesson,
+    coveredSoFar: string[],
+  ): Promise<{ outlines: SceneOutline[]; events: Array<Record<string, unknown>> }> => {
+    const { lessonIndex, unitIndex, lessonIndexInUnit, unit, lesson } = entry;
+    checkAborted();
+    const target = lessonTargets[lessonIndex];
+    const globalStart = lessonStartOffsets[lessonIndex];
+    const { context: unitResearchContext, chunks: unitChunks } = await getUnitResearch(
+      unitIndex,
+    );
+
+    const siblingLessons = (unit.lessons ?? []).map((l, i) => {
+      const marker = i === lessonIndexInUnit ? '  <-- THIS LESSON (generate only this one)' : '';
+      return `  ${i + 1}. ${l.title ?? `Lesson ${i + 1}`}${marker}`;
+    });
+    const lessonContext = [
+      `## Syllabus Context (Unit ${unitIndex + 1} of ${courseContract.unitCount}, Lesson ${lessonIndexInUnit + 1} of ${unitLessonTotal[unitIndex]})`,
+      '',
+      `Unit title: ${unit.title ?? ''}`,
+      `Unit objectives: ${(unit.objectives ?? []).join('; ')}`,
+      `Lesson title: ${lesson.title ?? ''}`,
+      `Lesson objectives: ${(lesson.objectives ?? []).join('; ')}`,
+      '',
+      'Lessons in this unit (you generate ONLY this lesson; the siblings cover the others):',
+      ...siblingLessons,
+      ...(coveredSoFar.length > 0
+        ? ['', 'Covered so far in this unit (build on this; do NOT repeat it):', ...coveredSoFar]
+        : []),
+      '',
+      `Generate EXACTLY ${target} scenes for this lesson. Global outline numbering continues from #${globalStart + 1}.`,
+    ].join('\n');
+
+    const lessonPrompts = buildPrompt(run.promptId as Parameters<typeof buildPrompt>[0], {
+      ...run.baseVariables,
+      requirement: `${run.requirement}\n\n${lessonContext}`,
+      researchContext: unitResearchContext,
+      courseContract: renderLessonScopedContract(courseContract, lessonIndex, run.courseType),
+    });
+    if (!lessonPrompts) throw new Error('Lesson outline prompt template not found');
+
+    const events: Array<Record<string, unknown>> = [
+      {
+        type: 'lesson',
+        index: lessonIndex,
         unitIndex,
-      );
+        title: lesson.title ?? `Lesson ${lessonIndex + 1}`,
+        total: courseContract.lessonCount,
+      },
+    ];
+    const localEnqueue = (event: Record<string, unknown>) => {
+      events.push(event);
+    };
+    const localUsedIds = new Set<string>();
 
-      const siblingLessons = (unit.lessons ?? []).map((l, i) => {
-        const marker = i === lessonIndexInUnit ? '  <-- THIS LESSON (generate only this one)' : '';
-        return `  ${i + 1}. ${l.title ?? `Lesson ${i + 1}`}${marker}`;
-      });
-      const lessonContext = [
-        `## Syllabus Context (Unit ${unitIndex + 1} of ${courseContract.unitCount}, Lesson ${lessonIndexInUnit + 1} of ${unitLessonTotal[unitIndex]})`,
-        '',
-        `Unit title: ${unit.title ?? ''}`,
-        `Unit objectives: ${(unit.objectives ?? []).join('; ')}`,
-        `Lesson title: ${lesson.title ?? ''}`,
-        `Lesson objectives: ${(lesson.objectives ?? []).join('; ')}`,
-        '',
-        'Lessons in this unit (you generate ONLY this lesson; the siblings cover the others):',
-        ...siblingLessons,
-        '',
-        `Generate EXACTLY ${target} scenes for this lesson. Global outline numbering continues from #${globalStart + 1}.`,
-      ].join('\n');
-
-      const lessonPrompts = buildPrompt(run.promptId as Parameters<typeof buildPrompt>[0], {
-        ...run.baseVariables,
-        requirement: `${run.requirement}\n\n${lessonContext}`,
-        researchContext: unitResearchContext,
-        courseContract: renderLessonScopedContract(courseContract, lessonIndex, run.courseType),
-      });
-      if (!lessonPrompts) throw new Error('Lesson outline prompt template not found');
-
-      const events: Array<Record<string, unknown>> = [
-        {
-          type: 'lesson',
-          index: lessonIndex,
-          unitIndex,
-          title: lesson.title ?? `Lesson ${lessonIndex + 1}`,
-          total: courseContract.lessonCount,
-        },
-      ];
-      const localEnqueue = (event: Record<string, unknown>) => {
-        events.push(event);
-      };
-      const localUsedIds = new Set<string>();
-
-      let lessonOutlines: SceneOutline[] | null = null;
-      let lessonFeedback: string | undefined;
-      for (let attempt = 1; attempt <= MAX_BLUEPRINT_ATTEMPTS; attempt++) {
-        checkAborted();
-        const userPrompt = lessonFeedback
-          ? `${lessonPrompts.user}\n\n## Correction Required\n\n${lessonFeedback}`
-          : lessonPrompts.user;
-        try {
-          const text = await run.callModel({ system: lessonPrompts.system, user: userPrompt });
-          const parsed = parseJsonResponse<ParsedOutlineResponse | SceneOutline[]>(text);
-          const rawOutlines = Array.isArray(parsed) ? parsed : parsed?.outlines;
-          if (!Array.isArray(rawOutlines) || rawOutlines.length === 0) {
-            lessonFeedback = 'Return the wrapper JSON object with the "outlines" array as specified.';
-            continue;
-          }
-
-          // Global ids + global orders (offsets are precomputed so parallel
-          // lessons can number their outlines deterministically).
-          const enriched = rawOutlines.map((outline, index) =>
-            sanitizeNonTaskEngineOutline({
-              ...outline,
-              id: outline.id || nanoid(),
-              order: globalStart + index + 1,
-            }),
-          );
-          const uniquified = enriched.map((outline) =>
-            ensureUniqueOutlineId(outline, localUsedIds),
-          );
-
-          // Structural check for THIS lesson: scene shape + exact count.
-          // A ±1 miss is tolerated only on the final attempt.
-          const shapeErrors = uniquified.flatMap(validateOutlineShape);
-          const countMatches =
-            uniquified.length === target ||
-            (attempt === MAX_BLUEPRINT_ATTEMPTS && Math.abs(uniquified.length - target) <= 1);
-          if (shapeErrors.length === 0 && countMatches) {
-            // Phase 2 §15.5: per-lesson review gate. The judge reviews the
-            // lesson's small deck against ITS objectives — a rejection
-            // regenerates just this lesson (cheap), never the whole unit.
-            // `off` skips the judge entirely (models that can't self-grade).
-            const reviewFeedback =
-              reviewMode === 'off'
-                ? null
-                : await reviewOutlineDeck(
-                    {
-                      title: lesson.title ?? `Lesson ${lessonIndex + 1}`,
-                      objectives: lesson.objectives ?? [],
-                      lessons: [],
-                    },
-                    uniquified,
-                    lessonIndex,
-                    run,
-                    localEnqueue,
-                  );
-            if (reviewFeedback === null) {
-              lessonOutlines = uniquified;
-              break;
-            }
-            lessonFeedback = reviewFeedback;
-            if (attempt >= MAX_BLUEPRINT_ATTEMPTS) {
-              if (reviewMode === 'strict') {
-                // The gate exhausted its budget — never accept a lesson the
-                // reviewer rejected.
-                throw new Error(
-                  `Lesson ${lessonIndex + 1} (unit ${unitIndex + 1}) did not pass the review gate after ${MAX_BLUEPRINT_ATTEMPTS} attempts`,
-                );
-              }
-              // Tolerant: the lesson met the shape/count contract, so a lone
-              // over-strict judge must not sink the whole course. Keep the
-              // lesson and surface the deferred findings.
-              log.warn(
-                `Lesson ${lessonIndex + 1} (unit ${unitIndex + 1}) accepted after ${MAX_BLUEPRINT_ATTEMPTS} review attempts with findings: ${reviewFeedback.replace(/\s+/g, ' ').slice(0, 240)}`,
-              );
-              const lastEvent = events[events.length - 1];
-              if (lastEvent && lastEvent.type === 'unitReview') {
-                lastEvent.acceptedAfterBudget = true;
-              }
-              lessonOutlines = uniquified;
-              break;
-            }
-            continue;
-          }
-          const problems = [...shapeErrors];
-          if (!countMatches) {
-            problems.push(
-              `This lesson must contain EXACTLY ${target} scenes; you produced ${uniquified.length}.`,
-            );
-          }
-          lessonFeedback = problems.join('\n');
-        } catch (error) {
-          if (signal?.aborted) throw error;
-          log.warn(`Lesson ${lessonIndex + 1} outline attempt ${attempt} failed:`, error);
-          if (attempt >= MAX_BLUEPRINT_ATTEMPTS) throw error;
+    let lessonOutlines: SceneOutline[] | null = null;
+    let lessonFeedback: string | undefined;
+    for (let attempt = 1; attempt <= MAX_BLUEPRINT_ATTEMPTS; attempt++) {
+      checkAborted();
+      const userPrompt = lessonFeedback
+        ? `${lessonPrompts.user}\n\n## Correction Required\n\n${lessonFeedback}`
+        : lessonPrompts.user;
+      try {
+        const text = await run.callModel({ system: lessonPrompts.system, user: userPrompt });
+        const parsed = parseJsonResponse<ParsedOutlineResponse | SceneOutline[]>(text);
+        const rawOutlines = Array.isArray(parsed) ? parsed : parsed?.outlines;
+        if (!Array.isArray(rawOutlines) || rawOutlines.length === 0) {
+          lessonFeedback = 'Return the wrapper JSON object with the "outlines" array as specified.';
+          continue;
         }
+
+        // Global ids + global orders (offsets are precomputed so lessons can
+        // number their outlines deterministically).
+        const enriched = rawOutlines.map((outline, index) =>
+          sanitizeNonTaskEngineOutline({
+            ...outline,
+            id: outline.id || nanoid(),
+            order: globalStart + index + 1,
+          }),
+        );
+        const uniquified = enriched.map((outline) =>
+          ensureUniqueOutlineId(outline, localUsedIds),
+        );
+
+        // Structural check for THIS lesson: scene shape + exact count.
+        // A ±1 miss is tolerated only on the final attempt.
+        const shapeErrors = uniquified.flatMap(validateOutlineShape);
+        const countMatches =
+          uniquified.length === target ||
+          (attempt === MAX_BLUEPRINT_ATTEMPTS && Math.abs(uniquified.length - target) <= 1);
+        if (shapeErrors.length === 0 && countMatches) {
+          // Phase 2 §15.5: per-lesson review gate. The judge reviews the
+          // lesson's small deck against ITS objectives — a rejection
+          // regenerates just this lesson (cheap), never the whole unit.
+          // `off` skips the judge entirely (models that can't self-grade).
+          const reviewFeedback =
+            reviewMode === 'off'
+              ? null
+              : await reviewOutlineDeck(
+                  {
+                    title: lesson.title ?? `Lesson ${lessonIndex + 1}`,
+                    objectives: lesson.objectives ?? [],
+                    lessons: [],
+                  },
+                  uniquified,
+                  lessonIndex,
+                  run,
+                  localEnqueue,
+                );
+          if (reviewFeedback === null) {
+            lessonOutlines = uniquified;
+            break;
+          }
+          lessonFeedback = reviewFeedback;
+          if (attempt >= MAX_BLUEPRINT_ATTEMPTS) {
+            if (reviewMode === 'strict') {
+              // The gate exhausted its budget — never accept a lesson the
+              // reviewer rejected.
+              throw new Error(
+                `Lesson ${lessonIndex + 1} (unit ${unitIndex + 1}) did not pass the review gate after ${MAX_BLUEPRINT_ATTEMPTS} attempts`,
+              );
+            }
+            // Tolerant: the lesson met the shape/count contract, so a lone
+            // over-strict judge must not sink the whole course. Keep the
+            // lesson and surface the deferred findings.
+            log.warn(
+              `Lesson ${lessonIndex + 1} (unit ${unitIndex + 1}) accepted after ${MAX_BLUEPRINT_ATTEMPTS} review attempts with findings: ${reviewFeedback.replace(/\s+/g, ' ').slice(0, 240)}`,
+            );
+            const lastEvent = events[events.length - 1];
+            if (lastEvent && lastEvent.type === 'unitReview') {
+              lastEvent.acceptedAfterBudget = true;
+            }
+            lessonOutlines = uniquified;
+            break;
+          }
+          continue;
+        }
+        const problems = [...shapeErrors];
+        if (!countMatches) {
+          problems.push(
+            `This lesson must contain EXACTLY ${target} scenes; you produced ${uniquified.length}.`,
+          );
+        }
+        lessonFeedback = problems.join('\n');
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        log.warn(`Lesson ${lessonIndex + 1} outline attempt ${attempt} failed:`, error);
+        if (attempt >= MAX_BLUEPRINT_ATTEMPTS) throw error;
       }
-      if (!lessonOutlines) {
-        throw new Error(
-          `Lesson ${lessonIndex + 1} outlines did not meet the contract after ${MAX_BLUEPRINT_ATTEMPTS} attempts`,
+    }
+    if (!lessonOutlines) {
+      throw new Error(
+        `Lesson ${lessonIndex + 1} outlines did not meet the contract after ${MAX_BLUEPRINT_ATTEMPTS} attempts`,
+      );
+    }
+
+    // Attach per-scene retrieval context from the unit's web research —
+    // same machinery as the PDF path (Pillar 3b), citation markers "[source N]".
+    const groundedOutlines = lessonOutlines.map((outline) => {
+      if (outline.retrievalContext || unitChunks.length === 0) return outline;
+      const query = `${outline.title}\n${outline.description}\n${(outline.keyPoints ?? []).join('\n')}`;
+      const retrieved = retrieveChunks(query, unitChunks);
+      if (retrieved.length === 0) return outline;
+      return { ...outline, retrievalContext: formatRetrievalContext(retrieved) };
+    });
+
+    return { outlines: groundedOutlines, events };
+  };
+
+  // Run units in parallel (bounded concurrency); within a unit, lessons run
+  // sequentially and each is handed the unit's accumulating coverage summary.
+  // Scenes still stream to the client as soon as the contiguous prefix of
+  // lessons completes (releaseReadyLessons).
+  const unitPromises = lazyBoundedMap(
+    pendingUnits,
+    LLM_CALL_CONCURRENCY,
+    async ({ lessons }) => {
+      const coveredSoFar: string[] = [];
+      for (const entry of lessons) {
+        checkAborted();
+        const result = await generateLessonOutline(entry, coveredSoFar);
+        completedLessons.set(entry.lessonIndex, result);
+        releaseReadyLessons();
+        coveredSoFar.push(
+          `- ${entry.lesson.title ?? `Lesson ${entry.lessonIndex + 1}`}: ${result.outlines
+            .map((outline) => outline.title)
+            .filter(Boolean)
+            .slice(0, 5)
+            .join('; ')}`,
         );
       }
-
-      // Attach per-scene retrieval context from the unit's web research —
-      // same machinery as the PDF path (Pillar 3b), citation markers "[source N]".
-      const groundedOutlines = lessonOutlines.map((outline) => {
-        if (outline.retrievalContext || unitChunks.length === 0) return outline;
-        const query = `${outline.title}\n${outline.description}\n${(outline.keyPoints ?? []).join('\n')}`;
-        const retrieved = retrieveChunks(query, unitChunks);
-        if (retrieved.length === 0) return outline;
-        return { ...outline, retrievalContext: formatRetrievalContext(retrieved) };
-      });
-
-      return { outlines: groundedOutlines, events };
     },
   ).map((promise) =>
     promise.then(
@@ -882,18 +918,9 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
     ),
   );
 
-  // Consume the promises in lesson order: lazyBoundedMap resolves each one as
-  // soon as its OWN lesson is done (no barrier), so the prefix gate streams a
-  // lesson's scenes to the client the moment it completes while the remaining
-  // lessons keep running in the background.
-  for (let i = 0; i < pendingLessons.length; i++) {
-    const settled = await lessonPromises[i];
+  for (const promise of unitPromises) {
+    const settled = await promise;
     if (!settled.ok) throw settled.error;
-    if (!settled.value) {
-      throw new Error(`Lesson ${pendingLessons[i].lessonIndex + 1} was skipped without running`);
-    }
-    completedLessons.set(pendingLessons[i].lessonIndex, settled.value);
-    releaseReadyLessons();
   }
 
   // ---- Phase C: assemble + full contract validation ----

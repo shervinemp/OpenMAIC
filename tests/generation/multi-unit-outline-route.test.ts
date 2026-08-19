@@ -314,6 +314,41 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(lesson3Prompt).not.toContain('Produce EXACTLY 1 lessons');
   });
 
+  test('lessons within a unit are chained: later lessons get a "covered so far" summary, the first does not', async () => {
+    setupMultiUnitFlow();
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        requirements: REQUIREMENTS,
+        sizePreset: 'standard',
+        pdfText: '',
+        pdfImages: [],
+        imageMapping: {},
+        researchContext: '',
+      }) as unknown as Parameters<typeof POST>[0],
+    );
+    await readStreamBody(response);
+
+    const prompts = callLLMMock.mock.calls
+      .map((c) => (c[0] as { prompt?: string }).prompt ?? '')
+      .filter((p) => p.includes('Syllabus Context (Unit'));
+
+    // The first lesson of each unit has no "covered so far" (nothing precedes it).
+    const firstOfUnit1 = prompts.find((p) => p.includes('Lesson 1 of 3'));
+    const firstOfUnit2 = prompts.find((p) => p.includes('Unit 2 of 2, Lesson 1 of 3'));
+    expect(firstOfUnit1).toBeDefined();
+    expect(firstOfUnit1).not.toContain('Covered so far in this unit');
+    expect(firstOfUnit2).not.toContain('Covered so far in this unit');
+
+    // The second lesson of unit 1 sees what lesson 1 covered.
+    const secondOfUnit1 = prompts.find((p) => p.includes('Unit 1 of 2, Lesson 2 of 3'));
+    expect(secondOfUnit1).toBeDefined();
+    expect(secondOfUnit1).toContain('Covered so far in this unit (build on this; do NOT repeat it)');
+    // Coverage is summarized from the prior lesson's scene titles.
+    expect(secondOfUnit1).toContain('Process abstraction:');
+  });
+
   test('syllabus corrective loop fixes the structure on retry', async () => {
     const wrongSyllabus = {
       ...syllabusResponse(),
