@@ -52,7 +52,6 @@ export const CAPTION_BATCH_IMAGES = 10;
 // Per-call vision budget at scene content generation: only images relevant
 // to the scene (suggested ids) get vision; the rest use their captions.
 export const VISION_PER_SCENE_IMAGES = 6;
->>>>>>> 9b4a88e9 (feat(generation): full-document coverage — index once, retrieve per stage)
 
 // ==================== Course Blueprint Contract ====================
 // The curriculum shape is a validated contract (see

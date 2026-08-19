@@ -80,7 +80,7 @@ Never return a bare array. Never omit `languageDirective`, `courseTitle`, or `ou
 ```json
 {
   "id": "scene_1",
-  "type": "slide" | "quiz" | "interactive" | "pbl",
+  "type": "slide" | "quiz" | "interactive" | "pbl" | "exercise" | "derivation" | "glossary" | "reading",
   "title": "Scene Title",
   "description": "Teaching purpose description",
   "keyPoints": ["Point 1", "Point 2", "Point 3"],
@@ -101,9 +101,14 @@ Never return a bare array. Never omit `languageDirective`, `courseTitle`, or `ou
 {{#if hasSourceImages}}
 - **If source images are available**, add `suggestedImageIds` to relevant slide scenes. Only use image IDs listed under Available Images.
 {{/if}}
-- **Interactive scenes**: If a concept benefits from hands-on simulation/visualization, use `"type": "interactive"` with `widgetType` and `widgetOutline` fields. Limit to 1-2 per course.
+- **Interactive scenes**: Whenever a concept benefits from hands-on interaction, visualization, or coding practice, use `"type": "interactive"` with `widgetType` and `widgetOutline` fields — spread them across the course rather than holding back.
    - Select widgetType based on concept: simulation (physics/chem), diagram (processes), code (programming), game (practice), visualization3d (3D models)
    - Provide appropriate widgetOutline for the widget type
+- **Specialized scenes** (use wherever the material calls for them):
+   - `exercise` — fully-worked problems (concrete statement + worked solution) for computational/quantitative/coding lessons — include several where the material is computational.
+   - `derivation` — step-by-step proof/derivation with LaTeX formulas, for formula-heavy lessons.
+   - `glossary` — one per unit: the unit's key terms with complete definitions.
+   - `reading` — one per unit: an annotated further-reading list (title + why-read).
 - **Scene count**: Governed entirely by the Course Contract above — produce EXACTLY the per-lesson counts it demands. It overrides any other count guidance in this prompt.
 - **Quiz placement**: Insert quizzes per the Course Contract cadence (course-wide positions). Quiz scenes count toward the lesson totals.
 - **Language**: Infer from the user's requirement text and context, then output all content in the inferred language
