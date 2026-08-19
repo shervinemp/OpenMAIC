@@ -19,6 +19,21 @@ describe('tts-cache', () => {
     );
   });
 
+  it('separates tenants by apiKey and baseUrl so cached audio is never cross-served', () => {
+    const base = {
+      text: 'hello',
+      providerId: 'lemonade',
+      voice: 'en_us_heart',
+      speed: 1.0,
+    };
+    expect(ttsCacheKey({ ...base, apiKey: 'tenant-a', baseUrl: 'http://host-a' })).not.toBe(
+      ttsCacheKey({ ...base, apiKey: 'tenant-b', baseUrl: 'http://host-a' }),
+    );
+    expect(ttsCacheKey({ ...base, apiKey: 'tenant-a', baseUrl: 'http://host-a' })).not.toBe(
+      ttsCacheKey({ ...base, apiKey: 'tenant-a', baseUrl: 'http://host-b' }),
+    );
+  });
+
   it('round-trips a cached audio entry', () => {
     const key = ttsCacheKey({
       text: 'cache me',
