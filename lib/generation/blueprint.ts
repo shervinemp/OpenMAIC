@@ -73,7 +73,7 @@ export function parseDurationFromText(text: string): number | null {
 // ==================== Course type inference ====================
 
 const EXAM_PREP_RE = /\b(exam|exams|prep|preparation|certification|certificate|associate|professional|practice test|mock)\b/i;
-const HANDS_ON_RE = /\b(hands[- ]on|build|building|project[- ]based|workshop|tutorial|lab)\b/i;
+const HANDS_ON_RE = /\b(hands[- ]on|build|building|project[- ]based|workshop|tutorial|lab|practice|practising|practicing|coding|programming|exercises?|homework|problem[- ]?set)\b/i;
 
 /**
  * Infer the course flavor from the requirement text (not the model's
@@ -269,10 +269,10 @@ export function renderCourseContract(contract: CourseContract, courseType: Cours
     courseType === 'exam-prep'
       ? 'Exam-prep: quiz-heavy mix — one quiz every 3rd scene (course-wide), exam-objective phrasing in keyPoints, distractors mirroring real exam traps.'
       : courseType === 'hands-on'
-        ? 'Hands-on: allow 1-2 interactive scenes and at most 1 pbl; practice-oriented slides.'
-        : 'Explainer: slide-heavy; at most 1-2 interactive scenes and at most 1 pbl per course.';
+        ? 'Hands-on: practice-led mix — coding/simulation/game interactive scenes and worked exercises throughout the course; at most 1 pbl per unit.'
+        : 'Balanced: alternate concept slides with active practice — spread interactive scenes (code/simulation/game) and worked exercises across the course instead of limiting them to 1-2; at most 1 pbl per unit.';
 
-  const specialization = contract.depthLevel === 'intro' ? '' : `\n- Specialized scene types (Phase 2 §15.4b):\n  * "exercise" — one or two fully-worked problems (statement + worked solution; analysis at university level) for computational/quantitative lessons.\n  * "derivation" — step-by-step proof/derivation scenes with LaTeX formulas, for formula-heavy lessons.\n  * "glossary" — one per unit: the unit's key terms with complete definitions.\n  * "reading" — one per unit: annotated further-reading list (title + why-read).`;
+  const specialization = `\n- Specialized scene types:\n  * "exercise" — fully-worked problems (concrete statement + worked solution) for computational, quantitative, and coding lessons — use these liberally wherever the material is computational.${contract.depthLevel === 'university' ? ' At university depth each problem also needs an "analysis" (why the method works / common pitfalls).' : ''}\n  * "derivation" — step-by-step proof/derivation scenes with LaTeX formulas, for formula-heavy lessons.\n  * "glossary" — one per unit: the unit's key terms with complete definitions.\n  * "reading" — one per unit: annotated further-reading list (title + why-read).`;
 
   return `Course contract (non-negotiable):
 - Produce EXACTLY ${contract.lessonCount} lessons (sections), in this order:
@@ -640,13 +640,14 @@ export function validateBlueprint(
   if (quizCount < expectedQuizzes) {
     warnings.push(`quiz cadence: ${quizCount} quizzes vs ~${expectedQuizzes} expected (every ${blueprint.quizPlacement} scenes)`);
   }
+  const unitTotal = blueprint.units?.length ?? 1;
   const interactiveCount = blueprint.lessons.flatMap((l) => l.outlines).filter((o) => o.type === 'interactive').length;
-  if (interactiveCount > 2) {
-    warnings.push(`interactive cap: ${interactiveCount} interactive scenes (max 2)`);
+  if (interactiveCount > Math.max(4, unitTotal * 3)) {
+    warnings.push(`interactive cap: ${interactiveCount} interactive scenes (soft cap ${Math.max(4, unitTotal * 3)})`);
   }
   const pblCount = blueprint.lessons.flatMap((l) => l.outlines).filter((o) => o.type === 'pbl').length;
-  if (pblCount > 1) {
-    warnings.push(`pbl cap: ${pblCount} pbl scenes (max 1)`);
+  if (pblCount > unitTotal) {
+    warnings.push(`pbl cap: ${pblCount} pbl scenes (max ${unitTotal}, one per unit)`);
   }
 
   // Specialized scene advisories (Phase 2 §15.4b): at intermediate/university
