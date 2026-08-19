@@ -188,7 +188,12 @@ export const SPECIALTY_DEPTH_FLOORS: Record<CourseDepthLevel, SpecialtyDepthFloo
  * intermediate and university levels.
  */
 export function renderDepthDirective(level: CourseDepthLevel): string {
-  if (level === 'intro') return '';
+  if (level === 'intro') {
+    return [
+      'Depth requirement: intro level.',
+      '- Prefer at least one concrete worked example (real numbers/values) over purely abstract restatements.',
+    ].join('\n');
+  }
   if (level === 'intermediate') {
     return [
       'Depth requirement: intermediate level.',
