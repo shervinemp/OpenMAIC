@@ -705,6 +705,10 @@ export async function buildDocumentDigest(
   const results = await mapWithConcurrency(groupJobs, LLM_CALL_CONCURRENCY, async (group) => {
     const prompt = buildDigestSectionPrompt(group, language);
     const response = await options.aiCall(prompt.system, prompt.user);
+    // Incremental progress: report as each section card lands (not only after
+    // the whole parallel batch finishes) so a long digest stays visibly alive.
+    batchCalls += 1;
+    options.onProgress?.('digest', batchCalls, groupJobs.length);
     return { groupId: group.id, card: parseDigestSectionResponse(response) };
   });
   for (const result of results) {
@@ -714,8 +718,6 @@ export async function buildDocumentDigest(
     const list = cardsBySection.get(groupId) ?? [];
     list.push(card);
     cardsBySection.set(groupId, list);
-    batchCalls += 1;
-    options.onProgress?.('digest', batchCalls, groupJobs.length);
   }
 
   const sections: DigestSectionCard[] = [];
