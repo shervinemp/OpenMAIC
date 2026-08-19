@@ -95,4 +95,13 @@ describe('searchWithBrave', () => {
     expect(result.sources).toHaveLength(1);
     expect(result.query).toHaveLength(400);
   });
+
+  it('degrades to empty results on a rate-limited (429) scrape', async () => {
+    proxyFetchMock.mockResolvedValueOnce(
+      new Response('<!doctype html>rate limited</html>', { status: 429 }),
+    );
+
+    const result = await searchWithBrave({ query: 'q', maxResults: 3 });
+    expect(result.sources).toEqual([]);
+  });
 });
