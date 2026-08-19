@@ -28,8 +28,10 @@ export const MAX_VISION_IMAGES = 20;
 // Total extracted chars at or below which the outline stage reads raw text.
 export const DIGEST_RAW_THRESHOLD_CHARS = 12_000;
 
-// Render budget for the coverage view injected into the outline prompt.
-export const DIGEST_TARGET_CHARS = 16_000;
+// Render budget for the coverage view injected into the outline prompt. Kept
+// tight: the full digest (all sections) still drives per-scene retrieval and
+// the coverage audit; only the outline PLANNING summary is bounded here.
+export const DIGEST_TARGET_CHARS = 12_000;
 
 // Max raw chars sent per digest batch call (level-1 section cards).
 export const DIGEST_BATCH_CHARS = 4_500;
