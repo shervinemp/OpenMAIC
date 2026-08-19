@@ -474,7 +474,7 @@ const VALID_OUTLINE_TYPES = new Set<SceneOutline['type']>([
   'reading',
 ]);
 
-function validateOutlineShape(outline: SceneOutline): string[] {
+export function validateOutlineShape(outline: SceneOutline): string[] {
   const errors: string[] = [];
   if (!outline || typeof outline !== 'object') {
     errors.push('outline is not an object');

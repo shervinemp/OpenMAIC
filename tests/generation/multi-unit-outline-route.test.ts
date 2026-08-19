@@ -64,6 +64,8 @@ const REQUIREMENTS = {
 
 const TOTAL_SCENES = 60;
 const SCENES_PER_UNIT = 30;
+const SCENES_PER_LESSON = 10;
+const LESSONS_PER_UNIT = 3;
 
 function sceneOutline(id: string, order: number, type: string = 'slide') {
   return {
@@ -105,25 +107,32 @@ function syllabusResponse() {
   };
 }
 
-/** Each unit call returns its 3×10 outlines (30 scenes). */
-function unitOutlines(unitIndex: number) {
+/** Each lesson call returns its 10 outlines. */
+function lessonOutlines(lessonIndex: number) {
   const outlines = [];
-  for (let order = 1; order <= SCENES_PER_UNIT; order++) {
-    outlines.push(sceneOutline(`u${unitIndex}_s${order}`, order));
+  for (let order = 1; order <= SCENES_PER_LESSON; order++) {
+    outlines.push(sceneOutline(`l${lessonIndex}_s${order}`, order));
   }
   return { outlines };
 }
 
-/** The unit review gate's accept verdict (Phase 2 §15.5). */
+/** The lesson review gate's accept verdict (Phase 2 §15.5). */
 function unitReviewPass() {
   return { adequate: true, findings: [] };
 }
 
 // ── Parallel-aware mock dispatch ─────────────────────────────
-// Unit outline calls now run concurrently, so `mockResolvedValueOnce` order is
-// nondeterministic. Dispatch on the prompt content instead.
+// Lesson outline calls now run concurrently, so `mockResolvedValueOnce` order
+// is nondeterministic. Dispatch on the prompt content instead.
 
-const UNIT_TITLES = ['Processes and Threads', 'Memory Management'];
+const LESSON_TITLES = [
+  'Process abstraction',
+  'Threads',
+  'Scheduling',
+  'Address spaces',
+  'Paging',
+  'Page replacement',
+];
 
 function promptKind(prompt: string): 'syllabus' | 'outline' | 'review' {
   if (prompt.includes('Syllabus Context (Unit')) return 'outline';
@@ -136,6 +145,19 @@ function unitIndexOf(prompt: string): number {
   return m ? Number(m[1]) - 1 : -1;
 }
 
+function lessonInUnitIndexOf(prompt: string): number {
+  const m = prompt.match(/Lesson (\d+) of \d+\)/);
+  return m ? Number(m[1]) - 1 : -1;
+}
+
+/** Global lesson index (unit * lessons-per-unit + in-unit position). */
+function globalLessonIndexOf(prompt: string): number {
+  const u = unitIndexOf(prompt);
+  const l = lessonInUnitIndexOf(prompt);
+  if (u < 0 || l < 0) return -1;
+  return u * LESSONS_PER_UNIT + l;
+}
+
 function unitTitleOf(prompt: string): string {
   const m = prompt.match(/Unit: ([^\n]+)/);
   return m ? m[1].trim() : '';
@@ -143,9 +165,9 @@ function unitTitleOf(prompt: string): string {
 
 interface FlowResponses {
   syllabus?: Array<Record<string, unknown>>;
-  /** per-unit outline responses: (attempt) => response (default: unitOutlines). */
+  /** per-lesson outline responses: (attempt) => response (default: lessonOutlines). */
   outline?: Record<number, (attempt: number) => unknown>;
-  /** per-unit review responses: (attempt) => response (default: unitReviewPass). */
+  /** per-lesson review responses: (attempt) => response (default: unitReviewPass). */
   review?: Record<number, (attempt: number) => unknown>;
 }
 
@@ -166,17 +188,17 @@ function setupMultiUnitFlow(flow: FlowResponses = {}) {
     }
 
     if (kind === 'outline') {
-      const ui = unitIndexOf(prompt);
-      const a = outlineAttempt.get(ui) ?? 0;
-      outlineAttempt.set(ui, a + 1);
-      const fn = flow.outline?.[ui];
-      return { text: JSON.stringify(fn ? fn(a) : unitOutlines(ui)), usage: {} };
+      const li = globalLessonIndexOf(prompt);
+      const a = outlineAttempt.get(li) ?? 0;
+      outlineAttempt.set(li, a + 1);
+      const fn = flow.outline?.[li];
+      return { text: JSON.stringify(fn ? fn(a) : lessonOutlines(li)), usage: {} };
     }
 
-    const ui = UNIT_TITLES.indexOf(unitTitleOf(prompt));
-    const a = reviewAttempt.get(ui) ?? 0;
-    reviewAttempt.set(ui, a + 1);
-    const fn = flow.review?.[ui];
+    const li = LESSON_TITLES.indexOf(unitTitleOf(prompt));
+    const a = reviewAttempt.get(li) ?? 0;
+    reviewAttempt.set(li, a + 1);
+    const fn = flow.review?.[li];
     return { text: JSON.stringify(fn ? fn(a) : unitReviewPass()), usage: {} };
   });
 
@@ -231,21 +253,22 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(syllabusEvent.units).toHaveLength(2);
     expect(syllabusEvent.lessons).toHaveLength(6);
 
-    const unitEvents = events.filter((e) => e.type === 'unit');
-    expect(unitEvents.map((e) => e.title)).toEqual(['Processes and Threads', 'Memory Management']);
+    const lessonEvents = events.filter((e) => e.type === 'lesson');
+    expect(lessonEvents).toHaveLength(6);
+    expect(lessonEvents.map((e) => e.title)).toEqual(LESSON_TITLES);
 
-    // Phase 2 §15.5: one review event per unit, both accepted.
+    // Phase 2 §15.5: one review event per lesson, all accepted.
     const reviewEvents = events.filter((e) => e.type === 'unitReview');
-    expect(reviewEvents).toHaveLength(2);
-    expect(reviewEvents.map((e) => e.adequate)).toEqual([true, true]);
+    expect(reviewEvents).toHaveLength(6);
+    expect(reviewEvents.every((e) => e.adequate)).toBe(true);
 
     const outlineEvents = events.filter((e) => e.type === 'outline');
     expect(outlineEvents).toHaveLength(TOTAL_SCENES);
-    // Global numbering across units, no duplicates.
+    // Global numbering across lessons, no duplicates.
     const orders = outlineEvents.map((e) => e.data.order);
     expect(orders[0]).toBe(1);
-    expect(orders[SCENES_PER_UNIT - 1]).toBe(SCENES_PER_UNIT);
-    expect(orders[SCENES_PER_UNIT]).toBe(SCENES_PER_UNIT + 1);
+    expect(orders[SCENES_PER_LESSON - 1]).toBe(SCENES_PER_LESSON);
+    expect(orders[SCENES_PER_LESSON]).toBe(SCENES_PER_LESSON + 1);
     expect(orders[TOTAL_SCENES - 1]).toBe(TOTAL_SCENES);
     expect(new Set(orders).size).toBe(TOTAL_SCENES);
 
@@ -282,13 +305,13 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     const text = await readStreamBody(response);
     const events = parseSseEvents(text);
     expect(events.find((e) => e.type === 'done')).toBeDefined();
-    // Syllabus retry + 2 unit calls + 2 unit reviews.
-    expect(callLLMMock).toHaveBeenCalledTimes(6);
+    // Syllabus retry + 6 lesson calls + 6 lesson reviews.
+    expect(callLLMMock).toHaveBeenCalledTimes(14);
   });
 
-  test('per-unit corrective loop re-calls a unit that missed its counts', async () => {
-    const shortUnit = { outlines: unitOutlines(0).outlines.slice(0, 10) };
-    setupMultiUnitFlow({ outline: { 0: (a) => (a === 0 ? shortUnit : unitOutlines(0)) } });
+  test('per-lesson corrective loop re-calls a lesson that missed its count', async () => {
+    const shortLesson = { outlines: lessonOutlines(0).outlines.slice(0, 4) };
+    setupMultiUnitFlow({ outline: { 0: (a) => (a === 0 ? shortLesson : lessonOutlines(0)) } });
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
     const response = await POST(
@@ -307,8 +330,8 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     const done = events.find((e) => e.type === 'done');
     expect(done).toBeDefined();
     expect(done.outlines).toHaveLength(TOTAL_SCENES);
-    // Syllabus + unit0 retry + unit0 + review0 + unit1 + review1.
-    expect(callLLMMock).toHaveBeenCalledTimes(6);
+    // Syllabus + lesson0 retry + lesson0 review + 5 remaining lessons (+ reviews).
+    expect(callLLMMock).toHaveBeenCalledTimes(14);
   });
 
   test('per-unit web research grounds unit outlines with [source N] citations (Phase 2 §15.2)', async () => {
@@ -383,7 +406,7 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(done.outlines).toHaveLength(TOTAL_SCENES);
   });
 
-  test('unit review gate rejects a unit and feeds the corrective loop (Phase 2 §15.5)', async () => {
+  test('lesson review gate rejects a lesson and feeds the corrective loop (Phase 2 §15.5)', async () => {
     const rejectVerdict = {
       adequate: false,
       findings: ['Objective "Model process lifecycles" is not taught by any scene'],
@@ -408,8 +431,8 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(done).toBeDefined();
     expect(done.outlines).toHaveLength(TOTAL_SCENES);
 
-    // syllabus + unit0 + reject-review + unit0-retry + pass-review + unit1 + review1.
-    expect(callLLMMock).toHaveBeenCalledTimes(7);
+    // syllabus + lesson0 (2 outlines + reject+pass reviews) + 5 lessons (+ reviews).
+    expect(callLLMMock).toHaveBeenCalledTimes(15);
 
     // The re-run's prompt carried the gate's findings (order-independent lookup).
     const retryCall = callLLMMock.mock.calls.find((call) =>
@@ -420,17 +443,25 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
 
     // The gate's events surfaced the rejection and the acceptance.
     const reviewEvents = events.filter((e) => e.type === 'unitReview');
-    expect(reviewEvents.map((e) => e.adequate)).toEqual([false, true, true]);
+    expect(reviewEvents.map((e) => e.adequate)).toEqual([
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
     expect(reviewEvents[0].findings[0]).toContain('Model process lifecycles');
   });
 
-  test('tolerant gate (default): a unit rejected on every attempt is accepted after the budget and the run completes', async () => {
+  test('tolerant gate (default): a lesson rejected on every attempt is accepted after the budget and the run completes', async () => {
     const rejectVerdict = {
       adequate: false,
       findings: ['Objective "Model process lifecycles" is not taught by any scene'],
     };
-    // Unit 0's judge rejects every attempt; the final rejection must NOT sink
-    // the run — the unit is accepted with the verdict marked acceptedAfterBudget.
+    // Lesson 0's judge rejects every attempt; the final rejection must NOT sink
+    // the run — the lesson is accepted with the verdict marked acceptedAfterBudget.
     setupMultiUnitFlow({ review: { 0: () => rejectVerdict } });
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
@@ -451,17 +482,20 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(done).toBeDefined();
     expect(done.outlines).toHaveLength(TOTAL_SCENES);
 
-    // Unit 0's three rejections; only the budget-exhausting final one is
-    // accepted-after-budget.
-    const unit0Reviews = events.filter((e) => e.type === 'unitReview' && e.index === 0);
-    expect(unit0Reviews).toHaveLength(3);
-    expect(unit0Reviews.map((e) => e.adequate)).toEqual([false, false, false]);
-    expect(unit0Reviews[0].acceptedAfterBudget).toBeUndefined();
-    expect(unit0Reviews[2].acceptedAfterBudget).toBe(true);
+    // syllabus + lesson0 (3 outlines + 3 reviews) + 5 lessons (outline + review).
+    expect(callLLMMock).toHaveBeenCalledTimes(17);
 
-    // Unit 1 passed on its single attempt.
-    const unit1Reviews = events.filter((e) => e.type === 'unitReview' && e.index === 1);
-    expect(unit1Reviews.map((e) => e.adequate)).toEqual([true]);
+    // Lesson 0's three rejections; only the budget-exhausting final one is
+    // accepted-after-budget.
+    const lesson0Reviews = events.filter((e) => e.type === 'unitReview' && e.index === 0);
+    expect(lesson0Reviews).toHaveLength(3);
+    expect(lesson0Reviews.map((e) => e.adequate)).toEqual([false, false, false]);
+    expect(lesson0Reviews[0].acceptedAfterBudget).toBeUndefined();
+    expect(lesson0Reviews[2].acceptedAfterBudget).toBe(true);
+
+    // The remaining lessons passed on their single attempts.
+    const otherReviews = events.filter((e) => e.type === 'unitReview' && e.index > 0);
+    expect(otherReviews.map((e) => e.adequate)).toEqual([true, true, true, true, true]);
   });
 
   test('unparseable judge verdict accepts the unit (best-effort gate)', async () => {
@@ -487,8 +521,8 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(done).toBeDefined();
     expect(done.outlines).toHaveLength(TOTAL_SCENES);
 
-    // No retry for the unparseable verdict: syllabus + 2 outlines + 2 reviews.
-    expect(callLLMMock).toHaveBeenCalledTimes(5);
+    // No retry for the unparseable verdict: syllabus + 6 lessons + 6 reviews.
+    expect(callLLMMock).toHaveBeenCalledTimes(13);
   });
 
   test('unit review judge infra failure accepts the unit (best-effort gate)', async () => {
@@ -515,7 +549,7 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
 
   test('resumes a partial run from a checkpoint (skips syllabus + completed units)', async () => {
     // A prior run completed unit 0 (30 scenes) and checkpointed it. The resume
-    // must reuse the syllabus and skip unit 0, generating only unit 1.
+    // must reuse the syllabus and skip unit 0's lessons, generating only unit 1.
     setupMultiUnitFlow();
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
@@ -528,7 +562,11 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
         imageMapping: {},
         researchContext: '',
         resumeSyllabus: syllabusResponse(),
-        resumeOutlines: unitOutlines(0).outlines,
+        resumeOutlines: [
+          ...lessonOutlines(0).outlines,
+          ...lessonOutlines(1).outlines,
+          ...lessonOutlines(2).outlines,
+        ].map((outline, index) => ({ ...outline, order: index + 1 })),
         resumeFromUnitIndex: 1,
       }) as unknown as Parameters<typeof POST>[0],
     );
@@ -536,15 +574,16 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     const text = await readStreamBody(response);
     const events = parseSseEvents(text);
 
-    // The syllabus call and unit 0 are skipped: only unit 1 outline + review.
-    expect(callLLMMock).toHaveBeenCalledTimes(2);
+    // The syllabus call and unit 0 are skipped: only unit 1's 3 lessons
+    // generate (3 outline + 3 review calls).
+    expect(callLLMMock).toHaveBeenCalledTimes(6);
 
     // The full ordered deck is reassembled: checkpointed outlines first.
     const done = events.find((e) => e.type === 'done');
     expect(done).toBeDefined();
     expect(done.outlines).toHaveLength(TOTAL_SCENES);
-    expect(done.outlines[0].id).toBe('u0_s1');
-    expect(done.outlines[SCENES_PER_UNIT].id).toBe('u1_s1');
+    expect(done.outlines[0].id).toBe('l0_s1');
+    expect(done.outlines[SCENES_PER_UNIT].id).toBe('l3_s1');
 
     // A unitDone event marks the newly-completed unit for the next checkpoint.
     const unitDone = events.filter((e) => e.type === 'unitDone');
