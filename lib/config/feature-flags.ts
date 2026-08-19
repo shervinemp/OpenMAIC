@@ -95,6 +95,24 @@ export function isVideoExportEnabled(): boolean {
   return readBoolean(process.env.NEXT_PUBLIC_ENABLE_VIDEO_EXPORT);
 }
 
+/**
+ * Unit review gate mode for multi-unit outline generation (Phase 2 §15.5).
+ *
+ * - `tolerant` (default): the gate drives up to `MAX_BLUEPRINT_ATTEMPTS - 1`
+ *   corrective passes; on the final rejection the unit is accepted anyway
+ *   (findings are logged and the review event is marked `acceptedAfterBudget`).
+ *   A lone over-strict judge never sinks a whole course.
+ * - `strict`: a unit rejected on the final attempt fails the entire run.
+ * - `off`: skip the unit review gate entirely.
+ */
+export type OutlineReviewMode = 'strict' | 'tolerant' | 'off';
+
+export function resolveOutlineReviewMode(): OutlineReviewMode {
+  const value = process.env.OPENMAIC_OUTLINE_REVIEW_MODE;
+  if (value === 'strict' || value === 'off') return value;
+  return 'tolerant';
+}
+
 /** Experimental PPTX import entry point. Default OFF. */
 export function isPptxImportEnabled(): boolean {
   return readBoolean(process.env.NEXT_PUBLIC_ENABLE_PPTX_IMPORT);

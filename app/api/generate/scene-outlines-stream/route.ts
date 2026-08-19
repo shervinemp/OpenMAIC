@@ -42,7 +42,7 @@ import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
-import { resolveVocationalActive } from '@/lib/config/feature-flags';
+import { resolveOutlineReviewMode, resolveVocationalActive } from '@/lib/config/feature-flags';
 import {
   buildCourseBlueprint,
   buildPerUnitContract,
@@ -85,7 +85,7 @@ import {
   retrieveChunks,
   type PdfChunk,
 } from '@/lib/generation/pdf-retrieval';
-import { mapWithConcurrency } from '@/lib/utils/concurrency';
+import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import {
   buildUnitReviewSummary,
   summarizeUnitReviewFindings,
@@ -475,6 +475,7 @@ async function reviewUnitOutlines(
 
 async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<MultiUnitOutlineResult> {
   const { controller, encoder, signal, courseContract } = run;
+  const reviewMode = resolveOutlineReviewMode();
   const enqueue = (event: Record<string, unknown>) => {
     try {
       controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
@@ -559,10 +560,49 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
   }
 
   const resumeFrom = run.resumeFromUnitIndex ?? 0;
-  const unitResults = await mapWithConcurrency(
-    (syllabus!.units ?? [])
-      .map((unit, index) => ({ unit, index }))
-      .slice(resumeFrom),
+  const allOutlines: SceneOutline[] = [];
+  const usedOutlineIds = new Set<string>();
+
+  // Replay the checkpointed outlines from the prior partial run first, so the
+  // client's collected set rebuilds the complete ordered deck.
+  for (const outline of run.resumeOutlines ?? []) {
+    const unique = ensureUniqueOutlineId(outline, usedOutlineIds);
+    allOutlines.push(unique);
+    enqueue({ type: 'outline', data: unique, index: allOutlines.length - 1 });
+  }
+
+  // Phase B runs every unit's outline call concurrently, but each unit's SSE
+  // events are emitted as soon as it AND every lower-numbered unit complete
+  // (units finish out of order; the prefix gate keeps the stream, the display
+  // order, and the resume checkpoint contiguous). Previously the events were
+  // buffered until EVERY unit finished — a 12-unit semester streamed nothing
+  // for 20+ minutes, then dumped all scenes at once.
+  const pendingUnits = (syllabus!.units ?? [])
+    .map((unit, index) => ({ unit, index }))
+    .slice(resumeFrom);
+  const completedUnits = new Map<
+    number,
+    { outlines: SceneOutline[]; events: Array<Record<string, unknown>> }
+  >();
+  let nextReleaseIndex = resumeFrom;
+
+  const releaseReadyUnits = () => {
+    while (completedUnits.has(nextReleaseIndex)) {
+      const result = completedUnits.get(nextReleaseIndex)!;
+      for (const event of result.events) enqueue(event);
+      for (const outline of result.outlines) {
+        const unique = ensureUniqueOutlineId(outline, usedOutlineIds);
+        allOutlines.push(unique);
+        enqueue({ type: 'outline', data: unique, index: allOutlines.length - 1 });
+      }
+      // Checkpoint signal: the client persists this unit's outlines as complete.
+      enqueue({ type: 'unitDone', index: nextReleaseIndex, count: result.outlines.length });
+      nextReleaseIndex++;
+    }
+  };
+
+  const unitPromises = lazyBoundedMap(
+    pendingUnits,
     LLM_CALL_CONCURRENCY,
     async ({ unit, index: unitIndex }) => {
       checkAborted();
@@ -696,24 +736,43 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
 
             // Phase 2 §15.5: unit review gate. An LLM-as-judge pass against the
             // unit's objectives; a failing verdict feeds this same bounded loop.
-            const reviewFeedback = await reviewUnitOutlines(
-              unit,
-              candidateOutlines,
-              unitIndex,
-              run,
-              localEnqueue,
-            );
+            // `off` skips the judge entirely (models that can't self-grade).
+            const reviewFeedback =
+              reviewMode === 'off'
+                ? null
+                : await reviewUnitOutlines(
+                    unit,
+                    candidateOutlines,
+                    unitIndex,
+                    run,
+                    localEnqueue,
+                  );
             if (reviewFeedback === null) {
               unitOutlines = candidateOutlines;
               break;
             }
             unitFeedback = reviewFeedback;
             if (attempt >= MAX_BLUEPRINT_ATTEMPTS) {
-              // The gate exhausted its budget with the structural contract —
-              // never accept a unit the reviewer rejected.
-              throw new Error(
-                `Unit ${unitIndex + 1} did not pass the unit review gate after ${MAX_BLUEPRINT_ATTEMPTS} attempts`,
+              if (reviewMode === 'strict') {
+                // The gate exhausted its budget with the structural contract —
+                // never accept a unit the reviewer rejected.
+                throw new Error(
+                  `Unit ${unitIndex + 1} did not pass the unit review gate after ${MAX_BLUEPRINT_ATTEMPTS} attempts`,
+                );
+              }
+              // Tolerant: the deck still met the structural contract (validated
+              // with tolerance on the final attempt), so a lone over-strict
+              // judge must not sink a whole course. Keep the unit and surface
+              // the deferred findings.
+              log.warn(
+                `Unit ${unitIndex + 1} accepted after ${MAX_BLUEPRINT_ATTEMPTS} review attempts with findings: ${reviewFeedback.replace(/\s+/g, ' ').slice(0, 240)}`,
               );
+              const lastEvent = events[events.length - 1];
+              if (lastEvent && lastEvent.type === 'unitReview') {
+                lastEvent.acceptedAfterBudget = true;
+              }
+              unitOutlines = candidateOutlines;
+              break;
             }
             continue;
           }
@@ -742,34 +801,26 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
 
       return { outlines: groundedOutlines, events };
     },
+  ).map((promise) =>
+    promise.then(
+      (value) => ({ ok: true as const, value }),
+      (error) => ({ ok: false as const, error }),
+    ),
   );
 
-  // Assemble + emit in unit order (units may have completed out of order).
-  // Re-dedup outline ids globally: each unit deduped against a local set, but
-  // a model can repeat ids (e.g. "1", "2") across units.
-  const allOutlines: SceneOutline[] = [];
-  const usedOutlineIds = new Set<string>();
-
-  // Replay the checkpointed outlines from the prior partial run first, so the
-  // client's collected set rebuilds the complete ordered deck.
-  for (const outline of run.resumeOutlines ?? []) {
-    const unique = ensureUniqueOutlineId(outline, usedOutlineIds);
-    allOutlines.push(unique);
-    enqueue({ type: 'outline', data: unique, index: allOutlines.length - 1 });
-  }
-
-  unitResults.forEach((result, offsetIndex) => {
-    if (!result) return;
-    const unitIndex = resumeFrom + offsetIndex;
-    for (const event of result.events) enqueue(event);
-    for (const outline of result.outlines) {
-      const unique = ensureUniqueOutlineId(outline, usedOutlineIds);
-      allOutlines.push(unique);
-      enqueue({ type: 'outline', data: unique, index: allOutlines.length - 1 });
+  // Consume the promises in unit order: lazyBoundedMap resolves each one as
+  // soon as its OWN unit is done (no barrier), so the prefix gate streams a
+  // unit's scenes to the client the moment it completes while the remaining
+  // units keep running in the background.
+  for (let i = 0; i < pendingUnits.length; i++) {
+    const settled = await unitPromises[i];
+    if (!settled.ok) throw settled.error;
+    if (!settled.value) {
+      throw new Error(`Unit ${pendingUnits[i].index + 1} was skipped without running`);
     }
-    // Checkpoint signal: the client persists this unit's outlines as complete.
-    enqueue({ type: 'unitDone', index: unitIndex, count: result.outlines.length });
-  });
+    completedUnits.set(pendingUnits[i].index, settled.value);
+    releaseReadyUnits();
+  }
 
   // ---- Phase C: assemble + full contract validation ----
   const blueprint = buildCourseBlueprint(
