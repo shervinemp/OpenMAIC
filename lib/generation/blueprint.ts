@@ -241,12 +241,28 @@ export function resolveRequestDuration(
  * prompt. Pre-rendered in TypeScript — the prompt templating language has
  * no {{#each}}.
  */
-export function renderCourseContract(contract: CourseContract, courseType: CourseType): string {
-  const quizPositions = Array.from(
+/** Scene-mix + specialization guidance shared by the contract renderers. */
+function renderCourseStyleGuide(contract: CourseContract, courseType: CourseType): string {
+  const typeMix =
+    courseType === 'exam-prep'
+      ? 'Exam-prep: quiz-heavy mix — one quiz every 3rd scene (course-wide), exam-objective phrasing in keyPoints, distractors mirroring real exam traps.'
+      : courseType === 'hands-on'
+        ? 'Hands-on: practice-led mix — coding/simulation/game interactive scenes and worked exercises throughout the course; at most 1 pbl per unit.'
+        : 'Balanced: alternate concept slides with active practice — spread interactive scenes (code/simulation/game) and worked exercises across the course instead of limiting them to 1-2; at most 1 pbl per unit.';
+
+  const specialization = `\n- Specialized scene types:\n  * "exercise" — fully-worked problems (concrete statement + worked solution) for computational, quantitative, and coding lessons — use these liberally wherever the material is computational.${contract.depthLevel === 'university' ? ' At university depth each problem also needs an "analysis" (why the method works / common pitfalls).' : ''}\n  * "derivation" — step-by-step proof/derivation scenes with LaTeX formulas, for formula-heavy lessons.\n  * "glossary" — one per unit: the unit's key terms with complete definitions.\n  * "reading" — one per unit: annotated further-reading list (title + why-read).`;
+
+  return `- Scene types: ${typeMix}${specialization}`;
+}
+
+function courseQuizPositions(contract: CourseContract): number[] {
+  return Array.from(
     { length: Math.max(1, Math.floor(contract.totalSceneTarget / contract.quizPlacement)) },
     (_, i) => contract.quizPlacement * (i + 1),
   );
+}
 
+export function renderCourseContract(contract: CourseContract, courseType: CourseType): string {
   const lessons = contract.lessonSceneTargets
     .map(
       (target, index) =>
@@ -265,22 +281,43 @@ export function renderCourseContract(contract: CourseContract, courseType: Cours
         .join('\n')
     : '';
 
-  const typeMix =
-    courseType === 'exam-prep'
-      ? 'Exam-prep: quiz-heavy mix — one quiz every 3rd scene (course-wide), exam-objective phrasing in keyPoints, distractors mirroring real exam traps.'
-      : courseType === 'hands-on'
-        ? 'Hands-on: practice-led mix — coding/simulation/game interactive scenes and worked exercises throughout the course; at most 1 pbl per unit.'
-        : 'Balanced: alternate concept slides with active practice — spread interactive scenes (code/simulation/game) and worked exercises across the course instead of limiting them to 1-2; at most 1 pbl per unit.';
-
-  const specialization = `\n- Specialized scene types:\n  * "exercise" — fully-worked problems (concrete statement + worked solution) for computational, quantitative, and coding lessons — use these liberally wherever the material is computational.${contract.depthLevel === 'university' ? ' At university depth each problem also needs an "analysis" (why the method works / common pitfalls).' : ''}\n  * "derivation" — step-by-step proof/derivation scenes with LaTeX formulas, for formula-heavy lessons.\n  * "glossary" — one per unit: the unit's key terms with complete definitions.\n  * "reading" — one per unit: annotated further-reading list (title + why-read).`;
+  const quizPositions = courseQuizPositions(contract);
 
   return `Course contract (non-negotiable):
 - Produce EXACTLY ${contract.lessonCount} lessons (sections), in this order:
 ${lessons}
 ${units ? `- Unit (chapter) structure — EXACTLY ${contract.unitCount} units:\n${units}\n` : ''}- Total scenes: ${contract.totalSceneTarget} — the sum of the per-lesson targets; you may not produce fewer.
-- Scene types: ${typeMix}${specialization}
+${renderCourseStyleGuide(contract, courseType)}
 - Quiz cadence (course-wide): a quiz at or near global outline #${quizPositions.join(', #')}.
 - Also emit "lessons": an array of ${contract.lessonCount} objects, each {"title": "...", "objectives": ["..."]} (1-2 objectives per lesson, teaching language)${contract.unitCount > 1 ? `, "units": an array of ${contract.unitCount} objects, each {"title": "...", "objectives": ["..."]} (1-2 objectives per unit, in order)` : ''}, plus course-level "audience" (string) and "objectives" (2-5 strings).`;
+}
+
+/**
+ * Per-lesson contract render for the per-lesson outline path. Unlike
+ * {@link renderCourseContract}, this scopes the SCENE COUNT to a single lesson
+ * (with correct global numbering) while keeping the style guide and quiz
+ * cadence course-wide — the per-lesson refactor used the course renderer with
+ * a 1-lesson contract, which turned "at most 1 pbl/glossary/reading per unit"
+ * and the quiz cadence into per-lesson instructions (3-4x over-production).
+ */
+export function renderLessonScopedContract(
+  contract: CourseContract,
+  lessonIndex: number,
+  courseType: CourseType,
+): string {
+  const target = contract.lessonSceneTargets[lessonIndex];
+  const start = contract.lessonSceneTargets.slice(0, lessonIndex).reduce((a, b) => a + b, 0);
+  const inRangeQuizPositions = courseQuizPositions(contract).filter(
+    (position) => position > start && position <= start + target,
+  );
+
+  return `Course contract (non-negotiable):
+- You are generating LESSON ${lessonIndex + 1} of ${contract.lessonCount} lessons (the other lessons are generated separately — output ONLY this lesson's scenes).
+- This lesson: EXACTLY ${target} scene outlines (global outline #${start + 1} through #${start + target}).
+- Course-wide total: ${contract.totalSceneTarget} scenes across all lessons.
+${renderCourseStyleGuide(contract, courseType)}
+- Quiz cadence: include a quiz only at these global positions (they fall inside your range): ${inRangeQuizPositions.length > 0 ? `#${inRangeQuizPositions.join(', #')}` : 'none — do not add a quiz to this lesson'}.
+- Lesson scope note: the "per unit" caps above are course-wide, not per-lesson — across this single lesson include at most one pbl (only for a substantial project) and at most one glossary / one reading (only if this lesson is their natural slot). Most lessons contain none of these.`;
 }
 
 // ==================== Canonicalization ====================

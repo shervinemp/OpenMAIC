@@ -49,6 +49,7 @@ import {
   inferCourseType,
   parseDurationFromText,
   renderCourseContract,
+  renderLessonScopedContract,
   renderSyllabusContract,
   resolveRequestDuration,
   summarizeBlueprintValidation,
@@ -397,30 +398,45 @@ interface MultiUnitOutlineResult {
   courseTitle: string | null;
 }
 
+/** One lesson scheduled for per-lesson outline generation (Phase 2 §15.8). */
+interface PendingLesson {
+  /** Global lesson index (0-based, across all units). */
+  lessonIndex: number;
+  unitIndex: number;
+  lessonIndexInUnit: number;
+  unit: {
+    title?: string;
+    objectives?: string[];
+    lessons?: Array<{ title?: string; objectives?: string[] }>;
+  };
+  lesson: { title?: string; objectives?: string[] };
+}
+
 /**
- * Phase 2 §15.5 — the unit review gate. Runs an LLM-as-judge verdict on the
- * unit's outline deck against the unit's objectives.
+ * Phase 2 §15.5 — the outline review gate. Runs an LLM-as-judge verdict on a
+ * deck (a unit or — since the per-lesson rework — a single lesson) against
+ * that deck's objectives.
  *
  * Returns null when the deck is ACCEPTED: the verdict was adequate, the judge
  * infrastructure failed, or the verdict was unparseable (a judge schema
  * failure, not a quality signal). All three are best-effort — mirroring the
  * per-unit web-research fallback — so a semester run never dies on the
- * reviewer. Returns corrective feedback to feed the unit's bounded retry loop
+ * reviewer. Returns corrective feedback to feed the deck's bounded retry loop
  * ONLY for a parseable `adequate: false` verdict with concrete findings.
  */
-async function reviewUnitOutlines(
-  unit: { title?: string; objectives?: string[]; lessons?: Array<{ title?: string }> },
+async function reviewOutlineDeck(
+  deck: { title?: string; objectives?: string[]; lessons?: Array<{ title?: string }> },
   outlines: SceneOutline[],
-  unitIndex: number,
+  deckIndex: number,
   run: MultiUnitOutlineRun,
   enqueue: (event: Record<string, unknown>) => void,
 ): Promise<string | null> {
   const reviewPrompt = buildPrompt(PROMPT_IDS.UNIT_REVIEW, {
     unitSummary: buildUnitReviewSummary(
       {
-        title: unit.title ?? `Unit ${unitIndex + 1}`,
-        objectives: unit.objectives ?? [],
-        lessons: (unit.lessons ?? []).map((lesson, index) => ({
+        title: deck.title ?? `Deck ${deckIndex + 1}`,
+        objectives: deck.objectives ?? [],
+        lessons: (deck.lessons ?? []).map((lesson, index) => ({
           title: lesson.title ?? `Lesson ${index + 1}`,
           objectives: [],
           durationMinutes: 0,
@@ -432,7 +448,7 @@ async function reviewUnitOutlines(
     ),
   });
   if (!reviewPrompt) {
-    log.warn(`Unit review prompt template not found for unit ${unitIndex + 1}; accepting the unit`);
+    log.warn(`Review prompt template not found for deck ${deckIndex + 1}; accepting the deck`);
     return null;
   }
 
@@ -442,8 +458,8 @@ async function reviewUnitOutlines(
     const { verdict, errors } = validateUnitReviewVerdict(parsed);
     enqueue({
       type: 'unitReview',
-      index: unitIndex,
-      unit: unit.title ?? `Unit ${unitIndex + 1}`,
+      index: deckIndex,
+      unit: deck.title ?? `Deck ${deckIndex + 1}`,
       adequate: verdict?.adequate ?? false,
       findings: verdict ? verdict.findings : errors,
     });
@@ -452,12 +468,12 @@ async function reviewUnitOutlines(
     }
     // An unparseable verdict (null) is a judge SCHEMA failure — the model did
     // not return the required {adequate, findings} shape — not a quality
-    // signal. Accept the unit rather than feeding a spurious corrective loop
+    // signal. Accept the deck rather than feeding a spurious corrective loop
     // that, after MAX_BLUEPRINT_ATTEMPTS, would kill the whole run. Only a
     // parseable `adequate: false` verdict with concrete findings drives a retry.
     if (!verdict) {
       log.warn(
-        `Unit review judge returned an unparseable verdict for unit ${unitIndex + 1}; accepting the unit (best-effort gate): ${errors.join('; ') || 'unknown schema error'}`,
+        `Review judge returned an unparseable verdict for deck ${deckIndex + 1}; accepting the deck (best-effort gate): ${errors.join('; ') || 'unknown schema error'}`,
       );
       return null;
     }
@@ -465,7 +481,7 @@ async function reviewUnitOutlines(
   } catch (error) {
     if (run.signal?.aborted) throw error;
     log.warn(
-      `Unit review judge failed for unit ${unitIndex + 1}; accepting the unit (best-effort gate):`,
+      `Review judge failed for deck ${deckIndex + 1}; accepting the deck (best-effort gate):`,
       error,
     );
     return null;
@@ -586,12 +602,17 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
   const allOutlines: SceneOutline[] = [];
   const usedOutlineIds = new Set<string>();
 
-  // Replay the checkpointed outlines from the prior partial run first, so the
-  // client's collected set rebuilds the complete ordered deck.
-  for (const outline of run.resumeOutlines ?? []) {
+  // Re-dedupe ids globally and emit a scene to the client with its global index.
+  const emitOutline = (outline: SceneOutline) => {
     const unique = ensureUniqueOutlineId(outline, usedOutlineIds);
     allOutlines.push(unique);
     enqueue({ type: 'outline', data: unique, index: allOutlines.length - 1 });
+  };
+
+  // Replay the checkpointed outlines from the prior partial run first, so the
+  // client's collected set rebuilds the complete ordered deck.
+  for (const outline of run.resumeOutlines ?? []) {
+    emitOutline(outline);
   }
 
   // Best-effort per-unit web research, memoized so a unit's lessons share one
@@ -644,17 +665,7 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
   // Build the flat list of pending lessons (skipping units already checkpointed).
   const syllabusUnits = syllabus!.units ?? [];
   const syllabusLessons = syllabus!.lessons ?? [];
-  const pendingLessons: Array<{
-    lessonIndex: number;
-    unitIndex: number;
-    lessonIndexInUnit: number;
-    unit: {
-      title?: string;
-      objectives?: string[];
-      lessons?: Array<{ title?: string; objectives?: string[] }>;
-    };
-    lesson: { title?: string; objectives?: string[] };
-  }> = [];
+  const pendingLessons: PendingLesson[] = [];
   for (let lessonIndex = resumeLessonIndex; lessonIndex < lessonTargets.length; lessonIndex++) {
     const unitIndex = unitIndexOfLesson(lessonIndex);
     const lessonIndexInUnit = lessonIndex - unitStartLesson[unitIndex];
@@ -681,9 +692,7 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
       const unitIndex = unitIndexOfLesson(nextLessonRelease);
       for (const event of result.events) enqueue(event);
       for (const outline of result.outlines) {
-        const unique = ensureUniqueOutlineId(outline, usedOutlineIds);
-        allOutlines.push(unique);
-        enqueue({ type: 'outline', data: unique, index: allOutlines.length - 1 });
+        emitOutline(outline);
       }
       unitReleasedScenes.set(
         unitIndex,
@@ -713,18 +722,6 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
         unitIndex,
       );
 
-      const lessonContract: CourseContract = {
-        ...courseContract,
-        durationMinutes: Math.max(
-          1,
-          Math.round(courseContract.durationMinutes / courseContract.lessonCount),
-        ),
-        totalSceneTarget: target,
-        lessonCount: 1,
-        lessonSceneTargets: [target],
-        unitCount: 1,
-        unitLessonCounts: [1],
-      };
       const siblingLessons = (unit.lessons ?? []).map((l, i) => {
         const marker = i === lessonIndexInUnit ? '  <-- THIS LESSON (generate only this one)' : '';
         return `  ${i + 1}. ${l.title ?? `Lesson ${i + 1}`}${marker}`;
@@ -747,7 +744,7 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
         ...run.baseVariables,
         requirement: `${run.requirement}\n\n${lessonContext}`,
         researchContext: unitResearchContext,
-        courseContract: renderCourseContract(lessonContract, run.courseType),
+        courseContract: renderLessonScopedContract(courseContract, lessonIndex, run.courseType),
       });
       if (!lessonPrompts) throw new Error('Lesson outline prompt template not found');
 
@@ -808,7 +805,7 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
             const reviewFeedback =
               reviewMode === 'off'
                 ? null
-                : await reviewUnitOutlines(
+                : await reviewOutlineDeck(
                     {
                       title: lesson.title ?? `Lesson ${lessonIndex + 1}`,
                       objectives: lesson.objectives ?? [],
