@@ -101,11 +101,11 @@ Never return a bare array. Never omit `languageDirective`, `courseTitle`, or `ou
 {{#if hasSourceImages}}
 - **If source images are available**, add `suggestedImageIds` to relevant slide scenes. Only use image IDs listed under Available Images.
 {{/if}}
-- **Interactive scenes**: If a concept benefits from hands-on simulation/visualization, use `"type": "interactive"` with `widgetType` and `widgetOutline` fields. Limit to 1-2 per course.
+- **Interactive scenes**: Whenever a concept benefits from hands-on interaction, visualization, or coding practice, use `"type": "interactive"` with `widgetType` and `widgetOutline` fields — spread them across the course rather than holding back.
    - Select widgetType based on concept: simulation (physics/chem), diagram (processes), code (programming), game (practice), visualization3d (3D models)
    - Provide appropriate widgetOutline for the widget type
-- **Specialized scenes** (only when the Course Contract's depth level calls for them):
-   - `exercise` — one or two fully-worked problems (concrete numbers, worked solution, analysis) for computational/quantitative lessons.
+- **Specialized scenes** (use wherever the material calls for them):
+   - `exercise` — fully-worked problems (concrete statement + worked solution) for computational/quantitative/coding lessons — include several where the material is computational.
    - `derivation` — step-by-step proof/derivation with LaTeX formulas, for formula-heavy lessons.
    - `glossary` — one per unit: the unit's key terms with complete definitions.
    - `reading` — one per unit: an annotated further-reading list (title + why-read).

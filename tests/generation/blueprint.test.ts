@@ -514,7 +514,7 @@ describe('validateBlueprint', () => {
     expect(blueprint.depthLevel).toBe('university');
   });
 
-  test('contract text documents the specialized scene types at higher presets', () => {
+  test('contract text documents the specialized scene types at every preset', () => {
     const text = renderCourseContract(deriveCourseContract(20, 'explainer', 'intensive'), 'explainer');
     expect(text).toContain('"exercise"');
     expect(text).toContain('"derivation"');
@@ -522,7 +522,8 @@ describe('validateBlueprint', () => {
     expect(text).toContain('"reading"');
 
     const compactText = renderCourseContract(deriveCourseContract(20), 'explainer');
-    expect(compactText).not.toContain('Specialized scene types');
+    expect(compactText).toContain('"exercise"');
+    expect(compactText).toContain('Specialized scene types');
   });
 
   test('legacy mode accepts any count with a single lesson', () => {
