@@ -16,6 +16,15 @@ Check ALL of the following:
 
 Adequate verdicts are for decks that a real instructor would accept for this unit. Be strict but fair: one or two fixable gaps should fail with concrete findings, not pass silently.
 
+## Calibration Examples
+
+Use these as the quality bar (do NOT copy them — review the actual deck):
+
+**ADEQUATE example** (a passing deck): every objective maps to at least one scene; scenes state concrete mechanisms and worked numbers; prerequisites precede dependents.
+
+**INADEQUATE example** (a failing deck): the objective "Compare threads and processes" has no scene covering it — the deck only describes processes. The finding for this would be:
+`{"adequate": false, "findings": ["Scene 3 covers processes but no scene compares threads vs processes — add a scene that teaches the comparison (objective 'Compare threads and processes')."]}`
+
 ## Output Schema
 
 ```json
@@ -25,4 +34,4 @@ Adequate verdicts are for decks that a real instructor would accept for this uni
 }
 ```
 
-When the deck fails, set `"adequate": false` and put one CONCRETE, actionable finding per problem into `findings` (each: which objective/scene is affected and what to change). Never return a false verdict without findings.
+When the deck fails, set `"adequate": false` and put one CONCRETE, actionable finding per problem into `findings`. EVERY finding must cite the affected scene number(s) (e.g. "Scene 3 ..." or "Scenes 2-4 ...") and say what to change. A finding that cites no scene is not actionable. Never return a false verdict without findings.
