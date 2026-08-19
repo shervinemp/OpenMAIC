@@ -96,12 +96,38 @@ describe('searchWithBrave', () => {
     expect(result.query).toHaveLength(400);
   });
 
-  it('degrades to empty results on a rate-limited (429) scrape', async () => {
-    proxyFetchMock.mockResolvedValueOnce(
-      new Response('<!doctype html>rate limited</html>', { status: 429 }),
-    );
+  it('retries rate-limited (429) scrapes and throws when retries exhaust', async () => {
+    vi.useFakeTimers();
+    try {
+      proxyFetchMock.mockResolvedValue(new Response('rate limited', { status: 429 }));
+      const pending = searchWithBrave({ query: 'q', maxResults: 3 });
+      const assertion = expect(pending).rejects.toThrow('Brave Search error (429)');
+      await vi.advanceTimersByTimeAsync(10_000);
+      await assertion;
+      expect(proxyFetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
-    const result = await searchWithBrave({ query: 'q', maxResults: 3 });
-    expect(result.sources).toEqual([]);
+  it('succeeds after a transient 429 by retrying', async () => {
+    vi.useFakeTimers();
+    try {
+      proxyFetchMock
+        .mockResolvedValueOnce(new Response('rate limited', { status: 429 }))
+        .mockResolvedValueOnce(
+          new Response(
+            `<div class="snippet" data-type="web"><a href="https://example.com"></a><div class="title search-snippet-title">Example</div><div class="generic-snippet">Content</div></div>`,
+            { status: 200 },
+          ),
+        );
+      const pending = searchWithBrave({ query: 'q', maxResults: 3 });
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await pending;
+      expect(result.sources).toHaveLength(1);
+      expect(proxyFetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
