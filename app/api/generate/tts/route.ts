@@ -140,6 +140,21 @@ export async function POST(req: NextRequest) {
         `registeredVoiceId=${voxcpmRegisteredVoiceId || 'none'}, audioId=${audioId}, textLen=${text.length}`,
     );
 
+    // Deterministic for a given tuple — reuse cached audio instead of paying the
+    // provider again (scene retries, voice previews, repeated speech actions).
+    const cacheKey = ttsCacheKey({
+      text,
+      providerId: ttsProviderId,
+      modelId: config.modelId,
+      voice: ttsVoice,
+      speed: ttsSpeed ?? 1.0,
+      providerOptions: ttsProviderOptions,
+    });
+    const cached = getCachedTTS(cacheKey);
+    if (cached) {
+      return apiSuccess({ audioId, base64: cached.base64, format: cached.format });
+    }
+
     // Generate audio
     const { audio, format } = await generateTTS(config, text);
 
@@ -153,6 +168,7 @@ export async function POST(req: NextRequest) {
 
     // Convert to base64
     const base64 = Buffer.from(audio).toString('base64');
+    setCachedTTS(cacheKey, { base64, format });
 
     return apiSuccess({
       audioId,
