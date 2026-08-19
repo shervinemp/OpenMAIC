@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
             const result = await buildDocumentDigest(text, {
               language,
               aiCall,
-              onProgress: (done, total) =>
+              onProgress: (_phase, done, total) =>
                 enqueue({ type: 'progress', phase: 'digest', done, total }),
             });
             digest = result.digest;
