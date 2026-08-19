@@ -77,4 +77,47 @@ describe('searchWithSearxng', () => {
     ]);
     expect(result.query).toBe('test query');
   });
+
+  it('retries rate-limited (429) requests and throws when retries exhaust', async () => {
+    vi.useFakeTimers();
+    try {
+      proxyFetchMock.mockResolvedValue(new Response('rate limited', { status: 429 }));
+      const pending = searchWithSearxng({
+        query: 'q',
+        baseUrl: 'http://192.168.161.100:6060',
+      });
+      const assertion = expect(pending).rejects.toThrow('SearXNG error (429)');
+      await vi.advanceTimersByTimeAsync(10_000);
+      await assertion;
+      expect(proxyFetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('succeeds after a transient 429 by retrying', async () => {
+    vi.useFakeTimers();
+    try {
+      proxyFetchMock
+        .mockResolvedValueOnce(new Response('rate limited', { status: 429 }))
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              results: [{ title: 'Recovered', url: 'https://example.com/r', content: 'ok' }],
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      const pending = searchWithSearxng({
+        query: 'q',
+        baseUrl: 'http://192.168.161.100:6060',
+      });
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await pending;
+      expect(result.sources).toHaveLength(1);
+      expect(proxyFetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
