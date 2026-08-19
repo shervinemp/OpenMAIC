@@ -20,6 +20,7 @@ export {
   renderSyllabusContract,
   resolveRequestDuration,
   splitIntoLessons,
+  validateOutlineShape,
   validateSyllabusStructure,
   summarizeBlueprintValidation,
   validateBlueprint,
