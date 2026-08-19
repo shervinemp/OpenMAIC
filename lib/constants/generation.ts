@@ -38,9 +38,6 @@ export const DIGEST_BATCH_CHARS = 4_500;
 // merge into the preceding card (their headings are all preserved).
 export const DIGEST_MIN_SECTION_CHARS = 700;
 
-// Level-2: max level-1 section cards summarized per chapter-card call.
-export const DIGEST_LEVEL2_BATCH_CARDS = 24;
-
 // Upload-time captioning pass: images per vision call. All images are
 // captioned (cached by content hash) so every image carries a real text
 // description — no "metadata-only" image anywhere in the pipeline.
@@ -224,7 +221,7 @@ export const MAX_CONTENT_ATTEMPTS = 2;
 // and the multi-unit outline stage (see lib/utils/concurrency.ts). Caps
 // in-flight calls so a semester run parallelizes without hammering the model
 // API / rate limits.
-export const LLM_CALL_CONCURRENCY = 3;
+export const LLM_CALL_CONCURRENCY = 6;
 
 // Depth contract defaults (lib/generation/content-depth.ts): a slide needs
 // at least this many substantive text elements (complete claims/sentences),
