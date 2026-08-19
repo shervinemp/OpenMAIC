@@ -477,7 +477,13 @@ async function reviewUnitOutlines(
 async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<MultiUnitOutlineResult> {
   const { controller, encoder, signal, courseContract } = run;
   const enqueue = (event: Record<string, unknown>) => {
-    controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+    try {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+    } catch {
+      // Client disconnected mid-generation: swallow the write. The in-flight
+      // unit still completes (its LLM call is not tied to req.signal), and the
+      // loop stops at the next abort check instead of dying mid-enqueue.
+    }
   };
   const checkAborted = () => {
     if (signal?.aborted) throw new Error('Client disconnected');
@@ -1045,7 +1051,6 @@ export async function POST(req: NextRequest) {
                     system,
                     prompt: user,
                     maxOutputTokens: modelInfo?.outputWindow,
-                    abortSignal: req.signal,
                   },
                   'scene-outlines-stream-multi-unit',
                   undefined,
