@@ -423,18 +423,75 @@ export interface ParsedDigestSection {
   keyTerms: string[];
 }
 
-/** Parse + validate a level-1 section card response. Null on garbage. */
+/** Validate one section-card entry ({teaches, keyTerms}). Null on garbage. */
+function parseSectionEntry(entry: unknown): ParsedDigestSection | null {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+  const { teaches, keyTerms } = entry as { teaches?: unknown; keyTerms?: unknown };
+  const teachesList = Array.isArray(teaches)
+    ? teaches.filter((value): value is string => typeof value === 'string' && !!value.trim())
+    : [];
+  const keyTermsList = Array.isArray(keyTerms)
+    ? keyTerms.filter((value): value is string => typeof value === 'string' && !!value.trim())
+    : [];
+  if (teachesList.length === 0 && keyTermsList.length === 0) return null;
+  return { teaches: teachesList, keyTerms: keyTermsList };
+}
+
+/** Parse + validate a single-section card response. Null on garbage. */
 export function parseDigestSectionResponse(text: string): ParsedDigestSection | null {
-  const parsed = tryParseJson<{ teaches?: unknown; keyTerms?: unknown }>(text);
-  if (!parsed || typeof parsed !== 'object') return null;
-  const teaches = Array.isArray(parsed.teaches)
-    ? parsed.teaches.filter((entry): entry is string => typeof entry === 'string' && !!entry.trim())
-    : [];
-  const keyTerms = Array.isArray(parsed.keyTerms)
-    ? parsed.keyTerms.filter((entry): entry is string => typeof entry === 'string' && !!entry.trim())
-    : [];
-  if (teaches.length === 0 && keyTerms.length === 0) return null;
-  return { teaches, keyTerms };
+  return parseSectionEntry(tryParseJson<unknown>(text));
+}
+
+/**
+ * Level-1 batched prompt: enumerate EVERY topic of EVERY section in one call.
+ * Multiple small sections share a call so a long book does not pay one LLM
+ * round-trip per heading (the dominant cost of indexing a 400-page document).
+ * Each section is delimited by its id; the response maps id → card.
+ */
+export function buildDigestBatchPrompt(
+  groups: DigestSectionGroup[],
+  language: string = 'English',
+): { system: string; user: string } {
+  const blocks = groups.map((group) => {
+    const headingLine = group.headings.length > 0 ? group.headings.join(' / ') : group.heading;
+    const sourceText = group.chunks.map((chunk) => chunk.text).join('\n\n---\n\n');
+    return `### SECTION ${group.id} — ${headingLine} (${pageRangeLabel(group)})\n\n${sourceText}`;
+  });
+  return {
+    system: [
+      'You are a document indexer building a coverage map for course generation.',
+      `The input is ${groups.length} section(s) of a source document, each delimited by "### SECTION <id> — <heading>".`,
+      'For EVERY section, enumerate EVERY distinct topic that section teaches.',
+      'Do not select, prioritize, or drop any topic because it seems minor — completeness is the contract.',
+      'Include ALL key terms, proper nouns, and technical identifiers introduced.',
+      'Write 1-2 sentences per topic. Never invent content that is not in the text.',
+      `Respond in ${language}.`,
+      'Respond ONLY with JSON: {"sections": {"<section_id>": {"teaches": ["..."], "keyTerms": ["..."]}}} with one entry per section id in the input.',
+    ].join('\n'),
+    user: `## Source document sections\n\n${blocks.join('\n\n')}`,
+  };
+}
+
+/**
+ * Parse a batched section-card response into id → card. Entries whose id is
+ * not in the batch are dropped; invalid entries are skipped.
+ */
+export function parseDigestBatchResponse(
+  text: string,
+  groupIds: string[],
+): Map<string, ParsedDigestSection> {
+  const parsed = tryParseJson<{ sections?: unknown }>(text);
+  const result = new Map<string, ParsedDigestSection>();
+  if (!parsed || typeof parsed !== 'object' || !parsed.sections || typeof parsed.sections !== 'object') {
+    return result;
+  }
+  const idSet = new Set(groupIds);
+  for (const [id, entry] of Object.entries(parsed.sections as Record<string, unknown>)) {
+    if (!idSet.has(id)) continue;
+    const card = parseSectionEntry(entry);
+    if (card) result.set(id, card);
+  }
+  return result;
 }
 
 /** Merge split/continuation cards for the same section id. */
@@ -691,33 +748,30 @@ export async function buildDocumentDigest(
   const level = planDigestLevel(groups, targetChars);
   const batches = planDigestBatches(groups);
 
-  // Level 1: section cards. The per-group LLM calls are independent, so run
-  // them with bounded concurrency — a 16-chapter book's cards otherwise
-  // serialize into a long indexing pass.
+  // Level 1: section cards. One LLM call per BATCH (a batch packs several
+  // small sections up to DIGEST_BATCH_CHARS, so a 400-page book is indexed in
+  // a few dozen calls instead of one call per detected heading). Batches run
+  // with bounded concurrency.
   const cardsBySection = new Map<string, ParsedDigestSection[]>();
   let batchCalls = 0;
 
-  const groupJobs: DigestSectionGroup[] = [];
-  for (const batch of batches) {
-    for (const group of batch.groups) groupJobs.push(group);
-  }
-
-  const results = await mapWithConcurrency(groupJobs, LLM_CALL_CONCURRENCY, async (group) => {
-    const prompt = buildDigestSectionPrompt(group, language);
+  const results = await mapWithConcurrency(batches, LLM_CALL_CONCURRENCY, async (batch) => {
+    const groupIds = batch.groups.map((group) => group.id);
+    const prompt = buildDigestBatchPrompt(batch.groups, language);
     const response = await options.aiCall(prompt.system, prompt.user);
-    // Incremental progress: report as each section card lands (not only after
-    // the whole parallel batch finishes) so a long digest stays visibly alive.
+    // Incremental progress: report as each batch lands (not only after the
+    // whole parallel run finishes) so a long digest stays visibly alive.
     batchCalls += 1;
-    options.onProgress?.('digest', batchCalls, groupJobs.length);
-    return { groupId: group.id, card: parseDigestSectionResponse(response) };
+    options.onProgress?.('digest', batchCalls, batches.length);
+    return { cards: parseDigestBatchResponse(response, groupIds) };
   });
   for (const result of results) {
     if (!result) continue;
-    const { groupId, card } = result;
-    if (!card) continue;
-    const list = cardsBySection.get(groupId) ?? [];
-    list.push(card);
-    cardsBySection.set(groupId, list);
+    for (const [groupId, card] of result.cards.entries()) {
+      const list = cardsBySection.get(groupId) ?? [];
+      list.push(card);
+      cardsBySection.set(groupId, list);
+    }
   }
 
   const sections: DigestSectionCard[] = [];
