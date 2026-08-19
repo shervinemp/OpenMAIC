@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   applyLensOrder,
   buildChapterCardPrompt,
+  buildDigestBatchPrompt,
   buildDigestLensPrompt,
   buildDigestSectionPrompt,
   buildDocumentDigest,
@@ -10,6 +11,7 @@ import {
   groupChunksByStructure,
   mergeSectionCards,
   parseChapterCardResponse,
+  parseDigestBatchResponse,
   parseDigestSectionResponse,
   parseLensOrder,
   planDigestBatches,
@@ -191,6 +193,33 @@ describe('digest prompts and parsing', () => {
     expect(parseDigestSectionResponse('{"teaches":[1,2]}')).toBeNull();
   });
 
+  test('batch prompt lists every section by id and the parser maps them back', () => {
+    const groups = groupChunksByStructure(chapterChunks(SOURCE));
+    const batch = groups.slice(0, 2);
+    const prompt = buildDigestBatchPrompt(batch, 'English');
+    for (const group of batch) {
+      expect(prompt.user).toContain(`### SECTION ${group.id}`);
+      expect(prompt.user).toContain(group.heading);
+    }
+    expect(prompt.system).toContain('"sections"');
+
+    const ids = batch.map((group) => group.id);
+    const parsed = parseDigestBatchResponse(
+      JSON.stringify({
+        sections: {
+          [ids[0]]: { teaches: ['a'], keyTerms: ['k'] },
+          [ids[1]]: { teaches: ['b'], keyTerms: ['j'] },
+          sec_zz: { teaches: ['ignored'], keyTerms: [] },
+        },
+      }),
+      ids,
+    );
+    expect(parsed.size).toBe(2);
+    expect(parsed.get(ids[0])!.teaches).toEqual(['a']);
+    expect(parsed.get(ids[1])!.teaches).toEqual(['b']);
+    expect(parseDigestBatchResponse('not json', ids).size).toBe(0);
+  });
+
   test('chapter prompt forbids dropping topics and lists every section', () => {
     const cards: DigestSectionCard[] = [
       {
@@ -323,16 +352,19 @@ describe('buildDocumentDigest orchestrator', () => {
     const groups = groupChunksByStructure(chapterChunks(SOURCE));
     const result = await buildDocumentDigest(SOURCE, {
       aiCall: async (_system, user) => {
-        // Echo the section heading into a synthetic card.
-        const heading = user.split('\n').find((l) => l.startsWith('Heading(s):'));
-        return JSON.stringify({
-          teaches: [heading ?? 'topic'],
-          keyTerms: ['term'],
-        });
+        // The batched prompt lists sections as "### SECTION <id>". Echo each
+        // section id into a synthetic card so every section is covered.
+        const ids = Array.from(user.matchAll(/### SECTION (sec_\d+)/g), (m) => m[1]);
+        const sections = Object.fromEntries(
+          ids.map((id) => [id, { teaches: [`${id} topic`], keyTerms: ['term'] }]),
+        );
+        return JSON.stringify({ sections });
       },
     });
     expect(result.level).toBe('single');
     expect(result.digest.sections.length).toBeGreaterThanOrEqual(groups.length);
     expect(result.batchCalls).toBeGreaterThan(0);
+    // Batching collapses several sections into fewer calls than sections.
+    expect(result.batchCalls).toBeLessThanOrEqual(groups.length);
   });
 });
