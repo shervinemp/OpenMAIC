@@ -359,7 +359,12 @@ function GenerationPreviewContent() {
 
       // Determine if we need the document analysis step
       const documentSources = legacySourceFromSession(currentSession);
-      const hasPdfToAnalyze = documentSources.length > 0 && !currentSession.pdfText;
+      // Re-extract + re-index when the extracted text is missing OR when a prior
+      // indexing request was aborted before it could persist the server-side
+      // index (text present but no handle). Skipping the latter silently yields
+      // an outline with zero coverage sections.
+      const hasPdfToAnalyze =
+        documentSources.length > 0 && (!currentSession.pdfText || !currentSession.pdfHandle);
       // If no document to analyze, skip to the next available step
       if (!hasPdfToAnalyze) {
         const firstNonPdfIdx = activeSteps.findIndex((s) => s.id !== 'pdf-analysis');
