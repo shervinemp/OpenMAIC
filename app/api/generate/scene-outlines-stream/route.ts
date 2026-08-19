@@ -39,7 +39,7 @@ import type {
 } from '@/lib/types/generation';
 import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
-import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { resolveModel, resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveOutlineReviewMode, resolveVocationalActive } from '@/lib/config/feature-flags';
 import {
@@ -382,6 +382,12 @@ interface MultiUnitOutlineRun {
   courseContract: CourseContract;
   courseType: CourseBlueprint['courseType'];
   callModel: (params: { system: string; user: string }) => Promise<string>;
+  /**
+   * Optional judge model for the review gate. When set, the review deck is
+   * judged by this model instead of the generator (which would otherwise
+   * grade its own output — a systematic blind spot).
+   */
+  reviewCallModel?: (params: { system: string; user: string }) => Promise<string>;
   signal: AbortSignal | undefined;
   controller: ReadableStreamDefaultController<Uint8Array>;
   encoder: TextEncoder;
@@ -453,7 +459,8 @@ async function reviewOutlineDeck(
   }
 
   try {
-    const text = await run.callModel({ system: reviewPrompt.system, user: reviewPrompt.user });
+    const judgeCallModel = run.reviewCallModel ?? run.callModel;
+    const text = await judgeCallModel({ system: reviewPrompt.system, user: reviewPrompt.user });
     const parsed = parseJsonResponse<UnitReviewVerdict>(text);
     const { verdict, errors } = validateUnitReviewVerdict(parsed);
     enqueue({
@@ -1190,6 +1197,31 @@ export async function POST(req: NextRequest) {
                 );
                 return result.text;
               };
+              // Configurable judge model: when OPENMAIC_OUTLINE_REVIEW_MODEL is
+              // set, the review gate judges with a different model than the
+              // generator (the generator grading its own output is a systematic
+              // blind spot). Unset → the gate uses the generator's model.
+              let reviewCallModel:
+                | ((params: { system: string; user: string }) => Promise<string>)
+                | undefined;
+              const reviewModelString = process.env.OPENMAIC_OUTLINE_REVIEW_MODEL;
+              if (reviewModelString) {
+                const judge = await resolveModel({ modelString: reviewModelString });
+                reviewCallModel = async ({ system, user }) => {
+                  const result = await callLLM(
+                    {
+                      model: judge.model,
+                      system,
+                      prompt: user,
+                      maxOutputTokens: judge.modelInfo?.outputWindow,
+                    },
+                    'scene-outlines-stream-review',
+                    undefined,
+                    judge.thinkingConfig,
+                  );
+                  return result.text;
+                };
+              }
               const multiResult = await generateMultiUnitOutlines({
                 requirement: requirements.requirement,
                 promptId,
@@ -1199,6 +1231,7 @@ export async function POST(req: NextRequest) {
                 courseContract,
                 courseType,
                 callModel,
+                reviewCallModel,
                 signal: req.signal,
                 controller,
                 encoder,
