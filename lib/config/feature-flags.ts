@@ -104,6 +104,10 @@ export function isVideoExportEnabled(): boolean {
  *   A lone over-strict judge never sinks a whole course.
  * - `strict`: a lesson rejected on the final attempt fails the entire run.
  * - `off`: skip the review gate entirely.
+ *
+ * The judge model itself can be pointed at a different model than the
+ * generator via `OPENMAIC_OUTLINE_REVIEW_MODEL` (handled in the outline route,
+ * not here).
  */
 export type OutlineReviewMode = 'strict' | 'tolerant' | 'off';
 
