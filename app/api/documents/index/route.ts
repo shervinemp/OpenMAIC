@@ -39,7 +39,7 @@ import {
 
 const log = createLogger('Documents Index API');
 
-export const maxDuration = 300;
+export const maxDuration = 900;
 
 interface IndexImageInput {
   id: string;
@@ -81,7 +81,20 @@ export async function POST(req: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         const enqueue = (event: Record<string, unknown>) => {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          } catch {
+            // Client disconnected mid-index. Swallow the write: the indexing
+            // work below keeps running and the index is still saved, so a
+            // later run hits the cache instead of re-indexing from scratch.
+          }
+        };
+        const closeStream = () => {
+          try {
+            controller.close();
+          } catch {
+            // Stream already closed by the client.
+          }
         };
         const heartbeat = setInterval(() => {
           try {
@@ -111,7 +124,7 @@ export async function POST(req: NextRequest) {
               },
             });
             clearInterval(heartbeat);
-            controller.close();
+            closeStream();
             return;
           }
 
@@ -128,7 +141,6 @@ export async function POST(req: NextRequest) {
                   messages: [{ role: 'user' as const, content: buildVisionUserContent(user, visionImages) }],
                   maxOutputTokens: modelInfo?.outputWindow,
                   maxRetries: 1,
-                  abortSignal: req.signal,
                 },
                 'documents-index',
                 undefined,
@@ -143,7 +155,6 @@ export async function POST(req: NextRequest) {
                 prompt: user,
                 maxOutputTokens: modelInfo?.outputWindow,
                 maxRetries: 1,
-                abortSignal: req.signal,
               },
               'documents-index',
               undefined,
@@ -239,7 +250,7 @@ export async function POST(req: NextRequest) {
             },
           });
           clearInterval(heartbeat);
-          controller.close();
+          closeStream();
         } catch (error) {
           clearInterval(heartbeat);
           log.error('Document indexing failed:', error);
@@ -247,7 +258,7 @@ export async function POST(req: NextRequest) {
             type: 'error',
             error: error instanceof Error ? error.message : String(error),
           });
-          controller.close();
+          closeStream();
         }
       },
     });
