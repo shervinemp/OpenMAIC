@@ -115,6 +115,7 @@ export {
   inferCourseType,
   parseDurationFromText,
   renderCourseContract,
+  renderLessonScopedContract,
   renderSyllabusContract,
   resolveRequestDuration,
   splitIntoLessons,

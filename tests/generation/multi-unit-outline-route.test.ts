@@ -281,6 +281,39 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(done.blueprint.sizePreset).toBe('standard');
   });
 
+  test('per-lesson prompt carries a lesson-scoped contract (correct global numbering + course-wide style guide)', async () => {
+    setupMultiUnitFlow();
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        requirements: REQUIREMENTS,
+        sizePreset: 'standard',
+        pdfText: '',
+        pdfImages: [],
+        imageMapping: {},
+        researchContext: '',
+      }) as unknown as Parameters<typeof POST>[0],
+    );
+    await readStreamBody(response);
+
+    // Find the outline call for global lesson 3 ("Address spaces", unit 1).
+    const lesson3Prompt = callLLMMock.mock.calls
+      .map((c) => (c[0] as { prompt?: string }).prompt ?? '')
+      .find((p) => p.includes('Syllabus Context (Unit 2 of 2, Lesson 1 of 3)'));
+    expect(lesson3Prompt).toBeDefined();
+
+    // Lesson-scoped count with correct global numbering (30 prior scenes → #31..#40).
+    expect(lesson3Prompt).toContain('You are generating LESSON 4 of 6');
+    expect(lesson3Prompt).toContain('EXACTLY 10 scene outlines (global outline #31 through #40)');
+    // Course-wide style guide still present (not silently dropped by the scoped renderer).
+    expect(lesson3Prompt).toContain('Scene types:');
+    expect(lesson3Prompt).toContain('Lesson scope note');
+    // The old per-lesson regression: the 1-lesson contract must not render
+    // "Produce EXACTLY 1 lessons" or lesson-relative "#1 through #10".
+    expect(lesson3Prompt).not.toContain('Produce EXACTLY 1 lessons');
+  });
+
   test('syllabus corrective loop fixes the structure on retry', async () => {
     const wrongSyllabus = {
       ...syllabusResponse(),
