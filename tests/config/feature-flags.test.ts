@@ -11,6 +11,7 @@ import {
   isPptxImportEnabled,
   isVideoExportEnabled,
   isVocationalTaskEngineEnabled,
+  resolveOutlineReviewMode,
   resolveVocationalActive,
   shouldShowVocationalTestUi,
 } from '@/lib/config/feature-flags';
@@ -369,6 +370,34 @@ describe('isVideoExportEnabled', () => {
 
     process.env[flag] = 'yes';
     expect(isVideoExportEnabled()).toBe(false);
+  });
+});
+
+describe('resolveOutlineReviewMode', () => {
+  const flag = 'OPENMAIC_OUTLINE_REVIEW_MODE';
+  let original: string | undefined;
+
+  beforeEach(() => {
+    original = process.env[flag];
+  });
+
+  afterEach(() => {
+    if (original === undefined) delete process.env[flag];
+    else process.env[flag] = original;
+  });
+
+  it('defaults to tolerant when unset or unrecognized', () => {
+    delete process.env[flag];
+    expect(resolveOutlineReviewMode()).toBe('tolerant');
+    process.env[flag] = 'yes';
+    expect(resolveOutlineReviewMode()).toBe('tolerant');
+  });
+
+  it('honors strict and off', () => {
+    process.env[flag] = 'strict';
+    expect(resolveOutlineReviewMode()).toBe('strict');
+    process.env[flag] = 'off';
+    expect(resolveOutlineReviewMode()).toBe('off');
   });
 });
 

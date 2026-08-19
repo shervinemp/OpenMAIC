@@ -424,6 +424,46 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(reviewEvents[0].findings[0]).toContain('Model process lifecycles');
   });
 
+  test('tolerant gate (default): a unit rejected on every attempt is accepted after the budget and the run completes', async () => {
+    const rejectVerdict = {
+      adequate: false,
+      findings: ['Objective "Model process lifecycles" is not taught by any scene'],
+    };
+    // Unit 0's judge rejects every attempt; the final rejection must NOT sink
+    // the run — the unit is accepted with the verdict marked acceptedAfterBudget.
+    setupMultiUnitFlow({ review: { 0: () => rejectVerdict } });
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        requirements: REQUIREMENTS,
+        sizePreset: 'standard',
+        pdfText: '',
+        pdfImages: [],
+        imageMapping: {},
+        researchContext: '',
+      }) as unknown as Parameters<typeof POST>[0],
+    );
+
+    const text = await readStreamBody(response);
+    const events = parseSseEvents(text);
+    const done = events.find((e) => e.type === 'done');
+    expect(done).toBeDefined();
+    expect(done.outlines).toHaveLength(TOTAL_SCENES);
+
+    // Unit 0's three rejections; only the budget-exhausting final one is
+    // accepted-after-budget.
+    const unit0Reviews = events.filter((e) => e.type === 'unitReview' && e.index === 0);
+    expect(unit0Reviews).toHaveLength(3);
+    expect(unit0Reviews.map((e) => e.adequate)).toEqual([false, false, false]);
+    expect(unit0Reviews[0].acceptedAfterBudget).toBeUndefined();
+    expect(unit0Reviews[2].acceptedAfterBudget).toBe(true);
+
+    // Unit 1 passed on its single attempt.
+    const unit1Reviews = events.filter((e) => e.type === 'unitReview' && e.index === 1);
+    expect(unit1Reviews.map((e) => e.adequate)).toEqual([true]);
+  });
+
   test('unparseable judge verdict accepts the unit (best-effort gate)', async () => {
     // A non-conforming judge response is a schema failure, not a rejection:
     // the unit is accepted without feeding the corrective loop.

@@ -9,6 +9,7 @@
 
 import { NextRequest } from 'next/server';
 import { generateTTS, QwenTTSError, TTSRateLimitError } from '@/lib/audio/tts-providers';
+import { getCachedTTS, setCachedTTS, ttsCacheKey } from '@/lib/audio/tts-cache';
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import {
