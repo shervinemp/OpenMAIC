@@ -33,7 +33,10 @@ export {
   renderDerivationToElements,
   renderExerciseToElements,
   renderGlossaryToElements,
+  renderComparisonToElements,
+  renderDataReadingToElements,
   renderReadingToElements,
+  renderTradeoffsToElements,
 } from './specialized-scene-render.js';
 export { parseActionsFromStructuredOutput } from './action-parser.js';
 export { postProcessInteractiveHtml } from './interactive-post-processor.js';
@@ -84,6 +87,14 @@ export type {
   ExerciseProblem,
   GlossaryTerm,
   ReadingItem,
+  ComparisonRow,
+  DataClaim,
+  DataSeries,
+  DataSeriesPoint,
+  TradeoffOption,
+  GeneratedComparisonContent,
+  GeneratedDataReadingContent,
+  GeneratedTradeoffsContent,
 } from './scene-types.js';
 
 export {
@@ -150,8 +161,11 @@ export {
   validateDerivationDepth,
   validateExerciseDepth,
   validateGlossaryDepth,
+  validateComparisonDepth,
+  validateDataReadingDepth,
   validateQuizDepth,
   validateReadingDepth,
+  validateTradeoffsDepth,
   validateSlideDepth,
 } from './content-depth.js';
 export type { DepthReport, SceneDepthSummary, SlideDepthOptions } from './content-depth.js';

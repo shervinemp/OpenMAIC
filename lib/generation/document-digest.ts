@@ -24,7 +24,7 @@
  */
 
 import { tryParseJson } from './json-repair';
-import { chunkSourceText, type PdfChunk } from './pdf-retrieval';
+import { chunkSourceText, type PdfChunk } from '@openmaic/generation';
 import { mapWithConcurrency } from '@/lib/utils/concurrency';
 import type { AICallFn } from './pipeline-types';
 import {

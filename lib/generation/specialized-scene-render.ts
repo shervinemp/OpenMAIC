@@ -9,5 +9,8 @@ export {
   renderDerivationToElements,
   renderExerciseToElements,
   renderGlossaryToElements,
+  renderComparisonToElements,
+  renderDataReadingToElements,
   renderReadingToElements,
+  renderTradeoffsToElements,
 } from '@openmaic/generation';

@@ -648,7 +648,7 @@
   },
   "classroomComplete": {
     "title": "Course complete",
-        "trailLabels": {
+    "trailLabels": {
       "slide": "pages",
       "quiz": "quizzes",
       "interactive": "interactives",
@@ -656,7 +656,10 @@
       "exercise": "exercises",
       "derivation": "derivations",
       "glossary": "glossaries",
-      "reading": "readings"
+      "reading": "readings",
+      "comparison": "comparisons",
+      "dataReading": "data readings",
+      "tradeoffs": "trade-offs"
     },
     "quizScoreLabel": "{{correct}} / {{total}} correct",
     "encouragement": {
@@ -1079,6 +1082,9 @@
     "sceneTypeDerivation": "Derivation",
     "sceneTypeGlossary": "Glossary",
     "sceneTypeReading": "Reading",
+    "sceneTypeComparison": "Comparison",
+    "sceneTypeDataReading": "Data Reading",
+    "sceneTypeTradeoffs": "Trade-offs",
     "sceneDescriptionPlaceholder": "Briefly describe the purpose and content of this scene",
     "quizQuestionCount": "Question count",
     "quizDifficulty": "Difficulty",

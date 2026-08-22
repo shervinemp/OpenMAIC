@@ -25,7 +25,6 @@ import {
   MIN_SCENES_PER_LESSON,
   QUIZ_PLACEMENT_DEFAULT,
   QUIZ_PLACEMENT_EXAM_PREP,
-  SCENES_PER_MINUTE,
   resolveSizePreset,
   type CourseDepthLevel,
   type CourseSizePreset,
@@ -311,7 +310,6 @@ export function resolveRequestDuration(
 // ==================== Prompt contract rendering ====================
 
 /**
-/**
  * Render the non-negotiable contract block injected into the outline
  * prompt. Pre-rendered in TypeScript — the prompt templating language has
  * no {{#each}}.
@@ -393,7 +391,6 @@ export function renderLessonScopedContract(
 ${renderCourseStyleGuide(contract, courseType)}
 - Quiz cadence: include a quiz only at these global positions (they fall inside your range): ${inRangeQuizPositions.length > 0 ? `#${inRangeQuizPositions.join(', #')}` : 'none — do not add a quiz to this lesson'}.
 - Lesson scope note: the "per unit" caps above are course-wide, not per-lesson — across this single lesson include at most one pbl (only for a substantial project) and at most one glossary / one reading (only if this lesson is their natural slot). Most lessons contain none of these.`;
-
 }
 
 // ==================== Canonicalization ====================
@@ -585,6 +582,9 @@ const VALID_OUTLINE_TYPES = new Set<SceneOutline['type']>([
   'derivation',
   'glossary',
   'reading',
+  'comparison',
+  'dataReading',
+  'tradeoffs',
 ]);
 
 export function validateOutlineShape(outline: SceneOutline): string[] {
@@ -600,7 +600,7 @@ export function validateOutlineShape(outline: SceneOutline): string[] {
   // downstream — a deck that validates but cannot generate.
   if (!outline.type || !VALID_OUTLINE_TYPES.has(outline.type)) {
     errors.push(
-      `outline "${outline.title || outline.order}" has an invalid scene type (${String(outline.type ?? 'missing')}) — use one of: slide, quiz, interactive, pbl, exercise, derivation, glossary, reading`,
+      `outline "${outline.title || outline.order}" has an invalid scene type (${String(outline.type ?? 'missing')}) — use one of: slide, quiz, interactive, pbl, exercise, derivation, glossary, reading, comparison, dataReading, tradeoffs`,
     );
   }
   if (outline.type === 'quiz' && !outline.quizConfig) {
@@ -753,13 +753,14 @@ export function validateBlueprint(
   if (quizCount < expectedQuizzes) {
     warnings.push(`quiz cadence: ${quizCount} quizzes vs ~${expectedQuizzes} expected (every ${blueprint.quizPlacement} scenes)`);
   }
+  const unitTotal = blueprint.units?.length ?? 1;
   const interactiveCount = blueprint.lessons.flatMap((l) => l.outlines).filter((o) => o.type === 'interactive').length;
-  if (interactiveCount > 2) {
-    warnings.push(`interactive cap: ${interactiveCount} interactive scenes (max 2)`);
+  if (interactiveCount > Math.max(4, unitTotal * 3)) {
+    warnings.push(`interactive cap: ${interactiveCount} interactive scenes (soft cap ${Math.max(4, unitTotal * 3)})`);
   }
   const pblCount = blueprint.lessons.flatMap((l) => l.outlines).filter((o) => o.type === 'pbl').length;
-  if (pblCount > 1) {
-    warnings.push(`pbl cap: ${pblCount} pbl scenes (max 1)`);
+  if (pblCount > unitTotal) {
+    warnings.push(`pbl cap: ${pblCount} pbl scenes (max ${unitTotal}, one per unit)`);
   }
 
   // Specialized scene advisories (Phase 2 §15.4b): at intermediate/university

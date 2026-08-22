@@ -24,7 +24,8 @@ vi.mock('@/lib/config/feature-flags', () => ({
   resolveVocationalActive: mocks.resolveVocationalActive,
 }));
 
-vi.mock('@/lib/generation/generation-pipeline', () => ({
+vi.mock('@openmaic/generation', async (importOriginal) => ({
+  ...(await importOriginal()),
   applyOutlineFallbacks: mocks.applyOutlineFallbacks,
   generateSceneContent: mocks.generateSceneContent,
   generateSceneActions: mocks.generateSceneActions,

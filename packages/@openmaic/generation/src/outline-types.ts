@@ -72,14 +72,18 @@ export interface SceneOutline {
   id: string;
   type:
     | 'slide'
-      | 'quiz'
-      | 'interactive'
-      | 'pbl'
-      // Specialized university-level kinds (Phase 2 §15.4b): render as slides.
-      | 'exercise'
-      | 'derivation'
-      | 'glossary'
-      | 'reading';
+    | 'quiz'
+    | 'interactive'
+    | 'pbl'
+    // Specialized university-level kinds (Phase 2 §15.4b): render as slides.
+    | 'exercise'
+    | 'derivation'
+    | 'glossary'
+    | 'reading'
+    // Analytic kinds (Phase 2 §15.9): render as slides.
+    | 'comparison'
+    | 'dataReading'
+    | 'tradeoffs';
   title: string;
   description: string;
   keyPoints: string[];

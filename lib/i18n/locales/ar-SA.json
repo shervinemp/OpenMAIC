@@ -648,7 +648,7 @@
   },
   "classroomComplete": {
     "title": "اكتملت الدورة",
-        "trailLabels": {
+    "trailLabels": {
       "slide": "صفحات",
       "quiz": "اختبارات",
       "interactive": "تفاعلية",
@@ -656,7 +656,10 @@
       "exercise": "تمارين",
       "derivation": "اشتقاقات",
       "glossary": "مسارد",
-      "reading": "قراءات"
+      "reading": "قراءات",
+      "comparison": "مقارنات",
+      "dataReading": "قراءات بيانات",
+      "tradeoffs": "مفاضلات"
     },
     "quizScoreLabel": "{{correct}} / {{total}} صحيحة",
     "encouragement": {
@@ -1079,6 +1082,9 @@
     "sceneTypeDerivation": "اشتقاق",
     "sceneTypeGlossary": "مسرد",
     "sceneTypeReading": "قراءة إضافية",
+    "sceneTypeComparison": "مقارنة",
+    "sceneTypeDataReading": "قراءة البيانات",
+    "sceneTypeTradeoffs": "المفاضلات",
     "sceneDescriptionPlaceholder": "صف هدف هذا المشهد ومحتواه بإيجاز",
     "quizQuestionCount": "عدد الأسئلة",
     "quizDifficulty": "الصعوبة",

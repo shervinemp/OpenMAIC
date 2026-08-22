@@ -1,47 +1,33 @@
 /**
- * Two-Stage Generation Pipeline
+ * App-side re-export of the scene generation pipeline.
  *
- * Barrel re-export — all symbols previously exported from this file
- * are now spread across focused sub-modules.
+ * The canonical implementations live in @openmaic/generation (package
+ * boundary: pure functions, no host-app imports). This shim keeps the
+ * established `@/lib/generation/generation-pipeline` import surface working
+ * for the scene routes, the agent tools, and their tests.
  */
-
-// Types
-export type {
-  AgentInfo,
-  SceneGenerationContext,
-  GeneratedSlideData,
-  GenerationResult,
-  AICallFn,
-} from './pipeline-types';
-
-// Prompt formatters
 export {
-  buildCourseContext,
-  formatAgentsForPrompt,
-  formatTeacherPersonaForPrompt,
+  applyOutlineFallbacks,
+  buildCompleteScene,
+  buildVisionUserContent,
+  buildOutlinePrompt,
+  changeOutlineType,
   formatImageDescription,
   formatImagePlaceholder,
-  buildVisionUserContent,
-  buildLanguageText,
-} from './prompt-formatters';
-
-// JSON repair
-export { parseJsonResponse, tryParseJson } from './json-repair';
-
-// Outline generator (Stage 1)
-export { generateSceneOutlinesFromRequirements, applyOutlineFallbacks } from './outline-generator';
-
-// Scene generator (Stage 2)
-export {
-  generateSceneContent,
+  formatTeacherPersonaForPrompt,
   generateSceneActions,
-  createSceneWithActions,
-} from './scene-generator';
-export type { SceneContentOptions, SceneActionsOptions } from './scene-generator';
-
-// Scene builder (standalone)
-export {
-  buildSceneFromOutline,
-  buildCompleteScene,
+  generateSceneContent,
+  generateWidgetContent,
+  resolveImageIds,
   uniquifyMediaElementIds,
-} from './scene-builder';
+  parseJsonResponse,
+  extractInteractiveElements,
+  extractWidgetConfig,
+  buildCourseContext,
+} from '@openmaic/generation';
+export type {
+  AgentInfo,
+  GeneratedSlideData,
+  SceneGenerationContext,
+  AICallFn,
+} from '@openmaic/generation';

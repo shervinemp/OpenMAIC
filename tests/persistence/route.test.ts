@@ -20,12 +20,6 @@ describe('embedded persistence route', () => {
     vi.doMock('@/lib/persistence/owner-materials', () => ({
       ensureOwnerMaterialSchema: vi.fn().mockResolvedValue(undefined),
     }));
-=======
-    // These tests target the Postgres path of the route; the local JSON-file
-    // backend is selected by PERSISTENCE_DIR (set in .env.local) and is
-    // covered by the storage package's conformance tests instead.
-    vi.stubEnv('PERSISTENCE_DIR', '');
->>>>>>> 86f25d71 (feat(persistence): origin-independent local server store for documents, runtime, and media assets)
   });
 
   it('returns a clear 404 when DATABASE_URL is unset', async () => {

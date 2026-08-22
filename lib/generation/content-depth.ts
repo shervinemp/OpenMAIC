@@ -18,8 +18,11 @@ export {
   validateDerivationDepth,
   validateExerciseDepth,
   validateGlossaryDepth,
+  validateComparisonDepth,
+  validateDataReadingDepth,
   validateQuizDepth,
   validateReadingDepth,
+  validateTradeoffsDepth,
   validateSlideDepth,
 } from '@openmaic/generation';
 export type {
