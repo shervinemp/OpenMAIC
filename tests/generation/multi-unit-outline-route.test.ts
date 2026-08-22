@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 const streamLLMMock = vi.hoisted(() => vi.fn());
 const callLLMMock = vi.hoisted(() => vi.fn());
 const resolveModelFromRequestMock = vi.hoisted(() => vi.fn());
+const resolveModelMock = vi.hoisted(() => vi.fn());
 const searchWebMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/ai/llm', () => ({
@@ -12,6 +13,7 @@ vi.mock('@/lib/ai/llm', () => ({
 
 vi.mock('@/lib/server/resolve-model', () => ({
   resolveModelFromRequest: resolveModelFromRequestMock,
+  resolveModel: resolveModelMock,
 }));
 
 vi.mock('@/lib/web-search', async () => {
@@ -208,6 +210,7 @@ function setupMultiUnitFlow(flow: FlowResponses = {}) {
 describe('multi-unit outline route (Phase 2 §15.8)', () => {
   beforeEach(() => {
     resolveModelFromRequestMock.mockReset();
+    resolveModelMock.mockReset();
     streamLLMMock.mockReset();
     callLLMMock.mockReset();
     searchWebMock.mockReset();
@@ -227,6 +230,7 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
 
   afterEach(() => {
     vi.resetModules();
+    vi.unstubAllEnvs();
   });
 
   test('standard preset: syllabus call + per-unit calls assemble a valid blueprint', async () => {
@@ -347,6 +351,50 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(secondOfUnit1).toContain('Covered so far in this unit (build on this; do NOT repeat it)');
     // Coverage is summarized from the prior lesson's scene titles.
     expect(secondOfUnit1).toContain('Process abstraction:');
+  });
+
+  test('OPENMAIC_OUTLINE_REVIEW_MODEL routes review calls through a separate judge model', async () => {
+    vi.stubEnv('OPENMAIC_OUTLINE_REVIEW_MODEL', 'openai/gpt-4o-mini');
+    const judgeModel = { provider: 'openai', modelId: 'judge-model' };
+    resolveModelMock.mockResolvedValue({
+      model: judgeModel,
+      modelInfo: { outputWindow: 2048, capabilities: {} },
+      thinkingConfig: undefined,
+    });
+    setupMultiUnitFlow();
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        requirements: REQUIREMENTS,
+        sizePreset: 'standard',
+        pdfText: '',
+        pdfImages: [],
+        imageMapping: {},
+        researchContext: '',
+      }) as unknown as Parameters<typeof POST>[0],
+    );
+    await readStreamBody(response);
+
+    // The judge is resolved from the env-configured provider/model string.
+    expect(resolveModelMock).toHaveBeenCalledWith({ modelString: 'openai/gpt-4o-mini' });
+
+    const calls = callLLMMock.mock.calls.map(
+      (c) => c[0] as { model?: unknown; system?: string },
+    );
+    const reviewCalls = calls.filter((c) => (c.system ?? '').includes('Unit Review Gate'));
+    const generationCalls = calls.filter((c) => !(c.system ?? '').includes('Unit Review Gate'));
+    expect(reviewCalls.length).toBeGreaterThan(0);
+    expect(generationCalls.length).toBeGreaterThan(0);
+
+    // Every review verdict comes from the judge; every syllabus/outline call
+    // still uses the request's generator model.
+    for (const call of reviewCalls) {
+      expect(call.model).toBe(judgeModel);
+    }
+    for (const call of generationCalls) {
+      expect(call.model).toEqual({ provider: 'openai', modelId: 'gpt-test' });
+    }
   });
 
   test('syllabus corrective loop fixes the structure on retry', async () => {

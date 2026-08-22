@@ -1206,7 +1206,21 @@ export async function POST(req: NextRequest) {
                 | undefined;
               const reviewModelString = process.env.OPENMAIC_OUTLINE_REVIEW_MODEL;
               if (reviewModelString) {
-                const judge = await resolveModel({ modelString: reviewModelString });
+                // Fail the run rather than degrade silently: an unresolvable
+                // judge must not quietly turn every deck review into a
+                // warn-and-accept no-op.
+                const judge = await resolveModel({ modelString: reviewModelString }).catch(
+                  (error: unknown) => {
+                    throw new Error(
+                      `OPENMAIC_OUTLINE_REVIEW_MODEL="${reviewModelString}" could not be resolved: ${error instanceof Error ? error.message : String(error)}`,
+                    );
+                  },
+                );
+                if (!judge?.model) {
+                  throw new Error(
+                    `OPENMAIC_OUTLINE_REVIEW_MODEL="${reviewModelString}" resolved to no model`,
+                  );
+                }
                 reviewCallModel = async ({ system, user }) => {
                   const result = await callLLM(
                     {

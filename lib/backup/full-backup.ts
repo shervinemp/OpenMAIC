@@ -253,7 +253,7 @@ function courseDirOf(manifestCourses: BackupCourse[], dir: string): BackupCourse
 }
 
 export async function restoreFullBackup(
-  file: File | Blob,
+  file: File | Blob | ArrayBuffer | Uint8Array,
   options: RestoreBackupOptions = {},
 ): Promise<RestoreBackupResult> {
   const mode: RestoreMode = options.mode ?? 'replace';
