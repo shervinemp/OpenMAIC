@@ -17,13 +17,20 @@ import {
   type MediaIndexEntry,
 } from './classroom-zip-types';
 import {
+  collectedAudioMediaIndexEntry,
+  collectedMediaIndexEntry,
+  legacyAudioMediaIndexEntry,
+  audioArchivePath,
+  collectLegacyAudioForExport,
+} from './classroom-zip-utils';
+import { buildStageAssetManifest } from '@/lib/media/asset-manifest';
+import {
   inlineHtmlAssets,
   createAssetFetcher,
   type InlineOptions,
   type InlineReport,
 } from './inline-assets';
 import { createProxiedFetch } from './proxied-fetch';
-import type { SpeechAction } from '@/lib/types/action';
 import type { Scene, SceneContent, Stage } from '@/lib/types/stage';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 
@@ -64,15 +71,30 @@ export async function addStageContentToZip(
   // Roster is stage-embedded; the stage document is its single source of truth.
   const agentConfigs = stage.generatedAgentConfigs ?? [];
 
-  // Audio + generated media (images/videos).
-  const audioFiles = await collectAudioFiles(scenes);
-  const mediaFiles = await collectMediaFiles(stage.id);
+  // Audio + generated media: enumerate exactly the references the document
+  // snapshot touches, then resolve bytes pool-first through the shared
+  // collectors — an orphan compatibility row cannot ride into the archive.
+  const assetManifest = await buildStageAssetManifest(stage, documentScenes as Scene[], stage.id, {
+    includeStageWhiteboard: false,
+  });
+  const audioEntries = assetManifest.entries.filter((entry) => entry.kind === 'audio');
+  const mediaEntries = assetManifest.entries.filter((entry) => entry.kind !== 'audio');
+
+  const audioFiles = await collectAudioFiles(audioEntries);
+  const mediaFiles = await collectMediaFiles(stage.id, mediaEntries);
 
   // audioId → zipPath mapping for manifest references.
   const audioIdToPath = new Map<string, string>();
   for (const af of audioFiles) {
     audioIdToPath.set(af.record.id, af.zipPath);
   }
+
+  // Legacy audioUrl-only narration: its bytes must travel even though the
+  // field itself never enters the manifest.
+  const { audioUrlToPath, blobs: legacyAudioBlobs } = await collectLegacyAudioForExport(
+    documentScenes as Scene[],
+    audioIdToPath,
+  );
 
   const manifestStage: ManifestStage = {
     name: stageName,
@@ -111,7 +133,7 @@ export async function addStageContentToZip(
         order: scene.order,
         content,
         actions: scene.actions
-          ? actionsToManifest(scene.actions, audioIdToPath, agentIdToIndex)
+          ? actionsToManifest(scene.actions, audioIdToPath, agentIdToIndex, audioUrlToPath)
           : undefined,
         whiteboards: scene.whiteboards,
         ...(scene.multiAgent?.enabled
@@ -130,36 +152,32 @@ export async function addStageContentToZip(
   );
 
   // Media index entries.
-  const mediaIndex: Record<string, MediaIndexEntry> = {};
+  const mediaIndexEntries: Array<[string, MediaIndexEntry]> = [];
   for (const af of audioFiles) {
-    mediaIndex[af.zipPath] = {
-      type: 'audio',
-      format: af.record.format,
-      duration: af.record.duration,
-      voice: af.record.voice,
-    };
+    mediaIndexEntries.push([af.zipPath, collectedAudioMediaIndexEntry(af)]);
+  }
+  for (const legacy of legacyAudioBlobs) {
+    mediaIndexEntries.push([legacy.zipPath, legacyAudioMediaIndexEntry(legacy)]);
   }
   for (const mf of mediaFiles) {
-    mediaIndex[mf.zipPath] = {
-      type: 'generated',
-      mimeType: mf.record.mimeType,
-      size: mf.record.size,
-      prompt: mf.record.prompt,
-    };
+    mediaIndexEntries.push([mf.zipPath, collectedMediaIndexEntry(mf)]);
   }
 
-  // Mark audio references whose blob could not be collected.
-  for (const scene of scenes) {
-    for (const action of scene.actions ?? []) {
-      if (action.type === 'speech') {
-        const audioId = (action as SpeechAction).audioId;
-        if (audioId && !audioIdToPath.has(audioId)) {
-          const missingPath = `audio/${audioId}.mp3`;
-          mediaIndex[missingPath] = { type: 'audio', missing: true };
-        }
-      }
+  // Referenced audio whose bytes resolved nowhere is reported as missing.
+  // Legacy audioUrl-only narration is handled by collectLegacyAudioForExport.
+  for (const [index, entry] of audioEntries.entries()) {
+    if (!audioIdToPath.has(entry.ref)) {
+      mediaIndexEntries.push([
+        audioArchivePath(index, 'mp3'),
+        {
+          type: 'audio',
+          sourceRef: entry.ref,
+          missing: true,
+        },
+      ]);
     }
   }
+  const mediaIndex = Object.fromEntries(mediaIndexEntries);
 
   const manifest: ClassroomManifest = {
     formatVersion: CLASSROOM_ZIP_FORMAT_VERSION,
@@ -176,10 +194,13 @@ export async function addStageContentToZip(
   for (const af of audioFiles) {
     zip.file(dir + af.zipPath, af.record.blob);
   }
+  for (const legacy of legacyAudioBlobs) {
+    zip.file(dir + legacy.zipPath, legacy.blob);
+  }
   for (const mf of mediaFiles) {
     zip.file(dir + mf.zipPath, mf.record.blob);
     if (mf.record.poster) {
-      zip.file(dir + mf.zipPath.replace(/\.\w+$/, '.poster.jpg'), mf.record.poster);
+      zip.file(dir + mf.posterZipPath, mf.record.poster);
     }
   }
 
