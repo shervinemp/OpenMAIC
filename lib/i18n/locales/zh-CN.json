@@ -614,7 +614,7 @@
   },
   "classroomComplete": {
     "title": "课程完成",
-        "trailLabels": {
+    "trailLabels": {
       "slide": "页",
       "quiz": "小测",
       "interactive": "互动",
@@ -622,7 +622,10 @@
       "exercise": "习题",
       "derivation": "推导",
       "glossary": "术语表",
-      "reading": "拓展阅读"
+      "reading": "拓展阅读",
+      "comparison": "对比",
+      "dataReading": "数据解读",
+      "tradeoffs": "权衡分析"
     },
     "quizScoreLabel": "答对 {{correct}} / {{total}}",
     "encouragement": {
@@ -1042,6 +1045,9 @@
     "sceneTypeDerivation": "推导",
     "sceneTypeGlossary": "术语表",
     "sceneTypeReading": "拓展阅读",
+    "sceneTypeComparison": "对比",
+    "sceneTypeDataReading": "数据解读",
+    "sceneTypeTradeoffs": "权衡分析",
     "sceneDescriptionPlaceholder": "简短描述这个场景的目的和内容",
     "quizQuestionCount": "题目数量",
     "quizDifficulty": "难度",

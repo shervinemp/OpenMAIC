@@ -20,19 +20,25 @@ import {
   recordSceneDepthReport,
   recordSceneDepthSummary,
   summarizeDepthFindings,
+  validateComparisonDepth,
+  validateDataReadingDepth,
   validateDerivationDepth,
   validateExerciseDepth,
   validateGlossaryDepth,
   validateQuizDepth,
   validateReadingDepth,
   validateSlideDepth,
+  validateTradeoffsDepth,
   type DepthReport,
 } from './content-depth';
 import {
+  renderComparisonToElements,
+  renderDataReadingToElements,
   renderDerivationToElements,
   renderExerciseToElements,
   renderGlossaryToElements,
   renderReadingToElements,
+  renderTradeoffsToElements,
 } from './specialized-scene-render';
 import type {
   SceneOutline,
@@ -44,6 +50,9 @@ import type {
   GeneratedDerivationContent,
   GeneratedGlossaryContent,
   GeneratedReadingContent,
+  GeneratedComparisonContent,
+  GeneratedDataReadingContent,
+  GeneratedTradeoffsContent,
   UserRequirements,
   PdfImage,
   ImageMapping,
@@ -318,6 +327,12 @@ export async function generateSceneContent(
       return generateGlossaryContent(outline, aiCall, languageDirective, unitContext);
     case 'reading':
       return generateReadingContent(outline, aiCall, languageDirective, unitContext);
+    case 'comparison':
+      return generateComparisonContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
+    case 'dataReading':
+      return generateDataReadingContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
+    case 'tradeoffs':
+      return generateTradeoffsContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
     case 'pbl':
       return generatePBLSceneContent(
         outline,
@@ -1163,6 +1178,63 @@ async function generateReadingContent(
   );
   if (!payload) return null;
   return finalizeRenderedElements(renderReadingToElements(outline, payload.items ?? []));
+}
+
+async function generateComparisonContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  retrievalContext?: string,
+  unitContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedComparisonContent>(
+    outline,
+    PROMPT_IDS.COMPARISON_CONTENT,
+    aiCall,
+    (parsed) =>
+      validateComparisonDepth(outline, parsed, { retrievalContext }),
+    { languageDirective, retrievalContext, unitContext },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderComparisonToElements(outline, payload));
+}
+
+async function generateDataReadingContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  retrievalContext?: string,
+  unitContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedDataReadingContent>(
+    outline,
+    PROMPT_IDS.DATA_READING_CONTENT,
+    aiCall,
+    (parsed) =>
+      validateDataReadingDepth(outline, parsed, { retrievalContext }),
+    { languageDirective, retrievalContext, unitContext },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderDataReadingToElements(outline, payload));
+}
+
+async function generateTradeoffsContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  retrievalContext?: string,
+  unitContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedTradeoffsContent>(
+    outline,
+    PROMPT_IDS.TRADEOFFS_CONTENT,
+    aiCall,
+    (parsed) =>
+      validateTradeoffsDepth(outline, parsed, { retrievalContext }),
+    { languageDirective, retrievalContext, unitContext },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderTradeoffsToElements(outline, payload));
 }
 
 /**

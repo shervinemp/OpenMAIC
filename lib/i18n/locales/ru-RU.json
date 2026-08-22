@@ -614,7 +614,7 @@
   },
   "classroomComplete": {
     "title": "Курс завершён",
-        "trailLabels": {
+    "trailLabels": {
       "slide": "страниц",
       "quiz": "тестов",
       "interactive": "интерактивов",
@@ -622,7 +622,10 @@
       "exercise": "упражнений",
       "derivation": "выводов",
       "glossary": "глоссариев",
-      "reading": "материалов"
+      "reading": "материалов",
+      "comparison": "сравнения",
+      "dataReading": "чтения данных",
+      "tradeoffs": "компромиссы"
     },
     "quizScoreLabel": "Верно {{correct}} из {{total}}",
     "encouragement": {
@@ -1042,6 +1045,9 @@
     "sceneTypeDerivation": "Вывод",
     "sceneTypeGlossary": "Глоссарий",
     "sceneTypeReading": "Чтение",
+    "sceneTypeComparison": "Сравнение",
+    "sceneTypeDataReading": "Чтение данных",
+    "sceneTypeTradeoffs": "Компромиссы",
     "sceneDescriptionPlaceholder": "Кратко опишите цель и содержание этой сцены",
     "quizQuestionCount": "Количество вопросов",
     "quizDifficulty": "Сложность",

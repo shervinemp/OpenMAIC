@@ -78,7 +78,11 @@ export interface SceneOutline {
     | 'exercise'
     | 'derivation'
     | 'glossary'
-    | 'reading';
+    | 'reading'
+    // Analytic kinds (Phase 2 §15.9): render as slides.
+    | 'comparison'
+    | 'dataReading'
+    | 'tradeoffs';
   title: string;
   description: string;
   keyPoints: string[];

@@ -176,12 +176,42 @@ export interface SpecialtyDepthFloor {
   minGlossaryTerms: number;
   /** Minimum further-reading items. */
   minReadingItems: number;
+  /** Minimum comparison dimensions (rows) across all subjects. */
+  minComparisonRows: number;
+  /** Minimum evaluated claims on a data-interpretation scene. */
+  minDataClaims: number;
+  /** Minimum options in a trade-off decision scene. */
+  minTradeoffOptions: number;
 }
 
 export const SPECIALTY_DEPTH_FLOORS: Record<CourseDepthLevel, SpecialtyDepthFloor> = {
-  intro: { minProblems: 1, minDerivationSteps: 2, minGlossaryTerms: 4, minReadingItems: 3 },
-  intermediate: { minProblems: 1, minDerivationSteps: 3, minGlossaryTerms: 5, minReadingItems: 4 },
-  university: { minProblems: 2, minDerivationSteps: 4, minGlossaryTerms: 6, minReadingItems: 5 },
+  intro: {
+    minProblems: 1,
+    minDerivationSteps: 2,
+    minGlossaryTerms: 4,
+    minReadingItems: 3,
+    minComparisonRows: 3,
+    minDataClaims: 2,
+    minTradeoffOptions: 2,
+  },
+  intermediate: {
+    minProblems: 1,
+    minDerivationSteps: 3,
+    minGlossaryTerms: 5,
+    minReadingItems: 4,
+    minComparisonRows: 4,
+    minDataClaims: 3,
+    minTradeoffOptions: 3,
+  },
+  university: {
+    minProblems: 2,
+    minDerivationSteps: 4,
+    minGlossaryTerms: 6,
+    minReadingItems: 5,
+    minComparisonRows: 5,
+    minDataClaims: 4,
+    minTradeoffOptions: 3,
+  },
 };
 
 /**

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { animate, motion, MotionConfig, useReducedMotion } from 'motion/react';
-import { FileText, HelpCircle, Gamepad2, Puzzle, Dumbbell, Sigma, BookMarked, Library } from 'lucide-react';
+import { FileText, HelpCircle, Gamepad2, Puzzle, Dumbbell, Sigma, BookMarked, Library, Scale, LineChart, GitBranch } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store';
@@ -28,6 +28,9 @@ const SCENE_TYPE_ICONS: Record<SummarySceneKind, typeof FileText> = {
   derivation: Sigma,
   glossary: BookMarked,
   reading: Library,
+  comparison: Scale,
+  dataReading: LineChart,
+  tradeoffs: GitBranch,
 };
 
 const TYPE_ORDER: SummarySceneKind[] = [
@@ -39,6 +42,9 @@ const TYPE_ORDER: SummarySceneKind[] = [
   'derivation',
   'glossary',
   'reading',
+  'comparison',
+  'dataReading',
+  'tradeoffs',
 ];
 
 const CONFETTI_COLORS = [

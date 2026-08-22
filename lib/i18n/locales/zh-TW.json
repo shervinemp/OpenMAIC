@@ -1023,6 +1023,9 @@
     "sceneTypeDerivation": "推導",
     "sceneTypeGlossary": "術語表",
     "sceneTypeReading": "延伸閱讀",
+    "sceneTypeComparison": "對比",
+    "sceneTypeDataReading": "數據解讀",
+    "sceneTypeTradeoffs": "權衡分析",
     "sceneDescriptionPlaceholder": "簡短描述這個場景的目的和內容",
     "quizQuestionCount": "題目數量",
     "quizDifficulty": "難度",
@@ -1845,7 +1848,7 @@
   },
   "classroomComplete": {
     "title": "課程完成",
-        "trailLabels": {
+    "trailLabels": {
       "slide": "頁面",
       "quiz": "小測",
       "interactive": "互動",
@@ -1853,7 +1856,10 @@
       "exercise": "習題",
       "derivation": "推導",
       "glossary": "術語表",
-      "reading": "延伸閱讀"
+      "reading": "延伸閱讀",
+      "comparison": "對比",
+      "dataReading": "數據解讀",
+      "tradeoffs": "權衡分析"
     },
     "quizScoreLabel": "{{correct}} / {{total}} 正確",
     "encouragement": {

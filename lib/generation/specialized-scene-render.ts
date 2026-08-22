@@ -20,6 +20,9 @@ import type {
   DerivationStep,
   GlossaryTerm,
   ReadingItem,
+  GeneratedComparisonContent,
+  GeneratedDataReadingContent,
+  GeneratedTradeoffsContent,
 } from '@/lib/types/generation';
 
 const CANVAS_WIDTH = 1000;
@@ -264,6 +267,215 @@ export function renderReadingToElements(
       gapAfter: 8,
     });
   });
+
+  return layOut(fitIntoCanvas(specs));
+}
+
+// ==================== Analytic kinds (Phase 2 §15.9) ====================
+
+export function renderComparisonToElements(
+  outline: SceneOutline,
+  content: GeneratedComparisonContent,
+): GeneratedSlideData['elements'] {
+  const specs: ElementSpec[] = [];
+  const subjects = content.subjects ?? [];
+  const rows = (content.rows ?? []).filter((row) => row.dimension?.trim());
+  const manyRows = rows.length > 4;
+  const dimFont = manyRows ? 13 : 14;
+  const cellFont = manyRows ? 12 : 13;
+
+  // Column header: Dimension | subject per column.
+  specs.push({
+    kind: 'text',
+    content: paragraph(
+      `<strong>Dimension</strong>${subjects.map((s) => ` &nbsp;|&nbsp; <strong>${escapeHtml(s)}</strong>`).join('')}`,
+      dimFont,
+      'color:#5b9bd5;',
+    ),
+    height: 28,
+    fontSize: dimFont,
+    gapAfter: 4,
+  });
+
+  for (const row of rows) {
+    const cellsHtml = subjects
+      .map((subject, index) => {
+        const cell = row.cells?.[index]?.trim();
+        return cell ? `<em>${escapeHtml(subject)}:</em> ${escapeHtml(cell)}` : '';
+      })
+      .filter(Boolean)
+      .join('<br>');
+    if (!cellsHtml) continue;
+    const plain = `${row.dimension} ${subjects.join(' ')} ${(row.cells ?? []).join(' ')}`;
+    specs.push({
+      kind: 'text',
+      content: paragraph(`<strong>${escapeHtml(row.dimension)}</strong><br>${cellsHtml}`, cellFont),
+      height: estimateHeight(plain, cellFont) + 18,
+      fontSize: cellFont,
+      gapAfter: 8,
+    });
+  }
+
+  for (const takeaway of content.takeaways ?? []) {
+    if (!takeaway?.trim()) continue;
+    specs.push({
+      kind: 'text',
+      content: paragraph(
+        `<strong>Takeaway</strong> — ${escapeHtml(takeaway)}`,
+        cellFont,
+        'border-left:3px solid #5b9bd5;padding-left:8px;',
+      ),
+      height: estimateHeight(takeaway, cellFont) + 16,
+      fontSize: cellFont,
+      gapAfter: 6,
+    });
+  }
+
+  return layOut(fitIntoCanvas(specs));
+}
+
+export function renderDataReadingToElements(
+  outline: SceneOutline,
+  content: GeneratedDataReadingContent,
+): GeneratedSlideData['elements'] {
+  const specs: ElementSpec[] = [];
+  const claims = (content.claims ?? []).filter((claim) => claim.statement?.trim());
+  const bodyFont = claims.length > 3 ? 12 : 13;
+
+  // Chart description block: what is plotted, on which axes.
+  const axes = `${content.xAxisLabel ?? ''} → ${content.yAxisLabel ?? ''}`;
+  const unitNote = content.unitNote?.trim() ? `<br><em>${escapeHtml(content.unitNote)}</em>` : '';
+  specs.push({
+    kind: 'text',
+    content: paragraph(
+      `<strong>${escapeHtml(content.chartTitle || outline.title)}</strong> (${escapeHtml(content.chartType)})<br>${escapeHtml(axes)}${unitNote}`,
+      bodyFont,
+      'color:#5b9bd5;',
+    ),
+    height: 52,
+    fontSize: bodyFont,
+    gapAfter: 6,
+  });
+
+  // The plotted values, compactly — the "chart" a learner reads.
+  for (const series of content.series ?? []) {
+    const pointsText = (series.points ?? [])
+      .map((p) => `${p.x}→${p.y}`)
+      .join('&nbsp;&nbsp; ');
+    if (!pointsText) continue;
+    const text = `${escapeHtml(series.name || 'series')}: ${pointsText}`;
+    specs.push({
+      kind: 'text',
+      content: paragraph(text, bodyFont),
+      height: estimateHeight(text.replace(/&nbsp;/g, ' '), bodyFont),
+      fontSize: bodyFont,
+      gapAfter: 4,
+    });
+  }
+  specs.push({ kind: 'text', content: '', height: 10, fontSize: bodyFont, gapAfter: 2 });
+
+  // Claims with their verdicts.
+  const verdictStyle: Record<string, string> = {
+    supported: 'color:#3f9950;',
+    refuted: 'color:#c0504d;',
+    insufficient: 'color:#b8860b;',
+  };
+  claims.forEach((claim, index) => {
+    const verdict = String(claim.verdict);
+    const label = verdict.charAt(0).toUpperCase() + verdict.slice(1);
+    const head = `<strong>Claim ${index + 1}</strong> — <span style="${verdictStyle[verdict] ?? ''}"><strong>${label}</strong></span>`;
+    const body = escapeHtml(claim.statement);
+    const why = claim.explanation?.trim()
+      ? `<br><em>Why:</em> ${escapeHtml(claim.explanation)}`
+      : '';
+    const plain = `${claim.statement} ${claim.explanation ?? ''}`;
+    specs.push({
+      kind: 'text',
+      content: paragraph(`${head}<br>${body}${why}`, bodyFont),
+      height: estimateHeight(plain, bodyFont) + 30,
+      fontSize: bodyFont,
+      gapAfter: 8,
+    });
+  });
+
+  return layOut(fitIntoCanvas(specs));
+}
+
+export function renderTradeoffsToElements(
+  outline: SceneOutline,
+  content: GeneratedTradeoffsContent,
+): GeneratedSlideData['elements'] {
+  const specs: ElementSpec[] = [];
+  const options_ = (content.options ?? []).filter((option) => option.name?.trim());
+  const bodyFont = options_.length > 2 ? 12 : 13;
+
+  if (content.context?.trim()) {
+    specs.push({
+      kind: 'text',
+      content: paragraph(
+        `<strong>Decision</strong> — ${escapeHtml(content.context)}`,
+        bodyFont,
+      ),
+      height: estimateHeight(content.context, bodyFont) + 14,
+      fontSize: bodyFont,
+      gapAfter: 6,
+    });
+  }
+
+  const constraints = (content.constraints ?? []).filter((c) => c?.trim());
+  if (constraints.length > 0) {
+    specs.push({
+      kind: 'text',
+      content: paragraph(
+        `<strong>Constraints</strong> — ${constraints.map((c) => escapeHtml(c)).join(' &nbsp;•&nbsp; ')}`,
+        bodyFont,
+        'color:#b8860b;',
+      ),
+      height: estimateHeight(constraints.join(' '), bodyFont) + 12,
+      fontSize: bodyFont,
+      gapAfter: 8,
+    });
+  }
+
+  for (const option of options_) {
+    const pros = (option.pros ?? []).filter(Boolean);
+    const cons = (option.cons ?? []).filter(Boolean);
+    const bestFor = option.bestFor?.trim()
+      ? `<br><em>Best for:</em> ${escapeHtml(option.bestFor)}`
+      : '';
+    const head = `<strong>${escapeHtml(option.name)}</strong>`;
+    const proLine = pros.length > 0 ? `<span style="color:#3f9950;">+ ${pros.map((p) => escapeHtml(p)).join('; + ')}</span>` : '';
+    const conLine = cons.length > 0 ? `<br><span style="color:#c0504d;">− ${cons.map((c) => escapeHtml(c)).join('; − ')}</span>` : '';
+    const plain = `${option.name} ${pros.join(' ')} ${cons.join(' ')} ${option.bestFor ?? ''}`;
+    specs.push({
+      kind: 'text',
+      content: paragraph(`${head}<br>${proLine}${conLine}${bestFor}`, bodyFont),
+      height: estimateHeight(plain, bodyFont) + 26,
+      fontSize: bodyFont,
+      gapAfter: 8,
+    });
+  }
+
+  if (content.recommendation?.choice?.trim()) {
+    const justification = content.recommendation.justification?.trim()
+      ? ` — ${escapeHtml(content.recommendation.justification)}`
+      : '';
+    specs.push({
+      kind: 'text',
+      content: paragraph(
+        `<strong>Recommendation: ${escapeHtml(content.recommendation.choice)}</strong>${justification}`,
+        bodyFont,
+        'border-left:3px solid #5b9bd5;padding-left:8px;',
+      ),
+      height:
+        estimateHeight(
+          `${content.recommendation.choice} ${content.recommendation.justification ?? ''}`,
+          bodyFont,
+        ) + 16,
+      fontSize: bodyFont,
+      gapAfter: 6,
+    });
+  }
 
   return layOut(fitIntoCanvas(specs));
 }

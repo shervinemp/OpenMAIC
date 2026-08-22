@@ -33,6 +33,9 @@ import type {
   DerivationStep,
   GlossaryTerm,
   ReadingItem,
+  GeneratedComparisonContent,
+  GeneratedDataReadingContent,
+  GeneratedTradeoffsContent,
 } from '@/lib/types/generation';
 
 // ==================== Report ====================
@@ -450,8 +453,195 @@ export function validateReadingDepth(
   return blankFindingsReport(complete.length, findings);
 }
 
-// ==================== Corrective feedback ====================
+// ==================== Analytic kinds (Phase 2 §15.9) ====================
 
+export function validateComparisonDepth(
+  outline: SceneOutline,
+  content: GeneratedComparisonContent,
+  options: { retrievalContext?: string; depthLevel?: CourseDepthLevel } = {},
+): DepthReport {
+  const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
+  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const findings: string[] = [];
+
+  const subjects = (content.subjects ?? []).filter((s) => s?.trim());
+  if (subjects.length < 2) {
+    findings.push(`comparison names ${subjects.length} subject(s); need at least 2 to compare`);
+  }
+  const completeRows = (content.rows ?? []).filter(
+    (row) =>
+      row.dimension?.trim() &&
+      (row.cells ?? []).length === subjects.length &&
+      (row.cells ?? []).every((cell) => cell?.trim()),
+  );
+  if (completeRows.length < floor.minComparisonRows) {
+    findings.push(
+      `comparison has ${completeRows.length} complete dimension row(s); need at least ${floor.minComparisonRows} (each with a dimension AND one complete-sentence cell per subject)`,
+    );
+  }
+  for (const row of content.rows ?? []) {
+    if (!row.dimension?.trim()) {
+      findings.push(`comparison row "${row.id}" is missing its dimension`);
+    } else if ((row.cells ?? []).length !== subjects.length) {
+      findings.push(
+        `comparison row "${row.dimension}" has ${(row.cells ?? []).length} cell(s) for ${subjects.length} subject(s) - every row needs one cell per subject`,
+      );
+    } else {
+      for (const [index, cell] of (row.cells ?? []).entries()) {
+        if (!cell?.trim()) continue;
+        if (isCaptionText(stripHtml(cell))) {
+          findings.push(
+            `comparison cell "${row.dimension}" (${subjects[index] ?? index}) is a bare fragment ("${cell.slice(0, 60)}") - write a complete sentence with concrete substance`,
+          );
+        }
+      }
+    }
+  }
+
+  if (options.retrievalContext) {
+    const combinedText = (content.rows ?? [])
+      .map((row) => `${row.dimension} ${(row.cells ?? []).join(' ')}`)
+      .concat(content.takeaways ?? [])
+      .join(' ');
+    findings.push(
+      ...citationFindings(combinedText, options.retrievalContext, COURSE_DEPTH_FLOORS[depthLevel].minCitations),
+    );
+  }
+
+  return blankFindingsReport(completeRows.length, findings);
+}
+
+export function validateDataReadingDepth(
+  outline: SceneOutline,
+  content: GeneratedDataReadingContent,
+  options: { retrievalContext?: string; depthLevel?: CourseDepthLevel } = {},
+): DepthReport {
+  const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
+  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const findings: string[] = [];
+
+  const series = content.series ?? [];
+  const plottedPoints = series.reduce((sum, s) => sum + (s.points?.length ?? 0), 0);
+  if (series.length === 0 || plottedPoints < 3) {
+    findings.push(
+      `data scene plots ${plottedPoints} point(s) across ${series.length} series; need at least one series with enough points to read a trend from`,
+    );
+  }
+  for (const s of series) {
+    if (!s.name?.trim()) findings.push(`a data series is missing its name`);
+    if ((s.points?.length ?? 0) > 0 && (s.points ?? []).some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) {
+      findings.push(`data series "${s.name}" has a non-numeric point`);
+    }
+  }
+  if (!content.chartTitle?.trim()) findings.push('data scene is missing the chart title');
+  if (!content.xAxisLabel?.trim() || !content.yAxisLabel?.trim()) {
+    findings.push('data scene is missing an axis label (both axes must be labeled with units)');
+  }
+
+  const validVerdicts = new Set(['supported', 'refuted', 'insufficient']);
+  const completeClaims = (content.claims ?? []).filter(
+    (claim) =>
+      claim.statement?.trim() &&
+      validVerdicts.has(claim.verdict) &&
+      claim.explanation?.trim(),
+  );
+  if (completeClaims.length < floor.minDataClaims) {
+    findings.push(
+      `data scene has ${completeClaims.length} evaluated claim(s); need at least ${floor.minDataClaims} (each with a statement, a verdict, and an explanation citing concrete values)`,
+    );
+  }
+  for (const claim of content.claims ?? []) {
+    if (claim.statement?.trim() && !validVerdicts.has(claim.verdict)) {
+      findings.push(`claim "${claim.statement.slice(0, 60)}" has verdict "${String(claim.verdict)}" - use supported / refuted / insufficient`);
+    }
+    if (claim.explanation?.trim() && !/\d/.test(stripHtml(claim.explanation))) {
+      findings.push(
+        `claim explanation ("${claim.explanation.slice(0, 60)}") cites no values - ground the verdict in the actual plotted numbers`,
+      );
+    }
+  }
+
+  if (options.retrievalContext) {
+    const combinedText = (content.claims ?? [])
+      .map((claim) => `${claim.statement} ${claim.explanation}`)
+      .join(' ');
+    findings.push(
+      ...citationFindings(combinedText, options.retrievalContext, COURSE_DEPTH_FLOORS[depthLevel].minCitations),
+    );
+  }
+
+  return blankFindingsReport(completeClaims.length, findings);
+}
+
+export function validateTradeoffsDepth(
+  outline: SceneOutline,
+  content: GeneratedTradeoffsContent,
+  options: { retrievalContext?: string; depthLevel?: CourseDepthLevel } = {},
+): DepthReport {
+  const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
+  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const findings: string[] = [];
+
+  if (!content.context?.trim()) {
+    findings.push('trade-off scene is missing the decision context');
+  } else if (isCaptionText(stripHtml(content.context))) {
+    findings.push(
+      `decision context is a fragment ("${content.context.slice(0, 60)}") - describe the situation and what makes the decision hard in complete sentences`,
+    );
+  }
+  if ((content.constraints ?? []).filter((c) => c?.trim()).length === 0) {
+    findings.push('trade-off scene lists no constraints - options must be judged against explicit limits');
+  }
+
+  const options_ = content.options ?? [];
+  if (options_.length < floor.minTradeoffOptions) {
+    findings.push(
+      `trade-off scene presents ${options_.length} option(s); need at least ${floor.minTradeoffOptions}`,
+    );
+  }
+  const names = new Set(options_.map((o) => o.name));
+  for (const option of options_) {
+    if (!option.name?.trim()) findings.push(`trade-off option "${option.id}" is missing its name`);
+    if ((option.pros ?? []).filter((p) => p?.trim()).length === 0) {
+      findings.push(`option "${option.name || option.id}" lists no pros`);
+    }
+    if ((option.cons ?? []).filter((c) => c?.trim()).length === 0) {
+      findings.push(`option "${option.name || option.id}" lists no cons - find the real trade-off`);
+    }
+  }
+
+  const recommendation = content.recommendation;
+  if (!recommendation?.choice?.trim() || !recommendation?.justification?.trim()) {
+    findings.push('trade-off scene is missing the recommendation (choice + justification)');
+  } else {
+    if (!names.has(recommendation.choice)) {
+      findings.push(
+        `recommendation chooses "${recommendation.choice}" but no option carries that name - pick exactly one of the presented options`,
+      );
+    }
+    if (isCaptionText(stripHtml(recommendation.justification))) {
+      findings.push(
+        `recommendation justification is a fragment - explain why it wins under the stated constraints`,
+      );
+    }
+  }
+
+  if (options.retrievalContext) {
+    const combinedText = [
+      content.context,
+      ...(content.constraints ?? []),
+      ...options_.flatMap((o) => [o.name, ...(o.pros ?? []), ...(o.cons ?? []), o.bestFor ?? '']),
+      recommendation?.justification ?? '',
+    ].join(' ');
+    findings.push(
+      ...citationFindings(combinedText, options.retrievalContext, COURSE_DEPTH_FLOORS[depthLevel].minCitations),
+    );
+  }
+
+  return blankFindingsReport(options_.length, findings);
+}
+
+// ==================== Corrective feedback ====================
 export function summarizeDepthFindings(report: DepthReport): string {
   return [
     'The generated content did NOT meet the depth contract:',

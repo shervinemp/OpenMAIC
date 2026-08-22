@@ -133,7 +133,10 @@ export interface SceneOutline {
     | 'exercise'
     | 'derivation'
     | 'glossary'
-    | 'reading';
+    | 'reading'
+    | 'comparison'
+    | 'dataReading'
+    | 'tradeoffs';
   title: string;
   description: string; // 1-2 sentences describing the purpose
   keyPoints: string[]; // 3-5 core key points
@@ -360,6 +363,82 @@ export interface ReadingItem {
 
 export interface GeneratedReadingContent {
   items: ReadingItem[];
+}
+
+// ==================== Analytic scene kinds (Phase 2 §15.9) ====================
+
+/**
+ * One dimension row of a compare-and-contrast table. `cells[i]` is what the
+ * row says about `subjects[i]` — a complete sentence per cell, not a label.
+ */
+export interface ComparisonRow {
+  id: string;
+  /** The property being compared across subjects (e.g. "Time complexity"). */
+  dimension: string;
+  /** One cell per subject, same order as the content's `subjects`. */
+  cells: string[];
+}
+
+export interface GeneratedComparisonContent {
+  /** The 2-3 concepts being compared, column order for every row. */
+  subjects: string[];
+  rows: ComparisonRow[];
+  /** Optional synthesis: when is each subject the right choice. */
+  takeaways?: string[];
+}
+
+/** Verdict on one claim made about a chart/dataset. */
+export interface DataClaim {
+  id: string;
+  statement: string;
+  verdict: 'supported' | 'refuted' | 'insufficient';
+  /** Why the data supports/refutes the claim (cite concrete values). */
+  explanation: string;
+}
+
+export interface DataSeriesPoint {
+  x: number;
+  y: number;
+}
+
+export interface DataSeries {
+  name: string;
+  points: DataSeriesPoint[];
+}
+
+export interface GeneratedDataReadingContent {
+  chartTitle: string;
+  chartType: 'bar' | 'line' | 'scatter';
+  xAxisLabel: string;
+  yAxisLabel: string;
+  /** Unit / scale note rendered under the chart description (optional). */
+  unitNote?: string;
+  series: DataSeries[];
+  /** At least two claims with verdicts grounded in the plotted values. */
+  claims: DataClaim[];
+}
+
+/** One option in a trade-off decision scene. */
+export interface TradeoffOption {
+  id: string;
+  name: string;
+  pros: string[];
+  cons: string[];
+  /** When this option is the right call (optional). */
+  bestFor?: string;
+}
+
+export interface GeneratedTradeoffsContent {
+  /** The decision context: situation + hard constraints (complete sentences). */
+  context: string;
+  constraints: string[];
+  options: TradeoffOption[];
+  recommendation: {
+    /** Name of the chosen option (must match an option's name). */
+    choice: string;
+    /** Why it wins under the stated constraints — not a generic platitude. */
+    justification: string;
+  };
 }
 
 // ==================== PBL Generation Types ====================

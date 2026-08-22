@@ -18,6 +18,9 @@ import {
   Sigma,
   BookMarked,
   Library,
+  Scale,
+  LineChart,
+  GitBranch,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
@@ -150,6 +153,9 @@ export function SceneSidebar({
       derivation: Sigma,
       glossary: BookMarked,
       reading: Library,
+      comparison: Scale,
+      dataReading: LineChart,
+      tradeoffs: GitBranch,
     };
     return icons[kind] || BookOpen;
   };
