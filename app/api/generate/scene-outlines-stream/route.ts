@@ -1274,7 +1274,9 @@ export async function POST(req: NextRequest) {
           // persist — aborting the upstream request the moment the client goes
           // away (rather than completing it) is the correct behaviour here, not
           // an inconsistency: buffering for a dead connection is pure waste.
+          let attemptStreamError: string | null = null;
           for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
+            attemptStreamError = null;
             try {
               let fullText = '';
               let scanFrom = 0;
@@ -1300,6 +1302,14 @@ export async function POST(req: NextRequest) {
                       },
                     ],
                     maxOutputTokens: modelInfo?.outputWindow,
+                    // Some providers fail with an empty chunk sequence instead
+                    // of a thrown error mid-iteration (e.g. a 402 quota
+                    // response); capture the reason here so the failure event
+                    // carries the real cause.
+                    onError: ({ error }: { error: unknown }) => {
+                      attemptStreamError =
+                        error instanceof Error ? error.message : String(error);
+                    },
                     // Tear down the upstream LLM request when the client disconnects,
                     // instead of letting it run to completion for a dead connection.
                     abortSignal: req.signal,
@@ -1309,6 +1319,10 @@ export async function POST(req: NextRequest) {
                     system: prompts.system,
                     prompt: userPrompt,
                     maxOutputTokens: modelInfo?.outputWindow,
+                    onError: ({ error }: { error: unknown }) => {
+                      attemptStreamError =
+                        error instanceof Error ? error.message : String(error);
+                    },
                     abortSignal: req.signal,
                   };
 
@@ -1449,10 +1463,15 @@ export async function POST(req: NextRequest) {
                 break;
               }
 
-              // Empty result ΓÇö retry if we have attempts left
-              lastError = fullText.trim()
-                ? 'LLM response could not be parsed into outlines'
-                : 'LLM returned empty response';
+              // Empty result — retry if we have attempts left. A thrown
+              // upstream error (auth, quota, rate limit) keeps ITS message:
+              // "Insufficient Balance" must reach the user verbatim instead of
+              // the misleading generic empty-response text.
+              lastError =
+                attemptStreamError ??
+                (fullText.trim()
+                  ? 'LLM response could not be parsed into outlines'
+                  : 'LLM returned empty response');
               log.warn(
                 `Outlines attempt ${attempt} diagnostics: textLen=${fullText.length}, outlines=${parsedOutlines.length}, languageDirective=${languageDirective ? 'yes' : 'no'}, preview=${JSON.stringify(fullText.slice(0, 240))}`,
               );
@@ -1477,6 +1496,7 @@ export async function POST(req: NextRequest) {
                 return;
               }
               lastError = error instanceof Error ? error.message : String(error);
+              attemptStreamError = lastError;
               log.warn(
                 `Outlines stream error detail (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}): ${lastError}`,
               );
