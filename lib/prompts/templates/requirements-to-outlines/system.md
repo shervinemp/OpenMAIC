@@ -266,6 +266,8 @@ Rules:
 - **Never** return a bare array. The top level is an object, not an array.
 - **Never** omit `languageDirective` or `courseTitle`. Both are required even if you think they are obvious.
 - **Never** wrap the response in any other structure, prose, or code fence.
+- **Every** object in `outlines` MUST carry a `type` field — one of: `slide`, `quiz`, `interactive`, `pbl`, `exercise`, `derivation`, `glossary`, `reading`, `comparison`, `dataReading`, `tradeoffs`. Outlines without `type` are rejected.
+- `outlines` holds scene records ONLY — never lesson headers or summaries (those go in `lessons`).
 
 ### Minimal complete example
 

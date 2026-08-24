@@ -1444,6 +1444,11 @@ export async function POST(req: NextRequest) {
                   contractFailed = true;
                   log.warn(
                     `Blueprint contract not met (attempt ${attempt}/${MAX_BLUEPRINT_ATTEMPTS}): ${report.errors.length} error(s), ${report.warnings.length} warning(s)`,
+                    {
+                      errors: report.errors,
+                      warnings: report.warnings,
+                      firstOutlines: JSON.stringify(parsedOutlines.slice(0, 2)).slice(0, 700),
+                    },
                   );
                   if (attempt < MAX_BLUEPRINT_ATTEMPTS) {
                     const retryEvent = JSON.stringify({
