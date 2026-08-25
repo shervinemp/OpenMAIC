@@ -1124,7 +1124,18 @@ export async function POST(req: NextRequest) {
     };
 
     const prompts = buildPrompt(promptId, baseVariables);
-    const multiUnit = contractMode && courseContract !== null && courseContract.unitCount > 1;
+    // Contract-mode ORDINARY courses ALWAYS take the syllabus-first path
+    // (Phase A syllabus call + per-lesson chains), including single-unit
+    // courses: the old single mega-call breaks weak models outright (they
+    // collapse lesson records into the outlines array), while the staged path
+    // degrades gracefully - smaller calls, per-lesson checkpoints, and
+    // coveredSoFar continuity. Interactive and task-engine courses keep their
+    // specialized single-call templates (their prompts and sanitization are
+    // tuned for one-shot output); the streaming mega-call serves them plus
+    // non-contract mode.
+    const interactiveCourse = requirements.interactiveMode === true;
+    const multiUnit =
+      contractMode && courseContract !== null && !taskEngineMode && !interactiveCourse;
 
     if (!prompts) {
       return apiError('INTERNAL_ERROR', 500, 'Prompt template not found');
