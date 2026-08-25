@@ -315,6 +315,48 @@ function recordUsageSafe(
 }
 
 /**
+ * Fallback model for provider failures (OPENMAIC_FALLBACK_MODEL).
+ *
+ * Free-tier models fail intermittently (quota exhaustion, "endpoint
+ * unavailable"). When a fallback model is configured, a failed call retries
+ * ONCE on the fallback so the run picks up where it failed instead of dying —
+ * paid tokens are only spent on the calls the primary model could not do.
+ * Resolved lazily and cached per process; never throws into the caller.
+ */
+let cachedFallbackModel: GenerateTextParams['model'] | undefined;
+let fallbackModelString: string | undefined;
+
+async function getFallbackModel(): Promise<GenerateTextParams['model'] | undefined> {
+  const configured = process.env.OPENMAIC_FALLBACK_MODEL?.trim();
+  if (!configured) return undefined;
+  if (cachedFallbackModel && fallbackModelString === configured) return cachedFallbackModel;
+  try {
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    const resolved = await resolveModel({ modelString: configured });
+    cachedFallbackModel = resolved.model;
+    fallbackModelString = configured;
+    return cachedFallbackModel;
+  } catch (err) {
+    log.warn(
+      `[llm] OPENMAIC_FALLBACK_MODEL="${configured}" could not be resolved; fallback disabled:`,
+      err,
+    );
+    return undefined;
+  }
+}
+
+function isProviderFailure(error: unknown): boolean {
+  const name = error instanceof Error ? error.name : undefined;
+  if (name === 'AbortError') return false;
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /insufficient balance|quota|payment required|endpoint is unavailable|model is unavailable|overloaded|rate limit|timeout|timed out|fetch failed/i.test(
+      message,
+    ) || (typeof error === 'object' && error !== null && (error as { statusCode?: number }).statusCode !== undefined && (error as { statusCode?: number }).statusCode! >= 500)
+  );
+}
+
+/**
  * Unified wrapper around `generateText`.
  *
  * @param params - Same parameters as AI SDK's `generateText`
@@ -335,6 +377,9 @@ export async function callLLM<T extends GenerateTextParams>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let lastResult: GenerateTextResult<any, any> | undefined;
   let lastError: unknown;
+  // The fallback swap happens once per call: primary → fallback, not back.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let fallbackTried = false;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -372,6 +417,25 @@ export async function callLLM<T extends GenerateTextParams>(
       return result;
     } catch (error) {
       lastError = error;
+
+      // Provider failure with a fallback configured: swap the model once and
+      // retry the same call. The attempt budget resets so the fallback gets a
+      // full set of attempts (it is a different backend, not a transient blip
+      // on the same one).
+      if (!fallbackTried && isProviderFailure(error)) {
+        const fallback = await getFallbackModel();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const currentModel = (params as { model?: unknown }).model;
+        if (fallback && fallback !== currentModel) {
+          fallbackTried = true;
+          params = { ...params, model: fallback } as T;
+          log.warn(
+            `[${source}] Primary model failed (${error instanceof Error ? error.message : String(error)}); retrying once on fallback model`,
+          );
+          attempt--;
+          continue;
+        }
+      }
 
       if (attempt < maxAttempts) {
         log.warn(`[${source}] Call failed (attempt ${attempt}/${maxAttempts}), retrying...`, error);
@@ -422,3 +486,5 @@ export function streamLLM<T extends StreamTextParams>(
 
   return result;
 }
+
+
