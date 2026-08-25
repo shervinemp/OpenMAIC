@@ -114,7 +114,8 @@
       "parserUnavailable": "Không dùng được chức năng nhập PPTX: chưa triển khai gói bộ đọc. Hãy chạy lại install/sync.",
       "invalidManifest": "Tệp lớp học không hợp lệ: thiếu hoặc hỏng manifest.json.",
       "missingData": "Tệp lớp học không hợp lệ: thiếu dữ liệu bài học bắt buộc.",
-      "storageFull": "Nhập không thành công: bộ nhớ trình duyệt đã đầy. Hãy xóa bớt lớp học cũ."
+      "storageFull": "Nhập không thành công: bộ nhớ trình duyệt đã đầy. Hãy xóa bớt lớp học cũ.",
+      "fullBackup": "Đây là bản sao lưu đầy đủ, không phải một khóa học. Hãy dùng \"Khôi phục bản sao lưu\" trên trang chủ."
     }
   },
   "chat": {

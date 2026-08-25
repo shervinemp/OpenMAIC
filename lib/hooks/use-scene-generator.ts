@@ -719,6 +719,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
         let pausedByFailureOrAbort = false;
         let hadContentFailure = false;
+        // Quota exhaustion (402 / "Insufficient Balance") fails the CURRENT
+        // scene like any other failure, but the remaining queue is preserved
+        // and the batch pauses: burning every pending scene against a spent
+        // quota would just convert a transient provider state into N failed
+        // scenes the user must manually retry.
+        const isQuotaFailure = (result: { error?: string; statusCode?: number }): boolean =>
+          result.statusCode === 402 ||
+          /insufficient balance|quota exceeded|payment required/i.test(result.error ?? '');
         for (const outline of pending) {
           if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
             store.getState().setGenerationStatus('paused');
@@ -755,11 +763,23 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             });
             store.getState().addFailedOutline(outline);
             options.onSceneFailed?.(outline, contentResult.error || 'Content generation failed');
-            // Surface and continue in both modes (Pillar 2 §4.8): a failure
-            // marks the outline failed and the loop advances — retry/skip are
-            // user actions on the retry cards. Pause only on cancel/abort.
             hadContentFailure = true;
             removeGeneratingOutline(outline.id);
+            if (isQuotaFailure(contentResult)) {
+              // Quota exhaustion: the remaining queue stays pending (not
+              // failed) so resume re-runs it when the provider resets.
+              log.warn(
+                `Provider quota exhausted at scene "${outline.title}"; pausing with ${
+                  pending.length - pending.indexOf(outline) - 1
+                } scene(s) still queued`,
+              );
+              store.getState().setGenerationStatus('paused');
+              pausedByFailureOrAbort = true;
+              break;
+            }
+            // Surface and continue in both modes (Pillar 2 §4.8): a failure
+            // marks the outline failed and the loop advances - retry/skip are
+            // user actions on the retry cards. Pause only on cancel/abort.
             continue;
           }
 
@@ -858,8 +878,19 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             });
             store.getState().addFailedOutline(outline);
             options.onSceneFailed?.(outline, actionsResult.error || 'Actions generation failed');
-            // Surface and continue — retry/skip are user actions (Pillar 2 §4.8).
             removeGeneratingOutline(outline.id);
+            if (isQuotaFailure(actionsResult)) {
+              // Same quota rule as content: pause with the queue intact.
+              log.warn(
+                `Provider quota exhausted at scene "${outline.title}" (actions); pausing with ${
+                  pending.length - pending.indexOf(outline) - 1
+                } scene(s) still queued`,
+              );
+              store.getState().setGenerationStatus('paused');
+              pausedByFailureOrAbort = true;
+              break;
+            }
+            // Surface and continue - retry/skip are user actions (Pillar 2 §4.8).
             continue;
           }
         }

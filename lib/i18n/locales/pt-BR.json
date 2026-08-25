@@ -114,7 +114,8 @@
       "parserUnavailable": "A importação de PPTX está indisponível: o pacote do analisador não foi implantado. Execute install/sync novamente.",
       "invalidManifest": "Arquivo inválido: manifest.json ausente ou corrompido.",
       "missingData": "Arquivo inválido: dados obrigatórios do curso ausentes.",
-      "storageFull": "Falha na importação: armazenamento do navegador cheio. Tente apagar salas antigas."
+      "storageFull": "Falha na importação: armazenamento do navegador cheio. Tente apagar salas antigas.",
+      "fullBackup": "Este é um backup completo, não um curso único. Use \"Restaurar backup\" na página inicial."
     }
   },
   "chat": {

@@ -114,7 +114,8 @@
       "parserUnavailable": "L’import PPTX est indisponible : le module d’analyse n’est pas déployé. Relancez l’installation ou la synchronisation.",
       "invalidManifest": "Fichier de classe invalide : manifest.json est absent ou corrompu.",
       "missingData": "Fichier de classe invalide : données de cours requises manquantes.",
-      "storageFull": "Échec de l’import : le stockage du navigateur est saturé. Essayez de supprimer d’anciennes classes."
+      "storageFull": "Échec de l’import : le stockage du navigateur est saturé. Essayez de supprimer d’anciennes classes.",
+      "fullBackup": "Ceci est une sauvegarde complète, pas un cours unique. Utilisez « Restaurer la sauvegarde » sur la page d'accueil."
     }
   },
   "chat": {

@@ -114,7 +114,8 @@
       "parserUnavailable": "PPTX 匯入功能不可用：解析器套件未部署，請重新執行安裝/同步。",
       "invalidManifest": "課堂檔案無效：manifest.json 遺失或損毀。",
       "missingData": "課堂檔案無效：缺少必要的課程資料。",
-      "storageFull": "匯入失敗：瀏覽器儲存空間已滿，請嘗試清除舊課堂。"
+      "storageFull": "匯入失敗：瀏覽器儲存空間已滿，請嘗試清除舊課堂。",
+      "fullBackup": "這是完整備份檔案，不是單一課程。請使用首頁上的「還原備份」。"
     }
   },
   "chat": {

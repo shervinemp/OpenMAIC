@@ -347,9 +347,8 @@ export type ImportPhase =
   | 'done';
 
 export class ImportClassroomError extends Error {
-  readonly code: 'INVALID_MANIFEST';
-
-  constructor(code: 'INVALID_MANIFEST', message?: string) {
+  readonly code: 'INVALID_MANIFEST' | 'FULL_BACKUP_ZIP';
+  constructor(code: 'INVALID_MANIFEST' | 'FULL_BACKUP_ZIP', message?: string) {
     super(message || code);
     this.name = 'ImportClassroomError';
     this.code = code;
@@ -378,6 +377,14 @@ export async function importClassroomZip(
     manifest = JSON.parse(await manifestFile.async('text'));
   } catch {
     throw new ImportClassroomError('INVALID_MANIFEST');
+  }
+  // A full backup is a valid ZIP with a manifest — but a different product.
+  // Point the user at the right door instead of a generic "corrupted" error.
+  if (
+    (manifest as { format?: string }).format === 'openmaic-full-backup' ||
+    zip.file('settings.json')
+  ) {
+    throw new ImportClassroomError('FULL_BACKUP_ZIP');
   }
   if (!manifest.stage || !manifest.scenes || !Array.isArray(manifest.scenes)) {
     throw new ImportClassroomError('INVALID_MANIFEST');
@@ -585,9 +592,11 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
         toast.error(
           isQuotaError
             ? t('import.error.storageFull')
-            : error instanceof ImportClassroomError
-              ? t('import.error.invalidManifest')
-              : t('import.error.invalidZip'),
+            : error instanceof ImportClassroomError && error.code === 'FULL_BACKUP_ZIP'
+              ? t('import.error.fullBackup')
+              : error instanceof ImportClassroomError
+                ? t('import.error.invalidManifest')
+                : t('import.error.invalidZip'),
           { id: toastId },
         );
       } finally {

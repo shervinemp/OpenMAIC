@@ -114,7 +114,8 @@
       "parserUnavailable": "La importación de PPTX no está disponible: el paquete del analizador no está desplegado. Vuelve a ejecutar install/sync.",
       "invalidManifest": "Archivo de aula no válido: falta manifest.json o está dañado.",
       "missingData": "Archivo de aula no válido: faltan datos requeridos del curso.",
-      "storageFull": "La importación falló: el almacenamiento del navegador está lleno. Intenta eliminar aulas antiguas."
+      "storageFull": "La importación falló: el almacenamiento del navegador está lleno. Intenta eliminar aulas antiguas.",
+      "fullBackup": "Este es un respaldo completo, no un curso individual. Usa \"Restaurar respaldo\" en la página de inicio."
     }
   },
   "chat": {

@@ -114,7 +114,8 @@
       "parserUnavailable": "PPTX import is unavailable: the parser bundle is not deployed. Re-run install/sync.",
       "invalidManifest": "Invalid classroom file: manifest.json is missing or corrupted.",
       "missingData": "Invalid classroom file: missing required course data.",
-      "storageFull": "Import failed: browser storage is full. Try clearing old classrooms."
+      "storageFull": "Import failed: browser storage is full. Try clearing old classrooms.",
+      "fullBackup": "This is a full backup file, not a single course. Use \"Restore backup\" on the home page instead."
     }
   },
   "chat": {
