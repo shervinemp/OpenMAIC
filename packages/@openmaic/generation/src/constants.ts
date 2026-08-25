@@ -179,12 +179,14 @@ export interface SpecialtyDepthFloor {
   minDataClaims: number;
   /** Minimum options in a trade-off decision scene. */
   minTradeoffOptions: number;
+  /** Minimum rubric criteria on a free-response scene. */
+  minFreeResponseCriteria: number;
 }
 
 export const SPECIALTY_DEPTH_FLOORS: Record<CourseDepthLevel, SpecialtyDepthFloor> = {
-  intro: { minProblems: 1, minDerivationSteps: 2, minGlossaryTerms: 4, minReadingItems: 3, minComparisonRows: 3, minDataClaims: 2, minTradeoffOptions: 2 },
-  intermediate: { minProblems: 1, minDerivationSteps: 3, minGlossaryTerms: 5, minReadingItems: 4, minComparisonRows: 4, minDataClaims: 3, minTradeoffOptions: 3 },
-  university: { minProblems: 2, minDerivationSteps: 4, minGlossaryTerms: 6, minReadingItems: 5, minComparisonRows: 5, minDataClaims: 4, minTradeoffOptions: 3 },
+  intro: { minProblems: 1, minDerivationSteps: 2, minGlossaryTerms: 4, minReadingItems: 3, minComparisonRows: 3, minDataClaims: 2, minTradeoffOptions: 2, minFreeResponseCriteria: 2 },
+  intermediate: { minProblems: 1, minDerivationSteps: 3, minGlossaryTerms: 5, minReadingItems: 4, minComparisonRows: 4, minDataClaims: 3, minTradeoffOptions: 3, minFreeResponseCriteria: 3 },
+  university: { minProblems: 2, minDerivationSteps: 4, minGlossaryTerms: 6, minReadingItems: 5, minComparisonRows: 5, minDataClaims: 4, minTradeoffOptions: 3, minFreeResponseCriteria: 4 },
 };
 
 

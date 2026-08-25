@@ -17,6 +17,7 @@ export {
   takeSceneDepthSummary,
   validateDerivationDepth,
   validateExerciseDepth,
+  validateFreeResponseDepth,
   validateGlossaryDepth,
   validateComparisonDepth,
   validateDataReadingDepth,

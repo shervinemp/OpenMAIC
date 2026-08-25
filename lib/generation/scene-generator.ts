@@ -24,6 +24,7 @@ import {
   validateDataReadingDepth,
   validateDerivationDepth,
   validateExerciseDepth,
+  validateFreeResponseDepth,
   validateGlossaryDepth,
   validateQuizDepth,
   validateReadingDepth,
@@ -36,6 +37,7 @@ import {
   renderDataReadingToElements,
   renderDerivationToElements,
   renderExerciseToElements,
+  renderFreeResponseToElements,
   renderGlossaryToElements,
   renderReadingToElements,
   renderTradeoffsToElements,
@@ -47,6 +49,7 @@ import type {
   GeneratedInteractiveContent,
   GeneratedPBLContent,
   GeneratedExerciseContent,
+  GeneratedFreeResponseContent,
   GeneratedDerivationContent,
   GeneratedGlossaryContent,
   GeneratedReadingContent,
@@ -333,6 +336,8 @@ export async function generateSceneContent(
       return generateDataReadingContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
     case 'tradeoffs':
       return generateTradeoffsContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
+    case 'freeResponse':
+      return generateFreeResponseContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
     case 'pbl':
       return generatePBLSceneContent(
         outline,
@@ -1218,6 +1223,24 @@ async function generateDataReadingContent(
   return finalizeRenderedElements(renderDataReadingToElements(outline, payload));
 }
 
+async function generateFreeResponseContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  retrievalContext?: string,
+  unitContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedFreeResponseContent>(
+    outline,
+    PROMPT_IDS.FREE_RESPONSE_CONTENT,
+    aiCall,
+    (parsed) =>
+      validateFreeResponseDepth(outline, parsed, { retrievalContext }),
+    { languageDirective, retrievalContext, unitContext },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderFreeResponseToElements(outline, payload));
+}
 async function generateTradeoffsContent(
   outline: SceneOutline,
   aiCall: AICallFn,
@@ -2331,3 +2354,5 @@ export function createSceneWithActions(
 
   return null;
 }
+
+

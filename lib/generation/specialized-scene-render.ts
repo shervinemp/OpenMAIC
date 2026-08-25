@@ -8,6 +8,7 @@
 export {
   renderDerivationToElements,
   renderExerciseToElements,
+  renderFreeResponseToElements,
   renderGlossaryToElements,
   renderComparisonToElements,
   renderDataReadingToElements,

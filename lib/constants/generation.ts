@@ -188,6 +188,8 @@ export interface SpecialtyDepthFloor {
   minDataClaims: number;
   /** Minimum options in a trade-off decision scene. */
   minTradeoffOptions: number;
+  /** Minimum rubric criteria on a free-response scene. */
+  minFreeResponseCriteria: number;
 }
 
 export const SPECIALTY_DEPTH_FLOORS: Record<CourseDepthLevel, SpecialtyDepthFloor> = {
@@ -199,6 +201,7 @@ export const SPECIALTY_DEPTH_FLOORS: Record<CourseDepthLevel, SpecialtyDepthFloo
     minComparisonRows: 3,
     minDataClaims: 2,
     minTradeoffOptions: 2,
+    minFreeResponseCriteria: 2,
   },
   intermediate: {
     minProblems: 1,
@@ -208,6 +211,7 @@ export const SPECIALTY_DEPTH_FLOORS: Record<CourseDepthLevel, SpecialtyDepthFloo
     minComparisonRows: 4,
     minDataClaims: 3,
     minTradeoffOptions: 3,
+    minFreeResponseCriteria: 3,
   },
   university: {
     minProblems: 2,
@@ -217,6 +221,7 @@ export const SPECIALTY_DEPTH_FLOORS: Record<CourseDepthLevel, SpecialtyDepthFloo
     minComparisonRows: 5,
     minDataClaims: 4,
     minTradeoffOptions: 3,
+    minFreeResponseCriteria: 4,
   },
 };
 
@@ -271,3 +276,4 @@ export const LLM_CALL_CONCURRENCY = 6;
 // caption fragments may not dominate, and a concrete example/definition/
 // fact is required unless the outline is intro/summary.
 export const MIN_SUBSTANTIVE_ELEMENTS = 4;
+

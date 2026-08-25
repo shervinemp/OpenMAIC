@@ -34,6 +34,7 @@ import {
   summarizeDepthFindings,
   validateDerivationDepth,
   validateExerciseDepth,
+  validateFreeResponseDepth,
   validateGlossaryDepth,
   validateComparisonDepth,
   validateDataReadingDepth,
@@ -46,6 +47,7 @@ import {
 import {
   renderDerivationToElements,
   renderExerciseToElements,
+  renderFreeResponseToElements,
   renderGlossaryToElements,
   renderComparisonToElements,
   renderDataReadingToElements,
@@ -74,6 +76,7 @@ import { buildPrompt, PROMPT_IDS } from './prompts/index.js';
 import type {
   GeneratedDerivationContent,
   GeneratedExerciseContent,
+  GeneratedFreeResponseContent,
   GeneratedGlossaryContent,
   GeneratedInteractiveContent,
   GeneratedPBLContent,
@@ -353,6 +356,8 @@ export async function generateSceneContent(
       );
     case 'quiz':
       return generateQuizContent(outline, aiCall, languageDirective, retrievalContext, unitContext, log, options.onFailure);
+    case 'freeResponse':
+      return generateFreeResponseContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
     case 'exercise':
       return generateExerciseContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
     case 'derivation':
@@ -1256,6 +1261,24 @@ async function generateReadingContent(
   if (!payload) return null;
   return finalizeRenderedElements(renderReadingToElements(outline, payload.items ?? []));
 }
+async function generateFreeResponseContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  retrievalContext?: string,
+  unitContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedFreeResponseContent>(
+    outline,
+    PROMPT_IDS.FREE_RESPONSE_CONTENT,
+    aiCall,
+    (parsed) => validateFreeResponseDepth(outline, parsed, { retrievalContext }),
+    { languageDirective, retrievalContext, unitContext },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderFreeResponseToElements(outline, payload));
+}
+
 async function generateComparisonContent(
   outline: SceneOutline,
   aiCall: AICallFn,

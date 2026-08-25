@@ -20,6 +20,7 @@ export const PROMPT_IDS = {
   READING_CONTENT: 'reading-content',
   COMPARISON_CONTENT: 'comparison-content',
   DATA_READING_CONTENT: 'data-reading-content',
+FREE_RESPONSE_CONTENT: 'free-response-content',
   TRADEOFFS_CONTENT: 'tradeoffs-content',
   UNIT_REVIEW: 'unit-review',
   SIMULATION_CONTENT: 'simulation-content',

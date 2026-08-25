@@ -2,11 +2,13 @@ import { describe, expect, test } from 'vitest';
 import {
   validateComparisonDepth,
   validateDataReadingDepth,
+  validateFreeResponseDepth,
   validateTradeoffsDepth,
 } from '@/lib/generation/content-depth';
 import {
   renderComparisonToElements,
   renderDataReadingToElements,
+  renderFreeResponseToElements,
   renderTradeoffsToElements,
 } from '@/lib/generation/specialized-scene-render';
 import { isSlideLikeOutline, changeOutlineType } from '@/lib/generation/outline-type';
@@ -16,6 +18,7 @@ import type {
   GeneratedComparisonContent,
   GeneratedDataReadingContent,
   GeneratedTradeoffsContent,
+  GeneratedFreeResponseContent,
 } from '@/lib/types/generation';
 
 function outline(type: SceneOutline['type'], depthLevel?: SceneOutline['depthLevel']): SceneOutline {
@@ -250,6 +253,74 @@ describe('validateTradeoffsDepth', () => {
   });
 });
 
+const adequateFreeResponse: GeneratedFreeResponseContent = {
+  prompt:
+    'Explain to a junior teammate why the retry storm made the p99 latency worse during the incident, using the stampede dynamics from the lesson. 150-250 words.',
+  guidance: [
+    'Name the failure mechanism before the fix.',
+    'Use at least one concrete number from the lesson.',
+  ],
+  rubric: [
+    {
+      id: 'crit-1',
+      criterion: 'Names the correct failure mechanism (retry storm, not general slowness).',
+      weight: 'essential',
+      lookFor:
+        'The answer identifies synchronized retries amplifying load as the cause of the spike.',
+    },
+    {
+      id: 'crit-2',
+      criterion: 'Uses concrete lesson values rather than vague quantities.',
+      weight: 'important',
+      lookFor: 'At least one specific number (timeout, retry count, or request rate) appears.',
+    },
+  ],
+  sampleAnswer:
+    'The incident was a retry storm. When the dependency slowed, every caller retried after its own short timeout, so the request rate tripled at exactly the moment the backend had the least headroom. With a 2-second timeout and 3 retries per caller, a single failing request became four requests against an already saturated pool, which pushed p99 from 800ms to 9 seconds. The fix is not more capacity: it is bounded, jittered, token-bucket retry budgets so that retries shed load instead of amplifying it.',
+};
+
+describe('validateFreeResponseDepth', () => {
+  test('accepts an adequate writing task', () => {
+    expect(validateFreeResponseDepth(outline('freeResponse', 'intro'), adequateFreeResponse).adequate)
+      .toBe(true);
+  });
+
+  test('rejects a rubric with no essential criterion', () => {
+    const report = validateFreeResponseDepth(outline('freeResponse'), {
+      ...adequateFreeResponse,
+      rubric: adequateFreeResponse.rubric.map((c) => ({ ...c, weight: 'bonus' as const })),
+    });
+    expect(report.adequate).toBe(false);
+    expect(report.findings.some((f) => f.includes('no essential criterion'))).toBe(true);
+  });
+
+  test('rejects a thin sample answer', () => {
+    const report = validateFreeResponseDepth(outline('freeResponse'), {
+      ...adequateFreeResponse,
+      sampleAnswer: 'Retries are bad.',
+    });
+    expect(report.adequate).toBe(false);
+    expect(report.findings.some((f) => f.includes('sample answer is only'))).toBe(true);
+  });
+
+  test('rejects a bare-topic prompt', () => {
+    const report = validateFreeResponseDepth(outline('freeResponse'), {
+      ...adequateFreeResponse,
+      prompt: 'Retry storms',
+    });
+    expect(report.adequate).toBe(false);
+    expect(report.findings.some((f) => f.includes('bare topic label'))).toBe(true);
+  });
+
+  test('renders the task box, rubric weights, and the strong answer', () => {
+    const elements = renderFreeResponseToElements(outline('freeResponse'), adequateFreeResponse);
+    const texts = elements.map((el) => ('content' in el ? String(el.content) : ''));
+    expect(texts.some((t) => t.includes('Your task'))).toBe(true);
+    expect(texts.some((t) => t.includes('[Essential]'))).toBe(true);
+    expect(texts.some((t) => t.includes('Strong answer'))).toBe(true);
+  });
+});
+
 describe('analytic kinds integrate with outline plumbing', () => {
   test.each(['comparison', 'dataReading', 'tradeoffs'] as const)(
     '%s is slide-like and survives type-change identity',
@@ -273,3 +344,4 @@ describe('analytic kinds integrate with outline plumbing', () => {
     expect(bad[0]).toContain('comparison');
   });
 });
+

@@ -39,6 +39,7 @@ export const PROMPT_IDS = {
   COMPARISON_CONTENT: 'comparison-content',
   DATA_READING_CONTENT: 'data-reading-content',
   TRADEOFFS_CONTENT: 'tradeoffs-content',
+  FREE_RESPONSE_CONTENT: 'free-response-content',
   SLIDE_ACTIONS: 'slide-actions',
   QUIZ_ACTIONS: 'quiz-actions',
   INTERACTIVE_ACTIONS: 'interactive-actions',

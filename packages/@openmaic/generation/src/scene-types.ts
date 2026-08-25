@@ -199,3 +199,43 @@ export interface GeneratedTradeoffsContent {
   };
 }
 
+
+export interface RubricCriterion {
+  id: string;
+  /** What this aspect of a strong answer does (complete sentence). */
+  criterion: string;
+  /** How central the criterion is to a strong answer. */
+  weight: 'essential' | 'important' | 'bonus';
+  /** The concrete indicator a grader looks for on this criterion. */
+  lookFor: string;
+}
+
+export interface GeneratedFreeResponseContent {
+  /** The full writing prompt - a complete task, not a topic label. */
+  prompt: string;
+  /** 2-4 pointers that frame the task without giving the answer away. */
+  guidance?: string[];
+  rubric: RubricCriterion[];
+  /** A strong model answer, rendered after the rubric. */
+  sampleAnswer: string;
+}
+
+export interface RubricCriterion {
+  id: string;
+  /** What this aspect of a strong answer does (complete sentence). */
+  criterion: string;
+  /** How central the criterion is to a strong answer. */
+  weight: 'essential' | 'important' | 'bonus';
+  /** The concrete indicator a grader looks for on this criterion. */
+  lookFor: string;
+}
+
+export interface GeneratedFreeResponseContent {
+  /** The full writing prompt - a complete task, not a topic label. */
+  prompt: string;
+  /** 2-4 pointers that frame the task without giving the answer away. */
+  guidance?: string[];
+  rubric: RubricCriterion[];
+  /** A strong model answer, rendered after the rubric. */
+  sampleAnswer: string;
+}

@@ -59,6 +59,7 @@ const SCENE_TYPES: SceneType[] = [
   'comparison',
   'dataReading',
   'tradeoffs',
+  'freeResponse',
 ];
 
 const TYPE_THEME: Record<
@@ -136,6 +137,12 @@ const TYPE_THEME: Record<
     accent: 'bg-orange-500',
     dot: 'bg-orange-400',
   },
+  freeResponse: {
+    chip: 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-500/10 dark:text-fuchsia-300',
+    chipHover: 'hover:bg-fuchsia-100/80 dark:hover:bg-fuchsia-500/15',
+    accent: 'bg-fuchsia-500',
+    dot: 'bg-fuchsia-400',
+  },
 };
 
 function normalizeOrder(outlines: SceneOutline[]): SceneOutline[] {
@@ -169,6 +176,8 @@ function useSceneTypeLabel() {
         return t('generation.sceneTypeDataReading');
       case 'tradeoffs':
         return t('generation.sceneTypeTradeoffs');
+      case 'freeResponse':
+        return t('generation.sceneTypeFreeResponse');
       case 'slide':
       default:
         return t('generation.sceneTypeSlide');
@@ -1593,3 +1602,4 @@ function useAutoResize(ref: React.RefObject<HTMLTextAreaElement | null>, value: 
     return () => cancelAnimationFrame(frame);
   }, [ref, value]);
 }
+

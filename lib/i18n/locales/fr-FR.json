@@ -659,7 +659,8 @@
       "reading": "lectures",
       "comparison": "comparaisons",
       "dataReading": "lectures de données",
-      "tradeoffs": "arbitrages"
+      "tradeoffs": "arbitrages",
+      "freeResponse": "rédactions libres"
     },
     "quizScoreLabel": "{{correct}} / {{total}} bonnes réponses",
     "encouragement": {
@@ -1085,6 +1086,7 @@
     "sceneTypeComparison": "Comparaison",
     "sceneTypeDataReading": "Lecture de données",
     "sceneTypeTradeoffs": "Arbitrages",
+    "sceneTypeFreeResponse": "Rédaction libre",
     "sceneDescriptionPlaceholder": "Décrivez brièvement l’objectif et le contenu de cette scène",
     "quizQuestionCount": "Nombre de questions",
     "quizDifficulty": "Difficulté",
