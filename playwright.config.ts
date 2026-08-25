@@ -29,9 +29,14 @@ export default defineConfig({
     url: 'http://localhost:3002',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    // Enable the MAIC Editor (Pro mode) so editor e2e can reach it. This is a
-    // build-time NEXT_PUBLIC_* flag: in CI it must be set on the dedicated
-    // `pnpm build` step; locally `pnpm dev` reads it here.
-    env: { PORT: '3002', NEXT_PUBLIC_MAIC_EDITOR_ENABLED: 'true' },
+    // Enable the MAIC Editor (Pro mode) so editor e2e can reach it, and the
+    // backup UI so the backup round-trip spec can reach Settings → Export.
+    // Both are build-time NEXT_PUBLIC_* flags: in CI they must be set on the
+    // dedicated `pnpm build` step; locally `pnpm dev` reads them here.
+    env: {
+      PORT: '3002',
+      NEXT_PUBLIC_MAIC_EDITOR_ENABLED: 'true',
+      NEXT_PUBLIC_ENABLE_BACKUP_UI: 'true',
+    },
   },
 });
