@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const streamLLMMock = vi.hoisted(() => vi.fn());
+const callLLMMock = vi.hoisted(() => vi.fn());
 const resolveModelFromRequestMock = vi.hoisted(() => vi.fn());
 const VOCATIONAL_FLAG = 'OPENMAIC_ENABLE_VOCATIONAL';
 let originalVocationalFlag: string | undefined;
 
 vi.mock('@/lib/ai/llm', () => ({
   streamLLM: streamLLMMock,
+  callLLM: callLLMMock,
 }));
 
 vi.mock('@/lib/server/resolve-model', () => ({
@@ -67,10 +69,45 @@ function fillerOutlines(count: number, startOrder: number) {
   }));
 }
 
+/**
+ * Contract-mode ordinary courses take the syllabus-first path (Phase 2
+ * §15.8): one syllabus call, then per-lesson outline calls + the review
+ * gate — all on callLLM. Dispatch on prompt shape; the lesson payload must
+ * match the 5-minute contract (1 lesson, 5 scenes).
+ */
+function mockSyllabusFirstFlow(lessonOutlines: unknown[]) {
+  callLLMMock.mockImplementation(async (params: { prompt?: string }) => {
+    const prompt = params.prompt ?? '';
+    if (prompt.includes('Unit Review Gate')) {
+      return { text: JSON.stringify({ adequate: true, findings: [] }), usage: {} };
+    }
+    if (prompt.includes('Syllabus Context (Unit')) {
+      return { text: JSON.stringify({ outlines: lessonOutlines }), usage: {} };
+    }
+    return {
+      text: JSON.stringify({
+        languageDirective: 'Teach in English.',
+        courseTitle: 'Mock Course',
+        audience: 'general',
+        objectives: ['Understand the topic', 'Apply the topic'],
+        units: [
+          {
+            title: 'Mock Unit',
+            objectives: ['Understand the topic', 'Apply the topic'],
+            lessons: [{ title: 'Mock Lesson', objectives: ['Cover the basics'] }],
+          },
+        ],
+      }),
+      usage: {},
+    };
+  });
+}
+
 describe('task-engine outline route', () => {
   beforeEach(() => {
     originalVocationalFlag = process.env[VOCATIONAL_FLAG];
     delete process.env[VOCATIONAL_FLAG];
+    callLLMMock.mockReset();
   });
 
   afterEach(() => {
@@ -410,6 +447,7 @@ describe('task-engine outline route', () => {
   test('preserves model-authored scenario PBL subtype through streamed outlines', async () => {
     vi.resetModules();
     streamLLMMock.mockReset();
+    callLLMMock.mockReset();
     resolveModelFromRequestMock.mockReset();
 
     resolveModelFromRequestMock.mockResolvedValue({
@@ -421,32 +459,23 @@ describe('task-engine outline route', () => {
       thinkingConfig: undefined,
     });
 
-    streamLLMMock.mockReturnValue({
-      textStream: (async function* () {
-        yield JSON.stringify({
-          languageDirective: '用中文授课。',
-          outlines: [
-            {
-              id: 'scene_pbl',
-              type: 'pbl',
-              title: '同理沟通练习',
-              description: '练习安慰压力很大的朋友。',
-              keyPoints: ['倾听', '回应'],
-              order: 1,
-              pblConfig: {
-                projectTopic: '同理沟通练习',
-                projectDescription: '练习安慰压力很大的朋友。',
-                targetSkills: ['倾听', '回应'],
-                issueCount: 2,
-                scenarioRoleplay: true,
-                scenarioBrief: '朋友压力很大，学习者练习倾听和支持。',
-              },
-            },
-            ...fillerOutlines(4, 2),
-          ],
-        });
-      })(),
-    });
+    const pblScene = {
+      id: 'scene_pbl',
+      type: 'pbl',
+      title: '同理沟通练习',
+      description: '练习安慰压力很大的朋友。',
+      keyPoints: ['倾听', '回应'],
+      order: 1,
+      pblConfig: {
+        projectTopic: '同理沟通练习',
+        projectDescription: '练习安慰压力很大的朋友。',
+        targetSkills: ['倾听', '回应'],
+        issueCount: 2,
+        scenarioRoleplay: true,
+        scenarioBrief: '朋友压力很大，学习者练习倾听和支持。',
+      },
+    };
+    mockSyllabusFirstFlow([pblScene, ...fillerOutlines(4, 2)]);
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
     const response = await POST(
@@ -472,6 +501,7 @@ describe('task-engine outline route', () => {
   test('ensures streamed outline ids are unique', async () => {
     vi.resetModules();
     streamLLMMock.mockReset();
+    callLLMMock.mockReset();
     resolveModelFromRequestMock.mockReset();
 
     resolveModelFromRequestMock.mockResolvedValue({
@@ -483,32 +513,25 @@ describe('task-engine outline route', () => {
       thinkingConfig: undefined,
     });
 
-    streamLLMMock.mockReturnValue({
-      textStream: (async function* () {
-        yield JSON.stringify({
-          languageDirective: 'Teach in English.',
-          outlines: [
-            {
-              id: 'scene_4',
-              type: 'slide',
-              title: 'First Scene',
-              description: 'First scene.',
-              keyPoints: ['A'],
-              order: 1,
-            },
-            {
-              id: 'scene_4',
-              type: 'slide',
-              title: 'Second Scene',
-              description: 'Second scene.',
-              keyPoints: ['B'],
-              order: 2,
-            },
-            ...fillerOutlines(3, 3),
-          ],
-        });
-      })(),
-    });
+    mockSyllabusFirstFlow([
+      {
+        id: 'scene_4',
+        type: 'slide',
+        title: 'First Scene',
+        description: 'First scene.',
+        keyPoints: ['A'],
+        order: 1,
+      },
+      {
+        id: 'scene_4',
+        type: 'slide',
+        title: 'Second Scene',
+        description: 'Second scene.',
+        keyPoints: ['B'],
+        order: 2,
+      },
+      ...fillerOutlines(3, 3),
+    ]);
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
     const response = await POST(
@@ -582,3 +605,4 @@ describe('task-engine outline route', () => {
     expect(done.outlines[0].widgetOutline).toBeUndefined();
   });
 });
+
