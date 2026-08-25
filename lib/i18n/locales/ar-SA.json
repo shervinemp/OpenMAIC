@@ -626,7 +626,8 @@
       "reading": "قراءات",
       "comparison": "مقارنات",
       "dataReading": "قراءات بيانات",
-      "tradeoffs": "مفاضلات"
+      "tradeoffs": "مفاضلات",
+      "freeResponse": "إجابات حرة"
     },
     "quizScoreLabel": "{{correct}} / {{total}} صحيحة",
     "encouragement": {
@@ -1049,6 +1050,7 @@
     "sceneTypeComparison": "مقارنة",
     "sceneTypeDataReading": "قراءة البيانات",
     "sceneTypeTradeoffs": "المفاضلات",
+    "sceneTypeFreeResponse": "إجابة حرة",
     "sceneDescriptionPlaceholder": "صف هدف هذا المشهد ومحتواه بإيجاز",
     "quizQuestionCount": "عدد الأسئلة",
     "quizDifficulty": "الصعوبة",

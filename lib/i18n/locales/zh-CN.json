@@ -626,7 +626,8 @@
       "reading": "拓展阅读",
       "comparison": "对比",
       "dataReading": "数据解读",
-      "tradeoffs": "权衡分析"
+      "tradeoffs": "权衡分析",
+      "freeResponse": "自由写作"
     },
     "quizScoreLabel": "答对 {{correct}} / {{total}}",
     "encouragement": {
@@ -1049,6 +1050,7 @@
     "sceneTypeComparison": "对比",
     "sceneTypeDataReading": "数据解读",
     "sceneTypeTradeoffs": "权衡分析",
+    "sceneTypeFreeResponse": "自由写作",
     "sceneDescriptionPlaceholder": "简短描述这个场景的目的和内容",
     "quizQuestionCount": "题目数量",
     "quizDifficulty": "难度",

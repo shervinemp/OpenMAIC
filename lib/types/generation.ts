@@ -136,7 +136,8 @@ export interface SceneOutline {
     | 'reading'
     | 'comparison'
     | 'dataReading'
-    | 'tradeoffs';
+    | 'tradeoffs'
+    | 'freeResponse';
   title: string;
   description: string; // 1-2 sentences describing the purpose
   keyPoints: string[]; // 3-5 core key points
@@ -428,6 +429,26 @@ export interface TradeoffOption {
   bestFor?: string;
 }
 
+export interface RubricCriterion {
+  id: string;
+  /** What this aspect of a strong answer does (complete sentence). */
+  criterion: string;
+  /** How central the criterion is to a strong answer. */
+  weight: 'essential' | 'important' | 'bonus';
+  /** The concrete indicator a grader looks for on this criterion. */
+  lookFor: string;
+}
+
+export interface GeneratedFreeResponseContent {
+  /** The full writing prompt — a complete task, not a topic label. */
+  prompt: string;
+  /** 2-4 pointers that frame the task without giving the answer away. */
+  guidance?: string[];
+  rubric: RubricCriterion[];
+  /** A strong model answer, rendered after the rubric. */
+  sampleAnswer: string;
+}
+
 export interface GeneratedTradeoffsContent {
   /** The decision context: situation + hard constraints (complete sentences). */
   context: string;
@@ -505,3 +526,4 @@ export interface SuggestedAction {
   description: string;
   timing?: 'start' | 'middle' | 'end' | 'after-content';
 }
+

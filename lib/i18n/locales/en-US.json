@@ -626,7 +626,8 @@
       "reading": "readings",
       "comparison": "comparisons",
       "dataReading": "data readings",
-      "tradeoffs": "trade-offs"
+      "tradeoffs": "trade-offs",
+      "freeResponse": "free responses"
     },
     "quizScoreLabel": "{{correct}} / {{total}} correct",
     "encouragement": {
@@ -1049,6 +1050,7 @@
     "sceneTypeComparison": "Comparison",
     "sceneTypeDataReading": "Data Reading",
     "sceneTypeTradeoffs": "Trade-offs",
+    "sceneTypeFreeResponse": "Free Response",
     "sceneDescriptionPlaceholder": "Briefly describe the purpose and content of this scene",
     "quizQuestionCount": "Question count",
     "quizDifficulty": "Difficulty",

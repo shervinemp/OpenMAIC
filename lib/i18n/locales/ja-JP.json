@@ -626,7 +626,8 @@
       "reading": "参考文献",
       "comparison": "比較",
       "dataReading": "データ読み取り",
-      "tradeoffs": "トレードオフ"
+      "tradeoffs": "トレードオフ",
+      "freeResponse": "自由記述"
     },
     "quizScoreLabel": "{{correct}} / {{total}} 正解",
     "encouragement": {
@@ -1049,6 +1050,7 @@
     "sceneTypeComparison": "比較",
     "sceneTypeDataReading": "データの読み取り",
     "sceneTypeTradeoffs": "トレードオフ",
+    "sceneTypeFreeResponse": "自由記述",
     "sceneDescriptionPlaceholder": "このシーンの目的と内容を簡潔に説明してください",
     "quizQuestionCount": "問題数",
     "quizDifficulty": "難易度",

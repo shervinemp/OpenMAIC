@@ -25,6 +25,7 @@ const SLIDE_LIKE_TYPES = new Set([
   'comparison',
   'dataReading',
   'tradeoffs',
+  'freeResponse',
 ]);
 
 export function isSlideLikeOutline(outline: SceneOutline): boolean {
@@ -119,6 +120,7 @@ export function changeOutlineType(outline: SceneOutline, newType: SceneType): Sc
     case 'comparison':
     case 'dataReading':
     case 'tradeoffs':
+    case 'freeResponse':
     default:
       return baseOutline;
   }

@@ -21,6 +21,7 @@ export type PromptId =
   | 'comparison-content'
   | 'data-reading-content'
   | 'tradeoffs-content'
+  | 'free-response-content'
   | 'slide-actions'
   | 'quiz-actions'
   | 'interactive-actions'

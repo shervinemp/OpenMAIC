@@ -21,6 +21,7 @@ import {
   Scale,
   LineChart,
   GitBranch,
+  PenLine,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
@@ -156,6 +157,7 @@ export function SceneSidebar({
       comparison: Scale,
       dataReading: LineChart,
       tradeoffs: GitBranch,
+      freeResponse: PenLine,
     };
     return icons[kind] || BookOpen;
   };
@@ -710,3 +712,4 @@ export function SceneSidebar({
     </div>
   );
 }
+

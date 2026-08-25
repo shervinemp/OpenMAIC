@@ -1027,6 +1027,7 @@
     "sceneTypeComparison": "對比",
     "sceneTypeDataReading": "數據解讀",
     "sceneTypeTradeoffs": "權衡分析",
+    "sceneTypeFreeResponse": "自由寫作",
     "sceneDescriptionPlaceholder": "簡短描述這個場景的目的和內容",
     "quizQuestionCount": "題目數量",
     "quizDifficulty": "難度",
@@ -1860,7 +1861,8 @@
       "reading": "延伸閱讀",
       "comparison": "對比",
       "dataReading": "數據解讀",
-      "tradeoffs": "權衡分析"
+      "tradeoffs": "權衡分析",
+      "freeResponse": "自由寫作"
     },
     "quizScoreLabel": "{{correct}} / {{total}} 正確",
     "encouragement": {

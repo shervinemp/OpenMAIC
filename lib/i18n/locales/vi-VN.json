@@ -670,7 +670,11 @@
       "exercise": "bài tập",
       "derivation": "chứng minh",
       "glossary": "bảng thuật ngữ",
-      "reading": "tài liệu đọc thêm"
+      "reading": "tài liệu đọc thêm",
+      "comparison": "so sánh",
+      "dataReading": "đọc dữ liệu",
+      "tradeoffs": "cân nhắc",
+      "freeResponse": "bài tự luận"
     },
     "quizScoreLabel": "Đúng {{correct}} / {{total}}",
     "encouragement": {
@@ -1167,7 +1171,11 @@
     "coverageDigestTrimmed": "{{count}} chủ đề đã bị cắt khỏi bản đồ phạm vi để vừa ngân sách đề cương",
     "pendingGenerationTitle": "Đang tạo khóa học",
     "pendingGenerationDesc": "Tiếp tục từ chỗ bạn đã dừng — dàn ý của bạn vẫn được lưu an toàn.",
-    "skipScene": "Bỏ qua cảnh"
+    "skipScene": "Bỏ qua cảnh",
+    "sceneTypeComparison": "So sánh",
+    "sceneTypeDataReading": "Đọc dữ liệu",
+    "sceneTypeTradeoffs": "Cân nhắc lựa chọn",
+    "sceneTypeFreeResponse": "Tự luận"
   },
   "settings": {
     "title": "Cài đặt",

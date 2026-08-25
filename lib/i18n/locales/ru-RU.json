@@ -626,7 +626,8 @@
       "reading": "материалов",
       "comparison": "сравнения",
       "dataReading": "чтения данных",
-      "tradeoffs": "компромиссы"
+      "tradeoffs": "компромиссы",
+      "freeResponse": "свободные ответы"
     },
     "quizScoreLabel": "Верно {{correct}} из {{total}}",
     "encouragement": {
@@ -1049,6 +1050,7 @@
     "sceneTypeComparison": "Сравнение",
     "sceneTypeDataReading": "Чтение данных",
     "sceneTypeTradeoffs": "Компромиссы",
+    "sceneTypeFreeResponse": "Свободный ответ",
     "sceneDescriptionPlaceholder": "Кратко опишите цель и содержание этой сцены",
     "quizQuestionCount": "Количество вопросов",
     "quizDifficulty": "Сложность",

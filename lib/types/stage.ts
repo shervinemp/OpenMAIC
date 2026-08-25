@@ -131,7 +131,8 @@ export type SceneOutlineKind =
   | 'reading'
   | 'comparison'
   | 'dataReading'
-  | 'tradeoffs';
+  | 'tradeoffs'
+  | 'freeResponse';
 
 /**
  * A partial update for {@link AppScene} — the patch shape used by `updateScene` /
@@ -169,3 +170,4 @@ export function makeScene<C extends SceneContent>(
 ): Extract<AppScene, { type: C['type'] }> {
   return { ...core, type: content.type, content } as Extract<AppScene, { type: C['type'] }>;
 }
+

@@ -36,6 +36,7 @@ import type {
   GeneratedComparisonContent,
   GeneratedDataReadingContent,
   GeneratedTradeoffsContent,
+  GeneratedFreeResponseContent,
 } from '@/lib/types/generation';
 
 // ==================== Report ====================
@@ -639,6 +640,75 @@ export function validateTradeoffsDepth(
   }
 
   return blankFindingsReport(options_.length, findings);
+}
+
+export function validateFreeResponseDepth(
+  outline: SceneOutline,
+  content: GeneratedFreeResponseContent,
+  options: { retrievalContext?: string; depthLevel?: CourseDepthLevel } = {},
+): DepthReport {
+  const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
+  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const findings: string[] = [];
+
+  if (!content.prompt?.trim()) {
+    findings.push('free-response scene is missing the writing prompt');
+  } else if (isCaptionText(stripHtml(content.prompt))) {
+    findings.push(
+      `writing prompt is a bare topic label ("${content.prompt.slice(0, 60)}") - state the full task with an audience and a scope`,
+    );
+  }
+
+  const validWeights = new Set(['essential', 'important', 'bonus']);
+  const rubric = content.rubric ?? [];
+  const completeCriteria = rubric.filter(
+    (c) => c.criterion?.trim() && validWeights.has(c.weight) && c.lookFor?.trim(),
+  );
+  if (completeCriteria.length < floor.minFreeResponseCriteria) {
+    findings.push(
+      `rubric has ${completeCriteria.length} complete criterion/ia; need at least ${floor.minFreeResponseCriteria} (each with a criterion, a weight, and a concrete look-for)`,
+    );
+  }
+  if (!rubric.some((c) => c.weight === 'essential')) {
+    findings.push('rubric has no essential criterion - at least one must be marked essential');
+  }
+  for (const criterion of rubric) {
+    if (criterion.criterion?.trim() && !validWeights.has(criterion.weight)) {
+      findings.push(
+        `rubric criterion "${criterion.criterion.slice(0, 60)}" has weight "${String(criterion.weight)}" - use essential / important / bonus`,
+      );
+    }
+    if (
+      criterion.lookFor?.trim() &&
+      /well written|good quality|reads well/i.test(stripHtml(criterion.lookFor))
+    ) {
+      findings.push(
+        `rubric look-for "${criterion.lookFor.slice(0, 60)}" is not observable - describe the concrete indicator a grader checks`,
+      );
+    }
+  }
+
+  if (!content.sampleAnswer?.trim()) {
+    findings.push('free-response scene is missing the sample answer');
+  } else if (content.sampleAnswer.trim().length < 200) {
+    findings.push(
+      `sample answer is only ${content.sampleAnswer.trim().length} chars - write a genuinely strong answer that would score full marks on the rubric`,
+    );
+  }
+
+  if (options.retrievalContext) {
+    const combinedText = [
+      content.prompt,
+      ...(content.guidance ?? []),
+      ...rubric.map((c) => `${c.criterion} ${c.lookFor}`),
+      content.sampleAnswer,
+    ].join(' ');
+    findings.push(
+      ...citationFindings(combinedText, options.retrievalContext, COURSE_DEPTH_FLOORS[depthLevel].minCitations),
+    );
+  }
+
+  return blankFindingsReport(completeCriteria.length, findings);
 }
 
 // ==================== Corrective feedback ====================

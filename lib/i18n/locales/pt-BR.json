@@ -626,7 +626,8 @@
       "reading": "leituras",
       "comparison": "comparações",
       "dataReading": "leituras de dados",
-      "tradeoffs": "trade-offs"
+      "tradeoffs": "trade-offs",
+      "freeResponse": "respostas livres"
     },
     "quizScoreLabel": "{{correct}} de {{total}} corretas",
     "encouragement": {
@@ -1049,6 +1050,7 @@
     "sceneTypeComparison": "Comparação",
     "sceneTypeDataReading": "Leitura de dados",
     "sceneTypeTradeoffs": "Trade-offs",
+    "sceneTypeFreeResponse": "Resposta livre",
     "sceneDescriptionPlaceholder": "Descreva brevemente o propósito e o conteúdo desta cena",
     "quizQuestionCount": "Número de questões",
     "quizDifficulty": "Dificuldade",

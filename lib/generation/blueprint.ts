@@ -250,7 +250,7 @@ function renderCourseStyleGuide(contract: CourseContract, courseType: CourseType
         ? 'Hands-on: practice-led mix — coding/simulation/game interactive scenes and worked exercises throughout the course; at most 1 pbl per unit.'
         : 'Balanced: alternate concept slides with active practice — spread interactive scenes (code/simulation/game) and worked exercises across the course instead of limiting them to 1-2; at most 1 pbl per unit.';
 
-  const specialization = `\n- Specialized scene types:\n  * "exercise" — fully-worked problems (concrete statement + worked solution) for computational, quantitative, and coding lessons — use these liberally wherever the material is computational.${contract.depthLevel === 'university' ? ' At university depth each problem also needs an "analysis" (why the method works / common pitfalls).' : ''}\n  * "derivation" — step-by-step proof/derivation scenes with LaTeX formulas, for formula-heavy lessons.\n  * "glossary" — one per unit: the unit's key terms with complete definitions.\n  * "reading" — one per unit: annotated further-reading list (title + why-read).\n- Analytic scene types (use where the content genuinely calls for them):\n  * "comparison" — a side-by-side table of 2-3 confusable concepts across decision-relevant dimensions. Use wherever the material says "compare", "vs", or contrasts two mechanisms.\n  * "dataReading" — a small plotted dataset plus claims the learner evaluates against it (supported / refuted / insufficient). Use for quantitative trends, measurements, benchmark-style material.\n  * "tradeoffs" — a decision under explicit constraints: 2-4 options with honest pros/cons and ONE justified recommendation matching an option name. Use for architecture/design/method-choice topics.`;
+  const specialization = `\n- Specialized scene types:\n  * "exercise" — fully-worked problems (concrete statement + worked solution) for computational, quantitative, and coding lessons — use these liberally wherever the material is computational.${contract.depthLevel === 'university' ? ' At university depth each problem also needs an "analysis" (why the method works / common pitfalls).' : ''}\n  * "derivation" — step-by-step proof/derivation scenes with LaTeX formulas, for formula-heavy lessons.\n  * "glossary" — one per unit: the unit's key terms with complete definitions.\n  * "reading" — one per unit: annotated further-reading list (title + why-read).\n- Analytic scene types (use where the content genuinely calls for them):\n  * "comparison" — a side-by-side table of 2-3 confusable concepts across decision-relevant dimensions. Use wherever the material says "compare", "vs", or contrasts two mechanisms.\n  * "dataReading" — a small plotted dataset plus claims the learner evaluates against it (supported / refuted / insufficient). Use for quantitative trends, measurements, benchmark-style material.\n  * "tradeoffs" — a decision under explicit constraints: 2-4 options with honest pros/cons and ONE justified recommendation matching an option name. Use for architecture/design/method-choice topics.\n  * "freeResponse" — a writing task: a full prompt, framing guidance, a grading rubric (criteria with what-to-look-for), and a strong sample answer. Use one per unit where written explanation is the skill being taught.`;
 
   return `- Scene types: ${typeMix}${specialization}`;
 }
@@ -512,6 +512,7 @@ const VALID_OUTLINE_TYPES = new Set<SceneOutline['type']>([
   'comparison',
   'dataReading',
   'tradeoffs',
+  'freeResponse',
 ]);
 
 export function validateOutlineShape(outline: SceneOutline): string[] {
@@ -527,7 +528,7 @@ export function validateOutlineShape(outline: SceneOutline): string[] {
   // downstream — a deck that validates but cannot generate.
   if (!outline.type || !VALID_OUTLINE_TYPES.has(outline.type)) {
     errors.push(
-      `outline "${outline.title || outline.order}" has an invalid scene type (${String(outline.type ?? 'missing')}) - use one of: slide, quiz, interactive, pbl, exercise, derivation, glossary, reading, comparison, dataReading, tradeoffs`,
+      `outline "${outline.title || outline.order}" has an invalid scene type (${String(outline.type ?? 'missing')}) - use one of: slide, quiz, interactive, pbl, exercise, derivation, glossary, reading, comparison, dataReading, tradeoffs, freeResponse`,
     );
   }
   if (outline.type === 'quiz' && !outline.quizConfig) {

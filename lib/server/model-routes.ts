@@ -124,6 +124,7 @@ export const LLM_STAGES = [
   'scene-content:comparison',
   'scene-content:dataReading',
   'scene-content:tradeoffs',
+  'scene-content:freeResponse',
   'scene-actions',
   'agent-profiles',
   'quiz-grade',

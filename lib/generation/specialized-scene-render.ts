@@ -23,6 +23,7 @@ import type {
   GeneratedComparisonContent,
   GeneratedDataReadingContent,
   GeneratedTradeoffsContent,
+  GeneratedFreeResponseContent,
 } from '@/lib/types/generation';
 
 const CANVAS_WIDTH = 1000;
@@ -479,3 +480,85 @@ export function renderTradeoffsToElements(
 
   return layOut(fitIntoCanvas(specs));
 }
+
+export function renderFreeResponseToElements(
+  outline: SceneOutline,
+  content: GeneratedFreeResponseContent,
+): GeneratedSlideData['elements'] {
+  const specs: ElementSpec[] = [];
+  const rubric = (content.rubric ?? []).filter((c) => c.criterion?.trim());
+  const bodyFont = rubric.length > 3 ? 12 : 13;
+
+  // The task itself, boxed.
+  specs.push({
+    kind: 'text',
+    content: paragraph(
+      `<strong>Your task</strong><br>${escapeHtml(content.prompt || outline.title)}`,
+      bodyFont,
+      'border-left:3px solid #5b9bd5;padding-left:8px;',
+    ),
+    height: estimateHeight(content.prompt || outline.title, bodyFont) + 22,
+    fontSize: bodyFont,
+    gapAfter: 8,
+  });
+
+  const guidance = (content.guidance ?? []).filter((g) => g?.trim());
+  if (guidance.length > 0) {
+    specs.push({
+      kind: 'text',
+      content: paragraph(
+        `<em>Framing</em> — ${guidance.map((g) => escapeHtml(g)).join(' &nbsp;•&nbsp; ')}`,
+        bodyFont,
+        'color:#b8860b;',
+      ),
+      height: estimateHeight(guidance.join(' '), bodyFont) + 12,
+      fontSize: bodyFont,
+      gapAfter: 8,
+    });
+  }
+
+  // The grading rubric.
+  const weightStyle: Record<string, string> = {
+    essential: 'color:#c0504d;',
+    important: 'color:#b8860b;',
+    bonus: 'color:#3f9950;',
+  };
+  specs.push({
+    kind: 'text',
+    content: paragraph('<strong>Grading rubric</strong>', bodyFont, 'color:#5b9bd5;'),
+    height: 24,
+    fontSize: bodyFont,
+    gapAfter: 2,
+  });
+  rubric.forEach((criterion) => {
+    const weight = String(criterion.weight);
+    const label = weight.charAt(0).toUpperCase() + weight.slice(1);
+    const text = `<span style="${weightStyle[weight] ?? ''}"><strong>[${label}]</strong></span> ${escapeHtml(criterion.criterion)}<br><em>Look for:</em> ${escapeHtml(criterion.lookFor ?? '')}`;
+    const plain = `${criterion.criterion} ${criterion.lookFor ?? ''}`;
+    specs.push({
+      kind: 'text',
+      content: paragraph(text, bodyFont),
+      height: estimateHeight(plain, bodyFont) + 26,
+      fontSize: bodyFont,
+      gapAfter: 6,
+    });
+  });
+
+  // A strong model answer, visually separated.
+  if (content.sampleAnswer?.trim()) {
+    specs.push({
+      kind: 'text',
+      content: paragraph(
+        `<strong>Strong answer</strong> — ${escapeHtml(content.sampleAnswer)}`,
+        bodyFont,
+        'border-left:3px solid #3f9950;padding-left:8px;',
+      ),
+      height: estimateHeight(content.sampleAnswer, bodyFont) + 18,
+      fontSize: bodyFont,
+      gapAfter: 6,
+    });
+  }
+
+  return layOut(fitIntoCanvas(specs));
+}
+

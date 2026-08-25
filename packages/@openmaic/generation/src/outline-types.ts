@@ -82,7 +82,8 @@ export interface SceneOutline {
     // Analytic kinds (Phase 2 §15.9): render as slides.
     | 'comparison'
     | 'dataReading'
-    | 'tradeoffs';
+    | 'tradeoffs'
+    | 'freeResponse';
   title: string;
   description: string;
   keyPoints: string[];
@@ -130,3 +131,4 @@ export interface SceneOutline {
   widgetType?: WidgetType;
   widgetOutline?: WidgetOutline;
 }
+
