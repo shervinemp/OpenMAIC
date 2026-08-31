@@ -17,7 +17,7 @@ import type {
   ToolCallRequest,
   ChatSession,
 } from '@/lib/types/chat';
-import type { SceneOutline } from '@/lib/types/generation';
+import type { GenerationSessionState, SceneOutline } from '@/lib/types/generation';
 import type { VoiceDesign } from '@/lib/audio/voice-design';
 import type { UIMessage } from 'ai';
 import type { AgentEditSessionRecord } from '@/lib/agent/client/agent-edit-session-types';
@@ -278,6 +278,21 @@ export interface AutoVoiceCacheRecord {
   updatedAt: number;
 }
 
+/**
+ * GenerationSession table - Full state of one in-flight course generation.
+ *
+ * The extracted document text, image data and coverage digest routinely
+ * exceed the ~5MB `sessionStorage` quota, so the full session lives here;
+ * `sessionStorage` carries only a tiny pointer envelope ({ sessionId,
+ * stageId? }) across page navigations. See lib/utils/generation-session-store.
+ */
+export interface GenerationSessionRecord {
+  sessionId: string; // Primary key (GenerationSessionState.sessionId)
+  session: GenerationSessionState; // JSON-safe session state
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** Build the compound primary key for mediaFiles: `${stageId}:${elementId}` */
 export function mediaFileKey(stageId: string, elementId: string): string {
   return `${stageId}:${elementId}`;
@@ -309,6 +324,7 @@ class MAICDatabase extends Dexie {
   agentEditSessions!: EntityTable<AgentEditSessionRecord, 'id'>;
   folders!: EntityTable<FolderRecord, 'id'>;
   stageFolders!: EntityTable<StageFolderMembership, 'stageId'>;
+  generationSessions!: EntityTable<GenerationSessionRecord, 'sessionId'>;
 
   constructor() {
     super(DATABASE_NAME);
@@ -551,6 +567,17 @@ class MAICDatabase extends Dexie {
     this.version(17).stores({
       folders: 'id, order',
       stageFolders: 'stageId, folderId',
+    });
+
+    // Version 18: generationSessions — full in-flight generation state that
+    // outgrew sessionStorage's ~5MB quota. The full session (document text,
+    // image data, coverage digest, research context) lives here; sessionStorage
+    // keeps only the pointer envelope. session.stageId is indexed because the
+    // classroom page looks the handoff params up by the stage id in its URL —
+    // the sessionStorage envelope does not survive a tab close. Only the new
+    // table is declared; Dexie merges table declarations across versions.
+    this.version(18).stores({
+      generationSessions: 'sessionId, updatedAt, session.stageId',
     });
   }
 }

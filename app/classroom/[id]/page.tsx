@@ -6,6 +6,10 @@ import { useStageStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/store/settings';
 import { claimStageSceneLoadToken, isCurrentStageSceneLoadToken } from '@/lib/store/stage';
 import { loadImageMapping } from '@/lib/utils/image-storage';
+import {
+  clearGenerationSessionForStage,
+  loadGenerationParams,
+} from '@/lib/utils/generation-session-store';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
@@ -121,16 +125,19 @@ export default function ClassroomDetailPage() {
     if (hasPending && stage) {
       generationStartedRef.current = true;
 
-      // Load generation params from sessionStorage (stored by generation-preview before navigating)
-      const genParamsStr = sessionStorage.getItem('generationParams');
-      const params = genParamsStr ? JSON.parse(genParamsStr) : {};
+      // Params persisted by generation-preview on the session record
+      // (IndexedDB — see generation-session-store), looked up by the stage id
+      // in the URL so the resume works even without the sessionStorage
+      // envelope (tab close, browser restart).
+      void (async () => {
+        const params = (await loadGenerationParams(classroomId)) ?? {};
 
-      // Reconstruct imageMapping from IndexedDB using pdfImages storageIds
-      const storageIds = (params.pdfImages || [])
-        .map((img: { storageId?: string }) => img.storageId)
-        .filter(Boolean);
+        // Reconstruct imageMapping from IndexedDB using pdfImages storageIds
+        const storageIds = (params.pdfImages || [])
+          .map((img) => img.storageId)
+          .filter((id): id is string => Boolean(id));
 
-      loadImageMapping(storageIds).then((imageMapping) => {
+        const imageMapping = await loadImageMapping(storageIds);
         generateRemaining({
           pdfImages: params.pdfImages,
           imageMapping,
@@ -143,7 +150,11 @@ export default function ClassroomDetailPage() {
           userProfile: params.userProfile,
           languageDirective: params.languageDirective || stage.languageDirective,
         });
-      });
+
+        // Handoff consumed — the stage document now owns everything. Drop the
+        // session record so it is not left behind for the TTL sweep.
+        await clearGenerationSessionForStage(classroomId);
+      })();
     } else if (outlines.length > 0 && stage) {
       // All scenes are generated, but some media may not have finished.
       // Resume media generation for any tasks not yet in IndexedDB.
@@ -156,6 +167,9 @@ export default function ClassroomDetailPage() {
       // an interrupted generation. No-op if already complete or not all
       // outlines have scenes.
       useStageStore.getState().markGenerationCompleteIfDone();
+      // Nothing needs the generation session anymore — drop any record a
+      // handoff left behind (single-slide course, refresh-after-completion).
+      void clearGenerationSessionForStage(classroomId);
       // Resume media only for outlines that still have a scene. On a finished
       // deck the user may have deleted a slide, leaving an orphaned outline;
       // generating its media would waste API calls on a slide that is gone.
@@ -165,7 +179,10 @@ export default function ClassroomDetailPage() {
         log.warn('[Classroom] Media generation resume error:', err);
       });
     }
-  }, [loading, error, generateRemaining]);
+    // classroomId: the params lookup and session cleanup are keyed by it. A
+    // change re-runs this effect, but `generationStartedRef` still guards the
+    // one-shot resume.
+  }, [loading, error, generateRemaining, classroomId]);
 
   return (
     <ThemeProvider>

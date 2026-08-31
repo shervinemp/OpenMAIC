@@ -864,9 +864,10 @@ describe('database runtime chat integration', () => {
     const { db } = await import('@/lib/utils/database');
     await db.open();
 
-    expect(db.verno).toBe(17);
+    expect(db.verno).toBe(18);
     expect([...db.backendDB().objectStoreNames]).not.toContain('chatStorageLocks');
     expect([...db.backendDB().objectStoreNames]).toContain('chatRestoreStaging');
+    expect([...db.backendDB().objectStoreNames]).toContain('generationSessions');
   });
 
   it('waits for active and locally queued chat writers before clearing all runtime data', async () => {

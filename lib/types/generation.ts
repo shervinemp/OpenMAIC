@@ -8,6 +8,7 @@
 import type { ActionType } from './action';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import type { CourseSizePreset, CourseDepthLevel } from '@/lib/constants/generation';
+import type { DocumentDigest } from '@/lib/generation/document-digest';
 
 // ==================== PDF Image Types ====================
 
@@ -80,6 +81,78 @@ export interface UserRequirements {
   webSearch?: boolean; // Enable web search for richer context
   interactiveMode?: boolean; // Enable Interactive Mode for interactive-first generation
   taskEngineMode?: boolean; // Enable vocational task-engine generation path
+}
+
+/**
+ * Params handed from the generation-preview flow to the classroom resume path
+ * (persisted on the generation session record; see generation-session-store).
+ */
+export interface GenerationSessionParams {
+  pdfImages?: PdfImage[];
+  agents?: Array<{ id: string; name: string; role: string; persona?: string }>;
+  userProfile?: string;
+  languageDirective?: string;
+}
+
+/**
+ * Full state of one in-flight course generation.
+ *
+ * Persisted in IndexedDB (`generationSessions`, keyed by `sessionId`) because
+ * the extracted document text, image data and coverage digest routinely
+ * exceed the ~5 MB `sessionStorage` quota. `sessionStorage` only carries a
+ * tiny pointer envelope ({ sessionId, stageId? }) across page navigations.
+ */
+export interface GenerationSessionState {
+  sessionId: string;
+  requirements: UserRequirements;
+  /** Course size preset selected on the home form (Phase 2 §15.3). */
+  sizePreset?: CourseSizePreset;
+  pdfText: string;
+  documentSources?: SessionDocumentSource[];
+  pdfImages?: PdfImage[];
+  imageStorageIds?: string[];
+  imageMapping?: ImageMapping;
+  sceneOutlines?: SceneOutline[] | null;
+  currentStep: 'generating' | 'complete';
+  previewPhase?: 'preparing' | 'outline-ready' | 'review' | 'generating-content';
+  /** Server-side document index handle (Phase 2 §16). */
+  pdfHandle?: string;
+  /** Coverage digest returned by the indexing step. */
+  pdfDigest?: DocumentDigest;
+  /** Indexing summary for UI display. */
+  documentIndex?: {
+    tier: string;
+    chunkCount: number;
+    totalImageCount: number;
+    captionedCount: number;
+  };
+  /** Stage id once the course is persisted (content phase) — lets a
+   *  re-entered session resume on the classroom page instead of
+   *  duplicating the stage. */
+  stageId?: string;
+  // PDF deferred parsing fields
+  pdfStorageKey?: string;
+  pdfFileName?: string;
+  documentMimeType?: string;
+  pdfProviderId?: string;
+  pdfProviderConfig?: {
+    apiKey?: string;
+    baseUrl?: string;
+    accessKeyId?: string;
+    accessKeySecret?: string;
+  };
+  // Web search context
+  researchContext?: string;
+  researchSources?: Array<{ title: string; url: string }>;
+  // Language directive inferred from outline generation
+  languageDirective?: string;
+  // Concise course title inferred from outline generation (used as the stage name)
+  courseTitle?: string;
+  // Server-effective vocational mode from the outline generation done event.
+  taskEngineMode?: boolean;
+  // Params the classroom resume path needs (agents, media context) after the
+  // stage handoff; written just before navigation to /classroom/[id].
+  generationParams?: GenerationSessionParams;
 }
 
 // ==================== Stage 1 Output: Scene Outlines (Simplified) ====================

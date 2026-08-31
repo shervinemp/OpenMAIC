@@ -49,6 +49,7 @@ import { BACKUP_UI_ENABLED } from '@/lib/backup/config';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
+import { saveGenerationSession, hasGenerationSessionEnvelope } from '@/lib/utils/generation-session-store';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import { dedupeCourseMaterialFiles } from '@/lib/document/course-materials';
 import type {
@@ -308,10 +309,11 @@ function HomePage() {
     useMediaGenerationStore.getState().revokeObjectUrls();
     useMediaGenerationStore.setState({ tasks: {} });
 
-    // A generation session parked in sessionStorage means the user backed out
-    // mid-outline (before the course was persisted). Surface a resume prompt
-    // and make sure the recent list is expanded so it is visible.
-    if (sessionStorage.getItem('generationSession')) {
+    // A parked generation session (pointer envelope in sessionStorage) means
+    // the user backed out mid-outline (before the course was persisted).
+    // Surface a resume prompt and make sure the recent list is expanded so it
+    // is visible.
+    if (hasGenerationSessionEnvelope()) {
       setPendingGeneration(true);
       persistRecentOpen(true);
     }
@@ -610,7 +612,11 @@ function HomePage() {
         sceneOutlines: null,
         currentStep: 'generating' as const,
       };
-      sessionStorage.setItem('generationSession', JSON.stringify(sessionState));
+      // Awaited: /generation-preview hydrates from this record on mount, so it
+      // must be durable before navigation. The full session lives in IndexedDB
+      // (sessionStorage only carries the pointer envelope — the quota-safe
+      // medium for the large document payloads that follow).
+      await saveGenerationSession(sessionState);
 
       router.push('/generation-preview');
     } catch (err) {
