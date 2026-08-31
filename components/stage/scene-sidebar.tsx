@@ -22,6 +22,7 @@ import {
   LineChart,
   GitBranch,
   PenLine,
+  Play,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
@@ -38,6 +39,8 @@ interface SceneSidebarProps {
   readonly onRetryOutline?: (outlineId: string) => Promise<void>;
   /** Skip resolution (Pillar 2 §4.9): close a failed outline permanently. */
   readonly onSkipOutline?: (outlineId: string) => void;
+  /** Re-kick the scene batch after a provider-failure pause. */
+  readonly onResumeGeneration?: () => void;
   readonly isCourseComplete?: boolean;
 }
 
@@ -51,6 +54,7 @@ export function SceneSidebar({
   onSceneSelect,
   onRetryOutline,
   onSkipOutline,
+  onResumeGeneration,
   isCourseComplete,
 }: SceneSidebarProps) {
   const { t } = useI18n();
@@ -579,6 +583,19 @@ export function SceneSidebar({
                           <span className="text-[9px] font-medium text-gray-400 dark:text-gray-500 mt-0.5">
                             {isPaused ? t('stage.paused') : t('stage.generating')}
                           </span>
+                          {isPaused && onResumeGeneration && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onResumeGeneration();
+                              }}
+                              className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-purple-600 px-1.5 py-0.5 text-[9px] font-semibold text-white hover:bg-purple-500 transition-colors active:scale-95"
+                              title={t('stage.resumeGeneration')}
+                            >
+                              <Play className="w-2.5 h-2.5" />
+                              {t('stage.resumeGeneration')}
+                            </button>
+                          )}
                         </>
                       )}
                     </div>

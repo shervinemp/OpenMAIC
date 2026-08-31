@@ -92,6 +92,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
+import { adoptCheckpointSessionId } from '@/lib/generation/outline-checkpoint';
 import { isPptxImportEnabled, shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
@@ -595,8 +596,19 @@ function HomePage() {
         }
       }
 
+      // Retry adoption: if a previous multi-unit run for the SAME requirement
+      // died mid-course, its outline checkpoint (device KV, keyed by the old
+      // session id) still holds every completed unit. Reusing that sessionId
+      // lets the generation preview's resume path engage - without this, a
+      // resubmit after "Generation failed" orphaned the checkpoint and
+      // silently restarted the whole course.
+      const adoptedSessionId = await adoptCheckpointSessionId(
+        requirements.requirement,
+        (checkpoint) => checkpoint.sessionId,
+      );
+
       const sessionState = {
-        sessionId: nanoid(),
+        sessionId: adoptedSessionId ?? nanoid(),
         requirements,
         sizePreset: form.sizePreset,
         pdfText: '',

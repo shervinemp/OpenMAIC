@@ -151,9 +151,11 @@ export default function ClassroomDetailPage() {
           languageDirective: params.languageDirective || stage.languageDirective,
         });
 
-        // Handoff consumed — the stage document now owns everything. Drop the
-        // session record so it is not left behind for the TTL sweep.
-        await clearGenerationSessionForStage(classroomId);
+        // The session record is intentionally KEPT: an in-page resume after a
+        // provider-failure pause needs the same params (pdfImages, agents,
+        // language directive) to re-kick the batch. The TTL sweep cleans up
+        // abandoned records.
+        // await clearGenerationSessionForStage(classroomId);
       })();
     } else if (outlines.length > 0 && stage) {
       // All scenes are generated, but some media may not have finished.
@@ -184,6 +186,32 @@ export default function ClassroomDetailPage() {
     // one-shot resume.
   }, [loading, error, generateRemaining, classroomId]);
 
+  // In-page resume after a provider-failure pause (quota exhaustion, flaky
+  // free tier): re-kick the batch with the same handoff params the first
+  // auto-resume used. The session record is kept around for exactly this.
+  const handleResumeGeneration = useCallback(async () => {
+    const state = useStageStore.getState();
+    const stage = state.stage;
+    if (!stage) return;
+    const params = (await loadGenerationParams(classroomId)) ?? {};
+    const storageIds = (params.pdfImages || [])
+      .map((img) => img.storageId)
+      .filter((id): id is string => Boolean(id));
+    const imageMapping = await loadImageMapping(storageIds);
+    generateRemaining({
+      pdfImages: params.pdfImages,
+      imageMapping,
+      stageInfo: {
+        name: stage.name || '',
+        description: stage.description,
+        style: stage.style,
+      },
+      agents: params.agents,
+      userProfile: params.userProfile,
+      languageDirective: params.languageDirective || stage.languageDirective,
+    });
+  }, [classroomId, generateRemaining]);
+
   return (
     <ThemeProvider>
       <MediaStageProvider value={classroomId}>
@@ -211,7 +239,7 @@ export default function ClassroomDetailPage() {
               </div>
             </div>
           ) : (
-            <Stage onRetryOutline={retrySingleOutline} />
+            <Stage onRetryOutline={retrySingleOutline} onResumeGeneration={handleResumeGeneration} />
           )}
         </div>
       </MediaStageProvider>

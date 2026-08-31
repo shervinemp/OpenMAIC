@@ -74,43 +74,14 @@ const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
 // outlines, persisted as units finish so a mid-run failure can resume instead
 // of regenerating everything. Keyed by session id so a fresh run never reuses
 // a stale checkpoint.
-const OUTLINE_CHECKPOINT_KEY = 'outlineCheckpoint';
+// Outline checkpoint helpers moved to lib/generation/outline-checkpoint.ts (shared with home-page retry adoption).
 
-interface OutlineCheckpoint {
-  sessionId: string;
-  syllabus: unknown;
-  outlines: SceneOutline[];
-  completedUnitCount: number;
-}
-
-function outlineCheckpointStore(): BrowserKVStore {
-  return new BrowserKVStore();
-}
-
-async function readOutlineCheckpoint(): Promise<OutlineCheckpoint | null> {
-  try {
-    return await outlineCheckpointStore().get<OutlineCheckpoint>(OUTLINE_CHECKPOINT_KEY, 'device');
-  } catch (e) {
-    log.warn('Failed to read outline checkpoint:', e);
-    return null;
-  }
-}
-
-async function writeOutlineCheckpoint(checkpoint: OutlineCheckpoint): Promise<void> {
-  try {
-    await outlineCheckpointStore().set(OUTLINE_CHECKPOINT_KEY, checkpoint, 'device');
-  } catch (e) {
-    log.warn('Failed to persist outline checkpoint:', e);
-  }
-}
-
-async function clearOutlineCheckpoint(): Promise<void> {
-  try {
-    await outlineCheckpointStore().remove(OUTLINE_CHECKPOINT_KEY, 'device');
-  } catch {
-    /* ignore */
-  }
-}
+import {
+  clearOutlineCheckpoint,
+  readOutlineCheckpoint,
+  writeOutlineCheckpoint,
+  type OutlineCheckpoint,
+} from '@/lib/generation/outline-checkpoint';
 
 type ParsedDocumentResponseImage = {
   id: string;
@@ -816,7 +787,7 @@ function GenerationPreviewContent() {
             checkpoint.completedUnitCount > 0
           ) {
             resumeSyllabus = checkpoint.syllabus;
-            resumeOutlines = checkpoint.outlines;
+            resumeOutlines = checkpoint.outlines as SceneOutline[];
             resumeFromUnitIndex = checkpoint.completedUnitCount;
           }
         } catch (e) {
@@ -920,6 +891,7 @@ function GenerationPreviewContent() {
                               syllabus: checkpointSyllabus,
                               outlines: [...collected],
                               completedUnitCount: Number(evt.index) + 1,
+                              requirement: currentSession.requirements.requirement,
                             };
                             void writeOutlineCheckpoint(checkpoint);
                           } catch (e) {
@@ -1908,3 +1880,5 @@ export default function GenerationPreviewPage() {
     </Suspense>
   );
 }
+
+
