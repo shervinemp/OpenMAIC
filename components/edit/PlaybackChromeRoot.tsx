@@ -91,6 +91,8 @@ export interface PlaybackChromeRootHandle {
 
 interface PlaybackChromeRootProps {
   readonly onRetryOutline?: (outlineId: string) => Promise<void>;
+  /** Re-kick the scene batch after a provider-failure pause. */
+  readonly onResumeGeneration?: () => void;
   /** Skip resolution (Pillar 2 §4.9): close a failed outline permanently.
       Defaults to the store action when unset. */
   readonly onSkipOutline?: (outlineId: string) => void;
@@ -1462,6 +1464,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           onCollapseChange={setSidebarCollapsed}
           onSceneSelect={gatedSceneSwitch}
           onRetryOutline={onRetryOutline}
+          onResumeGeneration={onResumeGeneration}
           onSkipOutline={onSkipOutline ?? ((outlineId) => useStageStore.getState().skipFailedOutline(outlineId))}
           isCourseComplete={isCourseComplete}
         />

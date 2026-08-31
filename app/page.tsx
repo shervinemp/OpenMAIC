@@ -685,8 +685,19 @@ function HomePage() {
         }
       }
 
+      // Retry adoption: if a previous multi-unit run for the SAME requirement
+      // died mid-course, its outline checkpoint (device KV, keyed by the old
+      // session id) still holds every completed unit. Reusing that sessionId
+      // lets the generation preview's resume path engage - without this, a
+      // resubmit after "Generation failed" orphaned the checkpoint and
+      // silently restarted the whole course.
+      const adoptedSessionId = await adoptCheckpointSessionId(
+        requirements.requirement,
+        (checkpoint) => checkpoint.sessionId,
+      );
+
       const sessionState = {
-        sessionId: nanoid(),
+        sessionId: adoptedSessionId ?? nanoid(),
         requirements,
         sizePreset: form.sizePreset,
         pdfText: '',
