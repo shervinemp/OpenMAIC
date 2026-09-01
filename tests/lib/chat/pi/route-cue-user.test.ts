@@ -473,6 +473,8 @@ describe('POST /api/chat/pi cue_user', () => {
     }
   });
 
+  // Spawns the Pi child process; under a fully loaded machine the default
+  // 5s budget is too tight even though the test passes in isolation.
   it('wires Pi standard message conversion only into the Director agent', async () => {
     mockDirectorWithAgentTurn({ explicitlyCueUser: false });
 
@@ -491,7 +493,7 @@ describe('POST /api/chat/pi cue_user', () => {
     expect(response.status).toBe(200);
     expect(directorOptions?.convertToLlm).toBe(convertToLlm);
     expect(childOptions.every((options) => options.convertToLlm === undefined)).toBe(true);
-  });
+  }, 30_000);
 
   it('keeps web_search out of the Director inventory', async () => {
     mockDirectorWithAgentTurn({ explicitlyCueUser: false });
