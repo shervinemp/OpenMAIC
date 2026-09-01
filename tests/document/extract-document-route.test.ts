@@ -71,18 +71,24 @@ describe('POST /api/extract-document', () => {
     delete process.env.PDF_MINERU_API_KEY;
   });
 
-  it('returns 400 for unsupported course material MIME types', async () => {
-    const res = await postExtractDocument({
-      file: new File(['x,y'], 'sheet.csv', { type: 'text/csv' }),
-    });
-    const json = await res.json();
+  // First route import in the file pulls the extraction stack; under a fully
+  // parallel suite that cold import can exceed 5s.
+  it(
+    'returns 400 for unsupported course material MIME types',
+    async () => {
+      const res = await postExtractDocument({
+        file: new File(['x,y'], 'sheet.csv', { type: 'text/csv' }),
+      });
+      const json = await res.json();
 
-    expect(res.status).toBe(400);
-    expect(json).toMatchObject({
-      success: false,
-      errorCode: 'INVALID_REQUEST',
-    });
-  });
+      expect(res.status).toBe(400);
+      expect(json).toMatchObject({
+        success: false,
+        errorCode: 'INVALID_REQUEST',
+      });
+    },
+    30_000,
+  );
 
   it('returns 413 before extraction when the file exceeds the per-file size limit', async () => {
     const res = await postExtractDocument({

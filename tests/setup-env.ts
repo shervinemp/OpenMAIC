@@ -4,6 +4,8 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
+import { afterEach, vi } from 'vitest';
+
 const envPath = resolve(__dirname, '..', '.env.local');
 try {
   const content = readFileSync(envPath, 'utf-8');
@@ -29,3 +31,37 @@ try {
 } catch {
   // .env.local not found, skip
 }
+
+/**
+ * Per-test hygiene, applied to every file that uses this config.
+ *
+ * Cross-file isolation is guaranteed by the pinned pool/isolate settings
+ * above; this guard covers the intra-file failure modes that actually
+ * occur in this suite: a test stubbing an env var without cleanup (the
+ * next test in the file inherits it), mock call history accumulating
+ * across tests, fake timers left installed after a test that took an
+ * early exit, and DOM-storage residue in happy-dom files.
+ *
+ * Deliberately NOT done here:
+ * - `vi.unstubAllGlobals()` — several suites install globals in
+ *   `beforeAll` for the whole file (sessionStorage, IDBKeyRange, FileReader
+ *   stubs); unstubbing per test would break them.
+ * - `vi.restoreAllMocks()` — would tear down implementations installed
+ *   once per file, not just call history.
+ * - IndexedDB teardown — suites own their `IDBFactory` instances per test;
+ *   no ambient factory cleanup is safe to assume.
+ */
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.clearAllMocks();
+  if (vi.isFakeTimers()) {
+    vi.useRealTimers();
+  }
+  // Some suites stub storage with partial mocks; only call a real .clear.
+  if (typeof globalThis.localStorage?.clear === 'function') {
+    globalThis.localStorage.clear();
+  }
+  if (typeof globalThis.sessionStorage?.clear === 'function') {
+    globalThis.sessionStorage.clear();
+  }
+});

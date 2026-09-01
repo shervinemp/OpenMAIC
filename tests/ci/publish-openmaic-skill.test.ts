@@ -6,6 +6,13 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
+/**
+ * The suite drives a real bash script through `/bin/bash`. On platforms
+ * without that path (Windows) every test would fail with spawn ENOENT -
+ * skip explicitly instead of reporting 76 environment failures.
+ */
+const bashAvailable = spawnSync('/bin/bash', ['-c', 'true'], { encoding: 'utf8' }).status === 0;
+
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
 const publishScript = resolve(repositoryRoot, '.github/scripts/publish-openmaic-skill.sh');
 const packageJsonPath = resolve(repositoryRoot, 'package.json');
@@ -98,7 +105,7 @@ function expectFailure(result: ReturnType<typeof runPublish>['result'], message:
   expect(result.stderr).toBe(`::error::${message}\n`);
 }
 
-describe('publish-openmaic-skill shell contract', () => {
+describe.skipIf(!bashAvailable)('publish-openmaic-skill shell contract', () => {
   it('performs a real publish with no positional argument under macOS Bash 3.2', () => {
     const { calls, result } = runPublish();
 

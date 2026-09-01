@@ -74,13 +74,19 @@ describe('LLM entry-point lint guard — coverage matrix', () => {
     for (const ext of EXTENSIONS) {
       // A namespace or named import of a value is not valid in a .cjs/.mjs mix
       // only in principle; eslint parses all of these fine, so no exclusions.
-      it(`blocks the ${form} import in every guarded path (.${ext})`, async () => {
-        for (const base of GUARDED_PATHS) {
-          const filePath = `${base}.${ext}`;
-          const errors = await errorsFor(filePath, code);
-          expect(errors, `${filePath} should reject the ${form} form`).not.toHaveLength(0);
-        }
-      });
+      // Each case lints every guarded path - give the real ESLint runs room
+      // on a loaded machine.
+      it(
+        `blocks the ${form} import in every guarded path (.${ext})`,
+        async () => {
+          for (const base of GUARDED_PATHS) {
+            const filePath = `${base}.${ext}`;
+            const errors = await errorsFor(filePath, code);
+            expect(errors, `${filePath} should reject the ${form} form`).not.toHaveLength(0);
+          }
+        },
+        30_000,
+      );
     }
   }
 
