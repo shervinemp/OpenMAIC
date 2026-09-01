@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { join } from 'path';
 
 export default defineConfig({
   testDir: './e2e/tests',
@@ -37,6 +38,11 @@ export default defineConfig({
       PORT: '3002',
       NEXT_PUBLIC_MAIC_EDITOR_ENABLED: 'true',
       NEXT_PUBLIC_ENABLE_BACKUP_UI: 'true',
+      // Isolate the e2e server's file-backed store from the developer's real
+      // one: `pnpm dev` loads .env.local (which points PERSISTENCE_DIR at the
+      // shared .data/persistence root), so without this override every e2e
+      // run synced its mock courses into the developer's actual workspace.
+      PERSISTENCE_DIR: join(process.cwd(), '.data', 'persistence-e2e'),
     },
   },
 });
