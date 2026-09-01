@@ -1,6 +1,17 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const labels = {
+  'de-DE': {
+    title: 'Bereitschaftsprüfung der Generierung',
+    description:
+      'Einige der aktivierten Generierungsziele sind nicht erreichbar oder nicht eingerichtet. Sie können fortfahren, diese Teile des Kurses schlagen jedoch fehl oder werden übersprungen.',
+    llm: 'Textmodell (LLM)',
+    image: 'Bilderzeugung',
+    video: 'Videoerzeugung',
+    tts: 'Sprachausgabe',
+    review: 'Einstellungen öffnen',
+    proceed: 'Trotzdem generieren',
+  },
   'en-US': {
     title: 'Generation readiness check',
     description:

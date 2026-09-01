@@ -1093,7 +1093,17 @@
     "webSearchFailed": "Websuche fehlgeschlagen",
     "outlinesReadyCount": "Abschnitte bereit: {{ready}} / {{total}}",
     "jumpToBlankTitle": "Zu einem Abschnitt ohne Titel springen",
-    "analyzingMediaMaterial": "Audio- und Videomaterial wird analysiert"
+    "analyzingMediaMaterial": "Audio- und Videomaterial wird analysiert",
+    "readiness": {
+      "title": "Bereitschaftsprüfung der Generierung",
+      "description": "Einige der aktivierten Generierungsziele sind nicht erreichbar oder nicht eingerichtet. Sie können fortfahren, diese Teile des Kurses schlagen jedoch fehl oder werden übersprungen.",
+      "llm": "Textmodell (LLM)",
+      "image": "Bilderzeugung",
+      "video": "Videoerzeugung",
+      "tts": "Sprachausgabe",
+      "review": "Einstellungen öffnen",
+      "proceed": "Trotzdem generieren"
+    }
   },
   "settings": {
     "title": "Einstellungen",

@@ -531,26 +531,14 @@ function HomePage() {
     }));
   };
 
-  const { check: checkReadiness, checking: readinessChecking, issues: readinessIssues, settle: settleReadiness } = useGenerationReadiness();
+  const {
+    probe: probeReadiness,
+    checking: readinessChecking,
+    issues: readinessIssues,
+    dismiss: dismissReadiness,
+  } = useGenerationReadiness();
 
-  const handleGenerate = async () => {
-    // No model/provider guard here: generation is gated by `canGenerate`
-    // (requires a usable provider), and under the #580 invariant a usable
-    // provider always has a concrete model. State A (no usable provider)
-    // surfaces through the toolbar's single Configure-Provider affordance.
-    if (!form.requirement.trim()) {
-      setError(t('upload.requirementRequired'));
-      return;
-    }
-
-    setError(null);
-
-    // Pre-flight: probe the enabled modalities (LLM provider, ComfyUI server +
-    // workflow selection, TTS server) so a dead media stack surfaces BEFORE
-    // the run burns LLM tokens, not after. Advisory - the user can proceed.
-    const proceed = await checkReadiness();
-    if (!proceed) return;
-
+  const runGeneration = async () => {
     try {
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
@@ -647,6 +635,28 @@ function HomePage() {
       log.error('Error preparing generation:', err);
       setError(err instanceof Error ? err.message : t('upload.generateFailed'));
     }
+  };
+
+  const handleGenerate = async () => {
+    // No model/provider guard here: generation is gated by `canGenerate`
+    // (requires a usable provider), and under the #580 invariant a usable
+    // provider always has a concrete model. State A (no usable provider)
+    // surfaces through the toolbar's single Configure-Provider affordance.
+    if (!form.requirement.trim()) {
+      setError(t('upload.requirementRequired'));
+      return;
+    }
+
+    setError(null);
+
+    // Pre-flight: probe the enabled modalities (LLM provider, ComfyUI server +
+    // workflow selection, TTS server) so a dead media stack surfaces BEFORE
+    // the run burns LLM tokens, not after. Advisory - blockers render the
+    // gate dialog and "Generate anyway" calls back into runGeneration().
+    const blockers = await probeReadiness();
+    if (blockers) return;
+
+    await runGeneration();
   };
 
   const formatDate = (timestamp: number) => {
@@ -780,8 +790,14 @@ function HomePage() {
       />
       <ReadinessGateDialog
         issues={readinessIssues}
-        onProceed={() => settleReadiness(true)}
-        onCancel={() => settleReadiness(false)}
+        onProceed={() => {
+          dismissReadiness();
+          void runGeneration();
+        }}
+        onReview={() => {
+          dismissReadiness();
+          setSettingsOpen(true);
+        }}
       />
 
       {/* ═══ Background Decor ═══ */}
