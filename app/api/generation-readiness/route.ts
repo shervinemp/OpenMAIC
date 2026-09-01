@@ -1,24 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { TTS_PROVIDERS } from '@/lib/audio/constants';
+import type { BuiltInTTSProviderId } from '@/lib/audio/types';
+import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
+import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
+import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
+import {
+  isServerConfiguredProvider,
+  resolveApiKey,
+  resolveBaseUrl,
+  resolveImageBaseUrl,
+  resolveVideoBaseUrl,
+} from '@/lib/server/provider-config';
+import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+
 /**
  * Generation readiness pre-flight.
  *
- * The generation flow can burn a lot of LLM tokens before the first image
- * request discovers that ComfyUI is not running (or that no workflow was ever
- * selected), or narrate scenes against a dead TTS server. The client sends
- * what only it knows (which modalities are enabled, the chosen providers, the
- * ComfyUI base URLs, whether a workflow/model is picked); this route probes
- * what only the server should probe (provider reachability) and reports a
- * per-modality status. Advisory, never blocking - the client decides.
+ * Answers one question before a course run starts: "will the enabled
+ * modalities actually work?" A dead ComfyUI or TTS server otherwise only
+ * surfaces after the LLM has burned tokens on outlines and scene content.
+ *
+ * Resolution parity is the invariant: every base URL / API key here is
+ * resolved exactly the way the corresponding generate route resolves it
+ * (server config > client value > registry default), so a `ready` check
+ * means generation will genuinely use that endpoint. Each check carries a
+ * server-decided `blocking` flag - the client only renders, it does not
+ * re-interpret statuses. The whole gate is advisory; the user can proceed.
  */
 
 export const runtime = 'nodejs';
 
-type ReadinessStatus = 'ready' | 'unreachable' | 'unconfigured' | 'auth_error' | 'unknown';
+type ReadinessKey = 'llm' | 'image' | 'video' | 'tts';
+type ReadinessStatus = 'ready' | 'unreachable' | 'unconfigured' | 'auth_error';
 
 interface ReadinessCheck {
-  key: 'llm' | 'image' | 'video' | 'tts';
+  key: ReadinessKey;
   status: ReadinessStatus;
+  blocking: boolean;
   detail?: string;
 }
 
@@ -30,7 +49,13 @@ interface ModalityInput {
   modelSelected?: boolean;
 }
 
-async function probe(url: string, headers: Record<string, string> = {}, timeoutMs = 4000): Promise<'reachable' | 'auth_error' | 'unreachable' | 'unknown'> {
+const blocking = (check: Omit<ReadinessCheck, 'blocking'>): ReadinessCheck => ({ ...check, blocking: true });
+
+async function probe(
+  url: string,
+  headers: Record<string, string> = {},
+  timeoutMs = 4000,
+): Promise<'reachable' | 'auth_error' | 'unreachable'> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -44,63 +69,185 @@ async function probe(url: string, headers: Record<string, string> = {}, timeoutM
   }
 }
 
-async function probeLlm(providerId: string, modelId: string): Promise<ReadinessCheck> {
-  const configured = process.env.OPENMAIC_FALLBACK_MODEL; // presence check only
-  void configured;
-  const prefix = providerId.toUpperCase().replace(/-/g, '_');
-  const base = process.env[`${prefix}_BASE_URL`];
-  const key = process.env[`${prefix}_API_KEY`];
-  // Server-managed provider without a probeable base: config presence is the
-  // best signal (resolveModel happens per request and surfaces its own errors).
-  if (!base) {
-    if (key) return { key: 'llm', status: 'ready', detail: `${providerId} configured (server-side)` };
-    return { key: 'llm', status: 'unconfigured', detail: `no ${prefix}_API_KEY/BASE_URL on the server` };
+/** Rejects client-supplied base URLs exactly like the generate routes do. */
+async function guardClientUrl(
+  key: ReadinessKey,
+  clientBaseUrl: string | undefined,
+): Promise<ReadinessCheck | null> {
+  if (!clientBaseUrl || process.env.NODE_ENV !== 'production') return null;
+  const ssrfError = await validateUrlForSSRF(clientBaseUrl);
+  if (ssrfError) {
+    return blocking({
+      key,
+      status: 'unreachable',
+      detail: ssrfError,
+    });
   }
-  const probeUrl = `${base.replace(/\/+$/, '')}/models`;
-  const reachability = await probe(probeUrl, key ? { Authorization: `Bearer ${key}` } : {});
+  return null;
+}
+
+async function checkLlm(input: {
+  providerId?: string;
+  modelId?: string;
+  apiKey?: string;
+  baseUrl?: string;
+}): Promise<ReadinessCheck | null> {
+  const { providerId, modelId, apiKey, baseUrl } = input;
+  // Mirrors generation: no resolvable provider+model means the run cannot
+  // start at all (the home toolbar normally prevents this state).
+  if (!providerId || !modelId) return null;
+  const managed = isServerConfiguredProvider('providers', providerId);
+  const clientBaseUrl = managed ? undefined : baseUrl || undefined;
+  const guard = await guardClientUrl('llm', clientBaseUrl);
+  if (guard) return guard;
+
+  const effectiveKey = resolveApiKey(providerId, apiKey || '');
+  const effectiveBaseUrl = resolveBaseUrl(providerId, clientBaseUrl);
+  if (!effectiveBaseUrl) {
+    if (effectiveKey) {
+      return { key: 'llm', status: 'ready', blocking: false, detail: `${providerId} configured` };
+    }
+    return blocking({
+      key: 'llm',
+      status: 'unconfigured',
+      detail: `no API key or base URL for ${providerId} - set it in settings or ${providerId.toUpperCase()}_API_KEY`,
+    });
+  }
+  const reachability = await probe(`${effectiveBaseUrl.replace(/\/+$/, '')}/models`, {
+    ...(effectiveKey ? { Authorization: `Bearer ${effectiveKey}` } : {}),
+  });
   if (reachability === 'unreachable') {
-    return { key: 'llm', status: 'unreachable', detail: `${providerId} base URL did not respond (${base})` };
+    return blocking({
+      key: 'llm',
+      status: 'unreachable',
+      detail: `${providerId} base URL did not respond (${effectiveBaseUrl})`,
+    });
   }
   if (reachability === 'auth_error') {
-    return { key: 'llm', status: 'auth_error', detail: `${providerId} rejected the server API key` };
+    return blocking({
+      key: 'llm',
+      status: 'auth_error',
+      detail: `${providerId} rejected the API key`,
+    });
   }
-  void modelId;
-  return { key: 'llm', status: 'ready', detail: `${providerId} reachable` };
+  return { key: 'llm', status: 'ready', blocking: false, detail: `${providerId} reachable` };
 }
 
-async function probeComfy(label: 'image' | 'video' | 'tts', input: ModalityInput): Promise<ReadinessCheck> {
-  if (!input.baseUrl) {
-    return {
-      key: label,
-      status: 'unconfigured',
-      detail: 'ComfyUI server URL is not set in settings',
-    };
-  }
-  if (input.modelSelected === false) {
-    return {
-      key: label,
-      status: 'unconfigured',
-      detail: `ComfyUI reachable? not checked - no workflow/model selected yet (${input.baseUrl})`,
-    };
-  }
-  const reachability = await probe(`${input.baseUrl.replace(/\/+$/, '')}/system_stats`);
-  if (reachability === 'unreachable') {
-    return {
-      key: label,
-      status: 'unreachable',
-      detail: `ComfyUI is not responding at ${input.baseUrl} - start it, or disable ${label} generation`,
-    };
-  }
-  return { key: label, status: 'ready', detail: `ComfyUI reachable at ${input.baseUrl}` };
-}
-
-function isComfy(providerId: string | undefined): boolean {
+function isComfyProvider(providerId: string): boolean {
   return providerId === 'comfyui-image' || providerId === 'comfyui-video';
+}
+
+/**
+ * Local/self-hosted endpoints are the ones that die silently and are worth
+ * an actual network probe. Public API endpoints are reported on config
+ * presence only: probing them without the caller's key yields misleading
+ * 401s, and their auth/quota failures already surface verbatim mid-run.
+ */
+function isLocalBaseUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    return (
+      hostname === 'localhost' ||
+      hostname === '::1' ||
+      hostname.endsWith('.local') ||
+      /^127\./.test(hostname) ||
+      /^10\./.test(hostname) ||
+      /^192\.168\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function checkImageOrVideo(
+  key: 'image' | 'video',
+  input: ModalityInput,
+): Promise<ReadinessCheck | null> {
+  if (!input.enabled) return null;
+  const providerId = input.providerId;
+  if (!providerId) {
+    return blocking({ key, status: 'unconfigured', detail: `${key} provider not set` });
+  }
+  const section = key === 'image' ? 'image' : 'video';
+  const managed = isServerConfiguredProvider(section, providerId);
+  const clientBaseUrl = managed ? undefined : input.baseUrl || undefined;
+  const guard = await guardClientUrl(key, clientBaseUrl);
+  if (guard) return guard;
+
+  // Same resolution chain as the generate routes: server config, else the
+  // client value, else the provider registry default (e.g. ComfyUI's
+  // http://localhost:8188, which the adapter applies at call time).
+  const resolvedBaseUrl =
+    (key === 'image'
+      ? resolveImageBaseUrl(providerId, clientBaseUrl)
+      : resolveVideoBaseUrl(providerId, clientBaseUrl)) ??
+    (key === 'image'
+      ? IMAGE_PROVIDERS[providerId as ImageProviderId]?.defaultBaseUrl
+      : VIDEO_PROVIDERS[providerId as VideoProviderId]?.defaultBaseUrl);
+
+  if (isComfyProvider(providerId) && input.modelSelected === false) {
+    return blocking({
+      key,
+      status: 'unconfigured',
+      detail: `no workflow/model selected yet - pick one in settings before generating`,
+    });
+  }
+  if (resolvedBaseUrl && isLocalBaseUrl(resolvedBaseUrl)) {
+    const probePath = isComfyProvider(providerId) ? '/system_stats' : '';
+    const reachability = await probe(`${resolvedBaseUrl.replace(/\/+$/, '')}${probePath}`);
+    if (reachability === 'unreachable') {
+      return blocking({
+        key,
+        status: 'unreachable',
+        detail: `the ${key} server is not responding at ${resolvedBaseUrl} - start it, or disable ${key} generation`,
+      });
+    }
+    if (reachability === 'auth_error') {
+      return blocking({ key, status: 'auth_error', detail: `the ${key} server rejected the request` });
+    }
+    return { key, status: 'ready', blocking: false, detail: `server reachable at ${resolvedBaseUrl}` };
+  }
+  return { key, status: 'ready', blocking: false, detail: `${providerId} configured` };
+}
+
+async function checkTts(input: ModalityInput): Promise<ReadinessCheck | null> {
+  if (!input.enabled) return null;
+  const providerId = input.providerId;
+  if (!providerId) {
+    return blocking({ key: 'tts', status: 'unconfigured', detail: 'tts provider not set' });
+  }
+  // TTS calls happen browser-side and the client applies the registry
+  // default before sending; keep the same fallback here as a safety net.
+  // Custom TTS providers are not in the registry - their baseUrl is
+  // always stored in their config.
+  const isBuiltInTts = (id: string): id is BuiltInTTSProviderId => id in TTS_PROVIDERS;
+  const resolvedBaseUrl =
+    input.baseUrl || (isBuiltInTts(providerId) ? TTS_PROVIDERS[providerId].defaultBaseUrl : '') || '';
+  if (!resolvedBaseUrl) {
+    // e.g. browser-native-tts: nothing to reach, always ready.
+    return { key: 'tts', status: 'ready', blocking: false, detail: `${providerId}` };
+  }
+  if (isLocalBaseUrl(resolvedBaseUrl)) {
+    const reachability = await probe(resolvedBaseUrl.replace(/\/+$/, ''));
+    if (reachability === 'unreachable') {
+      return blocking({
+        key: 'tts',
+        status: 'unreachable',
+        detail: `the tts server is not responding at ${resolvedBaseUrl} - start it, or disable tts`,
+      });
+    }
+    if (reachability === 'auth_error') {
+      return blocking({ key: 'tts', status: 'auth_error', detail: 'the tts server rejected the request' });
+    }
+    return { key: 'tts', status: 'ready', blocking: false, detail: `server reachable at ${resolvedBaseUrl}` };
+  }
+  return { key: 'tts', status: 'ready', blocking: false, detail: `${providerId} configured` };
 }
 
 export async function POST(request: NextRequest) {
   let body: {
-    llm?: { providerId?: string; modelId?: string };
+    llm?: { providerId?: string; modelId?: string; apiKey?: string; baseUrl?: string };
     image?: ModalityInput;
     video?: ModalityInput;
     tts?: ModalityInput;
@@ -111,61 +258,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'invalid json' }, { status: 400 });
   }
 
-  const checks: ReadinessCheck[] = [];
-
-  // LLM is the one modality generation cannot proceed without; probe it when
-  // the client knows its selection.
-  if (body.llm?.providerId && body.llm?.modelId) {
-    checks.push(await probeLlm(body.llm.providerId, body.llm.modelId));
-  }
-
-  for (const [label, input] of [
-    ['image', body.image],
-    ['video', body.video],
-    ['tts', body.tts],
-  ] as const) {
-    if (!input?.enabled) continue;
-    // A local server modality (ComfyUI, Kokoro, any self-hosted backend):
-    // probe it - these are exactly the ones that die silently while the LLM
-    // burns tokens.
-    if (input.baseUrl) {
-      const probePath = isComfy(input.providerId) ? '/system_stats' : '';
-      const reachability = await probe(`${input.baseUrl.replace(/\/+$/, '')}${probePath}`);
-      if (reachability === 'unreachable') {
-        checks.push({
-          key: label,
-          status: 'unreachable',
-          detail: `the ${label} server is not responding at ${input.baseUrl} - start it, or disable ${label} generation`,
-        });
-        continue;
-      }
-      if (reachability === 'auth_error') {
-        checks.push({ key: label, status: 'auth_error', detail: `${label} server rejected the request` });
-        continue;
-      }
-      if (isComfy(input.providerId) && input.modelSelected === false) {
-        checks.push({
-          key: label,
-          status: 'unconfigured',
-          detail: `ComfyUI is running, but no workflow/model has been selected yet`,
-        });
-        continue;
-      }
-      checks.push({ key: label, status: 'ready', detail: `server reachable at ${input.baseUrl}` });
-      continue;
-    }
-    // API-backed modality (no self-hosted server): config presence only -
-    // probing would burn quota.
-    if (input.providerId) {
-      checks.push({
-        key: label,
-        status: 'ready',
-        detail: `${input.providerId} configured`,
-      });
-      continue;
-    }
-    checks.push({ key: label, status: 'unconfigured', detail: `${label} provider not set` });
-  }
+  const results = await Promise.all([
+    checkLlm(body.llm ?? {}),
+    checkImageOrVideo('image', body.image ?? { enabled: false }),
+    checkImageOrVideo('video', body.video ?? { enabled: false }),
+    checkTts(body.tts ?? { enabled: false }),
+  ]);
+  const checks = results.filter((check): check is ReadinessCheck => check !== null);
 
   return NextResponse.json({ checks });
 }
