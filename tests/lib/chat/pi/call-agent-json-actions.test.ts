@@ -188,6 +188,8 @@ describe('Pi call_agent JSON action output', () => {
     mocks.buildAgent.mockReset();
   });
 
+  // Spawns the Pi child process; under a fully loaded machine the default
+  // 5s budget is too tight even though the test passes in isolation.
   it('parses child JSON actions, executes all action events, and does not leak raw JSON speech', async () => {
     const jsonOutput = JSON.stringify([
       { type: 'action', name: 'wb_open', params: {} },
@@ -249,7 +251,7 @@ describe('Pi call_agent JSON action output', () => {
       agentId: teacher.id,
       text: '我画了一个很简单的关系：树荫先挡住直射阳光，地面吸热就会减少。',
     });
-  });
+  }, 30_000);
 
   it('does not surface malformed structured JSON fallback as visible speech', async () => {
     mockChildWithJsonOutput('[{"type":"action","name":"wb_open","params":{}');

@@ -8,7 +8,7 @@
 import { Stage, Scene } from '../types/stage';
 import { ChatSession } from '../types/chat';
 import { db } from './database';
-import type { FolderRecord } from './database';
+import type { FolderRecord, GenerationSessionRecord } from './database';
 import { nanoid } from 'nanoid';
 import { validateFolderName, FOLDER_COUNT_LIMIT } from './folder-name-validation';
 import {
@@ -424,6 +424,67 @@ export async function saveStageDataIncremental(
 }
 
 /**
+ * Device-local outline recovery for decks whose plans never reached the
+ * document envelope. The document carries the outline only when an
+ * outline-carrying flush landed; decks saved by builds whose outline flush
+ * never did (or whose flushes failed) leave the plans only in the legacy
+ * Dexie tables — `stageOutlines` (resume-on-refresh outlines) and
+ * `generationSessions` (in-flight generation checkpoints, flat
+ * `sceneOutlines`). Without this fallback such plans are invisible after a
+ * reload: no lesson nav, no resume — while the materialized scenes still
+ * synced to the document.
+ *
+ * Recovery is read-only at load time. The adopted outline rides the store's
+ * snapshot on the next flush (the flush snapshot carries `outline` into
+ * `documentSnapshot`), which also heals the server copy for server-backed
+ * persistence. The resume pipeline itself is order-based
+ * (`generateRemaining` matches outlines to scenes by `order`), so a
+ * recovered flat plan resumes exactly where the deck stopped without
+ * re-running materialized scenes.
+ *
+ * The legacy stores never carried the blueprint's unit/lesson structure,
+ * so a recovered outline restores the deck and its resume cursor but not
+ * the multi-unit nav grouping.
+ */
+async function readLegacyStageOutline(
+  stageId: string,
+): Promise<AppDocumentOutline | undefined> {
+  try {
+    if (!db.isOpen()) await db.open();
+    const outlineRecord = await db.stageOutlines.get(stageId);
+    if (outlineRecord && Array.isArray(outlineRecord.outlines) && outlineRecord.outlines.length > 0) {
+      return {
+        outlines: outlineRecord.outlines,
+        generationComplete: outlineRecord.generationComplete,
+        createdAt: outlineRecord.createdAt,
+        updatedAt: outlineRecord.updatedAt,
+      };
+    }
+    const sessionRecords = await db.generationSessions
+      .where('session.stageId')
+      .equals(stageId)
+      .toArray();
+    const latest = sessionRecords.reduce<GenerationSessionRecord | undefined>((best, record) => {
+      const outlines = record.session?.sceneOutlines;
+      if (!Array.isArray(outlines) || outlines.length === 0) return best;
+      if (!best || (record.updatedAt ?? 0) > (best.updatedAt ?? 0)) return record;
+      return best;
+    }, undefined);
+    if (latest) {
+      return {
+        outlines: latest.session.sceneOutlines ?? [],
+        createdAt: latest.createdAt,
+        updatedAt: latest.updatedAt,
+      };
+    }
+    return undefined;
+  } catch (error) {
+    log.warn(`Legacy outline recovery failed for stage ${stageId}:`, error);
+    return undefined;
+  }
+}
+
+/**
  * Load stage data from IndexedDB
  */
 export async function loadStageData(stageId: string): Promise<StageStoreData | null> {
@@ -434,6 +495,17 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
       log.info(`Stage not found: ${stageId}`);
       return null;
     }
+    const persistedOutline = document.outline as AppDocumentOutline | undefined;
+    const outline =
+      persistedOutline ??
+      (await readLegacyStageOutline(stageId).then((recovered) => {
+        if (recovered) {
+          log.info(
+            `Recovered legacy outline for stage ${stageId}: ${recovered.outlines.length} outlines`,
+          );
+        }
+        return recovered;
+      }));
     const currentScene = await loadCurrentScene(stageId);
 
     // Chat runtime data lives in a separate IndexedDB database. Keep the
@@ -468,7 +540,7 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
       currentSceneId,
       chats,
       chatSnapshot,
-      outline: document.outline as AppDocumentOutline | undefined,
+      outline,
     };
   } catch (error) {
     log.error('Failed to load stage:', error);
