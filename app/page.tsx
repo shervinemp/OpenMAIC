@@ -100,6 +100,11 @@ import {
   isPptxImportEnabled,
   shouldShowVocationalTestUi,
 } from '@/lib/config/feature-flags';
+import { adoptCheckpointSessionId } from '@/lib/generation/outline-checkpoint';
+import {
+  ReadinessGateDialog,
+  useGenerationReadiness,
+} from '@/components/generation/readiness-gate';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
 import { ProBadge } from '@/components/workbench/ProBadge';
@@ -599,6 +604,8 @@ function HomePage() {
     }));
   };
 
+  const { check: checkReadiness, checking: readinessChecking, issues: readinessIssues, settle: settleReadiness } = useGenerationReadiness();
+
   const handleGenerate = async () => {
     // No model/provider guard here: generation is gated by `canGenerate`
     // (requires a usable provider), and under the #580 invariant a usable
@@ -611,6 +618,12 @@ function HomePage() {
     }
 
     setError(null);
+
+    // Pre-flight: probe the enabled modalities (LLM provider, ComfyUI server +
+    // workflow selection, TTS server) so a dead media stack surfaces BEFORE
+    // the run burns LLM tokens, not after. Advisory - the user can proceed.
+    const proceed = await checkReadiness();
+    if (!proceed) return;
 
     // The material list and the extractor provider config are frozen for the
     // duration of prep: `preparingGenerate` makes add/remove inert and
@@ -859,6 +872,11 @@ function HomePage() {
         }}
         initialSection={settingsSection}
       />
+      <ReadinessGateDialog
+        issues={readinessIssues}
+        onProceed={() => settleReadiness(true)}
+        onCancel={() => settleReadiness(false)}
+      />
 
       {/* ═══ Background Decor ═══ */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -1034,10 +1052,10 @@ function HomePage() {
               {/* Send button */}
               <button
                 onClick={handleGenerate}
-                disabled={!canGenerate || preparingGenerate}
+                disabled={!canGenerate || preparingGenerate || readinessChecking}
                 className={cn(
                   'shrink-0 h-8 rounded-lg flex items-center justify-center gap-1.5 transition-all px-3',
-                  canGenerate && !preparingGenerate
+                  canGenerate && !preparingGenerate && !readinessChecking
                     ? 'bg-primary text-primary-foreground hover:opacity-90 shadow-sm cursor-pointer'
                     : 'bg-muted text-muted-foreground/40 cursor-not-allowed',
                 )}
@@ -2013,3 +2031,5 @@ function ClassroomCard({
 export default function Page() {
   return <HomePage />;
 }
+
+
