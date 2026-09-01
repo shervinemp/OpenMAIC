@@ -1131,7 +1131,17 @@
     "coverageGaps": "{{count}} section(s) du document source non couverte(s) par une leçon",
     "coverageDigestTrimmed": "{{count}} sujet(s) ont été retiré(s) de la carte de couverture pour tenir dans le budget du plan",
     "pendingGenerationTitle": "Génération du cours en cours",
-    "pendingGenerationDesc": "Reprenez où vous vous êtes arrêté — votre plan est conservé."
+    "pendingGenerationDesc": "Reprenez où vous vous êtes arrêté — votre plan est conservé.",
+    "readiness": {
+      "title": "Vérification de disponibilité",
+      "description": "Certaines cibles de génération activées sont inaccessibles ou non configurées. Vous pouvez continuer, mais ces parties du cours échoueront ou seront ignorées.",
+      "llm": "Modèle de texte (LLM)",
+      "image": "Génération d'images",
+      "video": "Génération vidéo",
+      "tts": "Synthèse vocale",
+      "review": "Vérifier les réglages",
+      "proceed": "Générer quand même"
+    }
   },
   "settings": {
     "title": "Paramètres",

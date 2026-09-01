@@ -1131,7 +1131,17 @@
     "coverageGaps": "{{count}} source section(s) are not covered by any lesson",
     "coverageDigestTrimmed": "{{count}} topic(s) were trimmed from the coverage map to fit the outline budget",
     "pendingGenerationTitle": "Course generation in progress",
-    "pendingGenerationDesc": "Resume where you left off — your outlines are safe."
+    "pendingGenerationDesc": "Resume where you left off — your outlines are safe.",
+    "readiness": {
+      "title": "Generation readiness check",
+      "description": "Some of the enabled generation targets are not reachable or not set up. You can continue, but those parts of the course will fail or be skipped.",
+      "llm": "Text model (LLM)",
+      "image": "Image generation",
+      "video": "Video generation",
+      "tts": "Text-to-speech",
+      "review": "Review settings",
+      "proceed": "Generate anyway"
+    }
   },
   "settings": {
     "title": "Settings",

@@ -1131,7 +1131,17 @@
     "coverageGaps": "有 {{count}} 个来源章节未被任何课程覆盖",
     "coverageDigestTrimmed": "为适配大纲预算，从覆盖图中精简了 {{count}} 个主题",
     "pendingGenerationTitle": "课程生成进行中",
-    "pendingGenerationDesc": "从上次中断处继续 — 你的大纲已安全保存。"
+    "pendingGenerationDesc": "从上次中断处继续 — 你的大纲已安全保存。",
+    "readiness": {
+      "title": "生成前就绪检查",
+      "description": "部分已启用的生成目标不可用或未配置。你可以继续，但课程的这些部分会失败或被跳过。",
+      "llm": "文本模型（LLM）",
+      "image": "图像生成",
+      "video": "视频生成",
+      "tts": "语音合成",
+      "review": "打开设置",
+      "proceed": "仍然生成"
+    }
   },
   "settings": {
     "title": "设置",

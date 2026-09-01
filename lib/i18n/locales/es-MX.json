@@ -1131,7 +1131,17 @@
     "coverageGaps": "{{count}} sección(es) del material no están cubiertas por ninguna lección",
     "coverageDigestTrimmed": "Se recortaron {{count}} tema(s) del mapa de cobertura para ajustarse al presupuesto del esquema",
     "pendingGenerationTitle": "Generación del curso en curso",
-    "pendingGenerationDesc": "Reanuda donde lo dejaste — tus esquemas están a salvo."
+    "pendingGenerationDesc": "Reanuda donde lo dejaste — tus esquemas están a salvo.",
+    "readiness": {
+      "title": "Verificación de disponibilidad",
+      "description": "Algunos objetivos de generación habilitados no están accesibles o configurados. Puedes continuar, pero esas partes del curso fallarán o se omitirán.",
+      "llm": "Modelo de texto (LLM)",
+      "image": "Generación de imágenes",
+      "video": "Generación de video",
+      "tts": "Texto a voz",
+      "review": "Revisar ajustes",
+      "proceed": "Generar de todos modos"
+    }
   },
   "settings": {
     "title": "Configuración",

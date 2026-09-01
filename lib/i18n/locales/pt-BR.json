@@ -1131,7 +1131,17 @@
     "coverageGaps": "{{count}} seção(ões) do material não cobertas por nenhuma aula",
     "coverageDigestTrimmed": "{{count}} tópico(s) foram removidos do mapa de cobertura para caber no orçamento do esboço",
     "pendingGenerationTitle": "Geração do curso em andamento",
-    "pendingGenerationDesc": "Retome de onde parou — seus tópicos estão seguros."
+    "pendingGenerationDesc": "Retome de onde parou — seus tópicos estão seguros.",
+    "readiness": {
+      "title": "Verificação de prontidão",
+      "description": "Alguns alvos de geração habilitados estão inacessíveis ou não configurados. Você pode continuar, mas essas partes do curso falharão ou serão puladas.",
+      "llm": "Modelo de texto (LLM)",
+      "image": "Geração de imagens",
+      "video": "Geração de vídeo",
+      "tts": "Texto para fala",
+      "review": "Revisar configurações",
+      "proceed": "Gerar mesmo assim"
+    }
   },
   "settings": {
     "title": "Configurações",

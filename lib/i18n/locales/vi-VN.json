@@ -1176,7 +1176,17 @@
     "sceneTypeComparison": "So sánh",
     "sceneTypeDataReading": "Đọc dữ liệu",
     "sceneTypeTradeoffs": "Cân nhắc lựa chọn",
-    "sceneTypeFreeResponse": "Tự luận"
+    "sceneTypeFreeResponse": "Tự luận",
+    "readiness": {
+      "title": "Kiểm tra sẵn sàng trước khi tạo",
+      "description": "Một số đích tạo đã bật hiện không truy cập được hoặc chưa cấu hình. Bạn vẫn có thể tiếp tục, nhưng các phần đó của khóa học sẽ thất bại hoặc bị bỏ qua.",
+      "llm": "Mô hình văn bản (LLM)",
+      "image": "Tạo hình ảnh",
+      "video": "Tạo video",
+      "tts": "Chuyển văn bản thành giọng nói",
+      "review": "Mở cài đặt",
+      "proceed": "Vẫn tạo"
+    }
   },
   "settings": {
     "title": "Cài đặt",

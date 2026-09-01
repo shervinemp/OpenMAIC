@@ -164,6 +164,17 @@ export class MockApi {
     });
   }
 
+  /** Mock the readiness pre-flight (no media stack in e2e: never block). */
+  async mockGenerationReadiness() {
+    await this.page.route('**/api/generation-readiness', (route) => {
+      route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checks: [] }),
+      });
+    });
+  }
+
   /** Set up API mocks for the generation flow. Note: server-providers is already mocked by the base fixture. */
   async setupGenerationMocks(stageId?: string) {
     await this.mockSceneOutlinesStream();

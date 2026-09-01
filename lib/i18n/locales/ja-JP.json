@@ -1131,7 +1131,17 @@
     "coverageGaps": "{{count}} 個のソースセクションがどのレッスンにも含まれていません",
     "coverageDigestTrimmed": "アウトラインの予算に収めるため、カバレッジマップから {{count}} 件のトピックを削減しました",
     "pendingGenerationTitle": "コース生成が進行中です",
-    "pendingGenerationDesc": "中断したところから再開できます — アウトラインは保存されています。"
+    "pendingGenerationDesc": "中断したところから再開できます — アウトラインは保存されています。",
+    "readiness": {
+      "title": "生成前チェック",
+      "description": "有効な生成先の一部にアクセスできないか、未設定です。続行できますが、コースの該当部分は失敗またはスキップされます。",
+      "llm": "テキストモデル（LLM）",
+      "image": "画像生成",
+      "video": "動画生成",
+      "tts": "音声合成",
+      "review": "設定を確認",
+      "proceed": "それでも生成する"
+    }
   },
   "settings": {
     "title": "設定",
