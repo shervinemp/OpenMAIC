@@ -76,6 +76,26 @@ describe('generation readiness route', () => {
     ]);
   });
 
+  it('resolves a server-managed TTS provider like the generate route, ignoring the stale client base URL', async () => {
+    stubFetch({ transportError: true });
+    vi.stubEnv('TTS_LEMONADE_BASE_URL', 'http://127.0.0.1:8080/v1');
+    const data = await json(
+      await post({
+        tts: { enabled: true, providerId: 'lemonade-tts', baseUrl: 'http://localhost:13305/v1' },
+      }),
+    );
+    expect(data.checks).toEqual([
+      {
+        key: 'tts',
+        status: 'unreachable',
+        blocking: true,
+        detail: expect.stringContaining('http://127.0.0.1:8080/v1'),
+      },
+    ]);
+    // The managed env base URL is probed, not the client-sent registry default.
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith('http://127.0.0.1:8080/v1', expect.anything());
+  });
+
   it('applies the ComfyUI registry default and flags a missing workflow selection as blocking', async () => {
     stubFetch({ status: 200 });
     const noModel = await json(

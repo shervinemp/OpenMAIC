@@ -10,6 +10,7 @@ import {
   resolveApiKey,
   resolveBaseUrl,
   resolveImageBaseUrl,
+  resolveTTSBaseUrl,
   resolveVideoBaseUrl,
 } from '@/lib/server/provider-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
@@ -217,13 +218,18 @@ async function checkTts(input: ModalityInput): Promise<ReadinessCheck | null> {
   if (!providerId) {
     return blocking({ key: 'tts', status: 'unconfigured', detail: 'tts provider not set' });
   }
-  // TTS calls happen browser-side and the client applies the registry
-  // default before sending; keep the same fallback here as a safety net.
-  // Custom TTS providers are not in the registry - their baseUrl is
-  // always stored in their config.
+  // Resolution parity with /api/generate/tts: a server-managed provider
+  // (e.g. TTS_LEMONADE_BASE_URL) is authoritative and any client-sent base
+  // URL is ignored; only an unmanaged provider falls back to the client
+  // value, then to the registry default. Custom TTS providers are not in
+  // the registry - their baseUrl always lives in their config.
   const isBuiltInTts = (id: string): id is BuiltInTTSProviderId => id in TTS_PROVIDERS;
+  const managed = isServerConfiguredProvider('tts', providerId);
+  const clientBaseUrl = managed ? undefined : input.baseUrl || undefined;
   const resolvedBaseUrl =
-    input.baseUrl || (isBuiltInTts(providerId) ? TTS_PROVIDERS[providerId].defaultBaseUrl : '') || '';
+    resolveTTSBaseUrl(providerId, clientBaseUrl) ||
+    (isBuiltInTts(providerId) ? TTS_PROVIDERS[providerId].defaultBaseUrl : '') ||
+    '';
   if (!resolvedBaseUrl) {
     // e.g. browser-native-tts: nothing to reach, always ready.
     return { key: 'tts', status: 'ready', blocking: false, detail: `${providerId}` };
