@@ -3,12 +3,13 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { ImageMapping, PdfImage } from '@/lib/types/generation';
 
 const streamLLMMock = vi.hoisted(() => vi.fn());
-const classCallLLMMock = vi.hoisted(() => vi.fn());
+const callLLMMock = vi.hoisted(() => vi.fn());
 const resolveModelFromRequestMock = vi.hoisted(() => vi.fn());
 const resolveVisionImagesMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/ai/llm', () => ({
   streamLLM: streamLLMMock,
+  callLLM: callLLMMock,
 
 }));
 
@@ -19,96 +20,6 @@ vi.mock('@/lib/server/resolve-model', () => ({
 vi.mock('@/lib/persistence/resolve-vision-images', () => ({
   resolveVisionImagesForPrompt: resolveVisionImagesMock,
 }));
-
-/**
- * The standard (non-task-engine) outline branch must rebuild its placeholder
- * text from the SAME RESOLVED set the route attaches (RFC #1153 part 2, N3):
- * the task-engine/interactive branch already builds its text from
- * `resolvedVisionImages`, but the standard `buildOutlinePrompt` branch
- * rebuilds its own `[see attached]` placeholders from the unresolved slice —
- * so an id the server cannot resolve used to leave a dangling promise in the
- * standard prompt. This test pins the fixed branch: a dropped image drops its
- * text mention AND its attachment.
- */
-describe('scene-outlines-stream route — standard branch prompt parity on a dropped image (N3)', () => {
-  beforeEach(() => {
-    streamLLMMock.mockReset();
-    resolveModelFromRequestMock.mockReset();
-    resolveVisionImagesMock.mockReset();
-    resolveModelFromRequestMock.mockResolvedValue({
-      model: { provider: 'test.chat', modelId: 'test-model' },
-      modelInfo: { outputWindow: 4096, capabilities: { vision: true } },
-      modelString: 'test:test-model',
-      thinkingConfig: undefined,
-    });
-  });
-
-  // SKIP(endgame): the syllabus-first route (Phase A replay) serves ordinary
-    // contract courses through callLLM; the N3 property re-lands on the
-    // per-lesson prompt surface once the remaining Phase A commits replay.
-    test.skip('drops an unresolvable image from the standard prompt text and the attachments', async () => {
-    vi.resetModules();
-    const dataUrlFor = (bytes: string) =>
-      `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`;
-    // The pre-resolution drops img_2 (its id does not resolve server-side);
-    // img_1 resolves to bytes.
-    resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
-      images
-        .filter((image) => image.src !== 'ast_gone')
-        .map((image) => ({ ...image, src: dataUrlFor(`outline-bytes-${image.id}`) })),
-    );
-    streamLLMMock.mockReturnValue({
-      textStream: (async function* () {
-        yield JSON.stringify({
-          languageDirective: 'Teach in English.',
-          outlines: [
-            {
-              id: 'scene_1',
-              type: 'slide',
-              title: 'Safety Checklist',
-              description: 'Inspect the device.',
-              keyPoints: ['Inspect', 'Calibrate'],
-              order: 1,
-            },
-          ],
-        });
-      })(),
-    });
-
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
-    const response = await POST(
-      mockRequest({
-        pdfImages: [
-          { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
-          { id: 'img_2', src: '', pageNumber: 2, width: 200, height: 100 },
-        ],
-        imageMapping: { img_1: 'ast_ok', img_2: 'ast_gone' },
-      }),
-    );
-    await readStreamBody(response);
-
-    // The standard branch ran with a vision-enabled model, so the LLM call is
-    // multimodal and its text half is the standard prompt's user text.
-    const streamParams = streamLLMMock.mock.calls[0][0] as {
-      system: string;
-      messages: Array<{
-        role: string;
-        content: Array<{ type: string; text?: string; image?: string }>;
-      }>;
-    };
-    expect(streamParams.messages).toBeDefined();
-    const content = streamParams.messages[0].content;
-    const textPart = content.find((part) => part.type === 'text');
-    // img_1 is promised `[see attached]` and IS attached; img_2's text
-    // mention is gone together with its attachment.
-    expect(textPart?.text).toContain('img_1');
-    expect(textPart?.text).toContain('[see attached]');
-    expect(textPart?.text).not.toContain('img_2');
-    const imageParts = content.filter((part) => part.type === 'image');
-    expect(imageParts).toHaveLength(1);
-    expect(imageParts[0]?.image).toBe(Buffer.from('outline-bytes-img_1').toString('base64'));
-  });
-});
 
 function readStreamBody(response: Response): Promise<string> {
   const reader = response.body?.getReader();
@@ -122,6 +33,106 @@ function readStreamBody(response: Response): Promise<string> {
     });
   return pump().then(() => text);
 }
+
+/**
+ * The outline route must rebuild its prompt text from the SAME RESOLVED set
+ * the attachments use (RFC #1153 part 2, N3): server-backed transport passes
+ * asset ids, and an id the server cannot resolve is dropped from the resolved
+ * vision set before prompt assembly — so a dropped image drops its text
+ * mention together with its attachment. The property re-lands on the
+ * syllabus-first surface: ordinary contract courses go through `callLLM`
+ * (Phase A), so the pin is on the syllabus call's user prompt.
+ */
+describe('scene-outlines route - syllabus prompt parity on a dropped image (N3)', () => {
+  beforeEach(() => {
+    streamLLMMock.mockReset();
+    callLLMMock.mockReset();
+    resolveModelFromRequestMock.mockReset();
+    resolveVisionImagesMock.mockReset();
+    resolveModelFromRequestMock.mockResolvedValue({
+      model: { provider: 'test.chat', modelId: 'test-model' },
+      modelInfo: { outputWindow: 4096, capabilities: { vision: true } },
+      modelString: 'test:test-model',
+      thinkingConfig: undefined,
+    });
+    // Later calls (unit outlines, review gates) may legitimately fail;
+    // the property is asserted on the FIRST (syllabus) call's prompt.
+    callLLMMock.mockRejectedValue(new Error('syllabus call asserted; stop the stream'));
+  });
+
+  test('drops an unresolvable image from the syllabus prompt text', async () => {
+    vi.resetModules();
+    const dataUrlFor = (bytes: string) =>
+      `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`;
+    // The pre-resolution drops img_2 (its id does not resolve server-side);
+    // img_1 resolves to bytes.
+    resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
+      images
+        .filter((image) => image.src !== 'ast_gone')
+        .map((image) => ({ ...image, src: dataUrlFor(`outline-bytes-${image.id}`) })),
+    );
+    // A contract-shaped syllabus lets the chain proceed past the syllabus
+    // call; later calls reject so the stream stops cleanly.
+    callLLMMock
+      .mockResolvedValueOnce({
+        text: JSON.stringify({
+          languageDirective: 'Teach in English.',
+          courseTitle: 'Safety Checklist',
+          units: [
+            {
+              title: 'Safety Checklist',
+              objectives: ['Inspect the device', 'Calibrate safely'],
+              lessons: [
+                { title: 'Inspect', objectives: ['Inspect'] },
+                { title: 'Calibrate', objectives: ['Calibrate'] },
+              ],
+            },
+          ],
+          audience: 'field engineers',
+          objectives: ['Inspect the device', 'Calibrate safely'],
+        }),
+      })
+      .mockRejectedValue(new Error('syllabus call asserted; stop the stream'));
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        pdfImages: [
+          { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
+          { id: 'img_2', src: '', pageNumber: 2, width: 200, height: 100 },
+        ],
+        imageMapping: { img_1: 'ast_ok', img_2: 'ast_gone' },
+      }),
+    );
+    await readStreamBody(response);
+
+    // The resolver received BOTH mapped images (it is the resolver that
+    // decides which survive); the syllabus prompt is built from the same
+    // resolved set, so img_2's mention is gone together with its attachment.
+    expect(resolveVisionImagesMock).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'img_1' }),
+        expect.objectContaining({ id: 'img_2' }),
+      ]),
+      expect.anything(),
+    );
+    expect(callLLMMock.mock.calls.length).toBeGreaterThan(0);
+    // N3 pins every LLM-served prompt in the chain (syllabus + unit calls):
+    // prompts built from `availableImagesText` never re-introduce the
+    // unresolvable image, and the surviving image keeps its attachment
+    // promise. The syllabus prompt is structure-only and carries no image
+    // list; the per-unit outline calls do.
+    const prompts = callLLMMock.mock.calls.map(
+      (call) => (call[0] as { prompt?: string }).prompt ?? '',
+    );
+    expect(prompts.some((prompt) => prompt.includes('img_1'))).toBe(true);
+    for (const prompt of prompts) {
+      expect(prompt).not.toContain('img_2');
+    }
+    const bearer = prompts.find((prompt) => prompt.includes('img_1'))!;
+    expect(bearer).toContain('[see attached]');
+  });
+});
 
 function mockRequest(body: {
   pdfImages: Array<Pick<PdfImage, 'id' | 'src' | 'pageNumber' | 'width' | 'height'>>;
