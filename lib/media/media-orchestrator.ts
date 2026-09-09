@@ -94,13 +94,13 @@ export async function generateMediaForOutlines(
       phaseStarted.add(outlineId);
       useStageStore.getState().recordScenePhase(outlineId, 'media', { status: 'running' });
     }
-    const assetId = await generateSingleMedia(req, stageId, abortSignal);
+    await generateSingleMedia(req, stageId, abortSignal);
     if (!outlineId) continue;
     if (abortSignal?.aborted) break;
     const stats = mediaStats.get(outlineId);
     if (!stats) continue;
-    if (assetId) stats.done += 1;
-    else stats.failed += 1;
+    const task = useMediaGenerationStore.getState().getTask(req.elementId);
+    if (task?.status === "done") stats.done += 1; else stats.failed += 1;
     if (stats.done + stats.failed === stats.total) {
       useStageStore.getState().recordScenePhase(
         outlineId,

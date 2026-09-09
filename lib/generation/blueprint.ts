@@ -37,3 +37,7 @@ export type {
   LessonBlueprint,
   ParsedOutlineResponse,
 } from '@openmaic/generation';
+
+export {
+ legacyBlueprintFromOutlines,
+} from '@openmaic/generation';

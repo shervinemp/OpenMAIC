@@ -29,7 +29,6 @@ export type DocumentProducer = 'client' | 'server-job';
 
 export type OutlinePhaseName = 'content' | 'actions' | 'tts' | 'media';
 
-export type OutlinePhaseName = 'content' | 'actions' | 'tts' | 'media';
 
 export interface OutlinePhaseState {
   status: 'pending' | 'running' | 'done' | 'failed';

@@ -166,43 +166,45 @@ export default function ClassroomDetailPage() {
       void (async () => {
         const params = (await loadGenerationParams(classroomId)) ?? {};
 
-      // Reconstruct imageMapping for the resumed generation. A server-backed
-      // deployment stored allocated asset ids on the session's pdfImages (RFC
-      // #1153 part 2 B): the extracted images are pool assets, so generation
-      // is fed by id and the routes resolve the bytes server-side. Per source
-      // (N4) the mapping may MIX allocated asset ids and IndexedDB data URLs —
-      // a source whose cache write failed materialized its own images — so the
-      // resume mapping merges both, instead of choosing one transport for the
-      // whole set and silently dropping the other half.
-      const pdfImages = (params.pdfImages || []) as Array<
+        // Reconstruct imageMapping for the resumed generation. A server-backed
+        // deployment stored allocated asset ids on the session's pdfImages (RFC
+        // #1153 part 2 B): the extracted images are pool assets, so generation
+        // is fed by id and the routes resolve the bytes server-side. Per source
+        // (N4) the mapping may MIX allocated asset ids and IndexedDB data URLs —
+        // a source whose cache write failed materialized its own images — so the
+        // resume mapping merges both, instead of choosing one transport for the
+        // whole set and silently dropping the other half.
+        const pdfImages = ((params.pdfImages || []) as unknown) as Array<
         { id: string; assetId?: string; storageId?: string } & Record<string, unknown>
       >;
-      const finishResume = (imageMapping: Record<string, string>) =>
-        generateRemaining({
-          pdfImages: params.pdfImages,
-          imageMapping,
-          stageInfo: {
-            name: stage.name || '',
-            description: stage.description,
-            style: stage.style,
-          },
-          agents: params.agents,
-          userProfile: params.userProfile,
-          languageDirective: params.languageDirective || stage.languageDirective,
-        });
+        const finishResume = (imageMapping: Record<string, string>) =>
+          generateRemaining({
+            pdfImages: params.pdfImages,
+            imageMapping,
+            stageInfo: {
+              name: stage.name || '',
+              description: stage.description,
+              style: stage.style,
+            },
+            agents: params.agents,
+            userProfile: params.userProfile,
+            languageDirective: params.languageDirective || stage.languageDirective,
+          });
 
-      const imageMapping: Record<string, string> = {};
-      for (const img of pdfImages) {
-        if (img.assetId) imageMapping[img.id] = img.assetId;
-      }
-      const storageIds = pdfImages
-        .filter((img) => !img.assetId && img.storageId)
-        .map((img) => img.storageId as string);
-      void (async () => {
+        const imageMapping: Record<string, string> = {};
+        for (const img of pdfImages) {
+          if (img.assetId) imageMapping[img.id] = img.assetId;
+        }
+        const storageIds = pdfImages
+          .filter((img) => !img.assetId && img.storageId)
+          .map((img) => img.storageId as string);
         if (storageIds.length > 0) {
           Object.assign(imageMapping, await loadImageMapping(storageIds));
         }
         finishResume(imageMapping);
+        // Handoff consumed - the stage document now owns everything. Drop the
+        // session record so it is not left behind for the TTL sweep.
+        await clearGenerationSessionForStage(classroomId);
       })();
     } else if (outlines.length > 0 && stage) {
       // All scenes are generated, but some media may not have finished.

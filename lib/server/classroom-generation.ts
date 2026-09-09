@@ -38,7 +38,7 @@ import {
   formatRetrievalContext,
   retrieveChunks,
   type PdfChunk,
-} from '@/lib/generation/pdf-retrieval';
+} from '@openmaic/generation';
 import { renderDocumentDigest } from '@/lib/generation/document-digest';
 import { loadDocumentIndex } from '@/lib/server/document-index-store';
 import { DIGEST_TARGET_CHARS } from '@/lib/constants/generation';

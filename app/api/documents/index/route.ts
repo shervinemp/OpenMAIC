@@ -27,7 +27,7 @@ import {
   captionDocumentImages,
   type ImageCaption,
 } from '@/lib/generation/image-captioning';
-import { chunkSourceText, type PdfChunk } from '@/lib/generation/pdf-retrieval';
+import { chunkSourceText, type PdfChunk } from '@openmaic/generation';
 import { createLogger } from '@/lib/logger';
 import { apiError } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';

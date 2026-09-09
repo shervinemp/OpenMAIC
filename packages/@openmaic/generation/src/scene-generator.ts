@@ -98,7 +98,7 @@ import { noopGenerationLogger, type GenerationLogger } from './logger.js';
 import { isAbortError } from './generation-retry.js';
 import { generatePBLV2ProjectSingleCall } from './pbl/planner-single-call.js';
 import { PlannerV2Error } from './pbl/planner-core.js';
-import type { PBLPlannerV2Input } from './pbl/types.js';
+import type { PBLPlannerV2Input, PBLProjectV2 } from './pbl/types.js';
 
 function isGeneratedMediaPlaceholder(value: string | undefined): value is string {
   return !!value && /^gen_(img|vid)_[\w-]+$/i.test(value);
@@ -153,8 +153,16 @@ export interface SceneContentOptions {
    * Only consumed by the slide branch alongside `editDirective`.
    */
   baselineContent?: GeneratedSlideContent;
+  /**
+   * Extra model handle threaded to the PBL v2 planner (Phase 2 §15.1): a
+   * VISION-capable model carries the source images into the scenario design.
+   */
+  languageModel?: unknown;
+  /** Planner thinking budget / provider thinking knobs (opaque host shape,
+   *  threaded into the planner calls via the app aiCall closure). */
+  thinkingConfig?: unknown;
   /** Optional host fallback for the app-only loop planner. */
-  pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>;
+  pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProjectV2>;
   onFailure?: (failure: SceneContentFailure) => void;
   logger?: GenerationLogger;
   /**
@@ -380,6 +388,7 @@ export async function generateSceneContent(
         targetLanguage,
         userRequirements,
         options.pblLoopFallback,
+        options.languageModel,
         log,
       );
     default:
@@ -1419,7 +1428,8 @@ async function generatePBLSceneContent(
   languageDirective?: string,
   targetLanguage?: string,
   userRequirements?: UserRequirements,
-  pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>,
+  pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProjectV2>,
+  languageModel?: unknown,
   log: GenerationLogger = noopGenerationLogger,
 ): Promise<GeneratedPBLContent | null> {
   const pblConfig = outline.pblConfig;
@@ -1444,6 +1454,7 @@ async function generatePBLSceneContent(
         }
       : undefined,
     targetLanguage,
+    languageModel: languageModel ?? undefined,
   };
 
   try {

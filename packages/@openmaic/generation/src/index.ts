@@ -135,6 +135,7 @@ export {
   splitIntoLessons,
   validateOutlineShape,
   validateSyllabusStructure,
+  legacyBlueprintFromOutlines,
   summarizeBlueprintValidation,
   validateBlueprint,
   MAX_BLUEPRINT_ATTEMPTS,

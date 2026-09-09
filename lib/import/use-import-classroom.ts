@@ -18,6 +18,7 @@ import { createLogger } from '@/lib/logger';
 import { canonicalizeLegacyScene, mutateDocument, type AppDocument } from '@/lib/document-store';
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
+import { removeAsset } from '@/lib/media/asset-pool';
 import type JSZip from 'jszip';
 import type { Slide } from '@openmaic/dsl';
 import type { Stage } from '@/lib/types/stage';
@@ -552,6 +553,7 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
 
       let success = false;
       let importedStageId: string | undefined;
+      let importCommitted = false;
       try {
         const JSZip = (await import('jszip')).default;
         const zip = await JSZip.loadAsync(file);

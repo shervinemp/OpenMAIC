@@ -119,6 +119,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
   function PlaybackChromeRoot(
     {
       onRetryOutline,
+      onResumeGeneration,
       onSkipOutline,
       canEnterProMode,
       onEnterProMode,

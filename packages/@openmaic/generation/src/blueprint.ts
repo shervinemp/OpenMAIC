@@ -96,7 +96,7 @@ export interface CourseBlueprint {
   /** DERIVED - quiz placement cadence (every N scenes, course-wide). */
   quizPlacement: number;
   /** DERIVED - size preset the contract was derived from ('compact' default). */
-  sizePreset: CourseSizePreset;
+  sizePreset?: CourseSizePreset;
   /** DERIVED content depth level (Phase 2 §15.4). Optional for backward
       compatibility; treated as 'intro'. */
   depthLevel?: CourseDepthLevel;

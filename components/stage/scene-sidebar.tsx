@@ -8,6 +8,7 @@ import {
   Cpu,
   MousePointer2,
   BookOpen,
+  Play,
   Globe,
   AlertCircle,
   RefreshCw,
@@ -21,6 +22,7 @@ import {
   Scale,
   LineChart,
   GitBranch,
+  PenLine,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
@@ -28,7 +30,7 @@ import { ThumbnailInteractive } from '@/components/slide-renderer/components/Thu
 import { useStageStore, useCanvasStore } from '@/lib/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useNearViewport } from '@/lib/hooks/use-near-viewport';
-import type { SceneType, SlideContent, InteractiveContent } from '@/lib/types/stage';
+import type { Scene, SceneType, SlideContent, InteractiveContent } from '@/lib/types/stage';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
 
 interface SceneSidebarProps {
@@ -160,6 +162,7 @@ export function SceneSidebar({
       comparison: Scale,
       dataReading: LineChart,
       tradeoffs: GitBranch,
+      freeResponse: PenLine,
     };
     return icons[kind] || BookOpen;
   };

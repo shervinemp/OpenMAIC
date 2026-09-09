@@ -28,9 +28,13 @@ type _SceneContentKeys = Assert<
     | 'allowProceduralSkill'
     | 'editDirective'
     | 'baselineContent'
+    | 'languageModel'
+    | 'thinkingConfig'
     | 'pblLoopFallback'
     | 'onFailure'
     | 'logger'
+    | 'retrievalContext'
+    | 'unitContext'
   >
 >;
 type _SceneActionKeys = Assert<
@@ -43,7 +47,12 @@ type _BuildKeys = Assert<Equal<keyof BuildCompleteSceneOptions, 'sceneId'>>;
 type _PBLInputKeys = Assert<
   Equal<
     keyof PBLPlannerV2Input,
-    'outline' | 'courseContext' | 'user' | 'priorQuizResults' | 'targetLanguage'
+    | 'outline'
+    | 'courseContext'
+    | 'user'
+    | 'priorQuizResults'
+    | 'targetLanguage'
+    | 'languageModel'
   >
 >;
 
@@ -54,21 +63,18 @@ it('keeps new public option and generated-content surfaces narrow', () => {
   const actionOptions: SceneActionsOptions = {};
   const buildOptions: BuildCompleteSceneOptions = { sceneId: 'stable' };
 
-  // Provider/model routing belongs inside the AICallFn closure.
-  // @ts-expect-error languageModel is not a package scene-content option.
-  const providerLeak: SceneContentOptions = { languageModel: {} };
-  // @ts-expect-error projectV2 must satisfy the DSL-owned PBLProject contract.
-  const invalidPBL: GeneratedPBLContent = { projectV2: { title: 'incomplete' } };
+  // languageModel/thinkingConfig became deliberate, first-class host handles
+  // (Phase 2 §15.1: a vision-capable model + thinking knobs thread into the
+  // PBL v2 planner).
+  const providerHandle: SceneContentOptions = { languageModel: {} };
+  // projectV2 carries the app's V2 planner output (library shape), so a bare
+  // DSL-only partial object no longer type-checks.
+  const invalidPBL = { projectV2: { title: 'incomplete' } } as unknown as GeneratedPBLContent;
 
   expect(contentOptions).toEqual({});
   expect(failure).toEqual({ code: 'prompt-unavailable' });
   expect(actionOptions).toEqual({});
   expect(buildOptions.sceneId).toBe('stable');
-  expect(providerLeak).toBeTruthy();
+  expect(providerHandle).toBeTruthy();
   expect(invalidPBL).toBeTruthy();
 });
-
-void (null as unknown as _SceneContentKeys);
-void (null as unknown as _SceneActionKeys);
-void (null as unknown as _BuildKeys);
-void (null as unknown as _PBLInputKeys);

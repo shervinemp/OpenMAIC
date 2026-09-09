@@ -12,6 +12,7 @@ import type {
   WidgetConfigBase,
   WidgetType,
 } from '@openmaic/dsl';
+import type { PBLProjectV2 } from './pbl/types.js';
 
 /** AI-generated slide payload before it is assembled into a scene. */
 export interface GeneratedSlideContent {
@@ -42,7 +43,7 @@ export interface GeneratedInteractiveContent {
 
 /** AI-generated PBL payload. The persisted project contract is owned by the DSL. */
 export interface GeneratedPBLContent {
-  projectV2: PBLProject;
+  projectV2?: PBLProjectV2;
 }
 
 export type GeneratedSceneContent =

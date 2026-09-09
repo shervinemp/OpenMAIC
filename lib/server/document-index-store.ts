@@ -20,7 +20,7 @@ import { join } from 'node:path';
 
 import type { DocumentDigest } from '@/lib/generation/document-digest';
 import type { ImageCaption } from '@/lib/generation/image-captioning';
-import type { PdfChunk } from '@/lib/generation/pdf-retrieval';
+import type { PdfChunk } from '@openmaic/generation';
 
 export interface StoredDocumentIndex {
   version: 1;
