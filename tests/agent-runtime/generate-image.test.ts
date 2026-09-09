@@ -181,7 +181,7 @@ describe('generate_image tool', () => {
       }),
     );
     expect(mocks.writeFile).toHaveBeenCalledWith(
-      expect.stringMatching(/stage-owner\/media\/generated-[a-f0-9]{64}\.png$/),
+      expect.stringMatching(/stage-owner[/\\]media[/\\]generated-[a-f0-9]{64}\.png$/),
       Buffer.from('real-image-bytes'),
     );
     // Success details are provider-neutral: no provider id leaks into the

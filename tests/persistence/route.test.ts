@@ -66,6 +66,10 @@ describe('embedded persistence route', () => {
       ensureSchema,
       PgRuntimeStore: class {},
     }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {},
+    }));
     vi.doMock('@openmaic/storage/document/pg', () => ({
       ensureDocumentSchema,
       PgDocumentStore: class {},

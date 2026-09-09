@@ -10,7 +10,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('node:fs', () => ({ promises: { mkdir: mocks.mkdir, writeFile: mocks.writeFile } }));
 
 import { persistClassroomMediaBytes } from '@/lib/server/classroom-media-bytes';
-import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
 
 /**
  * Regression coverage for the agent-runtime byte persist path (#media-origin):
@@ -55,9 +54,12 @@ describe('persistClassroomMediaBytes', () => {
       signal: new AbortController().signal,
     });
 
-    expect(mocks.mkdir).toHaveBeenCalledWith(`${CLASSROOMS_DIR}/stage-owner/media`, {
-      recursive: true,
-    });
+    expect(mocks.mkdir).toHaveBeenCalledWith(
+      expect.stringMatching(/[/\\]stage-owner[/\\]media$/),
+      {
+        recursive: true,
+      },
+    );
     expect(mocks.writeFile).toHaveBeenCalledWith(
       expect.stringMatching(/tts-speech-a-[a-f0-9]{64}\.mp3$/),
       bytes,

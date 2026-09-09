@@ -378,7 +378,7 @@ export async function callLLM<T extends GenerateTextParams>(
   let lastResult: GenerateTextResult<any, any> | undefined;
   let lastError: unknown;
   // The fallback swap happens once per call: primary → fallback, not back.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   let fallbackTried = false;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -424,7 +424,7 @@ export async function callLLM<T extends GenerateTextParams>(
       // on the same one).
       if (!fallbackTried && isProviderFailure(error)) {
         const fallback = await getFallbackModel();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const currentModel = (params as { model?: unknown }).model;
         if (fallback && fallback !== currentModel) {
           fallbackTried = true;

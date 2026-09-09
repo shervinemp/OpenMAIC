@@ -72,12 +72,10 @@ export async function POST(request: NextRequest) {
     }
 
     // A client-supplied remote input image (image-to-video) is fetched
-    // server-side by the ComfyUI adapter — same SSRF policy as base URLs.
-    if (
-      body.inputImage &&
-      /^https?:\/\//i.test(body.inputImage) &&
-      process.env.NODE_ENV === 'production'
-    ) {
+    // server-side by the ComfyUI adapter - same SSRF policy as base URLs.
+    // Unconditional: self-hosted deployments allow local targets through
+    // ALLOW_LOCAL_NETWORKS on the guard itself, never by skipping it.
+    if (body.inputImage && /^https?:\/\//i.test(body.inputImage)) {
       const ssrfError = await validateUrlForSSRF(body.inputImage);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);

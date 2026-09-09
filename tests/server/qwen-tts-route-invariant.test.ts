@@ -28,8 +28,10 @@ function request(voice: string, modelId: string, speed = 1.25): NextRequest {
 }
 
 describe('Qwen TTS route model-follows-voice invariant', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     mocks.generateTTS.mockReset().mockResolvedValue({ audio: new Uint8Array([1]), format: 'wav' });
+    // The TTS cache is process-global; tests must not collide through it.
+    await import('@/lib/audio/tts-cache').then(({ clearTTSCache }) => clearTTSCache?.());
   });
 
   afterEach(() => vi.restoreAllMocks());

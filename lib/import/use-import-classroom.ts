@@ -553,7 +553,7 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
 
       let success = false;
       let importedStageId: string | undefined;
-      let importCommitted = false;
+      const importCommitted = false;
       try {
         const JSZip = (await import('jszip')).default;
         const zip = await JSZip.loadAsync(file);

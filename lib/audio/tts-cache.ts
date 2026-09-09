@@ -66,3 +66,8 @@ export function setCachedTTS(key: string, entry: TTSAudioCacheEntry): void {
     cache.delete(oldestKey);
   }
 }
+
+/** Test/none-process hook: drop every cached entry (process-global). */
+export function clearTTSCache(): void {
+  cache.clear();
+}

@@ -41,8 +41,8 @@ vi.mock('@/lib/media/video-providers', async (importOriginal) => ({
 }));
 
 vi.mock('@/lib/media/adapters/comfyui-video-adapter', () => ({
-  generateWithComfyUIVideo: adapterMocks['comfyui-video'].generate,
-  testComfyUIVideoConnectivity: adapterMocks['comfyui-video'].test,
+  generateWithComfyuiVideo: adapterMocks['comfyui-video'].generate,
+  testComfyuiVideoConnectivity: adapterMocks['comfyui-video'].test,
 }));
 vi.mock('@/lib/media/adapters/happyhorse-adapter', () => ({
   generateWithHappyHorse: adapterMocks.happyhorse.generate,

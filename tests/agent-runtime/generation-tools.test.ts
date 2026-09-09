@@ -119,7 +119,7 @@ describe('generation and deck tools', () => {
           aiCall: vi.fn(async () => {
             calls += 1;
             return calls === 1
-              ? JSON.stringify([{ id: 'q1', type: 'short_answer', question: 'Try it?' }])
+              ? JSON.stringify([{ id: 'q1', type: 'short_answer', question: 'Scenario: after the calibration, how do you verify the device is safe to operate?' }])
               : JSON.stringify([{ type: 'text', content: 'Narration' }]);
           }),
         }),
@@ -151,7 +151,7 @@ describe('generation and deck tools', () => {
     const aiCall = vi.fn(async () => {
       contentCalls += 1;
       if (contentCalls === 1)
-        return JSON.stringify([{ id: 'q1', type: 'short_answer', question: 'First?' }]);
+        return JSON.stringify([{ id: 'q1', type: 'short_answer', question: 'Scenario: which step isolates an unexpected device startup before maintenance begins?' }]);
       if (contentCalls === 2) return JSON.stringify([{ type: 'text', content: 'First narration' }]);
       throw new Error('mid-generation failure');
     });
