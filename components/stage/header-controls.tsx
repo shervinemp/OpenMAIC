@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import {
   Archive,
+  BookCheck,
   Download,
   FileDown,
   Film,
@@ -26,6 +27,7 @@ import { isVideoExportEnabled } from '@/lib/config/feature-flags';
 import { useVideoRenderStore } from '@/lib/store/video-render';
 import { CircularProgress } from '@/components/ui/circular-progress';
 import { VideoExportDialog } from './video-export-dialog';
+import ExamOverlay from '@/components/exam/exam-view';
 import { LanguageSwitcher } from '../language-switcher';
 import { SettingsDialog } from '../settings';
 import {
@@ -82,6 +84,9 @@ export function HeaderControls({
   const { theme, setTheme } = useTheme();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
+  const [examsOpen, setExamsOpen] = useState(false);
+  const unitCount = useStageStore((s) => s.blueprint?.units?.length ?? 0);
+  const examsAvailable = unitCount >= 2;
 
   // Export plumbing — uses the stage / media task stores to check
   // readiness, then hands off to the export hooks. Available in both
@@ -199,6 +204,18 @@ export function HeaderControls({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {/* Exams — semester midterm/final opening an overlay; hidden when
+            the course has no unit blueprint (single-unit course). */}
+        {examsAvailable && (
+          <button
+            onClick={() => setExamsOpen(true)}
+            className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
+            aria-label={t('exams.title')}
+          >
+            <BookCheck className="w-4 h-4" />
+          </button>
+        )}
 
         {/* Settings */}
         <button
@@ -391,6 +408,7 @@ export function HeaderControls({
       </DropdownMenu>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {examsAvailable && <ExamOverlay open={examsOpen} onOpenChange={setExamsOpen} />}
       {videoExportEnabled && (
         <VideoExportDialog open={videoDialogOpen} onOpenChange={setVideoDialogOpen} />
       )}

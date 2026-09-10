@@ -3,6 +3,7 @@ import type { Stage } from '@openmaic/dsl';
 
 import type { CourseBlueprint, SceneOutline } from '@/lib/types/generation';
 import type { AppScene } from '@/lib/types/stage';
+import type { ExamAttempt, ExamKind, ExamSpec } from '@/lib/types/exam';
 
 /** App-owned stage shape. Device playback position is not document metadata. */
 export type AppStage = Stage;
@@ -95,6 +96,10 @@ export interface AppDocumentOutline {
   pptxImports?: Record<string, { sceneIds: string[]; importedAt: number }>;
   blueprint?: CourseBlueprint;
   lessonGroups?: LessonJobGroup[];
+  /** Semester exams (midterm / final) keyed by kind, generated from the blueprint. */
+  exams?: Partial<Record<ExamKind, ExamSpec>>;
+  /** Submitted exam attempts with grades, newest last, capped per exam. */
+  examAttempts?: Partial<Record<ExamKind, ExamAttempt[]>>;
   completion?: OutlineCompletion;
   createdAt: number;
   updatedAt: number;

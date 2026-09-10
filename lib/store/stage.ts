@@ -20,6 +20,7 @@ import type {
   OutlinePhaseState,
 } from '@/lib/document-store/persistence-types';
 import { createLogger } from '@/lib/logger';
+import type { ExamAttempt, ExamKind, ExamSpec } from '@/lib/types/exam';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import type { StageManifest } from '@/lib/workbench/stage-freshness';
@@ -40,6 +41,39 @@ import {
 } from '@/lib/utils/deleted-stages';
 
 const log = createLogger('StageStore');
+
+/**
+ * Defensive hydration for the persisted exams snapshot. Legacy documents have
+ * no exams block; hostile or hand-edited documents must not poison the store,
+ * so every shaped field is re-validated and unknown kinds drop on the floor.
+ */
+function sanitizePersistedExams(
+  record: unknown,
+  logger: ReturnType<typeof createLogger>,
+): { exams: Partial<Record<ExamKind, ExamSpec>>; attempts: Partial<Record<ExamKind, ExamAttempt[]>> } {
+  type Persisted = { exams?: unknown; examAttempts?: unknown };
+  const src = (record ?? {}) as Persisted;
+  const result: Partial<Record<ExamKind, ExamSpec>> = {};
+  const attemptsResult: Partial<Record<ExamKind, ExamAttempt[]>> = {};
+  const isValidKind = (k: unknown): k is ExamKind => k === 'midterm' || k === 'final';
+  if (src.exams && typeof src.exams === 'object') {
+    for (const [kind, spec] of Object.entries(src.exams as Record<string, unknown>)) {
+      if (isValidKind(kind) && spec && typeof spec === 'object' && Array.isArray((spec as ExamSpec).mcQuestions)) {
+        result[kind] = spec as ExamSpec;
+      } else if (spec) {
+        logger.warn('Discarding malformed persisted exam spec:', kind);
+      }
+    }
+  }
+  if (src.examAttempts && typeof src.examAttempts === 'object') {
+    for (const [kind, list] of Object.entries(src.examAttempts as Record<string, unknown>)) {
+      if (isValidKind(kind) && Array.isArray(list) && list.length) {
+        attemptsResult[kind] = (list as ExamAttempt[]).slice(-2);
+      }
+    }
+  }
+  return { exams: result, attempts: attemptsResult };
+}
 
 /** Virtual scene ID used when the user navigates to a page still being generated */
 export const PENDING_SCENE_ID = '__pending__';
@@ -225,6 +259,8 @@ function clearedStageState(state: Pick<StageState, 'generationEpoch'>) {
     blueprint: undefined,
     lessonGroups: [],
     generationComplete: false,
+    exams: {},
+    examAttempts: {},
     generationEpoch: state.generationEpoch + 1,
     generationStatus: 'idle' as const,
     currentGeneratingOrder: -1,
@@ -397,6 +433,12 @@ interface StageState {
   setGenerationComplete: (complete: boolean) => void;
   /** Mark generation complete iff every outline has a scene and none failed. */
   markGenerationCompleteIfDone: () => void;
+
+  // Persisted (with outlines): semester exams + submitted attempts.
+  exams: Partial<Record<ExamKind, ExamSpec>>;
+  examAttempts: Partial<Record<ExamKind, ExamAttempt[]>>;
+  setExamSpec: (spec: ExamSpec) => void;
+  saveExamAttempt: (attempt: ExamAttempt) => void;
   /**
    * Apply the stage-meta sidecar's per-viewer facts. `readOnly` follows the
    * reference's classroom rule: a visitor who is not the owner gets a
@@ -550,6 +592,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   blueprint: undefined,
   lessonGroups: [],
   generationComplete: false,
+  exams: {},
+  examAttempts: {},
   outlineProducer: null,
   isOwner: true,
   readOnly: false,
@@ -928,6 +972,20 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     }
   },
 
+  setExamSpec: (spec) => {
+    set({ exams: { ...get().exams, [spec.kind]: spec } });
+    void get().saveToStorage();
+  },
+
+  saveExamAttempt: (attempt) => {
+    // Keep only the two most recent attempts per exam so a resubmitted attempt
+    // does not grow the document unboundedly.
+    const attempts = get().examAttempts[attempt.kind] ?? [];
+    const next = [...attempts.filter((a) => a.id !== attempt.id), attempt].slice(-2);
+    set({ examAttempts: { ...get().examAttempts, [attempt.kind]: next } });
+    void get().saveToStorage();
+  },
+
   setViewerAccess: ({ isOwner }) => {
     set({ isOwner, readOnly: !isOwner });
   },
@@ -996,6 +1054,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       blueprint,
       lessonGroups,
       generationComplete,
+      exams,
+      examAttempts,
     } = get();
     if (!stage?.id) {
       log.warn('Cannot save: stage.id is required');
@@ -1022,6 +1082,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
             blueprint,
             lessonGroups,
             generationComplete,
+            exams,
+            examAttempts,
             createdAt: Date.now(),
             updatedAt: Date.now(),
           },
@@ -1177,6 +1239,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       const outlines = outlinesRecord?.outlines || [];
       const persistedComplete = outlinesRecord?.generationComplete ?? false;
       const persistedBlueprint = outlinesRecord?.blueprint;
+      const persistedExams = sanitizePersistedExams(outlinesRecord, log);
 
       // Pillar 2 stale-running recovery: any phase persisted as `running` was
       // interrupted by the reload — demote it to `pending` (attempts kept) so
@@ -1257,6 +1320,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           blueprint: persistedBlueprint,
           lessonGroups: recoveredLessonGroups,
           generationComplete,
+          exams: persistedExams.exams,
+          examAttempts: persistedExams.attempts,
           // Compute generatingOutlines from persisted outlines minus completed
           // scenes. Once generation is complete the deck is frozen for editing,
           // so an orphaned outline (e.g. from a deleted slide) must NOT surface
