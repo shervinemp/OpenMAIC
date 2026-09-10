@@ -17,6 +17,34 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('MediaOrchestrator');
 
+// ==================== Recovery policy ====================
+//
+// A configured generation backend (local ComfyUI, a hosted provider, whatever)
+// is never abandoned because it failed a few requests. Two layers of recovery:
+//
+// 1. In-pass auto-retry: every failed request is re-attempted with exponential
+//    backoff (3s -> 48s, capped) before the serial queue moves on. Structured
+//    terminal errors (errorCode, e.g. CONTENT_SENSITIVE) skip intra-pass
+//    retries - a deterministic rejection will not fix itself - but ...
+// 2. Pass-level recovery: failed tasks are NEVER permanently skipped; the next
+//    generation pass (resume, reload, or new scenes finishing) re-enqueues
+//    every not-done task. A backend failure pattern therefore recovers as soon
+//    as the cause is fixed, without any manual per-item retry click.
+
+/** Intra-pass retry ceiling (initial attempt + retries). */
+export const MEDIA_AUTO_RETRY_LIMIT = 6;
+/** First backoff delay; doubles each retry, capped at MEDIA_RETRY_MAX_DELAY_MS. */
+const MEDIA_RETRY_BASE_DELAY_MS = 3_000;
+const MEDIA_RETRY_MAX_DELAY_MS = 48_000;
+
+/**
+ * Test seam: the backoff sleep. Tests inject an instant resolver so the retry
+ * loop is deterministic without fake timers. Must be awaited (real timers).
+ */
+export const mediaRetrySleep: { wait: (ms: number) => Promise<void> } = {
+  wait: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+};
+
 /** Error with a structured errorCode from the API */
 class MediaApiError extends Error {
   errorCode?: string;
@@ -64,9 +92,12 @@ export async function generateMediaForOutlines(
       // Filter by enabled flags
       if (mg.type === 'image' && !settings.imageGenerationEnabled) continue;
       if (mg.type === 'video' && !settings.videoGenerationEnabled) continue;
-      // Skip already completed or permanently failed (restored from DB)
+      // Skip only already-completed media. Failed tasks are NOT skipped: the
+      // recovery policy ("never give up while generation is configured")
+      // re-enqueues them on every pass, so a backend that failed earlier
+      // recovers automatically once its cause is fixed.
       const existing = store.getTask(mg.elementId);
-      if (existing?.status === 'done' || existing?.status === 'failed') continue;
+      if (existing?.status === 'done') continue;
       allRequests.push(mg);
     }
   }
@@ -172,14 +203,87 @@ async function generateSingleMedia(
   stageId: string,
   abortSignal?: AbortSignal,
 ): Promise<void> {
+  // In-pass recovery loop: failures are retried with exponential backoff. A
+  // structured terminal error (deterministic rejection, e.g. content policy)
+  // opts out of intra-pass retries but is still retried by later passes.
+  for (let attempt = 0; attempt < MEDIA_AUTO_RETRY_LIMIT; attempt++) {
+    const isLastAttempt = attempt === MEDIA_AUTO_RETRY_LIMIT - 1;
+    try {
+      await generateSingleMediaOnce(req, stageId, abortSignal);
+      return;
+    } catch (err) {
+      if (abortSignal?.aborted) {
+        // A submitted video MaaS task keeps running to a billable terminal
+        // state server-side even after this client stops polling. Mark either
+        // media task retryable instead of leaving it stuck in `generating`;
+        // note that retrying a video submits a second job rather than
+        // resuming the first.
+        const abortedMessage =
+          req.type === 'video'
+            ? 'Video generation polling was aborted; retry to submit a new job'
+            : 'Image generation was aborted; retry to submit a new request';
+        useMediaGenerationStore.getState().markFailed(req.elementId, abortedMessage);
+        return;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      const errorCode = err instanceof MediaApiError ? err.errorCode : undefined;
+      if (errorCode) {
+        // Deterministic rejection: intra-pass retries cannot fix it. Record
+        // and surface; the next generation pass will still re-attempt it.
+        log.warn(
+          `Terminal error on ${req.elementId} (${errorCode}): ${message}; will retry on the next generation pass`,
+        );
+        useMediaGenerationStore.getState().markFailed(req.elementId, message, errorCode);
+        // Persist structured terminal errors to IndexedDB so they survive page refresh
+        await db.mediaFiles
+          .put({
+            id: mediaFileKey(stageId, req.elementId),
+            stageId,
+            type: req.type,
+            blob: new Blob(), // empty placeholder
+            mimeType: req.type === 'image' ? 'image/png' : 'video/mp4',
+            size: 0,
+            prompt: req.prompt,
+            params: JSON.stringify({ aspectRatio: req.aspectRatio, style: req.style }),
+            error: message,
+            errorCode,
+            createdAt: Date.now(),
+          })
+          .catch(() => {}); // best-effort
+        return;
+      }
+      if (isLastAttempt) {
+        log.error(`Failed ${req.elementId}:`, message);
+        useMediaGenerationStore.getState().markFailed(req.elementId, message);
+        // Transient failures stay in memory only; the next generation pass
+        // re-enqueues them (pass-level recovery).
+        return;
+      }
+      const delay = Math.min(MEDIA_RETRY_BASE_DELAY_MS * 2 ** attempt, MEDIA_RETRY_MAX_DELAY_MS);
+      log.warn(
+        `Auto-retrying ${req.elementId} in ${delay}ms (attempt ${attempt + 1}/${MEDIA_AUTO_RETRY_LIMIT - 1}):`,
+        message,
+      );
+      throwIfAborted(abortSignal);
+      if (abortSignal?.aborted) throw createAbortError();
+      await mediaRetrySleep.wait(delay);
+      if (abortSignal?.aborted) throw createAbortError();
+    }
+  }
+}
+
+async function generateSingleMediaOnce(
+  req: MediaGenerationRequest,
+  stageId: string,
+  abortSignal?: AbortSignal,
+): Promise<void> {
   const store = useMediaGenerationStore.getState();
   store.markGenerating(req.elementId);
 
-  try {
-    const paramsJson = JSON.stringify({
-      aspectRatio: req.aspectRatio,
-      style: req.style,
-    });
+  const paramsJson = JSON.stringify({
+    aspectRatio: req.aspectRatio,
+    style: req.style,
+  });
 
     if (req.type === 'image') {
       const result = await callImageApi(req, stageId, abortSignal);
@@ -266,43 +370,6 @@ async function generateSingleMedia(
       const posterObjectUrl = posterBlob ? URL.createObjectURL(posterBlob) : undefined;
       useMediaGenerationStore.getState().markDone(req.elementId, objectUrl, posterObjectUrl);
     }
-  } catch (err) {
-    if (abortSignal?.aborted) {
-      // A submitted video MaaS task keeps running to a billable terminal state
-      // server-side even after this client stops polling. Mark either media
-      // task retryable instead of leaving it stuck in `generating`; note that
-      // retrying a video submits a second job rather than resuming the first.
-      const abortedMessage =
-        req.type === 'video'
-          ? 'Video generation polling was aborted; retry to submit a new job'
-          : 'Image generation was aborted; retry to submit a new request';
-      useMediaGenerationStore.getState().markFailed(req.elementId, abortedMessage);
-      return;
-    }
-    const message = err instanceof Error ? err.message : String(err);
-    const errorCode = err instanceof MediaApiError ? err.errorCode : undefined;
-    log.error(`Failed ${req.elementId}:`, message);
-    useMediaGenerationStore.getState().markFailed(req.elementId, message, errorCode);
-
-    // Persist non-retryable failures to IndexedDB so they survive page refresh
-    if (errorCode) {
-      await db.mediaFiles
-        .put({
-          id: mediaFileKey(stageId, req.elementId),
-          stageId,
-          type: req.type,
-          blob: new Blob(), // empty placeholder
-          mimeType: req.type === 'image' ? 'image/png' : 'video/mp4',
-          size: 0,
-          prompt: req.prompt,
-          params: JSON.stringify({ aspectRatio: req.aspectRatio, style: req.style }),
-          error: message,
-          errorCode,
-          createdAt: Date.now(),
-        })
-        .catch(() => {}); // best-effort
-    }
-  }
 }
 
 async function callImageApi(
