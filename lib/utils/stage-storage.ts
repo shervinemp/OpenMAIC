@@ -42,6 +42,7 @@ import {
 } from './chat-storage-lock';
 import { DocumentVersionError, type DocumentSummary } from '@openmaic/storage';
 import { isBrowserPersistenceEnabled } from '@/lib/persistence/bootstrap';
+import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import {
   MISSING_ASSET_LEASE,
@@ -843,8 +844,16 @@ export async function listStages(): Promise<StageListItem[]> {
     if (isBrowserPersistenceEnabled()) {
       // Server persistence is on: the generic document listing answers 403 by
       // design, so the home/workspace library lists through the owner-scoped
-      // workbench surface instead.
-      return await listOwnerStagesFromServer();
+      // workbench surface — but only when that surface can actually exist.
+      // The owner listing is gated on the agent runtime + DATABASE_URL; with
+      // the lighter file-backend browser persistence (no Postgres) the owner
+      // routes answer a plain 404 by design, in which case the same
+      // capability-token document store that serves reads by id is also
+      // usable for the listing (the same seam bootstrap configured).
+      if (isAgentRuntimeConfigured()) {
+        return await listOwnerStagesFromServer();
+      }
+      log.info('Agent runtime not configured; listing stages through the document store');
     }
     const summaries = await getDocumentStore().listDocuments();
     const ids = new Set(summaries.map((summary) => summary.id));
@@ -1243,7 +1252,13 @@ async function listOwnerFoldersFromServer(): Promise<FolderRecord[]> {
  */
 export async function listFolders(): Promise<FolderRecord[]> {
   if (isBrowserPersistenceEnabled()) {
-    return await listOwnerFoldersFromServer();
+    // Folder memberships rest in this browser's Dexie database; the owner
+    // route only aggregates them. Without the agent runtime that route 404s
+    // by design — read the device-local records directly, same source of
+    // truth they aggregate.
+    if (isAgentRuntimeConfigured()) {
+      return await listOwnerFoldersFromServer();
+    }
   }
   const folders = await db.folders.toArray();
   return folders.sort((a, b) => a.order - b.order);

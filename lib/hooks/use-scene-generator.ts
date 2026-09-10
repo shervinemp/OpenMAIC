@@ -46,6 +46,48 @@ import {
 
 const log = createLogger('SceneGenerator');
 
+/**
+ * Cross-tab generation lease (Web Locks API).
+ *
+ * Every mounted classroom tab that sees pending outlines resumes generation
+ * — a second open tab of the same course would re-run the whole loop and
+ * duplicate every provider call (content, actions, TTS, media) against the
+ * user's API key. The lease serializes that to one tab per stage: claimants
+ * that lose the race skip their own resume and let the holder drive, while
+ * the document store keeps every tab reading the same landing scenes.
+ *
+ * Degrades to a no-op release (so single-tab browsers behave exactly as
+ * before) when Web Locks are unavailable.
+ */
+async function claimGenerationLease(stageId: string): Promise<(() => void) | null> {
+  if (typeof navigator === 'undefined' || !navigator.locks) {
+    return () => {};
+  }
+  let release!: () => void;
+  const parked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return new Promise<(() => void) | null>((resolveOuter) => {
+    void navigator.locks
+      .request(
+        `openmaic-generate:${stageId}`,
+        { ifAvailable: true },
+        (lock: unknown) => {
+          if (!lock) {
+            resolveOuter(null);
+            return undefined;
+          }
+          resolveOuter(() => release());
+          return parked as unknown as Promise<void>;
+        },
+      )
+      .catch((error) => {
+        log.error('Generation lease request failed:', error);
+        resolveOuter(() => release());
+      });
+  });
+}
+
 interface SceneContentResult {
   success: boolean;
   content?: unknown;
@@ -721,6 +763,16 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
       store.getState().setGenerationStatus('generating');
 
+      // Cross-tab lease: exactly one tab per stage resumes generation.
+      const generationLease = await claimGenerationLease(stage.id);
+      if (generationLease === null) {
+        log.info(`Another browser tab is already driving generation for ${stage.id}; skipping duplicate resume`);
+        store.getState().setGenerationStatus('idle');
+        store.getState().setGeneratingOutlines([]);
+        generatingRef.current = false;
+        return;
+      }
+
       // Determine pending outlines (skipped outlines stay closed — Pillar 2 §4.9)
       const completedOrders = new Set(scenes.map((s) => s.order));
       const skippedIds = new Set(state.skippedOutlineIds);
@@ -733,6 +785,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         store.getState().setGeneratingOutlines([]);
         store.getState().setGenerationComplete(true);
         options.onComplete?.();
+        generationLease();
         generatingRef.current = false;
         return;
       }
@@ -998,6 +1051,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       } finally {
         generatingRef.current = false;
         fetchAbortRef.current = null;
+        generationLease();
       }
     },
     [options, store],
