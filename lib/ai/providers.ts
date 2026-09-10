@@ -893,6 +893,30 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/deepseek.svg',
     models: [
+      // V4.1-Flash (released 2026-09-10, `deepseek-flash`). Replaces the
+      // retired V4-Flash / V4-Flash-Vision-Exp ids - DeepSeek's endpoint
+      // temporarily re-routes those legacy names to this model, but the
+      // canonical name is what new configurations should use. Native
+      // multimodal: image input lands directly on this id, no second
+      // "vision" catalog entry needed.
+      {
+        id: 'deepseek-flash',
+        name: 'DeepSeek V4.1 Flash',
+        contextWindow: 1048576,
+        outputWindow: 393216,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      // Retired 2026-09-10: served by V4.1-Flash (deepseek-flash) at Flash
+      // rates until DeepSeek fully drops the alias.
       {
         id: 'deepseek-v4-pro',
         name: 'DeepSeek V4 Pro',
@@ -909,6 +933,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           },
         },
       },
+      // Retired 2026-09-10: temporarily routed to V4.1-Flash
+      // (deepseek-flash) at Flash rates by DeepSeek's endpoint.
       {
         id: 'deepseek-v4-flash',
         name: 'DeepSeek V4 Flash',
@@ -925,6 +951,9 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           },
         },
       },
+      // Retired 2026-09-10: temporarily routed to V4.1-Flash
+      // (deepseek-flash, native multimodal) - kept so existing configs with
+      // this id keep resolving and the vLLM gateway toggle still applies.
       {
         id: 'deepseek-v4-flash-vision-exp',
         name: 'DeepSeek V4 Flash Vision (Exp)',

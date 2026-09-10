@@ -90,11 +90,14 @@ describe('thinking config metadata', () => {
     );
     expect(googleModels).toContain('gemini-3.1-pro-preview');
     expect(googleModels).not.toContain('gemini-3-pro-preview');
-    expect(deepseekModels).toEqual([
-      'deepseek-v4-pro',
-      'deepseek-v4-flash',
-      'deepseek-v4-flash-vision-exp',
-    ]);
+    expect(deepseekModels).toEqual(['deepseek-flash', 'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp']);
+    // Pin the V4.1-Flash native-multimodal entry: the canonical id must keep
+    // vision: true (image input needs no separate vision-exp alias).
+    expect(getProvider('deepseek')?.models.find((m) => m.id === 'deepseek-flash')?.capabilities).toMatchObject({
+      streaming: true,
+      tools: true,
+      vision: true,
+    });
     // Pin the vision model's capabilities so a regression to vision: false
     // (silently dropping document images during generation) fails this test.
     const visionModel = getProvider('deepseek')?.models.find(
