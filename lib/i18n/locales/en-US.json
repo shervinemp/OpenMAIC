@@ -227,6 +227,7 @@
     "confirmSwitchMessage": "A topic is currently in progress. Switching scenes will end the current topic. Are you sure?",
     "generatingNextPage": "Scene is being generated, please wait...",
     "courseComplete": "Course complete",
+    "ungroupedScenes": "Other scenes",
     "fullscreen": "Fullscreen",
     "exitFullscreen": "Exit Fullscreen",
     "editCourse": "Edit course",

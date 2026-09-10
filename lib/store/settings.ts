@@ -933,7 +933,7 @@ export const useSettingsStore = create<SettingsState>()(
         playbackSpeed: 1,
 
         // Layout preferences
-        sidebarCollapsed: true,
+        sidebarCollapsed: false,
         chatAreaCollapsed: true,
         chatAreaWidth: 320,
         editRailCollapsed: false,
