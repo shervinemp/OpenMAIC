@@ -590,6 +590,22 @@ export function SceneSidebar({
                         ))}
                       </div>
                     )}
+                    {/* Phase chips (Pillar 2 §4.2): content → actions → tts → media */}
+                    {!isFailed && !isPaused && (
+                      <div className="absolute bottom-1 left-1 right-1 flex items-center gap-1">
+                        {(['content', 'actions', 'tts', 'media'] as const).map((phase) => (
+                          <span
+                            key={phase}
+                            className={cn(
+                              'flex-1 h-1 rounded-full transition-colors',
+                              generationPhase === phase
+                                ? 'bg-purple-500 dark:bg-purple-400 animate-pulse'
+                                : 'bg-gray-200 dark:bg-gray-700',
+                            )}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               );

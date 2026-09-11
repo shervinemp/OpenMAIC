@@ -2,6 +2,7 @@ import '@/lib/persistence/bootstrap';
 
 import { BrowserAssetStore, toAssetId } from '@openmaic/storage';
 import type { AssetMeta } from '@openmaic/dsl';
+import { HttpAssetStore } from './server-asset-store';
 import {
   isAssetPoolServerBacked,
   registerAssetPoolStorageResetHook,
