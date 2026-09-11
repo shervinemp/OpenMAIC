@@ -1,0 +1,18 @@
+{
+  "baseUrl": "http://127.0.0.1:8188",
+  "nodeMapping": {
+    "textPromptNodeId": "6",
+    "textPromptField": "text",
+
+    "seedNodeId": "3",
+    "seedField": "seed",
+
+    "imageInputNodeId": null,
+    "imageInputField": "image",
+
+    "outputNodeId": "9"
+  },
+  "workflowTemplate": {
+    "...": "PASTE YOUR FULL COMFYUI API WORKFLOW JSON HERE"
+  }
+}
