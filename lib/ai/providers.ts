@@ -1795,6 +1795,53 @@ function getCompatThinkingBodyParams(
   }
 }
 
+/**
+ * Prompt caching: tag the system prompt with an Anthropic cache block so the
+ * largely-static prefix is billed at cache-read cost on subsequent calls
+ * instead of full uncached input. System prompts here are rebuilt per request
+ * from stable content (course outline, tool schemas), so the prefix matches
+ * across turns. Opt out with LLM_PROMPT_CACHING_DISABLED=true.
+ */
+export function injectAnthropicSystemCacheControl(body: unknown): unknown {
+  const parsed = body as {
+    system?: string | Array<{ type: string; text?: string; cache_control?: unknown }>;
+  } | null;
+  if (!parsed || typeof parsed !== 'object') return body;
+  let mutated = false;
+  if (typeof parsed.system === 'string' && parsed.system.length > 0) {
+    parsed.system = [{ type: 'text', text: parsed.system, cache_control: { type: 'ephemeral' } }];
+    mutated = true;
+  } else if (Array.isArray(parsed.system) && parsed.system.length > 0) {
+    const last = parsed.system[parsed.system.length - 1];
+    if (last?.type === 'text' && !last.cache_control) {
+      last.cache_control = { type: 'ephemeral' };
+      mutated = true;
+    }
+  }
+  if (!mutated) return body;
+  const cloned = { ...(parsed as Record<string, unknown>), system: parsed.system };
+  return cloned;
+}
+
+export function wrapAnthropicCacheFetch(transportFetch: typeof fetch): typeof fetch {
+  return async (fetchInput, fetchInit) => {
+    let init = fetchInit;
+    if (
+      process.env.LLM_PROMPT_CACHING_DISABLED !== 'true' &&
+      init?.body &&
+      typeof init.body === 'string'
+    ) {
+      try {
+        const mutated = injectAnthropicSystemCacheControl(JSON.parse(init.body));
+        if (mutated !== undefined) init = { ...init, body: JSON.stringify(mutated) };
+      } catch {
+        /* leave body as-is */
+      }
+    }
+    return transportFetch(fetchInput, init);
+  };
+}
+
 function normalizeMiniMaxAnthropicBaseUrl(
   providerId: ProviderId,
   baseUrl?: string,
@@ -2115,6 +2162,9 @@ export function getModel(config: ModelConfig): ModelWithInfo {
   const transportFetch: typeof fetch =
     config.fetchImpl ?? ((fetchInput, fetchInit) => globalThis.fetch(fetchInput, fetchInit));
 
+  const maybeCacheControlledFetch: typeof fetch =
+    config.providerId === 'anthropic' ? wrapAnthropicCacheFetch(transportFetch) : transportFetch;
+
   let model: LanguageModel;
 
   switch (providerType) {
@@ -2317,8 +2367,8 @@ export function getModel(config: ModelConfig): ModelWithInfo {
 
           return transportFetch(url, init);
         }) as typeof globalThis.fetch;
-      } else if (config.fetchImpl) {
-        anthropicOptions.fetch = config.fetchImpl;
+      } else {
+        anthropicOptions.fetch = maybeCacheControlledFetch as typeof globalThis.fetch;
       }
 
       const anthropic = createAnthropic(anthropicOptions);

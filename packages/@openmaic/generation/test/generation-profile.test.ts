@@ -13,13 +13,13 @@ describe('generation profile (overall cost/quality knob)', () => {
     delete process.env.OPENMAIC_THINKING_PRESET;
   });
 
-  it('default profile is balanced with today\'s behavior unchanged', async () => {
+  it('default profile is balanced with lean thinking as the default', async () => {
     const { readGenerationProfile } = await import('@openmaic/generation');
     expect(readGenerationProfile()).toEqual({
       profile: 'balanced',
       depthFloorScale: 1,
       contentAttempts: 2,
-      thinkingPreset: undefined,
+      thinkingPreset: 'lean',
     });
   });
 

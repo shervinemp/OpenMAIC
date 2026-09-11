@@ -10,8 +10,9 @@
  *   thinking (validated-JSON stages skip CoT). Meaningful saving (~half of a
  *   semester run) at the cost of some prose density and fewer corrective
  *   reflections.
- * - balanced (default) — today's behavior, floors at 1×, two corrective
- *   retries, provider default thinking.
+ * - balanced (default) — depth floors at 1×, two corrective retries, `lean`
+ *   thinking (validated-JSON stages skip CoT; judgment stages keep bounded
+ *   budgets).
  * - premium — floors stay 1× (contracts, not an escalator), thinking freed to
  *   provider defaults; reserved for publish-grade runs.
  */
@@ -27,7 +28,7 @@ export interface GenerationProfilePolicy {
 
 const PROFILE_POLICY: Record<GenerationProfile, Omit<GenerationProfilePolicy, 'profile'>> = {
   economy: { depthFloorScale: 0.75, contentAttempts: 1, thinkingPreset: 'lean' },
-  balanced: { depthFloorScale: 1, contentAttempts: 2, thinkingPreset: undefined },
+  balanced: { depthFloorScale: 1, contentAttempts: 2, thinkingPreset: 'lean' },
   premium: { depthFloorScale: 1, contentAttempts: 2, thinkingPreset: undefined },
 };
 
@@ -50,18 +51,16 @@ function clampedScale(value: string | undefined, fallback: number): number {
  */
 export function readGenerationProfile(env = process.env): GenerationProfilePolicy {
   const raw = env.OPENMAIC_GENERATION_PROFILE?.trim();
-  const profile =
-    raw === 'economy' || raw === 'premium'
-      ? raw
-      : 'balanced';
+  const profile = raw === 'economy' || raw === 'premium' ? raw : 'balanced';
   const base = PROFILE_POLICY[profile];
   return {
     profile,
     depthFloorScale: clampedScale(env.OPENMAIC_DEPTH_FLOOR_SCALE, base.depthFloorScale),
     contentAttempts: positiveInt(env.OPENMAIC_CONTENT_ATTEMPTS, base.contentAttempts),
     thinkingPreset:
-      (env.OPENMAIC_THINKING_PRESET?.trim() as GenerationProfilePolicy['thinkingPreset'] ?? undefined) ??
-      base.thinkingPreset,
+      ((env.OPENMAIC_THINKING_PRESET?.trim() || undefined) as
+        | GenerationProfilePolicy['thinkingPreset']
+        | undefined) ?? base.thinkingPreset,
   };
 }
 

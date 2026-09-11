@@ -349,7 +349,8 @@ export function readThinkingPresetEnv(): ThinkingPreset | undefined {
     );
   }
   // No explicit thinking env: the generation profile's thinking axis picks the
-  // default (economy implies lean; balanced/premium leave provider defaults).
+  // default (economy implies lean; balanced is lean today; premium keeps
+  // provider defaults).
   return readGenerationProfile().thinkingPreset;
 }
 

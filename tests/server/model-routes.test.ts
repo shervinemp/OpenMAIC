@@ -391,7 +391,18 @@ describe('model-routes', () => {
       delete process.env.OPENMAIC_THINKING_PRESET;
     });
 
-    it('unset preset resolves to provider defaults (no thinking override)', async () => {
+    it('unset preset falls to the balanced profile default (lean thinking)', async () => {
+      delete process.env.OPENMAIC_GENERATION_PROFILE;
+      const { presetThinkingFor } = await import('@/lib/server/model-routes');
+      expect(presetThinkingFor('scene-content')).toEqual({ enabled: false });
+      expect(presetThinkingFor('scene-outlines-stream')).toEqual({
+        enabled: true,
+        budgetTokens: 6000,
+      });
+    });
+
+    it('quality preset resolves to provider defaults (no thinking override)', async () => {
+      process.env.OPENMAIC_THINKING_PRESET = 'quality';
       const { presetThinkingFor } = await import('@/lib/server/model-routes');
       expect(presetThinkingFor('scene-content')).toBeUndefined();
       expect(presetThinkingFor('scene-outlines-stream')).toBeUndefined();
