@@ -38,16 +38,7 @@ import type { SceneContent, Scene, Stage } from '@/lib/types/stage';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { accessDocument, type DocumentMigrationDeps } from '@/lib/document-store';
 
-export async function inlineSceneContent(
-  content: SceneContent,
-  options?: InlineOptions,
-): Promise<{ content: SceneContent; report: InlineReport }> {
-  if (content?.type !== 'interactive' || !('html' in content) || !content.html) {
-    return { content, report: { inlined: [], failed: [] } };
-  }
-  const { html, report } = await inlineHtmlAssets(content.html, options);
-  return { content: { ...content, html }, report };
-}
+export { inlineSceneContent } from './build-classroom-zip';
 
 const log = createLogger('ExportClassroom');
 

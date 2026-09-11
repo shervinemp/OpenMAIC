@@ -986,6 +986,34 @@ function HomePage() {
             </motion.div>
           )}
         </AnimatePresence>
+<<<<<<< HEAD
+=======
+
+        {/* ── Import buttons (empty state) ── */}
+        {classrooms.length === 0 && (
+          <div className="relative z-10 mt-4 flex items-center gap-4">
+            <button
+              onClick={triggerFileSelect}
+              disabled={importing}
+              className="flex items-center gap-1.5 text-[12px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
+            >
+              <Upload className="size-3.5" />
+              <span>{t('import.classroom')}</span>
+            </button>
+            {BACKUP_UI_ENABLED && <RestoreBackupButton variant="plain" />}
+            {PPTX_IMPORT_ENABLED && (
+              <button
+                onClick={triggerPptxFileSelect}
+                disabled={pptxImporting}
+                className="flex items-center gap-1.5 text-[12px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
+              >
+                <Presentation className="size-3.5" />
+                <span>{t('import.pptx')}</span>
+              </button>
+            )}
+          </div>
+        )}
+>>>>>>> feat/full-local-backup
       </motion.div>
 
       {/* ═══ Recent classrooms — collapsible ═══ */}
