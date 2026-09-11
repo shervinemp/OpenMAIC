@@ -108,7 +108,7 @@ function messageFrom(value: unknown): string {
 
 function retryableByMessage(value: unknown): boolean {
   const message = messageFrom(value);
-  return /rate limit|too many requests|timeout|timed out|fetch failed|network|ECONNRESET|ECONNREFUSED|ECONNABORTED|ETIMEDOUT|ENOTFOUND|EPIPE|socket hang up/i.test(
+  return /rate limit|too many requests|timeout|timed out|fetch failed|network|ECONNRESET|ECONNREFUSED|ECONNABORTED|ETIMEDOUT|ENOTFOUND|EPIPE|socket hang up|endpoint is unavailable|model is unavailable|overloaded|temporarily/i.test(
     message,
   );
 }

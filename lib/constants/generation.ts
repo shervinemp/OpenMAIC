@@ -9,6 +9,12 @@ export const MAX_PDF_CONTENT_CHARS = 50000;
 // Maximum number of images to send as vision content parts
 export const MAX_VISION_IMAGES = 20;
 
+// Size cap for one course material document (bytes), enforced by the extract
+// route on both the multipart and asset-id forms and by the vision-image
+// resolution (`resolveVisionImagesForPrompt`) so an oversized asset is
+// rejected at `identify` — before any bytes are materialized.
+export const MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+
 // ==================== Full-document coverage (Phase 2 §16) ====================
 // The outline stage must see the WHOLE source document, not the first N
 // characters. Below RAW_THRESHOLD the extracted text is injected as-is;
@@ -176,12 +182,47 @@ export interface SpecialtyDepthFloor {
   minGlossaryTerms: number;
   /** Minimum further-reading items. */
   minReadingItems: number;
+  /** Minimum comparison dimensions (rows) across all subjects. */
+  minComparisonRows: number;
+  /** Minimum evaluated claims on a data-interpretation scene. */
+  minDataClaims: number;
+  /** Minimum options in a trade-off decision scene. */
+  minTradeoffOptions: number;
+  /** Minimum rubric criteria on a free-response scene. */
+  minFreeResponseCriteria: number;
 }
 
 export const SPECIALTY_DEPTH_FLOORS: Record<CourseDepthLevel, SpecialtyDepthFloor> = {
-  intro: { minProblems: 1, minDerivationSteps: 2, minGlossaryTerms: 4, minReadingItems: 3 },
-  intermediate: { minProblems: 1, minDerivationSteps: 3, minGlossaryTerms: 5, minReadingItems: 4 },
-  university: { minProblems: 2, minDerivationSteps: 4, minGlossaryTerms: 6, minReadingItems: 5 },
+  intro: {
+    minProblems: 1,
+    minDerivationSteps: 2,
+    minGlossaryTerms: 4,
+    minReadingItems: 3,
+    minComparisonRows: 3,
+    minDataClaims: 2,
+    minTradeoffOptions: 2,
+    minFreeResponseCriteria: 2,
+  },
+  intermediate: {
+    minProblems: 1,
+    minDerivationSteps: 3,
+    minGlossaryTerms: 5,
+    minReadingItems: 4,
+    minComparisonRows: 4,
+    minDataClaims: 3,
+    minTradeoffOptions: 3,
+    minFreeResponseCriteria: 3,
+  },
+  university: {
+    minProblems: 2,
+    minDerivationSteps: 4,
+    minGlossaryTerms: 6,
+    minReadingItems: 5,
+    minComparisonRows: 5,
+    minDataClaims: 4,
+    minTradeoffOptions: 3,
+    minFreeResponseCriteria: 4,
+  },
 };
 
 /**
@@ -235,3 +276,4 @@ export const LLM_CALL_CONCURRENCY = 6;
 // caption fragments may not dominate, and a concrete example/definition/
 // fact is required unless the outline is intro/summary.
 export const MIN_SUBSTANTIVE_ELEMENTS = 4;
+

@@ -56,6 +56,10 @@ const SCENE_TYPES: SceneType[] = [
   'derivation',
   'glossary',
   'reading',
+  'comparison',
+  'dataReading',
+  'tradeoffs',
+  'freeResponse',
 ];
 
 const TYPE_THEME: Record<
@@ -115,6 +119,30 @@ const TYPE_THEME: Record<
     accent: 'bg-cyan-500',
     dot: 'bg-cyan-400',
   },
+  comparison: {
+    chip: 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300',
+    chipHover: 'hover:bg-violet-100/80 dark:hover:bg-violet-500/15',
+    accent: 'bg-violet-500',
+    dot: 'bg-violet-400',
+  },
+  dataReading: {
+    chip: 'bg-lime-50 text-lime-700 dark:bg-lime-500/10 dark:text-lime-300',
+    chipHover: 'hover:bg-lime-100/80 dark:hover:bg-lime-500/15',
+    accent: 'bg-lime-500',
+    dot: 'bg-lime-400',
+  },
+  tradeoffs: {
+    chip: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300',
+    chipHover: 'hover:bg-orange-100/80 dark:hover:bg-orange-500/15',
+    accent: 'bg-orange-500',
+    dot: 'bg-orange-400',
+  },
+  freeResponse: {
+    chip: 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-500/10 dark:text-fuchsia-300',
+    chipHover: 'hover:bg-fuchsia-100/80 dark:hover:bg-fuchsia-500/15',
+    accent: 'bg-fuchsia-500',
+    dot: 'bg-fuchsia-400',
+  },
 };
 
 function normalizeOrder(outlines: SceneOutline[]): SceneOutline[] {
@@ -142,6 +170,14 @@ function useSceneTypeLabel() {
         return t('generation.sceneTypeGlossary');
       case 'reading':
         return t('generation.sceneTypeReading');
+      case 'comparison':
+        return t('generation.sceneTypeComparison');
+      case 'dataReading':
+        return t('generation.sceneTypeDataReading');
+      case 'tradeoffs':
+        return t('generation.sceneTypeTradeoffs');
+      case 'freeResponse':
+        return t('generation.sceneTypeFreeResponse');
       case 'slide':
       default:
         return t('generation.sceneTypeSlide');
@@ -1566,3 +1602,4 @@ function useAutoResize(ref: React.RefObject<HTMLTextAreaElement | null>, value: 
     return () => cancelAnimationFrame(frame);
   }, [ref, value]);
 }
+

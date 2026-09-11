@@ -12,9 +12,13 @@ import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
-import { getEnabledProvidersWithVoices } from '@/lib/audio/voice-resolver';
+import {
+  getEnabledProvidersWithVoices,
+  resolveNarratorVoiceForGeneration,
+} from '@/lib/audio/voice-resolver';
+import { isQwenCloneVoice, resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
-import { useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
+import { useAllVoiceProfiles } from '@/lib/audio/voxcpm-voices';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   fetchSceneActions,
@@ -30,7 +34,17 @@ import {
   cleanupOldImages,
   storeImages,
 } from '@/lib/utils/image-storage';
+import {
+  cleanupOldGenerationSessions,
+  clearGenerationSession,
+  clearGenerationSessionEnvelope,
+  loadGenerationSession,
+  readGenerationSessionEnvelope,
+  saveGenerationSession,
+} from '@/lib/utils/generation-session-store';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
+import { resolveSessionDocumentSources } from '@/lib/document/session-sources';
+import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import {
   MAX_DOCUMENT_BUNDLE_FILES,
   MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES,
@@ -66,43 +80,14 @@ const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
 // outlines, persisted as units finish so a mid-run failure can resume instead
 // of regenerating everything. Keyed by session id so a fresh run never reuses
 // a stale checkpoint.
-const OUTLINE_CHECKPOINT_KEY = 'outlineCheckpoint';
+// Outline checkpoint helpers moved to lib/generation/outline-checkpoint.ts (shared with home-page retry adoption).
 
-interface OutlineCheckpoint {
-  sessionId: string;
-  syllabus: unknown;
-  outlines: SceneOutline[];
-  completedUnitCount: number;
-}
-
-function outlineCheckpointStore(): BrowserKVStore {
-  return new BrowserKVStore();
-}
-
-async function readOutlineCheckpoint(): Promise<OutlineCheckpoint | null> {
-  try {
-    return await outlineCheckpointStore().get<OutlineCheckpoint>(OUTLINE_CHECKPOINT_KEY, 'device');
-  } catch (e) {
-    log.warn('Failed to read outline checkpoint:', e);
-    return null;
-  }
-}
-
-async function writeOutlineCheckpoint(checkpoint: OutlineCheckpoint): Promise<void> {
-  try {
-    await outlineCheckpointStore().set(OUTLINE_CHECKPOINT_KEY, checkpoint, 'device');
-  } catch (e) {
-    log.warn('Failed to persist outline checkpoint:', e);
-  }
-}
-
-async function clearOutlineCheckpoint(): Promise<void> {
-  try {
-    await outlineCheckpointStore().remove(OUTLINE_CHECKPOINT_KEY, 'device');
-  } catch {
-    /* ignore */
-  }
-}
+import {
+  clearOutlineCheckpoint,
+  readOutlineCheckpoint,
+  writeOutlineCheckpoint,
+  type OutlineCheckpoint,
+} from '@/lib/generation/outline-checkpoint';
 
 type ParsedDocumentResponseImage = {
   id: string;
@@ -112,22 +97,6 @@ type ParsedDocumentResponseImage = {
   width?: number;
   height?: number;
 };
-
-function legacySourceFromSession(session: GenerationSessionState): SessionDocumentSource[] {
-  if (session.documentSources?.length) return session.documentSources;
-  if (!session.pdfStorageKey) return [];
-  return [
-    {
-      id: 'source_1',
-      name: session.pdfFileName || 'document.pdf',
-      size: 0,
-      mimeType: session.documentMimeType || 'application/pdf',
-      order: 1,
-      storageKey: session.pdfStorageKey,
-      providerId: session.pdfProviderId,
-    },
-  ];
-}
 
 function validateDocumentSources(
   sources: SessionDocumentSource[],
@@ -164,7 +133,7 @@ function GenerationPreviewContent() {
   // streaming card mid-stream, or by restoring a session that was already in review).
   // Combined with `reviewOutlineEnabled` to decide whether the post-stream timer fires.
   const outlineReviewIntentRef = useRef(false);
-  const { profiles: voxcpmProfiles } = useVoxCPMVoiceProfiles();
+  const { profiles: voiceProfiles } = useAllVoiceProfiles();
 
   const [session, setSession] = useState<GenerationSessionState | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
@@ -230,7 +199,14 @@ function GenerationPreviewContent() {
 
   const persistSession = (nextSession: GenerationSessionState) => {
     setSession(nextSession);
-    sessionStorage.setItem('generationSession', JSON.stringify(nextSession));
+    // The full session (document text, images, digest, research context) is
+    // far too large for sessionStorage's ~5MB quota — it lives in IndexedDB
+    // (see generation-session-store). Fire-and-forget: the in-memory state
+    // stays authoritative for the running flow, every later checkpoint writes
+    // a superset, and a failed write must never kill the generation.
+    saveGenerationSession(nextSession).catch((storageError) => {
+      log.warn('Failed to persist generation session:', storageError);
+    });
   };
 
   const clearOutlineReviewTimer = () => {
@@ -271,30 +247,43 @@ function GenerationPreviewContent() {
       }
     });
 
-  // Load session from sessionStorage
+  // Load session from IndexedDB (pointer envelope in sessionStorage)
   useEffect(() => {
     cleanupOldImages(24).catch((e) => log.error(e));
+    // Sessions abandoned before their natural end (tab closed mid-run) would
+    // otherwise linger in IndexedDB forever.
+    cleanupOldGenerationSessions(24).catch((e) => log.error(e));
 
-    const saved = sessionStorage.getItem('generationSession');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as GenerationSessionState;
-        if (!parsed.previewPhase) {
-          parsed.previewPhase = parsed.sceneOutlines?.length ? 'outline-ready' : 'preparing';
+    let cancelled = false;
+    loadGenerationSession()
+      .then((saved) => {
+        if (cancelled) return;
+        if (saved) {
+          try {
+            if (!saved.previewPhase) {
+              saved.previewPhase = saved.sceneOutlines?.length ? 'outline-ready' : 'preparing';
+            }
+            // Restore review intent: a saved 'review' phase without outlines means the user
+            // had opened the editor mid-stream before the refresh — preserve that intent so
+            // the post-stream auto-continue timer doesn't fire after SSE restart.
+            if (saved.previewPhase === 'review' && !saved.sceneOutlines?.length) {
+              outlineReviewIntentRef.current = true;
+            }
+            saved.taskEngineMode = saved.taskEngineMode === true;
+            setSession(saved);
+          } catch (e) {
+            log.error('Failed to restore generation session:', e);
+          }
         }
-        // Restore review intent: a saved 'review' phase without outlines means the user
-        // had opened the editor mid-stream before the refresh — preserve that intent so
-        // the post-stream auto-continue timer doesn't fire after SSE restart.
-        if (parsed.previewPhase === 'review' && !parsed.sceneOutlines?.length) {
-          outlineReviewIntentRef.current = true;
-        }
-        parsed.taskEngineMode = parsed.taskEngineMode === true;
-        setSession(parsed);
-      } catch (e) {
-        log.error('Failed to parse generation session:', e);
-      }
-    }
-    setSessionLoaded(true);
+        setSessionLoaded(true);
+      })
+      .catch((e) => {
+        log.error('Failed to load generation session:', e);
+        if (!cancelled) setSessionLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Abort all in-flight requests on unmount
@@ -388,7 +377,7 @@ function GenerationPreviewContent() {
       let activeSteps = getActiveSteps(currentSession);
 
       // Determine if we need the document analysis step
-      const documentSources = legacySourceFromSession(currentSession);
+      const documentSources = resolveSessionDocumentSources(currentSession);
       // Re-extract + re-index when the extracted text is missing OR when a prior
       // indexing request was aborted before it could persist the server-side
       // index (text present but no handle). Skipping the latter silently yields
@@ -408,27 +397,6 @@ function GenerationPreviewContent() {
         const sortedDocumentSources = [...documentSources].sort((a, b) => a.order - b.order);
         const parsedParts = await Promise.all(
           sortedDocumentSources.map(async (source): Promise<ParsedDocumentPart> => {
-            const documentBlob = await loadDocumentBlob(source.storageKey);
-            if (!documentBlob) {
-              throw new Error(t('generation.courseMaterialLoadFailed'));
-            }
-
-            if (!(documentBlob instanceof Blob) || documentBlob.size === 0) {
-              log.error('Invalid course material blob:', {
-                source: source.name,
-                type: typeof documentBlob,
-                size: documentBlob instanceof Blob ? documentBlob.size : 'N/A',
-              });
-              throw new Error(t('generation.courseMaterialLoadFailed'));
-            }
-
-            const documentFile = new File([documentBlob], source.name || 'document.pdf', {
-              type: source.mimeType || documentBlob.type || 'application/pdf',
-            });
-
-            const parseFormData = new FormData();
-            parseFormData.append('file', documentFile);
-
             const providerId = source.providerId || currentSession.pdfProviderId;
             const legacySourceConfig = (
               source as SessionDocumentSource & {
@@ -441,38 +409,38 @@ function GenerationPreviewContent() {
               }
             ).providerConfig;
             const providerConfig = currentSession.pdfProviderConfig || legacySourceConfig;
+            const documentBlob = await loadDocumentBlob(source.storageKey);
+            if (!(documentBlob instanceof Blob) || documentBlob.size === 0) {
+              throw new Error(t('generation.courseMaterialLoadFailed'));
+            }
+            const documentFile = new File([documentBlob], source.name || 'document.pdf', {
+              type: source.mimeType || documentBlob.type || 'application/pdf',
+            });
+            const parseFormData = new FormData();
+            parseFormData.append('file', documentFile);
             if (providerId) parseFormData.append('providerId', providerId);
-            if (providerConfig?.apiKey?.trim()) {
+            if (providerConfig?.apiKey?.trim())
               parseFormData.append('apiKey', providerConfig.apiKey);
-            }
-            if (providerConfig?.baseUrl?.trim()) {
+            if (providerConfig?.baseUrl?.trim())
               parseFormData.append('baseUrl', providerConfig.baseUrl);
-            }
-            // AliDocMind uses AK/SK instead of a single apiKey.
             if (providerConfig?.accessKeyId?.trim()) {
               parseFormData.append('accessKeyId', providerConfig.accessKeyId);
             }
             if (providerConfig?.accessKeySecret?.trim()) {
               parseFormData.append('accessKeySecret', providerConfig.accessKeySecret);
             }
-
             const parseResponse = await fetch('/api/extract-document', {
               method: 'POST',
               body: parseFormData,
               signal,
             });
-
-            if (!parseResponse.ok) {
-              const errorData = await parseResponse.json();
-              throw new Error(errorData.error || t('generation.courseMaterialParseFailed'));
-            }
-
+            if (!parseResponse.ok) throw new Error(t('generation.courseMaterialParseFailed'));
             const parseResult = await parseResponse.json();
             if (!parseResult.success || !parseResult.data) {
               throw new Error(t('generation.courseMaterialParseFailed'));
             }
-
-            const rawImages = parseResult.data.metadata?.pdfImages;
+            const parseData = parseResult.data;
+            const rawImages = parseData.metadata?.pdfImages;
             const images = rawImages
               ? rawImages.map((img: ParsedDocumentResponseImage) => ({
                   id: img.id,
@@ -482,7 +450,7 @@ function GenerationPreviewContent() {
                   width: img.width,
                   height: img.height,
                 }))
-              : ((parseResult.data.images as string[] | undefined) ?? []).map((src, i) => ({
+              : ((parseData.images as string[] | undefined) ?? []).map((src, i) => ({
                   id: `img_${i + 1}`,
                   src,
                   pageNumber: 1,
@@ -498,9 +466,9 @@ function GenerationPreviewContent() {
                 order: source.order,
                 providerId,
               },
-              text: parseResult.data.text as string,
-              rawTextLength: (parseResult.data.text as string).length,
-              pageCount: parseResult.data.metadata?.pageCount,
+              text: parseData.text as string,
+              rawTextLength: (parseData.text as string).length,
+              pageCount: parseData.metadata?.pageCount,
               images,
             };
           }),
@@ -666,12 +634,7 @@ function GenerationPreviewContent() {
           pdfDigest,
           documentIndex,
         };
-        setSession(updatedSession);
-        try {
-          sessionStorage.setItem('generationSession', JSON.stringify(updatedSession));
-        } catch (storageError) {
-          log.warn('Session storage failed (document too large for sessionStorage):', storageError);
-        }
+        persistSession(updatedSession);
 
         if (notices.length > 0) {
           setTruncationWarnings(notices);
@@ -685,53 +648,61 @@ function GenerationPreviewContent() {
       // Step: Web Search (if enabled)
       const webSearchStepIdx = activeSteps.findIndex((s) => s.id === 'web-search');
       if (currentSession.requirements.webSearch && webSearchStepIdx >= 0) {
-        setCurrentStepIndex(webSearchStepIdx);
-        setWebSearchSources([]);
+        // Resume: a persisted researchContext means the search already
+        // completed in a previous run — re-running it would discard the
+        // recovered sources and pay for the query again. Restore the UI and
+        // continue straight to the outline step instead.
+        if (currentSession.researchContext) {
+          setWebSearchSources(currentSession.researchSources ?? []);
+        } else {
+          setCurrentStepIndex(webSearchStepIdx);
+          setWebSearchSources([]);
 
-        const wsSettings = useSettingsStore.getState();
-        const wsProviderId = wsSettings.webSearchProviderId;
-        const wsConfig = wsSettings.webSearchProvidersConfig?.[wsProviderId];
-        const res = await fetch('/api/web-search', {
-          method: 'POST',
-          headers: getApiHeaders(),
-          body: JSON.stringify(
-            withThinkingConfig({
-              query: currentSession.requirements.requirement,
-              pdfText: currentSession.pdfText || undefined,
-              providerId: wsProviderId,
-              apiKey: wsConfig?.apiKey || undefined,
-              baseUrl: wsProviderId === 'searxng' ? undefined : wsConfig?.baseUrl || undefined,
-              baiduSubSources: wsProviderId === 'baidu' ? wsSettings.baiduSubSources : undefined,
-              claudeModelId: wsProviderId === 'claude' ? wsConfig?.modelId || undefined : undefined,
-            }),
-          ),
-          signal,
-        });
+          const wsSettings = useSettingsStore.getState();
+          const wsProviderId = wsSettings.webSearchProviderId;
+          const wsConfig = wsSettings.webSearchProvidersConfig?.[wsProviderId];
+          const res = await fetch('/api/web-search', {
+            method: 'POST',
+            headers: getApiHeaders(),
+            body: JSON.stringify(
+              withThinkingConfig({
+                query: currentSession.requirements.requirement,
+                pdfText: currentSession.pdfText || undefined,
+                providerId: wsProviderId,
+                apiKey: wsConfig?.apiKey || undefined,
+                baseUrl: wsProviderId === 'searxng' ? undefined : wsConfig?.baseUrl || undefined,
+                baiduSubSources: wsProviderId === 'baidu' ? wsSettings.baiduSubSources : undefined,
+                claudeModelId:
+                  wsProviderId === 'claude' ? wsConfig?.modelId || undefined : undefined,
+              }),
+            ),
+            signal,
+          });
 
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({ error: 'Web search failed' }));
-          throw new Error(data.error || t('generation.webSearchFailed'));
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({ error: 'Web search failed' }));
+            throw new Error(data.error || t('generation.webSearchFailed'));
+          }
+
+          const searchData = await res.json();
+          const sources = (searchData.sources || []).map((s: { title: string; url: string }) => ({
+            title: s.title,
+            url: s.url,
+          }));
+          setWebSearchSources(sources);
+
+          const updatedSessionWithSearch: GenerationSessionState = {
+            ...currentSession,
+            researchContext: searchData.context || '',
+            researchSources: sources,
+          };
+          persistSession(updatedSessionWithSearch);
+          currentSession = updatedSessionWithSearch;
+          activeSteps = getActiveSteps(currentSession);
         }
-
-        const searchData = await res.json();
-        const sources = (searchData.sources || []).map((s: { title: string; url: string }) => ({
-          title: s.title,
-          url: s.url,
-        }));
-        setWebSearchSources(sources);
-
-        const updatedSessionWithSearch = {
-          ...currentSession,
-          researchContext: searchData.context || '',
-          researchSources: sources,
-        };
-        setSession(updatedSessionWithSearch);
-        sessionStorage.setItem('generationSession', JSON.stringify(updatedSessionWithSearch));
-        currentSession = updatedSessionWithSearch;
-        activeSteps = getActiveSteps(currentSession);
       }
 
-      // Load imageMapping early (needed for both outline and scene generation)
+      // Load imageMapping early (needed for both outline and scene generation).
       let imageMapping: ImageMapping = {};
       if (currentSession.imageStorageIds && currentSession.imageStorageIds.length > 0) {
         log.debug('Loading images from IndexedDB');
@@ -785,7 +756,7 @@ function GenerationPreviewContent() {
             checkpoint.completedUnitCount > 0
           ) {
             resumeSyllabus = checkpoint.syllabus;
-            resumeOutlines = checkpoint.outlines;
+            resumeOutlines = checkpoint.outlines as SceneOutline[];
             resumeFromUnitIndex = checkpoint.completedUnitCount;
           }
         } catch (e) {
@@ -827,8 +798,7 @@ function GenerationPreviewContent() {
                 webSearchConfig: currentSession.requirements.webSearch
                   ? (() => {
                       const ws = useSettingsStore.getState();
-                      const wsConfig =
-                        ws.webSearchProvidersConfig?.[ws.webSearchProviderId];
+                      const wsConfig = ws.webSearchProvidersConfig?.[ws.webSearchProviderId];
                       return {
                         providerId: ws.webSearchProviderId,
                         apiKey: wsConfig?.apiKey || undefined,
@@ -837,9 +807,7 @@ function GenerationPreviewContent() {
                             ? undefined
                             : wsConfig?.baseUrl || undefined,
                         baiduSubSources:
-                          ws.webSearchProviderId === 'baidu'
-                            ? ws.baiduSubSources
-                            : undefined,
+                          ws.webSearchProviderId === 'baidu' ? ws.baiduSubSources : undefined,
                       };
                     })()
                   : undefined,
@@ -892,6 +860,7 @@ function GenerationPreviewContent() {
                               syllabus: checkpointSyllabus,
                               outlines: [...collected],
                               completedUnitCount: Number(evt.index) + 1,
+                              requirement: currentSession.requirements.requirement,
                             };
                             void writeOutlineCheckpoint(checkpoint);
                           } catch (e) {
@@ -1120,17 +1089,43 @@ function GenerationPreviewContent() {
           const getAvailableVoicesForGeneration = () => {
             const providers = getEnabledProvidersWithVoices(
               settings.ttsProvidersConfig,
-              voxcpmProfiles,
+              voiceProfiles,
             );
             return providers.flatMap((p) =>
-              p.voices.map((v) => ({
-                providerId: p.providerId,
-                voiceId: v.id,
-                voiceName: v.name,
-                voiceLanguage: v.language,
-              })),
+              p.voices.map((v) => {
+                const cloneModelGroup =
+                  p.providerId === 'qwen-tts' && isQwenCloneVoice(v.id)
+                    ? p.modelGroups.find((group) =>
+                        group.voices.some((groupVoice) => groupVoice.id === v.id),
+                      )
+                    : undefined;
+                const modelId = cloneModelGroup
+                  ? resolveTTSModelForVoice(p.providerId, v.id, cloneModelGroup.modelId)
+                  : undefined;
+                return {
+                  providerId: p.providerId,
+                  ...(modelId ? { modelId } : {}),
+                  voiceId: v.id,
+                  voiceName: v.name,
+                  voiceLanguage: v.language,
+                };
+              }),
             );
           };
+
+          // The user's global TTS voice is the narrator voice. Pass it along so
+          // the server pins the teacher agent to it instead of letting the LLM
+          // pick a different voice. Reuse the same resolution helpers as the
+          // advertised list: the model follows the voice, and only clones carry
+          // a model on the wire. An unusable global voice (disabled/unconfigured
+          // provider) is NOT pinned — the LLM then picks a working advertised
+          // voice and the narration fallback machinery stays alive.
+          const getNarratorVoiceForGeneration = () =>
+            resolveNarratorVoiceForGeneration(
+              settings.ttsProviderId,
+              settings.ttsVoice,
+              settings.ttsProvidersConfig[settings.ttsProviderId],
+            );
 
           const agentResp = await fetch('/api/generate/agent-profiles', {
             method: 'POST',
@@ -1146,6 +1141,7 @@ function GenerationPreviewContent() {
                 availableAvatars: allAvatars.map((a) => a.path),
                 avatarDescriptions: allAvatars.map((a) => ({ path: a.path, desc: a.desc })),
                 availableVoices: getAvailableVoicesForGeneration(),
+                narratorVoice: getNarratorVoiceForGeneration(),
               }),
             ),
             signal,
@@ -1249,18 +1245,23 @@ function GenerationPreviewContent() {
           ? `Student: ${currentSession.requirements.userNickname || 'Unknown'}${currentSession.requirements.userBio ? ` — ${currentSession.requirements.userBio}` : ''}`
           : undefined;
       store.setGeneratingOutlines(outlines);
-      sessionStorage.setItem(
-        'generationParams',
-        JSON.stringify({
+      currentSession = {
+        ...currentSession,
+        stageId: stage.id,
+        // Params the classroom resume path needs after the handoff (it reads
+        // them from the session record — see generation-session-store).
+        generationParams: {
           pdfImages: currentSession.pdfImages,
           agents,
           userProfile,
           languageDirective,
-        }),
-      );
+        },
+      };
       await store.saveToStorage();
-      currentSession = { ...currentSession, stageId: stage.id };
-      persistSession(currentSession);
+      // Awaited: the classroom page loads these params cross-page, so the
+      // record must be durable before the flow continues.
+      await saveGenerationSession(currentSession);
+      setSession(currentSession);
 
       // Advance to slide-content step
       const contentStepIdx = activeSteps.findIndex((s) => s.id === 'slide-content');
@@ -1349,7 +1350,11 @@ function GenerationPreviewContent() {
       const remaining = outlines.filter((o) => o.order !== firstScene.order);
       store.setGeneratingOutlines(remaining);
 
-      sessionStorage.removeItem('generationSession');
+      // Drop only the pointer envelope: the home page must not offer a
+      // "resume" prompt, but the classroom page still reads generationParams
+      // from the IndexedDB record after this navigation and clears the record
+      // itself once consumed.
+      clearGenerationSessionEnvelope();
       await store.saveToStorage();
       router.push(`/classroom/${stage.id}`);
     } catch (err) {
@@ -1366,7 +1371,7 @@ function GenerationPreviewContent() {
         return;
       }
       // The course was NOT yet persisted (outline stage failed). Keep the
-      // session in sessionStorage so the user can resume from the home page
+      // session so the user can resume from the home page
       // "resume generation" prompt instead of re-typing and re-uploading
       // everything. The resume path re-runs generation with the original
       // inputs (document blobs are still in IndexedDB).
@@ -1390,13 +1395,9 @@ function GenerationPreviewContent() {
     // list — drop the session so the home page doesn't offer a redundant
     // "resume" prompt. Otherwise (outline phase) keep it so generation can
     // be resumed from the home page.
-    try {
-      const saved = JSON.parse(sessionStorage.getItem('generationSession') ?? 'null');
-      if (saved?.stageId) {
-        sessionStorage.removeItem('generationSession');
-      }
-    } catch {
-      sessionStorage.removeItem('generationSession');
+    const envelope = readGenerationSessionEnvelope();
+    if (envelope?.stageId) {
+      void clearGenerationSession();
     }
     router.push('/');
   };
@@ -1511,7 +1512,7 @@ function GenerationPreviewContent() {
     void startGeneration(confirmedSession);
   };
 
-  // Still loading session from sessionStorage
+  // Still loading session (IndexedDB + envelope)
   if (!sessionLoaded) {
     return (
       <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
@@ -1875,3 +1876,5 @@ export default function GenerationPreviewPage() {
     </Suspense>
   );
 }
+
+

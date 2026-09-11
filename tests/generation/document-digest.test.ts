@@ -21,7 +21,7 @@ import {
   stripExtractionNoise,
   type DigestSectionCard,
 } from '@/lib/generation/document-digest';
-import { chunkSourceText } from '@/lib/generation/pdf-retrieval';
+import { chunkSourceText } from '@openmaic/generation';
 import { DIGEST_BATCH_CHARS, DIGEST_RAW_THRESHOLD_CHARS, DIGEST_TARGET_CHARS } from '@/lib/constants/generation';
 
 // ~26k chars of textbook-shaped source: chapters 1-3, each with sections.

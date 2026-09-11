@@ -133,6 +133,14 @@ export async function slideToPng(
       root!.render(createElement(SlideCanvas, { slide, chrome: false }));
     });
 
+    // BaseImageElement renders <img loading="lazy">, and this container sits
+    // permanently outside the viewport — lazy images would never fetch, and
+    // the load-wait below would time out on blank slides. Force eager loading
+    // for the throwaway tree so snapshot behavior is unchanged.
+    container.querySelectorAll('img').forEach((img) => {
+      img.loading = 'eager';
+    });
+
     // Give the SlideCanvas's ResizeObserver-driven `useViewportSize` a few
     // frames to fire and write `fitScale`. Default state already paints at
     // 1:1, but waiting avoids a flash of unscaled content when the slide
@@ -196,7 +204,7 @@ export async function slideToPng(
     await nextFrame();
 
     if (process.env.NODE_ENV !== 'production') {
-      // eslint-disable-next-line no-console
+       
       console.debug('[slideToPng] container ready', {
         innerHTMLLength: container.innerHTML.length,
         imgCount: container.querySelectorAll('img').length,
@@ -246,7 +254,7 @@ export async function slideToPng(
       return await toPng(target, nativeOpts);
     } catch (nativeErr) {
       if (process.env.NODE_ENV !== 'production') {
-        // eslint-disable-next-line no-console
+         
         console.debug(
           '[slideToPng] native paint unavailable, falling back to html2canvas:',
           nativeErr,

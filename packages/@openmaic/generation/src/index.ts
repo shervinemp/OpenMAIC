@@ -13,16 +13,37 @@ export {
   generateSceneContent,
   generateWidgetContent,
   PBLGenerationError,
+  resolveImageIds,
 } from './scene-generator.js';
-export type { SceneActionsOptions, SceneContentOptions } from './scene-generator.js';
+export type {
+  SceneActionsOptions,
+  SceneContentFailure,
+  SceneContentFailureCode,
+  SceneContentOptions,
+} from './scene-generator.js';
 export { buildCompleteScene } from './scene-builder.js';
 export type { BuildCompleteSceneOptions } from './scene-builder.js';
+export {
+  readGenerationProfile,
+  scaleDepthFloor,
+} from './profile.js';
+export type { GenerationProfile, GenerationProfilePolicy } from './profile.js';
 export {
   isAbortError,
   isRetryableGenerationError,
   withGenerationRetry,
 } from './generation-retry.js';
 export type { GenerationRetryEvent, GenerationRetryOptions } from './generation-retry.js';
+export {
+  renderDerivationToElements,
+  renderExerciseToElements,
+  renderFreeResponseToElements,
+  renderGlossaryToElements,
+  renderComparisonToElements,
+  renderDataReadingToElements,
+  renderReadingToElements,
+  renderTradeoffsToElements,
+} from './specialized-scene-render.js';
 export { parseActionsFromStructuredOutput } from './action-parser.js';
 export { postProcessInteractiveHtml } from './interactive-post-processor.js';
 export { generatePBLV2ProjectSingleCall } from './pbl/planner-single-call.js';
@@ -64,6 +85,24 @@ export type {
   GeneratedSlideContent,
   ScientificModel,
   WidgetConfig,
+  GeneratedDerivationContent,
+  GeneratedExerciseContent,
+  GeneratedGlossaryContent,
+  GeneratedReadingContent,
+  DerivationStep,
+  ExerciseProblem,
+  GlossaryTerm,
+  ReadingItem,
+  ComparisonRow,
+  DataClaim,
+  DataSeries,
+  DataSeriesPoint,
+  TradeoffOption,
+  RubricCriterion,
+  GeneratedFreeResponseContent,
+  GeneratedComparisonContent,
+  GeneratedDataReadingContent,
+  GeneratedTradeoffsContent,
 } from './scene-types.js';
 
 export {
@@ -78,10 +117,77 @@ export type {
   OutlineGenerationOptions,
   OutlinePromptContext,
 } from './outline-generator.js';
-export { changeOutlineType } from './outline-type.js';
+export { changeOutlineType, isSlideLikeOutline } from './outline-type.js';
+export * from './unit-review.js';
+export type { SceneType } from './outline-type.js';
 export { uniquifyMediaElementIds } from './outline-media.js';
+export { partitionImagesForVision } from './outline-formatters.js';
+export type { VisionImagePartition } from './outline-formatters.js';
+export {
+  assignLessonIds,
+  buildCourseBlueprint,
+  buildPerUnitContract,
+  clampDurationMinutes,
+  deriveContractForRequest,
+  perLessonSceneCap,
+  deriveCourseContract,
+  inferCourseType,
+  parseDurationFromText,
+  renderCourseContract,
+  renderLessonScopedContract,
+  renderSyllabusContract,
+  resolveRequestDuration,
+  splitIntoLessons,
+  validateOutlineShape,
+  validateSyllabusStructure,
+  legacyBlueprintFromOutlines,
+  summarizeBlueprintValidation,
+  validateBlueprint,
+  MAX_BLUEPRINT_ATTEMPTS,
+} from './blueprint.js';
+export type { ResolvedRequestDuration } from './blueprint.js';
+export type {
+  BlueprintValidationOptions,
+  BlueprintValidationResult,
+  CourseBlueprint,
+  CourseContract,
+  CourseType,
+  LessonBlueprint,
+  ParsedOutlineResponse,
+} from './blueprint.js';
 export { parseJsonResponse } from './json-repair.js';
 export type { JsonParsingOptions } from './json-repair.js';
+export {
+  extractSlideTexts,
+  isCaptionText,
+  isIntroSummaryOutline,
+  isSubstantiveText,
+  recordSceneDepthReport,
+  summarizeDepthFindings,
+  takeSceneDepthReport,
+  recordSceneDepthSummary,
+  takeSceneDepthSummary,
+  validateDerivationDepth,
+  validateExerciseDepth,
+  validateFreeResponseDepth,
+  validateGlossaryDepth,
+  validateComparisonDepth,
+  validateDataReadingDepth,
+  validateQuizDepth,
+  validateReadingDepth,
+  validateTradeoffsDepth,
+  validateSlideDepth,
+} from './content-depth.js';
+export type { DepthReport, SceneDepthSummary, SlideDepthOptions } from './content-depth.js';
+export type { ChunkOptions, PdfChunk, RetrieveOptions } from './pdf-retrieval.js';
+export {
+  chunkSourceText,
+  extractCitationMarkers,
+  formatRetrievalContext,
+  retrieveChunks,
+  scoreChunk,
+  validateCitations,
+} from './pdf-retrieval.js';
 export { noopGenerationLogger } from './logger.js';
 export type { GenerationLogger } from './logger.js';
 export {

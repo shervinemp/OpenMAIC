@@ -1,4 +1,5 @@
 import type { WidgetType } from '@openmaic/dsl';
+import type { CourseDepthLevel } from './constants.js';
 
 export type { WidgetType } from '@openmaic/dsl';
 
@@ -78,7 +79,12 @@ export interface SceneOutline {
     | 'exercise'
     | 'derivation'
     | 'glossary'
-    | 'reading';
+    | 'reading'
+    // Analytic kinds (Phase 2 §15.9): render as slides.
+    | 'comparison'
+    | 'dataReading'
+    | 'tradeoffs'
+    | 'freeResponse';
   title: string;
   description: string;
   keyPoints: string[];
@@ -86,18 +92,20 @@ export interface SceneOutline {
   estimatedDuration?: number;
   order: number;
   languageNote?: string;
-  /** Lesson membership (assigned during blueprint canonicalization). */
+  /** Lesson membership (assigned during blueprint canonicalization; playback
+      order remains the global `order`). */
   lessonId?: string;
   /**
-   * Per-scene retrieval context with `[source p.N]` citation markers
-   * (Pillar 3b).
+   * Per-scene retrieval context rendered at the outline stage (Pillar 3b):
+   * top-k source chunks with `[source p.N]` citation markers. Injected into
+   * the content prompt and used as the citation ground-truth.
    */
   retrievalContext?: string;
   /**
-   * Content depth level (Phase 2 §15.4), stamped from the blueprint's
-   * derived level.
+   * Content depth level for this scene (Phase 2 §15.4), derived from the
+   * blueprint's derived level. The content stage enforces its floor.
    */
-  depthLevel?: 'intro' | 'intermediate' | 'university';
+  depthLevel?: CourseDepthLevel;
   suggestedImageIds?: string[];
   mediaGenerations?: MediaGenerationRequest[];
   quizConfig?: {
@@ -126,3 +134,4 @@ export interface SceneOutline {
   widgetType?: WidgetType;
   widgetOutline?: WidgetOutline;
 }
+

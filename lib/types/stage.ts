@@ -119,7 +119,7 @@ export type AppScene = DslScene<Action, SceneContent> & {
 };
 export type Scene = AppScene;
 
-/** The full outline-kind union, incl. the specialized slide-like kinds. */
+/** The full outline-kind union, incl. the specialized + analytic slide-like kinds. */
 export type SceneOutlineKind =
   | 'slide'
   | 'quiz'
@@ -128,7 +128,11 @@ export type SceneOutlineKind =
   | 'exercise'
   | 'derivation'
   | 'glossary'
-  | 'reading';
+  | 'reading'
+  | 'comparison'
+  | 'dataReading'
+  | 'tradeoffs'
+  | 'freeResponse';
 
 /**
  * A partial update for {@link AppScene} — the patch shape used by `updateScene` /
@@ -166,3 +170,4 @@ export function makeScene<C extends SceneContent>(
 ): Extract<AppScene, { type: C['type'] }> {
   return { ...core, type: content.type, content } as Extract<AppScene, { type: C['type'] }>;
 }
+

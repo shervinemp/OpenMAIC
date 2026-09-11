@@ -17,14 +17,14 @@ import { NextRequest } from 'next/server';
 import { streamLLM, callLLM } from '@/lib/ai/llm';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import {
+  buildVisionUserContent,
   formatImageDescription,
   formatImagePlaceholder,
-  buildVisionUserContent,
-  uniquifyMediaElementIds,
   formatTeacherPersonaForPrompt,
-} from '@/lib/generation/generation-pipeline';
-import type { AgentInfo } from '@/lib/generation/generation-pipeline';
-import { DEFAULT_LANGUAGE_DIRECTIVE } from '@/lib/generation/outline-generator';
+  uniquifyMediaElementIds,
+  DEFAULT_LANGUAGE_DIRECTIVE,
+  type AgentInfo,
+} from '@openmaic/generation';
 import {
   LLM_CALL_CONCURRENCY,
   MAX_PDF_CONTENT_CHARS,
@@ -41,6 +41,7 @@ import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModel, resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
+import { resolveVisionImagesForPrompt } from '@/lib/persistence/resolve-vision-images';
 import { resolveOutlineReviewMode, resolveVocationalActive } from '@/lib/config/feature-flags';
 import {
   buildCourseBlueprint,
@@ -60,7 +61,7 @@ import {
   type CourseContract,
   type ParsedOutlineResponse,
 } from '@/lib/generation/blueprint';
-import { parseJsonResponse } from '@/lib/generation/json-repair';
+import { parseJsonResponse } from '@openmaic/generation';
 import { searchWeb, formatSearchResultsAsContext } from '@/lib/web-search';
 import {
   formatWebSourceLegend,
@@ -84,8 +85,8 @@ import {
   formatRetrievalContext,
   retrieveChunks,
   type PdfChunk,
-} from '@/lib/generation/pdf-retrieval';
-import { lazyBoundedMap } from '@/lib/utils/concurrency';
+} from '@openmaic/generation';
+import { lazyBoundedMap, mapWithConcurrency } from '@/lib/utils/concurrency';
 import {
   buildUnitReviewSummary,
   summarizeUnitReviewFindings,
@@ -1055,17 +1056,36 @@ export async function POST(req: NextRequest) {
         const textOnlySlice = allWithSrc.slice(MAX_VISION_IMAGES);
         const noSrcImages = sortedImages.filter((img) => !imageMapping[img.id]);
 
-        const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
+        // Server-backed transport: `imageMapping` values are allocated asset
+        // ids, so the vision srcs reach here as ids. Resolve them to the same
+        // bytes the base64 path would send BEFORE prompt assembly, keeping the
+        // vision prompt byte-identical in both modes (RFC #1153 part 2 B). An
+        // id the server cannot resolve is dropped here, so the placeholder
+        // text below never promises an image that will not be attached.
+        const resolvedVisionImages = await resolveVisionImagesForPrompt(
+          visionSlice.map((img) => ({
+            id: img.id,
+            src: imageMapping[img.id],
+            ...(img.width !== undefined ? { width: img.width } : {}),
+            ...(img.height !== undefined ? { height: img.height } : {}),
+          })),
+          req.headers,
+        );
+        const resolvedIds = new Set(resolvedVisionImages.map((img) => img.id));
+        const visionImageById = new Map(sortedImages.map((img) => [img.id, img] as const));
+        const visionDescriptions = resolvedVisionImages.map((img) =>
+          formatImagePlaceholder(visionImageById.get(img.id) ?? { ...img, pageNumber: 1, src: '' }),
+        );
         const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
           formatImageDescription(img),
         );
         availableImagesText = [...visionDescriptions, ...textDescriptions].join('\n');
 
-        visionImages = visionSlice.map((img) => ({
+        visionImages = resolvedVisionImages.map((img) => ({
           id: img.id,
-          src: imageMapping[img.id],
-          width: img.width,
-          height: img.height,
+          src: img.src,
+          ...(img.width !== undefined ? { width: img.width } : {}),
+          ...(img.height !== undefined ? { height: img.height } : {}),
         }));
       } else {
         // Text-only mode: full descriptions
@@ -1124,7 +1144,18 @@ export async function POST(req: NextRequest) {
     };
 
     const prompts = buildPrompt(promptId, baseVariables);
-    const multiUnit = contractMode && courseContract !== null && courseContract.unitCount > 1;
+    // Contract-mode ORDINARY courses ALWAYS take the syllabus-first path
+    // (Phase A syllabus call + per-lesson chains), including single-unit
+    // courses: the old single mega-call breaks weak models outright (they
+    // collapse lesson records into the outlines array), while the staged path
+    // degrades gracefully - smaller calls, per-lesson checkpoints, and
+    // coveredSoFar continuity. Interactive and task-engine courses keep their
+    // specialized single-call templates (their prompts and sanitization are
+    // tuned for one-shot output); the streaming mega-call serves them plus
+    // non-contract mode.
+    const interactiveCourse = requirements.interactiveMode === true;
+    const multiUnit =
+      contractMode && courseContract !== null && !taskEngineMode && !interactiveCourse;
 
     if (!prompts) {
       return apiError('INTERNAL_ERROR', 500, 'Prompt template not found');
@@ -1274,7 +1305,9 @@ export async function POST(req: NextRequest) {
           // persist — aborting the upstream request the moment the client goes
           // away (rather than completing it) is the correct behaviour here, not
           // an inconsistency: buffering for a dead connection is pure waste.
+          let attemptStreamError: string | null = null;
           for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
+            attemptStreamError = null;
             try {
               let fullText = '';
               let scanFrom = 0;
@@ -1300,6 +1333,14 @@ export async function POST(req: NextRequest) {
                       },
                     ],
                     maxOutputTokens: modelInfo?.outputWindow,
+                    // Some providers fail with an empty chunk sequence instead
+                    // of a thrown error mid-iteration (e.g. a 402 quota
+                    // response); capture the reason here so the failure event
+                    // carries the real cause.
+                    onError: ({ error }: { error: unknown }) => {
+                      attemptStreamError =
+                        error instanceof Error ? error.message : String(error);
+                    },
                     // Tear down the upstream LLM request when the client disconnects,
                     // instead of letting it run to completion for a dead connection.
                     abortSignal: req.signal,
@@ -1309,6 +1350,10 @@ export async function POST(req: NextRequest) {
                     system: prompts.system,
                     prompt: userPrompt,
                     maxOutputTokens: modelInfo?.outputWindow,
+                    onError: ({ error }: { error: unknown }) => {
+                      attemptStreamError =
+                        error instanceof Error ? error.message : String(error);
+                    },
                     abortSignal: req.signal,
                   };
 
@@ -1430,6 +1475,11 @@ export async function POST(req: NextRequest) {
                   contractFailed = true;
                   log.warn(
                     `Blueprint contract not met (attempt ${attempt}/${MAX_BLUEPRINT_ATTEMPTS}): ${report.errors.length} error(s), ${report.warnings.length} warning(s)`,
+                    {
+                      errors: report.errors,
+                      warnings: report.warnings,
+                      firstOutlines: JSON.stringify(parsedOutlines.slice(0, 2)).slice(0, 700),
+                    },
                   );
                   if (attempt < MAX_BLUEPRINT_ATTEMPTS) {
                     const retryEvent = JSON.stringify({
@@ -1449,10 +1499,15 @@ export async function POST(req: NextRequest) {
                 break;
               }
 
-              // Empty result ΓÇö retry if we have attempts left
-              lastError = fullText.trim()
-                ? 'LLM response could not be parsed into outlines'
-                : 'LLM returned empty response';
+              // Empty result — retry if we have attempts left. A thrown
+              // upstream error (auth, quota, rate limit) keeps ITS message:
+              // "Insufficient Balance" must reach the user verbatim instead of
+              // the misleading generic empty-response text.
+              lastError =
+                attemptStreamError ??
+                (fullText.trim()
+                  ? 'LLM response could not be parsed into outlines'
+                  : 'LLM returned empty response');
               log.warn(
                 `Outlines attempt ${attempt} diagnostics: textLen=${fullText.length}, outlines=${parsedOutlines.length}, languageDirective=${languageDirective ? 'yes' : 'no'}, preview=${JSON.stringify(fullText.slice(0, 240))}`,
               );
@@ -1477,6 +1532,7 @@ export async function POST(req: NextRequest) {
                 return;
               }
               lastError = error instanceof Error ? error.message : String(error);
+              attemptStreamError = lastError;
               log.warn(
                 `Outlines stream error detail (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}): ${lastError}`,
               );

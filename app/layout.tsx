@@ -11,6 +11,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { ServerProvidersInit } from '@/components/server-providers-init';
 import { StorageHealthNotice } from '@/components/storage-health-notice';
 import { AccessCodeGuard } from '@/components/access-code-guard';
+import { ProSwapWatcher } from '@/components/workbench/ProSwapWatcher';
 import { AutoSnapshot } from '@/components/backup/auto-snapshot';
 import { BACKUP_UI_ENABLED } from '@/lib/backup/config';
 
@@ -49,6 +50,7 @@ export default function RootLayout({
         <ThemeProvider>
           <I18nProvider>
             <ServerProvidersInit />
+            <ProSwapWatcher />
             <AccessCodeGuard>{children}</AccessCodeGuard>
             {BACKUP_UI_ENABLED && <AutoSnapshot />}
             <Toaster position="top-center" />

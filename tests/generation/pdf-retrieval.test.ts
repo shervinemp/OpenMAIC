@@ -6,7 +6,7 @@ import {
   retrieveChunks,
   scoreChunk,
   validateCitations,
-} from '@/lib/generation/pdf-retrieval';
+} from '@openmaic/generation';
 
 const SOURCE = `Page 1
 

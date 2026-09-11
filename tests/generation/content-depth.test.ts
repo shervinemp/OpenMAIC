@@ -11,7 +11,7 @@ import {
   takeSceneDepthSummary,
   validateQuizDepth,
   validateSlideDepth,
-} from '@/lib/generation/content-depth';
+} from '@openmaic/generation';
 import type { PPTElement } from '@openmaic/dsl';
 import type { QuizQuestion } from '@/lib/types/stage';
 import type { SceneOutline } from '@/lib/types/generation';

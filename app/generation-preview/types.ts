@@ -1,65 +1,11 @@
 import { ScanLine, Search, Bot, FileText, LayoutPanelLeft, Clapperboard } from 'lucide-react';
 import { useSettingsStore } from '@/lib/store/settings';
-import type {
-  SceneOutline,
-  UserRequirements,
-  PdfImage,
-  ImageMapping,
-  SessionDocumentSource,
-} from '@/lib/types/generation';
-import type { DocumentDigest } from '@/lib/generation/document-digest';
-import type { CourseSizePreset } from '@/lib/constants/generation';
+import type { GenerationSessionState } from '@/lib/types/generation';
 
-// Session state stored in sessionStorage
-export interface GenerationSessionState {
-  sessionId: string;
-  requirements: UserRequirements;
-  /** Course size preset selected on the home form (Phase 2 §15.3). */
-  sizePreset?: CourseSizePreset;
-  pdfText: string;
-  documentSources?: SessionDocumentSource[];
-  pdfImages?: PdfImage[];
-  imageStorageIds?: string[];
-  imageMapping?: ImageMapping;
-  sceneOutlines?: SceneOutline[] | null;
-  currentStep: 'generating' | 'complete';
-  previewPhase?: 'preparing' | 'outline-ready' | 'review' | 'generating-content';
-  /** Server-side document index handle (Phase 2 §16). */
-  pdfHandle?: string;
-  /** Coverage digest returned by the indexing step. */
-  pdfDigest?: DocumentDigest;
-  /** Indexing summary for UI display. */
-  documentIndex?: {
-    tier: string;
-    chunkCount: number;
-    totalImageCount: number;
-    captionedCount: number;
-  };
-  /** Stage id once the course is persisted (content phase) — lets a
-   *  re-entered session resume on the classroom page instead of
-   *  duplicating the stage. */
-  stageId?: string;
-  // PDF deferred parsing fields
-  pdfStorageKey?: string;
-  pdfFileName?: string;
-  documentMimeType?: string;
-  pdfProviderId?: string;
-  pdfProviderConfig?: {
-    apiKey?: string;
-    baseUrl?: string;
-    accessKeyId?: string;
-    accessKeySecret?: string;
-  };
-  // Web search context
-  researchContext?: string;
-  researchSources?: Array<{ title: string; url: string }>;
-  // Language directive inferred from outline generation
-  languageDirective?: string;
-  // Concise course title inferred from outline generation (used as the stage name)
-  courseTitle?: string;
-  // Server-effective vocational mode from the outline generation done event.
-  taskEngineMode?: boolean;
-}
+// The full session-state type lives with its sibling generation types in
+// lib/types/generation.ts (the persistence layer depends on it); re-exported
+// here for the page components.
+export type { GenerationSessionState };
 
 export type GenerationStep = {
   id: string;

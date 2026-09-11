@@ -48,6 +48,15 @@ describe('quiz attempt runtime persistence', () => {
       configurable: true,
       value: IDBKeyRange,
     });
+    // Node >= 24 ships the Web Locks API on `navigator`. These tests simulate
+    // multiple tabs inside ONE process; node's lock manager is process-global,
+    // so with real locks the simulated tabs serialize and the lock-free
+    // reconciliation paths under test ("without Web Locks") deadlock instead.
+    // Pin the lock-free semantics; tests that need locks stub their own
+    // navigator.
+    if (typeof navigator !== 'undefined' && navigator.locks) {
+      vi.stubGlobal('navigator', { userAgent: navigator.userAgent });
+    }
   });
 
   afterEach(() => {

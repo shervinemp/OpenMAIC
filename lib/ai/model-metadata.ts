@@ -363,8 +363,13 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('qwen', 'qwen3-max')]: qwenBudgetDisabled,
   [getModelMetadataKey('qwen', 'qwen3-vl-plus')]: qwenBudgetDisabled,
 
+  // V4.1-Flash (deepseek-flash, released 2026-09-10) carries the family's
+  // thinking control. Retired legacy ids below keep their entries because
+  // DeepSeek's endpoint temporarily re-routes them to this model.
+  [getModelMetadataKey('deepseek', 'deepseek-flash')]: deepseekEffort,
   [getModelMetadataKey('deepseek', 'deepseek-v4-pro')]: deepseekEffort,
   [getModelMetadataKey('deepseek', 'deepseek-v4-flash')]: deepseekEffort,
+  [getModelMetadataKey('deepseek', 'deepseek-v4-flash-vision-exp')]: deepseekEffort,
   [getModelMetadataKey('atlascloud', 'deepseek-ai/deepseek-v4-pro')]: deepseekEffort,
 
   [getModelMetadataKey('kimi', 'kimi-k3')]: kimiK3Effort,

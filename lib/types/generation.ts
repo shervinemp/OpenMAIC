@@ -8,6 +8,7 @@
 import type { ActionType } from './action';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import type { CourseSizePreset, CourseDepthLevel } from '@/lib/constants/generation';
+import type { DocumentDigest } from '@/lib/generation/document-digest';
 
 // ==================== PDF Image Types ====================
 
@@ -20,6 +21,13 @@ export interface PdfImage {
   pageNumber: number; // Page number in PDF
   description?: string; // Optional description for AI context
   storageId?: string; // Reference to IndexedDB (session_xxx_img_1)
+  /**
+   * Pool asset id of the image bytes. Present on server-backed deployments
+   * (RFC #1153 part 2 B): the extracted images are pool assets, so generation
+   * is fed by id and no IndexedDB bytes are materialized. Browser-backed
+   * images carry `storageId` instead — never both.
+   */
+  assetId?: string; // Allocated asset-pool id (server-backed transport)
   width?: number; // Image width (px or normalized)
   height?: number; // Image height (px or normalized)
   originalId?: string; // ID assigned by the extractor before bundle-level normalization
@@ -42,6 +50,14 @@ export interface SelectedCourseMaterial {
   lastModified: number;
   type: string;
   order: number;
+  /** Allocated asset-pool id once the file has been ingested (part 0). */
+  assetId?: string;
+  /**
+   * SHA-256 of the file bytes, computed at upload time. This is the stable
+   * half of the extraction-cache key: two uploads of the same bytes get
+   * different allocated asset ids but the same digest (part 1).
+   */
+  contentDigest?: string;
 }
 
 export interface SessionDocumentSource {
@@ -52,6 +68,17 @@ export interface SessionDocumentSource {
   mimeType?: string;
   order: number;
   storageKey: string;
+  /**
+   * Allocated asset-pool id for this source. New sessions write it; legacy
+   * sessions carry only `storageKey` and keep working (back-compat).
+   */
+  assetId?: string;
+  /**
+   * SHA-256 of the source bytes, computed at upload time. Together with the
+   * extractor identity it keys the extraction derivation cache (part 1);
+   * legacy sessions predating the digest carry only `storageKey`.
+   */
+  contentDigest?: string;
   providerId?: string;
 }
 
@@ -80,6 +107,78 @@ export interface UserRequirements {
   webSearch?: boolean; // Enable web search for richer context
   interactiveMode?: boolean; // Enable Interactive Mode for interactive-first generation
   taskEngineMode?: boolean; // Enable vocational task-engine generation path
+}
+
+/**
+ * Params handed from the generation-preview flow to the classroom resume path
+ * (persisted on the generation session record; see generation-session-store).
+ */
+export interface GenerationSessionParams {
+  pdfImages?: PdfImage[];
+  agents?: Array<{ id: string; name: string; role: string; persona?: string }>;
+  userProfile?: string;
+  languageDirective?: string;
+}
+
+/**
+ * Full state of one in-flight course generation.
+ *
+ * Persisted in IndexedDB (`generationSessions`, keyed by `sessionId`) because
+ * the extracted document text, image data and coverage digest routinely
+ * exceed the ~5 MB `sessionStorage` quota. `sessionStorage` only carries a
+ * tiny pointer envelope ({ sessionId, stageId? }) across page navigations.
+ */
+export interface GenerationSessionState {
+  sessionId: string;
+  requirements: UserRequirements;
+  /** Course size preset selected on the home form (Phase 2 §15.3). */
+  sizePreset?: CourseSizePreset;
+  pdfText: string;
+  documentSources?: SessionDocumentSource[];
+  pdfImages?: PdfImage[];
+  imageStorageIds?: string[];
+  imageMapping?: ImageMapping;
+  sceneOutlines?: SceneOutline[] | null;
+  currentStep: 'generating' | 'complete';
+  previewPhase?: 'preparing' | 'outline-ready' | 'review' | 'generating-content';
+  /** Server-side document index handle (Phase 2 §16). */
+  pdfHandle?: string;
+  /** Coverage digest returned by the indexing step. */
+  pdfDigest?: DocumentDigest;
+  /** Indexing summary for UI display. */
+  documentIndex?: {
+    tier: string;
+    chunkCount: number;
+    totalImageCount: number;
+    captionedCount: number;
+  };
+  /** Stage id once the course is persisted (content phase) — lets a
+   *  re-entered session resume on the classroom page instead of
+   *  duplicating the stage. */
+  stageId?: string;
+  // PDF deferred parsing fields
+  pdfStorageKey?: string;
+  pdfFileName?: string;
+  documentMimeType?: string;
+  pdfProviderId?: string;
+  pdfProviderConfig?: {
+    apiKey?: string;
+    baseUrl?: string;
+    accessKeyId?: string;
+    accessKeySecret?: string;
+  };
+  // Web search context
+  researchContext?: string;
+  researchSources?: Array<{ title: string; url: string }>;
+  // Language directive inferred from outline generation
+  languageDirective?: string;
+  // Concise course title inferred from outline generation (used as the stage name)
+  courseTitle?: string;
+  // Server-effective vocational mode from the outline generation done event.
+  taskEngineMode?: boolean;
+  // Params the classroom resume path needs (agents, media context) after the
+  // stage handoff; written just before navigation to /classroom/[id].
+  generationParams?: GenerationSessionParams;
 }
 
 // ==================== Stage 1 Output: Scene Outlines (Simplified) ====================
@@ -133,7 +232,11 @@ export interface SceneOutline {
     | 'exercise'
     | 'derivation'
     | 'glossary'
-    | 'reading';
+    | 'reading'
+    | 'comparison'
+    | 'dataReading'
+    | 'tradeoffs'
+    | 'freeResponse';
   title: string;
   description: string; // 1-2 sentences describing the purpose
   keyPoints: string[]; // 3-5 core key points
@@ -362,6 +465,102 @@ export interface GeneratedReadingContent {
   items: ReadingItem[];
 }
 
+// ==================== Analytic scene kinds (Phase 2 §15.9) ====================
+
+/**
+ * One dimension row of a compare-and-contrast table. `cells[i]` is what the
+ * row says about `subjects[i]` — a complete sentence per cell, not a label.
+ */
+export interface ComparisonRow {
+  id: string;
+  /** The property being compared across subjects (e.g. "Time complexity"). */
+  dimension: string;
+  /** One cell per subject, same order as the content's `subjects`. */
+  cells: string[];
+}
+
+export interface GeneratedComparisonContent {
+  /** The 2-3 concepts being compared, column order for every row. */
+  subjects: string[];
+  rows: ComparisonRow[];
+  /** Optional synthesis: when is each subject the right choice. */
+  takeaways?: string[];
+}
+
+/** Verdict on one claim made about a chart/dataset. */
+export interface DataClaim {
+  id: string;
+  statement: string;
+  verdict: 'supported' | 'refuted' | 'insufficient';
+  /** Why the data supports/refutes the claim (cite concrete values). */
+  explanation: string;
+}
+
+export interface DataSeriesPoint {
+  x: number;
+  y: number;
+}
+
+export interface DataSeries {
+  name: string;
+  points: DataSeriesPoint[];
+}
+
+export interface GeneratedDataReadingContent {
+  chartTitle: string;
+  chartType: 'bar' | 'line' | 'scatter';
+  xAxisLabel: string;
+  yAxisLabel: string;
+  /** Unit / scale note rendered under the chart description (optional). */
+  unitNote?: string;
+  series: DataSeries[];
+  /** At least two claims with verdicts grounded in the plotted values. */
+  claims: DataClaim[];
+}
+
+/** One option in a trade-off decision scene. */
+export interface TradeoffOption {
+  id: string;
+  name: string;
+  pros: string[];
+  cons: string[];
+  /** When this option is the right call (optional). */
+  bestFor?: string;
+}
+
+export interface RubricCriterion {
+  id: string;
+  /** What this aspect of a strong answer does (complete sentence). */
+  criterion: string;
+  /** How central the criterion is to a strong answer. */
+  weight: 'essential' | 'important' | 'bonus';
+  /** The concrete indicator a grader looks for on this criterion. */
+  lookFor: string;
+}
+
+export interface GeneratedFreeResponseContent {
+  /** The full writing prompt — a complete task, not a topic label. */
+  prompt: string;
+  /** 2-4 pointers that frame the task without giving the answer away. */
+  guidance?: string[];
+  rubric: RubricCriterion[];
+  /** A strong model answer, rendered after the rubric. */
+  sampleAnswer: string;
+}
+
+export interface GeneratedTradeoffsContent {
+  /** The decision context: situation + hard constraints (complete sentences). */
+  context: string;
+  constraints: string[];
+  options: TradeoffOption[];
+  recommendation: {
+    /** Name of the chosen option (must match an option's name). */
+    choice: string;
+    /** Why it wins under the stated constraints — not a generic platitude. */
+    justification: string;
+  };
+}
+
 // ==================== PBL Generation Types ====================
 
 import type { PBLProjectConfig } from '@/lib/pbl/types';
@@ -426,3 +625,4 @@ export interface SuggestedAction {
   description: string;
   timing?: 'start' | 'middle' | 'end' | 'after-content';
 }
+

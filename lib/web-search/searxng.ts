@@ -85,6 +85,7 @@ export async function searchWithSearxng(params: {
   const startedAt = Date.now();
   const requestUrl = buildSearxngSearchUrl(baseUrl, query);
   const res = await fetchSearxngWithRetry(requestUrl, signal);
+
   const rawText = await res.text();
   let data: {
     query?: string;

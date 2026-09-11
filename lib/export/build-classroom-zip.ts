@@ -25,6 +25,12 @@ import {
 } from './classroom-zip-utils';
 import { buildStageAssetManifest } from '@/lib/media/asset-manifest';
 import {
+  inlineHtmlAssets,
+  createAssetFetcher,
+  type InlineOptions,
+  type InlineReport,
+} from './inline-assets';
+import { createProxiedFetch } from './proxied-fetch';
 import type { Scene, SceneContent, Stage } from '@/lib/types/stage';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 
@@ -76,6 +82,7 @@ export async function addStageContentToZip(
 
   const audioFiles = await collectAudioFiles(audioEntries);
   const mediaFiles = await collectMediaFiles(stage.id, mediaEntries);
+
   // audioId → zipPath mapping for manifest references.
   const audioIdToPath = new Map<string, string>();
   for (const af of audioFiles) {
@@ -89,6 +96,44 @@ export async function addStageContentToZip(
     audioIdToPath,
   );
 
+  const manifestStage: ManifestStage = {
+    name: stageName,
+    description: stage.description,
+    language: stage.languageDirective,
+    style: stage.style,
+    videoManifest: stage.videoManifest,
+    createdAt: stage.createdAt,
+    updatedAt: stage.updatedAt,
+  };
+
+  const manifestAgents = agentConfigs.map(manifestAgentFromConfig);
+
+  // agentId → index mapping for multiAgent references.
+  const agentIdToIndex = new Map<string, number>();
+  agentConfigs.forEach((agent, index) => agentIdToIndex.set(agent.id, index));
+
+  const aggregateReport: InlineReport = { inlined: [], failed: [] };
+  const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
+  const manifestScenes: ManifestScene[] = await Promise.all(
+    (documentScenes as Scene[]).map(async (scene) => {
+      const { content, report } = await inlineSceneContent(scene.content, {
+        fetcher: sharedFetcher,
+      });
+      for (const url of report.inlined) {
+        if (!aggregateReport.inlined.includes(url)) aggregateReport.inlined.push(url);
+      }
+      for (const failure of report.failed) {
+        if (!aggregateReport.failed.some((f) => f.url === failure.url)) {
+          aggregateReport.failed.push(failure);
+        }
+      }
+      return {
+        type: scene.type,
+        title: scene.title,
+        order: scene.order,
+        content,
+        actions: scene.actions
+          ? actionsToManifest(scene.actions, audioIdToPath, agentIdToIndex, audioUrlToPath)
           : undefined,
         whiteboards: scene.whiteboards,
         ...(scene.multiAgent?.enabled
@@ -133,6 +178,7 @@ export async function addStageContentToZip(
     }
   }
   const mediaIndex = Object.fromEntries(mediaIndexEntries);
+
   const manifest: ClassroomManifest = {
     formatVersion: CLASSROOM_ZIP_FORMAT_VERSION,
     exportedAt: new Date().toISOString(),

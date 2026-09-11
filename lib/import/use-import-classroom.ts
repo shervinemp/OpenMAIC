@@ -16,9 +16,9 @@ import {
 import { rewriteAudioRefsToIds } from '@/lib/export/classroom-zip-utils';
 import { createLogger } from '@/lib/logger';
 import { canonicalizeLegacyScene, mutateDocument, type AppDocument } from '@/lib/document-store';
-import { putAsset, removeAsset } from '@/lib/media/asset-pool';
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
+import { removeAsset } from '@/lib/media/asset-pool';
 import type JSZip from 'jszip';
 import type { Slide } from '@openmaic/dsl';
 import type { Stage } from '@/lib/types/stage';
@@ -205,14 +205,9 @@ export async function materializeImportedAudio(
     const zipEntry = zip.file(zipPath);
     if (!zipEntry) continue;
     const blob = await zipEntry.async('blob');
-    const assetId = await putAsset(blob, {
-      contentType: importedAudioContentType(meta, blob.type),
-      mediaType: 'audio',
-      duration: meta.duration,
-      voice: meta.voice,
-    });
-    allocatedIds.push(assetId);
-    pathToId.set(zipPath, assetId);
+    const audioId = nanoid();
+    allocatedIds.push(audioId);
+    pathToId.set(zipPath, audioId);
     const relativePath = zipPath.startsWith('audio/') ? zipPath.slice('audio/'.length) : zipPath;
     const formatSuffix = meta.format ? `.${meta.format}` : undefined;
     const sourceRef =
@@ -220,9 +215,9 @@ export async function materializeImportedAudio(
       (formatSuffix && relativePath.endsWith(formatSuffix)
         ? relativePath.slice(0, -formatSuffix.length)
         : relativePath.replace(/\.[^/.]+$/, ''));
-    if (!sourceRefToId.has(sourceRef)) sourceRefToId.set(sourceRef, assetId);
+    if (!sourceRefToId.has(sourceRef)) sourceRefToId.set(sourceRef, audioId);
     const record: AudioFileRecord = {
-      id: assetId,
+      id: audioId,
       stageId,
       blob,
       format: meta.format || 'mp3',
@@ -235,7 +230,7 @@ export async function materializeImportedAudio(
   return { pathToId, sourceRefToId };
 }
 
-/** Allocate imported media into the browser-global pool and mirror it to Dexie. */
+/** Materialize imported media directly into the stage's Dexie byte rows. */
 export async function materializeImportedMedia(
   zip: JSZip,
   manifest: ClassroomManifest,
@@ -274,16 +269,12 @@ export async function materializeImportedMedia(
     const posterEntry =
       type === 'video' ? zip.file(siblingPosterZipPath(zipPath, meta.mimeType)) : null;
     const posterBlob = posterEntry ? await posterEntry.async('blob') : undefined;
-    const assetId = await putAsset(blob, {
-      contentType: mimeType,
-      mediaType: type,
-      prompt: meta.prompt,
-    });
-    allocatedIds.push(assetId);
-    refToNewId.set(oldRef, assetId);
+    const mediaId = nanoid();
+    allocatedIds.push(mediaId);
+    refToNewId.set(oldRef, mediaId);
 
     await db.mediaFiles.put({
-      id: mediaFileKey(stageId, assetId),
+      id: mediaFileKey(stageId, mediaId),
       stageId,
       type,
       blob,
@@ -294,7 +285,7 @@ export async function materializeImportedMedia(
       params: '',
       createdAt,
     });
-    imported.push({ oldRef, assetId, type, posterBlob, prompt: meta.prompt });
+    imported.push({ oldRef, assetId: mediaId, type, posterBlob, prompt: meta.prompt });
   }
 
   // A modern ZIP can contain both the video's legacy sibling poster and the
@@ -307,11 +298,7 @@ export async function materializeImportedMedia(
       .map((oldPosterRef) => mappedString(mappings.refToNewId, oldPosterRef))
       .find((value): value is string => typeof value === 'string');
     if (!posterAssetId) {
-      posterAssetId = await putAsset(entry.posterBlob, {
-        contentType: entry.posterBlob.type || 'image/jpeg',
-        mediaType: 'video-poster',
-        parentRef: entry.assetId,
-      });
+      posterAssetId = nanoid();
       allocatedIds.push(posterAssetId);
       await db.mediaFiles.put({
         id: mediaFileKey(stageId, posterAssetId),
@@ -566,6 +553,7 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
 
       let success = false;
       let importedStageId: string | undefined;
+      const importCommitted = false;
       try {
         const JSZip = (await import('jszip')).default;
         const zip = await JSZip.loadAsync(file);
@@ -591,6 +579,29 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
           { id: toastId },
         );
       } finally {
+        // Media files cannot join the aggregate document transaction. Until the
+        // document commit point, compensate every row/allocation individually.
+        const cleanup = async (label: string, operation: () => Promise<unknown>) => {
+          try {
+            await operation();
+          } catch (cleanupError) {
+            log.error(`Failed to undo imported ${label}:`, cleanupError);
+          }
+        };
+        if (!importCommitted && importedStageId) {
+          const stageId = importedStageId;
+          await cleanup('document', async () => {
+            await mutateDocument(stageId, async (_document, store) =>
+              store.deleteDocument(stageId),
+            );
+          });
+          await cleanup('generated media', () =>
+            db.mediaFiles.where('stageId').equals(stageId).delete(),
+          );
+          await cleanup('audio files', () =>
+            db.audioFiles.where('stageId').equals(stageId).delete(),
+          );
+        }
         setImporting(false);
         setPhase('idle');
       }

@@ -21,8 +21,10 @@ import {
   getServerTTSProviders,
   resolveImageApiKey,
   resolveImageBaseUrl,
+  resolveImageModel,
   resolveVideoApiKey,
   resolveVideoBaseUrl,
+  resolveVideoModel,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
 } from '@/lib/server/provider-config';
@@ -34,6 +36,7 @@ import type { VideoProviderId } from '@/lib/media/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
+import { resolveImageSize } from '@/lib/server/image-sizing';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 
 const log = createLogger('ClassroomMedia');
@@ -91,9 +94,14 @@ export async function generateMediaForClassroom(
   const requests = outlines.flatMap((o) => o.mediaGenerations ?? []);
   if (requests.length === 0) return {};
 
-  // Resolve providers
-  const imageProviderIds = Object.keys(getServerImageProviders());
-  const videoProviderIds = Object.keys(getServerVideoProviders());
+  // Resolve providers, excluding operator force-disabled ones (server
+  // precedence, #665 — mirror the TTS listing's disabled flag).
+  const imageProviderIds = Object.entries(getServerImageProviders())
+    .filter(([, info]) => !info.disabled)
+    .map(([id]) => id);
+  const videoProviderIds = Object.entries(getServerVideoProviders())
+    .filter(([, info]) => !info.disabled)
+    .map(([id]) => id);
 
   const mediaMap: Record<string, string> = {};
 
@@ -112,11 +120,20 @@ export async function generateMediaForClassroom(
           log.warn(`No API key for image provider "${providerId}", skipping ${req.elementId}`);
           continue;
         }
-        const model = providerConfig?.models?.[0]?.id;
+        // No client model here — the server-side `IMAGE_<PREFIX>_MODELS` pin
+        // (first entry) is authoritative when set; otherwise fall back to the
+        // first catalog model so key-only deployments keep generating. This
+        // path is internal (no HTTP response to fail loud with), so the
+        // adapter's requireModel must stay a backstop, never the primary
+        // failure mode.
+        const model = resolveImageModel(providerId) ?? providerConfig?.models?.[0]?.id;
 
         const result = await generateImage(
           { providerId, apiKey, baseUrl: resolveImageBaseUrl(providerId), model },
-          { prompt: req.prompt, aspectRatio: req.aspectRatio || '16:9' },
+          resolveImageSize(
+            { prompt: req.prompt, aspectRatio: req.aspectRatio || '16:9' },
+            { providerId, modelId: model },
+          ),
         );
 
         let buf: Buffer;
@@ -152,8 +169,14 @@ export async function generateMediaForClassroom(
           log.warn(`No API key for video provider "${providerId}", skipping ${req.elementId}`);
           continue;
         }
+        // No client model here — the server-side `VIDEO_<PREFIX>_MODELS` pin
+        // (first entry) is authoritative when set; otherwise fall back to the
+        // first catalog model so key-only deployments keep generating. This
+        // path is internal (no HTTP response to fail loud with), so the
+        // adapter's requireModel must stay a backstop, never the primary
+        // failure mode.
         const providerConfig = VIDEO_PROVIDERS[providerId];
-        const model = providerConfig?.models?.[0]?.id;
+        const model = resolveVideoModel(providerId) ?? providerConfig?.models?.[0]?.id;
 
         const normalized = normalizeVideoOptions(providerId, {
           prompt: req.prompt,

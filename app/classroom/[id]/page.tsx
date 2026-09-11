@@ -6,6 +6,10 @@ import { useStageStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/store/settings';
 import { claimStageSceneLoadToken, isCurrentStageSceneLoadToken } from '@/lib/store/stage';
 import { loadImageMapping } from '@/lib/utils/image-storage';
+import {
+  clearGenerationSessionForStage,
+  loadGenerationParams,
+} from '@/lib/utils/generation-session-store';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
@@ -15,6 +19,8 @@ import { createLogger } from '@/lib/logger';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import { fetchStageMeta } from '@/lib/classroom/stage-meta-client';
+import { noteStageOwnership } from '@/lib/classroom/stage-ownership-signal';
 import {
   applyClassroomStageAndScenes,
   defaultClassroomLoadDeps,
@@ -59,7 +65,8 @@ export default function ClassroomDetailPage() {
             applyStageAndScenes: applyClassroomStageAndScenes,
           }),
         loadRestoredMediaTasks: defaultClassroomLoadDeps.loadRestoredMediaTasks,
-        applyRestoredMediaTasks: defaultClassroomLoadDeps.applyRestoredMediaTasks,
+        applyRestoredMediaTasks: (restored) =>
+          defaultClassroomLoadDeps.applyRestoredMediaTasks(restored, isCurrent),
         discardRestoredMediaTasks: defaultClassroomLoadDeps.discardRestoredMediaTasks,
         loadLegacyAgentFallbacks: defaultClassroomLoadDeps.loadLegacyAgentFallbacks,
         commitMigratedAgentConfigs: defaultClassroomLoadDeps.commitMigratedAgentConfigs,
@@ -71,6 +78,37 @@ export default function ClassroomDetailPage() {
         setLoading,
         log,
       });
+
+      // The stage-meta sidecar resolves the viewer-facing ownership facts the
+      // document seam does not carry — `isOwner` decides read-only vs editable
+      // (see `stage-meta-client.ts`). Run it strictly AFTER the load applied
+      // its defaults so its answer wins, and fire it without blocking the
+      // render that already happened.
+      if (isEffectCurrent()) {
+        void fetchStageMeta(classroomId)
+          .then((result) => {
+            if (!isEffectCurrent()) return;
+            if (result.outcome === 'found') {
+              noteStageOwnership(classroomId, true, {
+                isOwner: result.meta.isOwner,
+              });
+              useStageStore.getState().setViewerAccess({
+                isOwner: result.meta.isOwner,
+              });
+            } else if (result.outcome === 'unavailable') {
+              // A silent sidecar is not "this is a stranger's course": record
+              // the outage so nothing treats `isOwner === false` as a visitor
+              // conclusion. The edit gate stays on the upstream defaults.
+              noteStageOwnership(classroomId, false, null);
+            } else {
+              // 'absent' — no sidecar row for this id. This classroom also
+              // serves local-only courses, so the upstream editable default
+              // stays; the server's owner-scoped writes remain the authority.
+              noteStageOwnership(classroomId, true, null);
+            }
+          })
+          .catch(() => noteStageOwnership(classroomId, false, null));
+      }
     },
     [classroomId, loadFromStorage],
   );
@@ -121,29 +159,53 @@ export default function ClassroomDetailPage() {
     if (hasPending && stage) {
       generationStartedRef.current = true;
 
-      // Load generation params from sessionStorage (stored by generation-preview before navigating)
-      const genParamsStr = sessionStorage.getItem('generationParams');
-      const params = genParamsStr ? JSON.parse(genParamsStr) : {};
+      // Params persisted by generation-preview on the session record
+      // (IndexedDB — see generation-session-store), looked up by the stage id
+      // in the URL so the resume works even without the sessionStorage
+      // envelope (tab close, browser restart).
+      void (async () => {
+        const params = (await loadGenerationParams(classroomId)) ?? {};
 
-      // Reconstruct imageMapping from IndexedDB using pdfImages storageIds
-      const storageIds = (params.pdfImages || [])
-        .map((img: { storageId?: string }) => img.storageId)
-        .filter(Boolean);
+        // Reconstruct imageMapping for the resumed generation. A server-backed
+        // deployment stored allocated asset ids on the session's pdfImages (RFC
+        // #1153 part 2 B): the extracted images are pool assets, so generation
+        // is fed by id and the routes resolve the bytes server-side. Per source
+        // (N4) the mapping may MIX allocated asset ids and IndexedDB data URLs —
+        // a source whose cache write failed materialized its own images — so the
+        // resume mapping merges both, instead of choosing one transport for the
+        // whole set and silently dropping the other half.
+        const pdfImages = ((params.pdfImages || []) as unknown) as Array<
+        { id: string; assetId?: string; storageId?: string } & Record<string, unknown>
+      >;
+        const finishResume = (imageMapping: Record<string, string>) =>
+          generateRemaining({
+            pdfImages: params.pdfImages,
+            imageMapping,
+            stageInfo: {
+              name: stage.name || '',
+              description: stage.description,
+              style: stage.style,
+            },
+            agents: params.agents,
+            userProfile: params.userProfile,
+            languageDirective: params.languageDirective || stage.languageDirective,
+          });
 
-      loadImageMapping(storageIds).then((imageMapping) => {
-        generateRemaining({
-          pdfImages: params.pdfImages,
-          imageMapping,
-          stageInfo: {
-            name: stage.name || '',
-            description: stage.description,
-            style: stage.style,
-          },
-          agents: params.agents,
-          userProfile: params.userProfile,
-          languageDirective: params.languageDirective || stage.languageDirective,
-        });
-      });
+        const imageMapping: Record<string, string> = {};
+        for (const img of pdfImages) {
+          if (img.assetId) imageMapping[img.id] = img.assetId;
+        }
+        const storageIds = pdfImages
+          .filter((img) => !img.assetId && img.storageId)
+          .map((img) => img.storageId as string);
+        if (storageIds.length > 0) {
+          Object.assign(imageMapping, await loadImageMapping(storageIds));
+        }
+        finishResume(imageMapping);
+        // Handoff consumed - the stage document now owns everything. Drop the
+        // session record so it is not left behind for the TTL sweep.
+        await clearGenerationSessionForStage(classroomId);
+      })();
     } else if (outlines.length > 0 && stage) {
       // All scenes are generated, but some media may not have finished.
       // Resume media generation for any tasks not yet in IndexedDB.
@@ -156,6 +218,9 @@ export default function ClassroomDetailPage() {
       // an interrupted generation. No-op if already complete or not all
       // outlines have scenes.
       useStageStore.getState().markGenerationCompleteIfDone();
+      // Nothing needs the generation session anymore — drop any record a
+      // handoff left behind (single-slide course, refresh-after-completion).
+      void clearGenerationSessionForStage(classroomId);
       // Resume media only for outlines that still have a scene. On a finished
       // deck the user may have deleted a slide, leaving an orphaned outline;
       // generating its media would waste API calls on a slide that is gone.
@@ -165,7 +230,36 @@ export default function ClassroomDetailPage() {
         log.warn('[Classroom] Media generation resume error:', err);
       });
     }
-  }, [loading, error, generateRemaining]);
+    // classroomId: the params lookup and session cleanup are keyed by it. A
+    // change re-runs this effect, but `generationStartedRef` still guards the
+    // one-shot resume.
+  }, [loading, error, generateRemaining, classroomId]);
+
+  // In-page resume after a provider-failure pause (quota exhaustion, flaky
+  // free tier): re-kick the batch with the same handoff params the first
+  // auto-resume used. The session record is kept around for exactly this.
+  const handleResumeGeneration = useCallback(async () => {
+    const state = useStageStore.getState();
+    const stage = state.stage;
+    if (!stage) return;
+    const params = (await loadGenerationParams(classroomId)) ?? {};
+    const storageIds = (params.pdfImages || [])
+      .map((img) => img.storageId)
+      .filter((id): id is string => Boolean(id));
+    const imageMapping = await loadImageMapping(storageIds);
+    generateRemaining({
+      pdfImages: params.pdfImages,
+      imageMapping,
+      stageInfo: {
+        name: stage.name || '',
+        description: stage.description,
+        style: stage.style,
+      },
+      agents: params.agents,
+      userProfile: params.userProfile,
+      languageDirective: params.languageDirective || stage.languageDirective,
+    });
+  }, [classroomId, generateRemaining]);
 
   return (
     <ThemeProvider>
@@ -194,7 +288,7 @@ export default function ClassroomDetailPage() {
               </div>
             </div>
           ) : (
-            <Stage onRetryOutline={retrySingleOutline} />
+            <Stage onRetryOutline={retrySingleOutline} onResumeGeneration={handleResumeGeneration} />
           )}
         </div>
       </MediaStageProvider>

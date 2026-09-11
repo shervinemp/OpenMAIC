@@ -50,9 +50,60 @@ async function waitForJob(
   throw new Error(`Timed out waiting for job ${id}`);
 }
 
+/**
+ * Project cleanup runs after the job reaches its terminal status, so a bare
+ * `access` right after `waitForJob` races the removal.
+ */
+async function waitForCleanup(path: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      await access(path);
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`Timed out waiting for ${path} to be removed`);
+}
+
 const renderOptions = { fps: 30, quality: 'standard', format: 'mp4' } as const;
 
 describe('RenderCoordinator through the RenderExecutor seam', () => {
+  it('keeps a dispatched video queued until the shared execution slot is acquired', async () => {
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore();
+    let releasePreview!: () => void;
+    const previewParked = new Promise<void>((resolve) => {
+      releasePreview = resolve;
+    });
+    let finishVideo!: () => void;
+    const videoParked = new Promise<void>((resolve) => {
+      finishVideo = resolve;
+    });
+    const executor = new FakeExecutor(async () => {
+      await videoParked;
+      return { status: 'succeeded' };
+    });
+    const coordinator = new RenderCoordinator(executor, jobs, artifacts.store, {
+      maxConcurrency: 1,
+    });
+    const preview = coordinator.tryRunWithExecutionSlot(() => previewParked);
+    expect(preview).toBeDefined();
+
+    const dir = await projectDir();
+    const id = await coordinator.submit(coordinator.reserve('video-user'), dir, renderOptions);
+    await Promise.resolve();
+    expect(await jobs.get(id)).toMatchObject({ status: 'queued', currentStage: 'queued' });
+    expect(executor.requests).toHaveLength(0);
+
+    releasePreview();
+    await preview;
+    await waitForJob(jobs, id, () => executor.requests.length === 1);
+    expect(await jobs.get(id)).toMatchObject({ status: 'running', currentStage: 'preparing' });
+    finishVideo();
+    await waitForJob(jobs, id, (job) => job.status === 'succeeded');
+  });
+
   it('persists normalized progress, performance, and the artifact on success', async () => {
     const jobs = createMemoryJobStore();
     const artifacts = createMemoryArtifactStore();
@@ -114,7 +165,7 @@ describe('RenderCoordinator through the RenderExecutor seam', () => {
     expect(await coordinator.cancel(id)).toBe(true);
     const job = await waitForJob(jobs, id, (current) => current.status === 'cancelled');
     expect(job.failure).toEqual({ code: 'cancelled', message: 'Render cancelled' });
-    await expect(access(dir)).rejects.toThrow();
+    await waitForCleanup(dir);
   });
 
   it('keeps deadline failure classification from a replaceable executor', async () => {
@@ -138,7 +189,7 @@ describe('RenderCoordinator through the RenderExecutor seam', () => {
       failure: { code: 'deadline_exceeded' },
     });
     expect(artifacts.paths.has(id)).toBe(false);
-    await expect(access(dir)).rejects.toThrow();
+    await waitForCleanup(dir);
   });
 
   it('classifies unexpected executor errors and still performs cleanup', async () => {
@@ -156,6 +207,6 @@ describe('RenderCoordinator through the RenderExecutor seam', () => {
       error: 'executor unavailable',
       failure: { code: 'execution_failed', message: 'executor unavailable' },
     });
-    await expect(access(dir)).rejects.toThrow();
+    await waitForCleanup(dir);
   });
 });

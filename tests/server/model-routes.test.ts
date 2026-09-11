@@ -73,6 +73,8 @@ describe('model-routes', () => {
     const { getStageModel } = await import('@/lib/server/model-routes');
     expect(getStageModel('scene-content')).toBeUndefined();
     expect(error).toHaveBeenCalled();
+    expect(error.mock.calls[0]?.[0]).toContain('callers apply their own fallback');
+    expect(error.mock.calls[0]?.[0]).not.toContain('DEFAULT_MODEL');
   });
 
   it('ignores non-string route values', async () => {
@@ -129,6 +131,164 @@ describe('model-routes', () => {
       thinking: { effort: 'high' },
     });
     expect(getStageModel('scene-content')).toBe('openai:gpt-5.4');
+  });
+
+  it('parses an api and a contextWindow on an object route value', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'maic-agent-driver': {
+        model: 'openai:gpt-5.6-luna',
+        api: 'openai-completions',
+        contextWindow: 32_000,
+      },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('maic-agent-driver')).toEqual({
+      model: 'openai:gpt-5.6-luna',
+      api: 'openai-completions',
+      contextWindow: 32_000,
+    });
+  });
+
+  it('accepts dialect as an alias for api', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'maic-agent-driver': { model: 'openai:gpt-5.6-luna', dialect: 'openai-responses' },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('maic-agent-driver')).toEqual({
+      model: 'openai:gpt-5.6-luna',
+      api: 'openai-responses',
+    });
+  });
+
+  it('prefers api over dialect and warns on conflict', async () => {
+    const warn = vi.fn();
+    vi.doMock('@/lib/logger', () => ({
+      createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+    }));
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'maic-agent-driver': {
+        model: 'openai:gpt-5.6-luna',
+        api: 'openai-completions',
+        dialect: 'anthropic-messages',
+      },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('maic-agent-driver')).toEqual({
+      model: 'openai:gpt-5.6-luna',
+      api: 'openai-completions',
+    });
+    expect(warn).toHaveBeenCalledWith(
+      'Both api and dialect are set for stage "maic-agent-driver"; api wins.',
+    );
+  });
+
+  it('uses dialect when api is invalid and warns that dialect won', async () => {
+    const warn = vi.fn();
+    vi.doMock('@/lib/logger', () => ({
+      createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+    }));
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'maic-agent-driver': {
+        model: 'openai:gpt-5.6-luna',
+        api: 123,
+        dialect: 'openai-completions',
+      },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('maic-agent-driver')).toEqual({
+      model: 'openai:gpt-5.6-luna',
+      api: 'openai-completions',
+    });
+    expect(warn).toHaveBeenCalledWith(
+      'Invalid api for stage "maic-agent-driver" in MODEL_ROUTES; using dialect "openai-completions" instead.',
+    );
+  });
+
+  it('ignores a non-string api with a warning but keeps the model', async () => {
+    const warn = vi.fn();
+    vi.doMock('@/lib/logger', () => ({
+      createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+    }));
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'maic-agent-driver': { model: 'openai:gpt-5.6-luna', api: 123 },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('maic-agent-driver')).toEqual({ model: 'openai:gpt-5.6-luna' });
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('ignores a non-string dialect with a warning but keeps the model', async () => {
+    const warn = vi.fn();
+    vi.doMock('@/lib/logger', () => ({
+      createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+    }));
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'maic-agent-driver': { model: 'openai:gpt-5.6-luna', dialect: ['openai-completions'] },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('maic-agent-driver')).toEqual({ model: 'openai:gpt-5.6-luna' });
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('floors a fractional positive contextWindow', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'maic-agent-driver': { model: 'openai:gpt-5.6-luna', contextWindow: 32_000.9 },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('maic-agent-driver')).toEqual({
+      model: 'openai:gpt-5.6-luna',
+      contextWindow: 32_000,
+    });
+  });
+
+  it('drops a contextWindow that floors below 1 with a warning but keeps the model', async () => {
+    const warn = vi.fn();
+    vi.doMock('@/lib/logger', () => ({
+      createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+    }));
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'maic-agent-driver': { model: 'openai:gpt-5.6-luna', contextWindow: 0.5 },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('maic-agent-driver')).toEqual({ model: 'openai:gpt-5.6-luna' });
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('drops a non-positive contextWindow with a warning but keeps the model', async () => {
+    const warn = vi.fn();
+    vi.doMock('@/lib/logger', () => ({
+      createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+    }));
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'maic-agent-driver': { model: 'openai:gpt-5.6-luna', contextWindow: 0 },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('maic-agent-driver')).toEqual({ model: 'openai:gpt-5.6-luna' });
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('drops a non-numeric contextWindow with a warning but keeps the model', async () => {
+    const warn = vi.fn();
+    vi.doMock('@/lib/logger', () => ({
+      createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+    }));
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'maic-agent-driver': { model: 'openai:gpt-5.6-luna', contextWindow: '32000' },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('maic-agent-driver')).toEqual({ model: 'openai:gpt-5.6-luna' });
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('routes the agent driver stage (maic-agent-driver)', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'maic-agent-driver': {
+        model: 'openai:gpt-5.6-luna',
+        api: 'openai-completions',
+      },
+    });
+    const { getStageModel } = await import('@/lib/server/model-routes');
+    expect(getStageModel('maic-agent-driver')).toBe('openai:gpt-5.6-luna');
   });
 
   it('supports the full thinking config (budgetTokens/enabled/level/mode)', async () => {
@@ -216,7 +376,63 @@ describe('model-routes', () => {
         'chat-adapter',
         'generate-classroom',
         'web-search-query-rewrite',
+        'maic-agent',
+        'maic-agent-driver',
+        'conversation-title',
       ]),
     );
+  });
+
+  describe('thinking presets (OPENMAIC_THINKING_PRESET)', () => {
+    beforeEach(() => {
+      delete process.env.OPENMAIC_THINKING_PRESET;
+    });
+    afterEach(() => {
+      delete process.env.OPENMAIC_THINKING_PRESET;
+    });
+
+    it('unset preset falls to the balanced profile default (lean thinking)', async () => {
+      delete process.env.OPENMAIC_GENERATION_PROFILE;
+      const { presetThinkingFor } = await import('@/lib/server/model-routes');
+      expect(presetThinkingFor('scene-content')).toEqual({ enabled: false });
+      expect(presetThinkingFor('scene-outlines-stream')).toEqual({
+        enabled: true,
+        budgetTokens: 6000,
+      });
+    });
+
+    it('quality preset resolves to provider defaults (no thinking override)', async () => {
+      process.env.OPENMAIC_THINKING_PRESET = 'quality';
+      const { presetThinkingFor } = await import('@/lib/server/model-routes');
+      expect(presetThinkingFor('scene-content')).toBeUndefined();
+      expect(presetThinkingFor('scene-outlines-stream')).toBeUndefined();
+    });
+
+    it('apply the preset table exactly, plus unknown values warn and fall through', async () => {
+      const warn = vi.fn();
+      vi.doMock('@/lib/logger', () => ({
+        createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+      }));
+      process.env.OPENMAIC_THINKING_PRESET = 'not-a-preset';
+      const mod = await import('@/lib/server/model-routes');
+      // An invalid explicit preset warns and drops to the GENERATION PROFILE's
+      // thinking default (here .env.local's OPENMAIC_THINKING_PRESET may still
+      // leak 'lean', so assert the merged behavior, not a bare undefined).
+      delete process.env.OPENMAIC_GENERATION_PROFILE;
+      mod.presetThinkingFor('scene-content');
+      expect(warn).toHaveBeenCalled();
+
+      process.env.OPENMAIC_THINKING_PRESET = 'lean';
+      expect(mod.presetThinkingFor('scene-content')).toEqual({ enabled: false });
+      expect(mod.presetThinkingFor('scene-actions')).toEqual({ enabled: false });
+      expect(mod.presetThinkingFor('exam-grading')).toEqual({
+        enabled: true,
+        budgetTokens: 4000,
+      });
+      // composite fallback inherits the parent's preset entry
+      expect(mod.presetThinkingFor('scene-content:quiz')).toEqual({ enabled: false });
+      // unlisted judgment stage (e.g. driver chats) keeps its provider default
+      expect(mod.presetThinkingFor('maic-agent-driver')).toBeUndefined();
+    });
   });
 });

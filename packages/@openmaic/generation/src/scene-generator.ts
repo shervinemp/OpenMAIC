@@ -16,12 +16,44 @@ import type {
   WidgetType,
 } from '@openmaic/dsl';
 import { isWidgetType, normalizeElement } from '@openmaic/dsl';
-import { MAX_VISION_IMAGES } from './constants.js';
+import {
+  COURSE_DEPTH_FLOORS,
+  MAX_VISION_IMAGES,
+  renderDepthDirective,
+  resolveDepthLevel,
+} from './constants.js';
+import { readGenerationProfile } from './profile.js';
 import {
   formatImageDescription,
   formatImagePlaceholder,
-  sortDocumentImagesForVision,
+  partitionImagesForVision,
 } from './outline-formatters.js';
+import {
+  recordSceneDepthReport,
+  recordSceneDepthSummary,
+  summarizeDepthFindings,
+  validateDerivationDepth,
+  validateExerciseDepth,
+  validateFreeResponseDepth,
+  validateGlossaryDepth,
+  validateComparisonDepth,
+  validateDataReadingDepth,
+  validateQuizDepth,
+  validateReadingDepth,
+  validateSlideDepth,
+  validateTradeoffsDepth,
+  type DepthReport,
+} from './content-depth.js';
+import {
+  renderDerivationToElements,
+  renderExerciseToElements,
+  renderFreeResponseToElements,
+  renderGlossaryToElements,
+  renderComparisonToElements,
+  renderDataReadingToElements,
+  renderReadingToElements,
+  renderTradeoffsToElements,
+} from './specialized-scene-render.js';
 import type {
   ImageMapping,
   PdfImage,
@@ -30,6 +62,7 @@ import type {
   WidgetOutline,
 } from './outline-types.js';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator.js';
+import { isSlideLikeOutline } from './outline-type.js';
 import { postProcessInteractiveHtml } from './interactive-post-processor.js';
 import { parseActionsFromStructuredOutput } from './action-parser.js';
 import { parseJsonResponse } from './json-repair.js';
@@ -41,9 +74,17 @@ import {
 import type { PromptId } from './prompts/types.js';
 import { buildPrompt, PROMPT_IDS } from './prompts/index.js';
 import type {
+  GeneratedDerivationContent,
+  GeneratedExerciseContent,
+  GeneratedFreeResponseContent,
+  GeneratedGlossaryContent,
   GeneratedInteractiveContent,
   GeneratedPBLContent,
+  GeneratedComparisonContent,
+  GeneratedDataReadingContent,
   GeneratedQuizContent,
+  GeneratedReadingContent,
+  GeneratedTradeoffsContent,
   GeneratedSlideContent,
   WidgetConfig,
 } from './scene-types.js';
@@ -57,7 +98,7 @@ import { noopGenerationLogger, type GenerationLogger } from './logger.js';
 import { isAbortError } from './generation-retry.js';
 import { generatePBLV2ProjectSingleCall } from './pbl/planner-single-call.js';
 import { PlannerV2Error } from './pbl/planner-core.js';
-import type { PBLPlannerV2Input } from './pbl/types.js';
+import type { PBLPlannerV2Input, PBLProjectV2 } from './pbl/types.js';
 
 function isGeneratedMediaPlaceholder(value: string | undefined): value is string {
   return !!value && /^gen_(img|vid)_[\w-]+$/i.test(value);
@@ -72,11 +113,27 @@ const INTERACTIVE_WIDGET_ACTIONS = [
 
 // ── Options interfaces for scene generation functions ──
 
+export type SceneContentFailureCode = 'prompt-unavailable' | 'invalid-model-output';
+
+export interface SceneContentFailure {
+  code: SceneContentFailureCode;
+}
+
 export interface SceneContentOptions {
   assignedImages?: PdfImage[];
   imageMapping?: ImageMapping;
   visionEnabled?: boolean;
   generatedMediaMapping?: ImageMapping;
+  /**
+   * Pre-resolved bytes for the vision slice (RFC #1153 part 2, N3). The app's
+   * scene-content route resolves the slice's allocated asset ids server-side
+   * BEFORE calling the generator so the attachment bytes are settled before
+   * prompt assembly; when provided, the LLM message's vision images are built
+   * from these (matched to the slice ids), so the caller's aiCall resolution
+   * becomes a defensive no-op. Absent (package consumers, browser-backed
+   * runs), the srcs are derived from `imageMapping` exactly as before.
+   */
+  resolvedVisionImages?: Array<{ id: string; src: string; width?: number; height?: number }>;
   agents?: AgentInfo[];
   languageDirective?: string;
   /** Authoritative UI locale selected by the user, consumed by the PBL v2 planner. */
@@ -96,9 +153,31 @@ export interface SceneContentOptions {
    * Only consumed by the slide branch alongside `editDirective`.
    */
   baselineContent?: GeneratedSlideContent;
+  /**
+   * Extra model handle threaded to the PBL v2 planner (Phase 2 §15.1): a
+   * VISION-capable model carries the source images into the scenario design.
+   */
+  languageModel?: unknown;
+  /** Planner thinking budget / provider thinking knobs (opaque host shape,
+   *  threaded into the planner calls via the app aiCall closure). */
+  thinkingConfig?: unknown;
   /** Optional host fallback for the app-only loop planner. */
-  pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>;
+  pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProjectV2>;
+  onFailure?: (failure: SceneContentFailure) => void;
   logger?: GenerationLogger;
+  /**
+   * Per-scene source retrieval context (Pillar 3b): retrieved chunks with
+   * `[source p.N]` citation markers. Injected into the slide/quiz prompt;
+   * generated content must cite ≥2 retrieved markers and may not cite
+   * anything outside the retrieved set (citation ground-truth).
+   */
+  retrievalContext?: string;
+  /**
+   * Prerequisite coherence threading (Phase 2 §15.5): a compact "what was
+   * taught so far in this unit" block injected into the content prompts so
+   * scenes build on earlier material instead of repeating it.
+   */
+  unitContext?: string;
 }
 
 export interface SceneActionsOptions {
@@ -224,6 +303,7 @@ export async function generateSceneContent(
     imageMapping,
     visionEnabled,
     generatedMediaMapping,
+    resolvedVisionImages,
     agents,
     languageDirective,
     targetLanguage,
@@ -231,6 +311,8 @@ export async function generateSceneContent(
     allowProceduralSkill = false,
     editDirective,
     baselineContent,
+    retrievalContext,
+    unitContext,
   } = options;
 
   // Unified path for interactive scenes (both normal and ultra mode)
@@ -257,6 +339,7 @@ export async function generateSceneContent(
     return generateWidgetContent(outline, aiCall, languageDirective, {
       allowProceduralSkill,
       logger: log,
+      onFailure: options.onFailure,
     });
   }
 
@@ -269,14 +352,34 @@ export async function generateSceneContent(
         imageMapping,
         visionEnabled,
         generatedMediaMapping,
+        resolvedVisionImages,
         agents,
         languageDirective,
         editDirective,
         baselineContent,
+        retrievalContext,
+        unitContext,
         log,
+        options.onFailure,
       );
     case 'quiz':
-      return generateQuizContent(outline, aiCall, languageDirective, log);
+      return generateQuizContent(outline, aiCall, languageDirective, retrievalContext, unitContext, log, options.onFailure);
+    case 'freeResponse':
+      return generateFreeResponseContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
+    case 'exercise':
+      return generateExerciseContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
+    case 'derivation':
+      return generateDerivationContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
+    case 'glossary':
+      return generateGlossaryContent(outline, aiCall, languageDirective, unitContext);
+    case 'reading':
+      return generateReadingContent(outline, aiCall, languageDirective, unitContext);
+    case 'comparison':
+      return generateComparisonContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
+    case 'dataReading':
+      return generateDataReadingContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
+    case 'tradeoffs':
+      return generateTradeoffsContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
     case 'pbl':
       return generatePBLSceneContent(
         outline,
@@ -285,6 +388,7 @@ export async function generateSceneContent(
         targetLanguage,
         userRequirements,
         options.pblLoopFallback,
+        options.languageModel,
         log,
       );
     default:
@@ -313,18 +417,25 @@ function isImageIdReference(value: string): boolean {
 }
 
 /**
- * Resolve image ID references in src field to actual base64 URLs
+ * Resolve image ID references in src field to the mapping's payload.
  *
  * AI generates: { type: "image", src: "img_1", ... }
- * This function replaces: { type: "image", src: "data:image/png;base64,...", ... }
+ * This function replaces: { type: "image", src: "<imageMapping[src]>", ... }
  *
  * Design rationale (Plan B):
  * - Simpler: AI only needs to know one field (src)
  * - Consistent: Generated JSON structure matches final PPTImageElement
  * - Intuitive: src is the image source, first as ID then as actual URL
  * - Less prompt complexity: No need to explain imageId vs src distinction
+ *
+ * The mapping VALUE is written verbatim, so the transport is decided entirely
+ * by the caller's `imageMapping` shape — no flag threading into this package
+ * (RFC #1153 part 2 B): a browser-backed mapping carries base64 data URLs and
+ * the element src becomes the data URL exactly as before; a server-backed
+ * mapping carries allocated pool asset ids and the element src becomes the
+ * asset id, which the renderer resolves through the pool registry.
  */
-function resolveImageIds(
+export function resolveImageIds(
   elements: GeneratedSlideData['elements'],
   imageMapping?: ImageMapping,
   generatedMediaMapping?: ImageMapping,
@@ -345,7 +456,7 @@ function resolveImageIds(
             log.warn(`No mapping for image ID: ${src}, removing element`);
             return null; // Remove invalid image elements
           }
-          log.debug(`Resolved image ID "${src}" to base64 URL`);
+          log.debug(`Resolved image ID "${src}" to its mapped source`);
           return { ...el, src: imageMapping[src] };
         }
 
@@ -578,41 +689,63 @@ async function generateSlideContent(
   imageMapping?: ImageMapping,
   visionEnabled?: boolean,
   generatedMediaMapping?: ImageMapping,
+  resolvedVisionImages?: Array<{ id: string; src: string; width?: number; height?: number }>,
   agents?: AgentInfo[],
   languageDirective?: string,
   editDirective?: string,
   baselineContent?: GeneratedSlideContent,
+  retrievalContext?: string,
+  unitContext?: string,
   log: GenerationLogger = noopGenerationLogger,
+  onFailure?: (failure: SceneContentFailure) => void,
 ): Promise<GeneratedSlideContent | null> {
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (assignedImages && assignedImages.length > 0) {
-    const sortedAssignedImages = sortDocumentImagesForVision(assignedImages);
+    // The partition is the shared ordering (RFC #1153 part 2, N3): the app's
+    // scene-content route pre-resolves the SAME `withSrc` candidates in this
+    // order, so the slice below can never admit an image the route has not
+    // resolved. `visionEnabled && imageMapping` off → every image is a plain
+    // text description listed in the ORIGINAL full vision-priority
+    // interleaved order (`sorted` — the pre-partition `sortedAssignedImages`
+    // order), NOT the slices-concatenated order, so a non-vision run with a
+    // mapping present (a non-vision model on a server-backed deployment) sees
+    // exactly the text ordering it saw before the partition refactor.
+    const { sorted, visionSlice, textOnlySlice, noSrcImages } = partitionImagesForVision(
+      assignedImages,
+      imageMapping,
+      MAX_VISION_IMAGES,
+    );
     if (visionEnabled && imageMapping) {
       // Vision mode: split into vision images and text-only
-      const withSrc = sortedAssignedImages.filter((img) => imageMapping[img.id]);
-      const visionSlice = withSrc.slice(0, MAX_VISION_IMAGES);
-      const textOnlySlice = withSrc.slice(MAX_VISION_IMAGES);
-      const noSrcImages = sortedAssignedImages.filter((img) => !imageMapping[img.id]);
-
       const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
       const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
         formatImageDescription(img),
       );
       assignedImagesText = [...visionDescriptions, ...textDescriptions].join('\n');
 
-      visionImages = visionSlice.map((img) => ({
-        id: img.id,
-        src: imageMapping[img.id],
-        width: img.width,
-        height: img.height,
-      }));
+      // When the route pre-resolved the slice, its resolved bytes are used
+      // verbatim (matched to the slice ids), so the caller's aiCall resolution
+      // is a defensive no-op; otherwise fall back to the mapping src (an
+      // allocated id the caller's aiCall resolves at prompt-assembly time).
+      const resolvedById = new Map(
+        (resolvedVisionImages ?? []).map((img) => [img.id, img] as const),
+      );
+      visionImages = visionSlice.map((img) => {
+        const resolved = resolvedById.get(img.id);
+        return (
+          resolved ?? {
+            id: img.id,
+            src: imageMapping[img.id],
+            width: img.width,
+            height: img.height,
+          }
+        );
+      });
     } else {
-      assignedImagesText = sortedAssignedImages
-        .map((img) => formatImageDescription(img))
-        .join('\n');
+      assignedImagesText = sorted.map((img) => formatImageDescription(img)).join('\n');
     }
   }
 
@@ -658,6 +791,8 @@ async function generateSlideContent(
   const canvasHeight = 562.5;
 
   const teacherContext = formatTeacherPersonaForPrompt(agents);
+  const depthLevel = resolveDepthLevel(outline.depthLevel);
+  const depthFloor = COURSE_DEPTH_FLOORS[depthLevel];
 
   const prompts = buildPrompt(PROMPT_IDS.SLIDE_CONTENT, {
     title: outline.title,
@@ -669,6 +804,8 @@ async function generateSlideContent(
     canvas_height: canvasHeight,
     teacherContext,
     languageDirective: languageDirective || '',
+    depthDirective: renderDepthDirective(depthLevel),
+    unitContext: unitContext || '',
     imageElementEnabled,
     generatedImageEnabled,
     generatedVideoEnabled,
@@ -676,6 +813,7 @@ async function generateSlideContent(
   });
 
   if (!prompts) {
+    onFailure?.({ code: 'prompt-unavailable' });
     return null;
   }
 
@@ -692,6 +830,9 @@ async function generateSlideContent(
   // the existing slide rather than generating from scratch. Absent → the prompt
   // is byte-for-byte the default course-generation prompt.
   let userPrompt = prompts.user;
+  if (retrievalContext) {
+    userPrompt = `${prompts.user}\n\n## Source Material (ground your content here)\n\n${retrievalContext}\n\nCitation requirements: cite the exact [source p.N] markers shown above for at least ${depthFloor.minCitations} of your claims. Never cite a marker that is not listed above.`;
+  }
   if (editDirective || baselineContent) {
     // The baseline handed here for whole-slide regeneration already carries small
     // image-ID references (`img_N`) instead of base64 payloads — the caller lifts
@@ -722,80 +863,135 @@ async function generateSlideContent(
       `Return the full updated slide content in the same schema.`;
   }
 
-  const response = await aiCall(prompts.system, userPrompt, visionImages);
-  const generatedData = parseJsonResponse<GeneratedSlideData>(response);
+  // Depth contract (Pillar 3): the generated slide must carry substantive
+  // content (complete claims), captions may not dominate, and a concrete
+  // example/definition/fact is required unless the outline is intro/summary.
+  // On failure the call re-prompts with the specific findings (bounded); on
+  // exhaustion the content is rejected with the report recorded for the
+  // job model/UI. Edit mode (MAIC Editor) is exempt - user-driven edits may
+  // intentionally be minimal.
+  const isEditMode = !!(editDirective || baselineContent);
+  const maxAttempts = readGenerationProfile().contentAttempts + 1;
+  let depthFeedback: string | undefined;
 
-  if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {
-    log.error(`Failed to parse AI response for: ${outline.title}`);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const attemptUserPrompt =
+      depthFeedback && !isEditMode
+        ? `${userPrompt}\n\n## Depth Correction Required\n\n${depthFeedback}`
+        : userPrompt;
+
+    const response = await aiCall(prompts.system, attemptUserPrompt, visionImages);
+
+    const generatedData = parseJsonResponse<GeneratedSlideData>(response);
+
+    if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {
+      log.error(`Failed to parse AI response for: ${outline.title}`);
+      onFailure?.({ code: 'invalid-model-output' });
+      return null;
+    }
+
+    log.debug(`Got ${generatedData.elements.length} elements for: ${outline.title}`);
+
+    // Debug: Log image elements before resolution
+    const imageElements = generatedData.elements.filter((el) => el.type === 'image');
+    if (imageElements.length > 0) {
+      log.debug(
+        `Image elements before resolution:`,
+        imageElements.map((el) => ({
+          type: el.type,
+          src:
+            (el as Record<string, unknown>).src &&
+            String((el as Record<string, unknown>).src).substring(0, 50),
+        })),
+      );
+      log.debug(`imageMapping keys:`, imageMapping ? Object.keys(imageMapping).length : '0 keys');
+    }
+
+    // Fix elements with missing required fields + aspect ratio correction (while src is still img_id)
+    const fixedElements = fixElementDefaults(generatedData.elements, assignedImages, log);
+    log.debug(`After element fixing: ${fixedElements.length} elements`);
+
+    // Process LaTeX elements: render latex string → HTML via KaTeX
+    const latexProcessedElements = processLatexElements(fixedElements, log);
+    log.debug(`After LaTeX processing: ${latexProcessedElements.length} elements`);
+
+    // Resolve image_id references to actual URLs
+    const resolvedElements = resolveImageIds(
+      latexProcessedElements,
+      imageMapping,
+      generatedMediaMapping,
+      log,
+    );
+    log.debug(`After image resolution: ${resolvedElements.length} elements`);
+
+    const videoNormalizedElements = normalizeGeneratedVideoRefs(
+      resolvedElements,
+      outline.mediaGenerations,
+      log,
+    );
+    log.debug(`After video reference normalization: ${videoNormalizedElements.length} elements`);
+
+    // Process elements, assign unique IDs
+    const processedElements: PPTElement[] = videoNormalizedElements.map((el) => ({
+      ...el,
+      id: `${el.type}_${nanoid(8)}`,
+      rotate: 0,
+    })) as PPTElement[];
+
+    // Process background
+    let background: SlideBackground | undefined;
+    if (generatedData.background) {
+      if (generatedData.background.type === 'solid' && generatedData.background.color) {
+        background = { type: 'solid', color: generatedData.background.color };
+      } else if (generatedData.background.type === 'gradient' && generatedData.background.gradient) {
+        background = {
+          type: 'gradient',
+          gradient: generatedData.background.gradient,
+        };
+      }
+    }
+
+
+    if (isEditMode) {
+      return {
+        elements: processedElements,
+        background,
+        remark: generatedData.remark || outline.description,
+      };
+    }
+
+    const depthReport = validateSlideDepth(outline, processedElements, {
+      retrievalContext,
+      depthLevel,
+    });
+    if (depthReport.adequate) {
+      if (attempt > 1) {
+        // Depth affordance: this scene needed corrective re-prompting.
+        recordSceneDepthSummary(outline.id, { reworked: true, attempts: attempt, findings: [] });
+      }
+      return {
+        elements: processedElements,
+        background,
+        remark: generatedData.remark || outline.description,
+      };
+    }
+
+    if (attempt < maxAttempts) {
+      depthFeedback = summarizeDepthFindings(depthReport);
+      log.warn(
+        `Slide depth contract not met for "${outline.title}" (attempt ${attempt}/${maxAttempts}); re-prompting with ${depthReport.findings.length} finding(s)`,
+      );
+      continue;
+    }
+
+    recordSceneDepthReport(outline.id, depthReport);
+    log.error(
+      `Slide depth contract not met for "${outline.title}" after ${maxAttempts} attempts: ${depthReport.findings.join("; ")}`,
+    );
     return null;
   }
 
-  log.debug(`Got ${generatedData.elements.length} elements for: ${outline.title}`);
-
-  // Debug: Log image elements before resolution
-  const imageElements = generatedData.elements.filter((el) => el.type === 'image');
-  if (imageElements.length > 0) {
-    log.debug(
-      `Image elements before resolution:`,
-      imageElements.map((el) => ({
-        type: el.type,
-        src:
-          (el as Record<string, unknown>).src &&
-          String((el as Record<string, unknown>).src).substring(0, 50),
-      })),
-    );
-    log.debug(`imageMapping keys:`, imageMapping ? Object.keys(imageMapping).length : '0 keys');
-  }
-
-  // Fix elements with missing required fields + aspect ratio correction (while src is still img_id)
-  const fixedElements = fixElementDefaults(generatedData.elements, assignedImages, log);
-  log.debug(`After element fixing: ${fixedElements.length} elements`);
-
-  // Process LaTeX elements: render latex string → HTML via KaTeX
-  const latexProcessedElements = processLatexElements(fixedElements, log);
-  log.debug(`After LaTeX processing: ${latexProcessedElements.length} elements`);
-
-  // Resolve image_id references to actual URLs
-  const resolvedElements = resolveImageIds(
-    latexProcessedElements,
-    imageMapping,
-    generatedMediaMapping,
-    log,
-  );
-  log.debug(`After image resolution: ${resolvedElements.length} elements`);
-
-  const videoNormalizedElements = normalizeGeneratedVideoRefs(
-    resolvedElements,
-    outline.mediaGenerations,
-    log,
-  );
-  log.debug(`After video reference normalization: ${videoNormalizedElements.length} elements`);
-
-  // Process elements, assign unique IDs
-  const processedElements: PPTElement[] = videoNormalizedElements.map((el) => ({
-    ...el,
-    id: `${el.type}_${nanoid(8)}`,
-    rotate: 0,
-  })) as PPTElement[];
-
-  // Process background
-  let background: SlideBackground | undefined;
-  if (generatedData.background) {
-    if (generatedData.background.type === 'solid' && generatedData.background.color) {
-      background = { type: 'solid', color: generatedData.background.color };
-    } else if (generatedData.background.type === 'gradient' && generatedData.background.gradient) {
-      background = {
-        type: 'gradient',
-        gradient: generatedData.background.gradient,
-      };
-    }
-  }
-
-  return {
-    elements: processedElements,
-    background,
-    remark: generatedData.remark || outline.description,
-  };
+  return null;
 }
 
 /**
@@ -805,13 +1001,18 @@ async function generateQuizContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   languageDirective?: string,
+  retrievalContext?: string,
+  unitContext?: string,
   log: GenerationLogger = noopGenerationLogger,
+  onFailure?: (failure: SceneContentFailure) => void,
 ): Promise<GeneratedQuizContent | null> {
   const quizConfig = outline.quizConfig || {
     questionCount: 3,
     difficulty: 'medium',
     questionTypes: ['single'],
   };
+  const depthLevel = resolveDepthLevel(outline.depthLevel);
+  const depthFloor = COURSE_DEPTH_FLOORS[depthLevel];
 
   const prompts = buildPrompt(PROMPT_IDS.QUIZ_CONTENT, {
     title: outline.title,
@@ -821,37 +1022,326 @@ async function generateQuizContent(
     difficulty: quizConfig.difficulty,
     questionTypes: quizConfig.questionTypes.join(', '),
     languageDirective: languageDirective || '',
+    depthDirective: renderDepthDirective(depthLevel),
+    unitContext: unitContext || '',
   });
 
   if (!prompts) {
+    onFailure?.({ code: 'prompt-unavailable' });
     return null;
+  }
+
+  let baseUserPrompt = prompts.user;
+  if (retrievalContext) {
+    baseUserPrompt = `${prompts.user}\n\n## Source Material (ground your questions here)\n\n${retrievalContext}\n\nCitation requirements: cite the exact [source p.N] markers shown above in at least ${depthFloor.minCitations} questions/analyses. Never cite a marker that is not listed above.`;
   }
 
   log.debug(`Generating quiz content for: ${outline.title}`);
-  const response = await aiCall(prompts.system, prompts.user);
-  const generatedQuestions = parseJsonResponse<QuizQuestion[]>(response);
+  // Depth contract: the quiz must carry its configured question count with
+  // substantive stems, plausible distractors, and explanations. Bounded
+  // corrective re-prompts; on exhaustion the content is rejected with the
+  // report recorded for the job model/UI.
+  const maxAttempts = readGenerationProfile().contentAttempts + 1;
+  let depthFeedback: string | undefined;
 
-  if (!generatedQuestions || !Array.isArray(generatedQuestions)) {
-    log.error(`Failed to parse AI response for: ${outline.title}`);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const attemptUserPrompt = depthFeedback
+      ? `${baseUserPrompt}\n\n## Depth Correction Required\n\n${depthFeedback}`
+      : baseUserPrompt;
+
+    const response = await aiCall(prompts.system, attemptUserPrompt);
+
+    const generatedQuestions = parseJsonResponse<QuizQuestion[]>(response);
+
+    if (!generatedQuestions || !Array.isArray(generatedQuestions)) {
+      log.error(`Failed to parse AI response for: ${outline.title}`);
+      onFailure?.({ code: 'invalid-model-output' });
+      return null;
+    }
+
+    log.debug(`Got ${generatedQuestions.length} questions for: ${outline.title}`);
+
+    // Ensure each question has an ID and normalize options format
+    const questions: QuizQuestion[] = generatedQuestions.map((q) => {
+      const isText = q.type === 'short_answer';
+      return {
+        ...q,
+        id: q.id || `q_${nanoid(8)}`,
+        options: isText ? undefined : normalizeQuizOptions(q.options),
+        answer: isText ? undefined : normalizeQuizAnswer(q as unknown as Record<string, unknown>),
+        hasAnswer: isText ? false : true,
+      };
+    });
+
+    const depthReport = validateQuizDepth(outline, questions, retrievalContext);
+    if (depthReport.adequate) {
+      if (attempt > 1) {
+        recordSceneDepthSummary(outline.id, { reworked: true, attempts: attempt, findings: [] });
+      }
+      return { questions };
+    }
+
+    if (attempt < maxAttempts) {
+      depthFeedback = summarizeDepthFindings(depthReport);
+      log.warn(
+        `Quiz depth contract not met for "${outline.title}" (attempt ${attempt}/${maxAttempts}); re-prompting with ${depthReport.findings.length} finding(s)`,
+      );
+      continue;
+    }
+
+    recordSceneDepthReport(outline.id, depthReport);
+    log.error(
+      `Quiz depth contract not met for "${outline.title}" after ${maxAttempts} attempts: ${depthReport.findings.join("; ")}`,
+    );
     return null;
   }
 
-  log.debug(`Got ${generatedQuestions.length} questions for: ${outline.title}`);
-
-  // Ensure each question has an ID and normalize options format
-  const questions: QuizQuestion[] = generatedQuestions.map((q) => {
-    const isText = q.type === 'short_answer';
-    return {
-      ...q,
-      id: q.id || `q_${nanoid(8)}`,
-      options: isText ? undefined : normalizeQuizOptions(q.options),
-      answer: isText ? undefined : normalizeQuizAnswer(q as unknown as Record<string, unknown>),
-      hasAnswer: isText ? false : true,
-    };
-  });
-
-  return { questions };
+  return null;
 }
+
+// ==================== Specialized scene content (Phase 2 §15.4b) ====================
+// Exercise / derivation / glossary / reading scenes generate a STRUCTURED
+// payload (problems with worked solutions, latex steps, term pairs, annotated
+// reading items), validate it against the kind's depth floor with the same
+// bounded corrective loop as slides/quizzes, then render it into slide
+// elements via lib/generation/specialized-scene-render.ts. The resulting
+// scene is a standard slide; the depth contract is what distinguishes the
+// kinds.
+
+interface StructuredSceneOptions {
+  languageDirective?: string;
+  retrievalContext?: string;
+  log?: GenerationLogger;
+  unitContext?: string;
+}
+
+/**
+ * Shared driver: build the kind's prompt, run the bounded depth-corrective
+ * loop against the structured validator, and return the accepted payload
+ * (or null with the report recorded on exhaustion).
+ */
+async function generateValidatedStructured<T>(
+  outline: SceneOutline,
+  promptId: PromptId,
+  aiCall: AICallFn,
+  validate: (payload: T) => DepthReport,
+  options: StructuredSceneOptions,
+): Promise<T | null> {
+  const log = options.log ?? noopGenerationLogger;
+  const depthLevel = resolveDepthLevel(outline.depthLevel);
+  const prompts = buildPrompt(promptId, {
+    title: outline.title,
+    description: outline.description,
+    keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
+    languageDirective: options.languageDirective || '',
+    depthDirective: renderDepthDirective(depthLevel),
+    unitContext: options.unitContext || '',
+  });
+  if (!prompts) return null;
+
+  let baseUserPrompt = prompts.user;
+  if (options.retrievalContext) {
+    baseUserPrompt = `${prompts.user}\n\n## Source Material (ground your content here)\n\n${options.retrievalContext}\n\nCitation requirements: cite the exact [source p.N] markers shown above for at least ${COURSE_DEPTH_FLOORS[depthLevel].minCitations} of your claims. Never cite a marker that is not listed above.`;
+  }
+
+  const maxAttempts = readGenerationProfile().contentAttempts + 1;
+  let depthFeedback: string | undefined;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const attemptUserPrompt = depthFeedback
+      ? `${baseUserPrompt}\n\n## Depth Correction Required\n\n${depthFeedback}`
+      : baseUserPrompt;
+
+    const response = await aiCall(prompts.system, attemptUserPrompt);
+    const payload = parseJsonResponse<T>(response);
+    if (!payload || typeof payload !== 'object') {
+      log.error(`Failed to parse AI response for: ${outline.title}`);
+      return null;
+    }
+
+    const depthReport = validate(payload);
+    if (depthReport.adequate) {
+      if (attempt > 1) {
+        recordSceneDepthSummary(outline.id, { reworked: true, attempts: attempt, findings: [] });
+      }
+      return payload;
+    }
+
+    if (attempt < maxAttempts) {
+      depthFeedback = summarizeDepthFindings(depthReport);
+      log.warn(
+        `Specialized depth contract not met for "${outline.title}" (attempt ${attempt}/${maxAttempts}); re-prompting with ${depthReport.findings.length} finding(s)`,
+      );
+      continue;
+    }
+
+    recordSceneDepthReport(outline.id, depthReport);
+    log.error(
+      `Specialized depth contract not met for "${outline.title}" after ${maxAttempts} attempts: ${depthReport.findings.join('; ')}`,
+    );
+    return null;
+  }
+
+  return null;
+}
+
+/** Run the rendered elements through the standard slide post-pipeline. */
+function finalizeRenderedElements(
+  rawElements: GeneratedSlideData['elements'],
+): GeneratedSlideContent {
+  const fixedElements = fixElementDefaults(rawElements);
+  const latexProcessedElements = processLatexElements(fixedElements);
+  const processedElements: PPTElement[] = latexProcessedElements.map((el) => ({
+    ...el,
+    id: `${el.type}_${nanoid(8)}`,
+    rotate: 0,
+  })) as PPTElement[];
+  return { elements: processedElements };
+}
+
+async function generateExerciseContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  retrievalContext?: string,
+  unitContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedExerciseContent>(
+    outline,
+    PROMPT_IDS.EXERCISE_CONTENT,
+    aiCall,
+    (parsed) =>
+      validateExerciseDepth(outline, parsed.problems ?? [], { retrievalContext }),
+    { languageDirective, retrievalContext, unitContext },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderExerciseToElements(outline, payload.problems ?? []));
+}
+
+async function generateDerivationContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  retrievalContext?: string,
+  unitContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedDerivationContent>(
+    outline,
+    PROMPT_IDS.DERIVATION_CONTENT,
+    aiCall,
+    (parsed) =>
+      validateDerivationDepth(outline, parsed.steps ?? [], { retrievalContext }),
+    { languageDirective, retrievalContext, unitContext },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderDerivationToElements(outline, payload.steps ?? []));
+}
+
+async function generateGlossaryContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  unitContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedGlossaryContent>(
+    outline,
+    PROMPT_IDS.GLOSSARY_CONTENT,
+    aiCall,
+    (parsed) => validateGlossaryDepth(outline, parsed.terms ?? []),
+    { languageDirective, unitContext },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderGlossaryToElements(outline, payload.terms ?? []));
+}
+
+async function generateReadingContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  unitContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedReadingContent>(
+    outline,
+    PROMPT_IDS.READING_CONTENT,
+    aiCall,
+    (parsed) => validateReadingDepth(outline, parsed.items ?? [], {}),
+    { languageDirective, unitContext },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderReadingToElements(outline, payload.items ?? []));
+}
+async function generateFreeResponseContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  retrievalContext?: string,
+  unitContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedFreeResponseContent>(
+    outline,
+    PROMPT_IDS.FREE_RESPONSE_CONTENT,
+    aiCall,
+    (parsed) => validateFreeResponseDepth(outline, parsed, { retrievalContext }),
+    { languageDirective, retrievalContext, unitContext },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderFreeResponseToElements(outline, payload));
+}
+
+async function generateComparisonContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  retrievalContext?: string,
+  unitContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedComparisonContent>(
+    outline,
+    PROMPT_IDS.COMPARISON_CONTENT,
+    aiCall,
+    (parsed) => validateComparisonDepth(outline, parsed, { retrievalContext }),
+    { languageDirective, retrievalContext, unitContext },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderComparisonToElements(outline, payload));
+}
+
+async function generateDataReadingContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  retrievalContext?: string,
+  unitContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedDataReadingContent>(
+    outline,
+    PROMPT_IDS.DATA_READING_CONTENT,
+    aiCall,
+    (parsed) => validateDataReadingDepth(outline, parsed, { retrievalContext }),
+    { languageDirective, retrievalContext, unitContext, log: noopGenerationLogger },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderDataReadingToElements(outline, payload));
+}
+
+async function generateTradeoffsContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  retrievalContext?: string,
+  unitContext?: string,
+): Promise<GeneratedSlideContent | null> {
+  const payload = await generateValidatedStructured<GeneratedTradeoffsContent>(
+    outline,
+    PROMPT_IDS.TRADEOFFS_CONTENT,
+    aiCall,
+    (parsed) => validateTradeoffsDepth(outline, parsed, { retrievalContext }),
+    { languageDirective, retrievalContext, unitContext, log: noopGenerationLogger },
+  );
+  if (!payload) return null;
+  return finalizeRenderedElements(renderTradeoffsToElements(outline, payload));
+}
+
 
 /**
  * Normalize quiz options from AI response.
@@ -938,7 +1428,8 @@ async function generatePBLSceneContent(
   languageDirective?: string,
   targetLanguage?: string,
   userRequirements?: UserRequirements,
-  pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>,
+  pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProjectV2>,
+  languageModel?: unknown,
   log: GenerationLogger = noopGenerationLogger,
 ): Promise<GeneratedPBLContent | null> {
   const pblConfig = outline.pblConfig;
@@ -963,6 +1454,7 @@ async function generatePBLSceneContent(
         }
       : undefined,
     targetLanguage,
+    languageModel: languageModel ?? undefined,
   };
 
   try {
@@ -1065,7 +1557,11 @@ export async function generateWidgetContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   languageDirective?: string,
-  options: { allowProceduralSkill?: boolean; logger?: GenerationLogger } = {},
+  options: {
+    allowProceduralSkill?: boolean;
+    logger?: GenerationLogger;
+    onFailure?: (failure: SceneContentFailure) => void;
+  } = {},
 ): Promise<GeneratedInteractiveContent | null> {
   const log = options.logger ?? noopGenerationLogger;
   const widgetType = outline.widgetType;
@@ -1177,6 +1673,7 @@ export async function generateWidgetContent(
   const prompts = buildPrompt(promptId, variables);
   if (!prompts) {
     log.error(`Failed to build ${widgetType} prompt for: ${outline.title}`);
+    options.onFailure?.({ code: 'prompt-unavailable' });
     return null;
   }
 
@@ -1186,6 +1683,7 @@ export async function generateWidgetContent(
 
   if (!html) {
     log.error(`Failed to extract HTML from ${widgetType} response for: ${outline.title}`);
+    options.onFailure?.({ code: 'invalid-model-output' });
     return null;
   }
 
@@ -1568,7 +2066,10 @@ export async function generateSceneActions(
     );
   }
 
-  if (outline.type === 'slide' && 'elements' in content) {
+  // Slide-like kinds (slide + exercise/derivation/glossary/reading — Phase 2
+  // §15.4b) share the slide-action pipeline; the action parser sees 'slide'
+  // so slide-only actions (spotlight, laser, whiteboard) are not stripped.
+  if (isSlideLikeOutline(outline) && 'elements' in content) {
     // Format element list for AI to select from
     const elementsText = formatElementsForPrompt(content.elements);
 

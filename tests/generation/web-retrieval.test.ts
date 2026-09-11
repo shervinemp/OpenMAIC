@@ -8,7 +8,7 @@ import {
   formatRetrievalContext,
   retrieveChunks,
   validateCitations,
-} from '@/lib/generation/pdf-retrieval';
+} from '@openmaic/generation';
 import type { WebSearchResult } from '@/lib/types/web-search';
 
 function makeResult(): WebSearchResult {

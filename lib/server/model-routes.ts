@@ -2,8 +2,9 @@
  * Per-stage LLM model routing (issue #745).
  *
  * Optional, config-only overrides that map a generation *stage* to a specific
- * model string. Consulted during model resolution and falling back to today's
- * behavior (`DEFAULT_MODEL`) when unset — zero behavior change unless opted in.
+ * model string. This module returns only configured routes; callers choose their
+ * own fallback when a route is unset or invalid. Most use `DEFAULT_MODEL`, while
+ * `conversation-title` reuses the agent-driver connection.
  *
  * Surface: a single JSON env var `MODEL_ROUTES`. Each value is a model string in
  * the canonical `provider:model` format (see parseModelString), OR an object
@@ -20,6 +21,7 @@
  */
 
 import { createLogger } from '@/lib/logger';
+import { readGenerationProfile } from '@openmaic/generation';
 import type {
   ThinkingConfig,
   ThinkingEffort,
@@ -41,9 +43,28 @@ const VALID_EFFORTS: readonly ThinkingEffort[] = [
 ];
 const VALID_LEVELS: readonly ThinkingLevel[] = ['minimal', 'low', 'medium', 'high'];
 
-/** A resolved route entry: the model string plus an optional full thinking config. */
+/**
+ * A resolved route entry: the model string plus an optional full thinking config.
+ *
+ * `api`/`dialect` and `contextWindow` are parsed for every routable stage but are
+ * currently consumed only by the agent-driver stage (`maic-agent-driver`); on any
+ * other stage they are inert (accepted silently, never applied). `thinking` is the
+ * only field honored by the generic callLLM stages.
+ */
 export interface StageRoute {
   model: string;
+  /**
+   * Explicit pi transport dialect (for example openai-completions). Consumed only
+   * by the agent-driver stage; inert on every other routable stage.
+   */
+  api?: string;
+  /**
+   * Effective context window for this stage, overriding the provider catalog
+   * value. Consumed by pi-native compaction thresholds (e.g. the agent driver)
+   * so an operator can pin a conservative window below the catalog number.
+   * Consumed only by the agent-driver stage; inert on every other routable stage.
+   */
+  contextWindow?: number;
   /**
    * Full thinking config for this stage (the unified ThinkingConfig abstraction:
    * mode / effort / level / enabled / budgetTokens / excludeReasoningOutput).
@@ -121,9 +142,15 @@ export const LLM_STAGES = [
   'scene-content:derivation',
   'scene-content:glossary',
   'scene-content:reading',
+  'scene-content:comparison',
+  'scene-content:dataReading',
+  'scene-content:tradeoffs',
+  'scene-content:freeResponse',
   'scene-actions',
   'agent-profiles',
   'quiz-grade',
+  'exam-generation',
+  'exam-grading',
   'pbl-chat',
   'pbl-v2-runtime',
   'pbl-v2-runtime:instructor',
@@ -134,6 +161,8 @@ export const LLM_STAGES = [
   'generate-classroom',
   'web-search-query-rewrite',
   'maic-agent',
+  'maic-agent-driver',
+  'conversation-title',
 ] as const;
 
 export type LlmStage = (typeof LLM_STAGES)[number];
@@ -154,9 +183,41 @@ function parseRouteValue(key: string, value: unknown): StageRoute | undefined {
       return undefined;
     }
     const route: StageRoute = { model };
+    const api = typeof obj.api === 'string' ? obj.api.trim() : '';
+    const dialect = typeof obj.dialect === 'string' ? obj.dialect.trim() : '';
+    if (api || dialect) route.api = api || dialect;
+    if (obj.api !== undefined && !api) {
+      log.warn(
+        dialect
+          ? `Invalid api for stage "${key}" in MODEL_ROUTES; using dialect "${dialect}" instead.`
+          : `Invalid api for stage "${key}" in MODEL_ROUTES; ignored.`,
+      );
+    }
+    if (obj.dialect !== undefined && !dialect) {
+      log.warn(
+        api
+          ? `Invalid dialect for stage "${key}" in MODEL_ROUTES; using api "${api}" instead.`
+          : `Invalid dialect for stage "${key}" in MODEL_ROUTES; ignored.`,
+      );
+    }
+    if (api && dialect && api !== dialect) {
+      log.warn(`Both api and dialect are set for stage "${key}"; api wins.`);
+    }
     if (obj.thinking !== undefined) {
       const thinking = parseThinking(key, obj.thinking);
       if (thinking) route.thinking = thinking;
+    }
+    if (obj.contextWindow !== undefined) {
+      const contextWindow = obj.contextWindow;
+      if (
+        typeof contextWindow === 'number' &&
+        Number.isFinite(contextWindow) &&
+        Math.floor(contextWindow) >= 1
+      ) {
+        route.contextWindow = Math.floor(contextWindow);
+      } else {
+        log.warn(`Invalid contextWindow for stage "${key}" in MODEL_ROUTES; ignored.`);
+      }
     }
     return route;
   }
@@ -187,7 +248,7 @@ function loadRoutes(): Record<string, StageRoute> {
         log.error('MODEL_ROUTES must be a JSON object of stage -> model; ignoring.');
       }
     } catch (err) {
-      log.error('Invalid MODEL_ROUTES JSON, ignoring (falling back to DEFAULT_MODEL).', err);
+      log.error('Invalid MODEL_ROUTES JSON, ignoring; callers apply their own fallback.', err);
     }
   }
 
@@ -197,7 +258,8 @@ function loadRoutes(): Record<string, StageRoute> {
 
 /**
  * Resolve the configured model string for a stage, or `undefined` when the
- * stage is unset/unconfigured (callers fall back to `DEFAULT_MODEL`).
+ * stage is unset or unconfigured. Callers choose their fallback; notably,
+ * `conversation-title` reuses the agent-driver connection.
  *
  * Composite `a:b` stages resolve most-specific-first: the full key is tried,
  * then successively shorter prefixes (e.g. `scene-content:quiz` →
@@ -219,4 +281,93 @@ export function getStageRoute(stage?: string): StageRoute | undefined {
 /** Convenience: the resolved model string for a stage (route's `model`). */
 export function getStageModel(stage?: string): string | undefined {
   return getStageRoute(stage)?.model;
+}
+
+/**
+ * Thinking presets (issue: reasoning-token spend control).
+ *
+ * `OPENMAIC_THINKING_PRESET` picks a DEFAULT thinking policy across stages so
+ * operators don't have to hand-write a per-stage `thinking` block per model.
+ * `MODEL_ROUTES` per-stage `thinking` always wins; the preset fills in only
+ * where the route (or its parent, via the same composite fallback as the
+ * model) carries no explicit thinking.
+ *
+ * - `lean` — the token-saving default for volume generation: stages whose
+ *   output is machine-validated JSON (slide/quiz/analytic content, scene
+ *   actions, indexing) do NOT reason — the depth contracts and structured
+ *   validators already enforce quality, and one provider call per scene
+ *   output dropped ~85% of its output tokens in a measured run. Judgment
+ *   stages keep a bounded budget (planning, exams, interactive widgets,
+ *   derivations, rubric grading).
+ * - `quality` — provider defaults everywhere (same as leaving it unset).
+ *
+ * Unset (or any other value) = provider defaults, documented instead of
+ * silently changed.
+ */
+export type ThinkingPreset = 'lean' | 'quality';
+
+/**
+ * The `lean` preset table: stage -> thinking default. Anything absent from
+ * both preset tables resolves to provider defaults openly.
+ */
+export const THINKING_PRESET_LEAN: Partial<Record<LlmStage, ThinkingConfig>> = {
+  // Machine-validated structured output: validation + one findings re-prompt
+  // replaces long CoT.
+  'scene-content': { enabled: false },
+  'scene-content:slide': { enabled: false },
+  'scene-content:quiz': { enabled: false },
+  'scene-content:pbl': { enabled: false },
+  'scene-content:glossary': { enabled: false },
+  'scene-content:reading': { enabled: false },
+  'scene-content:comparison': { enabled: false },
+  'scene-content:dataReading': { enabled: false },
+  'scene-content:tradeoffs': { enabled: false },
+  'scene-actions': { enabled: false },
+  'web-search-query-rewrite': { enabled: false },
+  'conversation-title': { enabled: false },
+  'documents-index': { enabled: false },
+
+  // Judgment / long-horizon stages: reasoning earns its tokens.
+  'scene-outlines-stream': { enabled: true, budgetTokens: 6000 },
+  'scene-content:interactive': { enabled: true, budgetTokens: 8000 },
+  'scene-content:derivation': { enabled: true, budgetTokens: 6000 },
+  'scene-content:exercise': { enabled: true, budgetTokens: 4000 },
+  'scene-content:freeResponse': { enabled: true, budgetTokens: 4000 },
+  'exam-generation': { enabled: true, budgetTokens: 6000 },
+  'exam-grading': { enabled: true, budgetTokens: 4000 },
+  'quiz-grade': { enabled: true, budgetTokens: 3000 },
+  'pbl-chat': { enabled: true, budgetTokens: 4000 },
+  'pbl-v2-runtime:evaluate': { enabled: true, budgetTokens: 4000 },
+};
+
+export function readThinkingPresetEnv(): ThinkingPreset | undefined {
+  const value = process.env.OPENMAIC_THINKING_PRESET?.trim();
+  if (value) {
+    if (value === 'lean' || value === 'quality') return value;
+    log.warn(
+      `OPENMAIC_THINKING_PRESET="${value}" is not one of (lean|quality); the generation profile default applies.`,
+    );
+  }
+  // No explicit thinking env: the generation profile's thinking axis picks the
+  // default (economy implies lean; balanced is lean today; premium keeps
+  // provider defaults).
+  return readGenerationProfile().thinkingPreset;
+}
+
+/**
+ * Preset thinking for a stage when the operator's route (checked by the
+ * caller) carried no explicit `thinking`. Resolves the same composite way as
+ * `getStageModel`: exact key first, then ancestor prefixes.
+ */
+export function presetThinkingFor(stage?: string): ThinkingConfig | undefined {
+  const preset = readThinkingPresetEnv();
+  if (!preset || preset === 'quality' || !stage) return undefined;
+  let key: string | undefined = stage;
+  while (key) {
+    const entry = THINKING_PRESET_LEAN[key as LlmStage];
+    if (entry) return entry;
+    const lastColon = key.lastIndexOf(':');
+    key = lastColon > 0 ? key.slice(0, lastColon) : undefined;
+  }
+  return undefined;
 }

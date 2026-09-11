@@ -23,6 +23,14 @@ Based on the scene information above, generate a complete Canvas/PPT component f
 ## Language Directive
 {{languageDirective}}
 
+{{#if depthDirective}}
+{{depthDirective}}
+{{/if}}
+
+{{#if unitContext}}
+{{unitContext}}
+{{/if}}
+
 **Must Follow**:
 
 1. Output pure JSON directly, without any explanation or description

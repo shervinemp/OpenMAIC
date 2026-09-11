@@ -12,6 +12,11 @@ import fs from 'fs';
 import path from 'path';
 import type { PromptId, LoadedPrompt, SnippetId } from './types';
 import { createLogger } from '@/lib/logger';
+import {
+  loadPrompt as loadGenerationPrompt,
+  loadSnippet as loadGenerationSnippet,
+  type SnippetId as GenerationSnippetId,
+} from '@openmaic/generation';
 const log = createLogger('PromptLoader');
 
 /**
@@ -68,7 +73,12 @@ export function processConditionalBlocks(
 }
 
 /**
- * Load a prompt by ID
+ * Load a prompt by ID.
+ *
+ * App-only templates live here; generation-owned templates live in
+ * @openmaic/generation (the package boundary). A local miss therefore falls
+ * back to the package's loader, mirroring the snippet fallback below - a
+ * missing app-owned copy can never shadow a package-owned template.
  */
 export function loadPrompt(promptId: PromptId): LoadedPrompt | null {
   const promptDir = path.join(getPromptsDir(), 'templates', promptId);
@@ -94,9 +104,12 @@ export function loadPrompt(promptId: PromptId): LoadedPrompt | null {
       systemPrompt,
       userPromptTemplate,
     };
-  } catch (error) {
-    log.error(`Failed to load prompt ${promptId}:`, error);
-    return null;
+  } catch {
+    // Not an app-owned template: resolve through the generation package
+    // (single canonical copy for every generation-owned prompt). The app's
+    // PromptId union is a superset of the package's - app-only ids resolve
+    // to null here, which the callers already treat as "template missing".
+    return loadGenerationPrompt(promptId as Parameters<typeof loadGenerationPrompt>[0]);
   }
 }
 

@@ -13,7 +13,7 @@
  * (lib/web-search, called per unit by the multi-unit outline route).
  */
 
-import { chunkSourceText, type PdfChunk } from './pdf-retrieval';
+import { chunkSourceText, type PdfChunk } from '@openmaic/generation';
 import type { WebSearchResult } from '@/lib/types/web-search';
 
 /**

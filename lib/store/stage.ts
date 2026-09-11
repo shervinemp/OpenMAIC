@@ -20,13 +20,16 @@ import type {
   OutlinePhaseState,
 } from '@/lib/document-store/persistence-types';
 import { createLogger } from '@/lib/logger';
+import type { ExamAttempt, ExamKind, ExamSpec } from '@/lib/types/exam';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
+import type { StageManifest } from '@/lib/workbench/stage-freshness';
 import { applyGeneratedAgentsToRegistry } from '@/lib/orchestration/registry/store';
 import { migrateScene } from '@/lib/edit/slide-schema';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
 import type { ChatStorageSnapshot } from '@/lib/utils/chat-storage';
+import type { DocumentProducer } from '@/lib/document-store/persistence-types';
 import type { PendingChange, StaleDroppedSave } from '@/lib/utils/stage-storage';
 import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
 import {
@@ -38,6 +41,39 @@ import {
 } from '@/lib/utils/deleted-stages';
 
 const log = createLogger('StageStore');
+
+/**
+ * Defensive hydration for the persisted exams snapshot. Legacy documents have
+ * no exams block; hostile or hand-edited documents must not poison the store,
+ * so every shaped field is re-validated and unknown kinds drop on the floor.
+ */
+function sanitizePersistedExams(
+  record: unknown,
+  logger: ReturnType<typeof createLogger>,
+): { exams: Partial<Record<ExamKind, ExamSpec>>; attempts: Partial<Record<ExamKind, ExamAttempt[]>> } {
+  type Persisted = { exams?: unknown; examAttempts?: unknown };
+  const src = (record ?? {}) as Persisted;
+  const result: Partial<Record<ExamKind, ExamSpec>> = {};
+  const attemptsResult: Partial<Record<ExamKind, ExamAttempt[]>> = {};
+  const isValidKind = (k: unknown): k is ExamKind => k === 'midterm' || k === 'final';
+  if (src.exams && typeof src.exams === 'object') {
+    for (const [kind, spec] of Object.entries(src.exams as Record<string, unknown>)) {
+      if (isValidKind(kind) && spec && typeof spec === 'object' && Array.isArray((spec as ExamSpec).mcQuestions)) {
+        result[kind] = spec as ExamSpec;
+      } else if (spec) {
+        logger.warn('Discarding malformed persisted exam spec:', kind);
+      }
+    }
+  }
+  if (src.examAttempts && typeof src.examAttempts === 'object') {
+    for (const [kind, list] of Object.entries(src.examAttempts as Record<string, unknown>)) {
+      if (isValidKind(kind) && Array.isArray(list) && list.length) {
+        attemptsResult[kind] = (list as ExamAttempt[]).slice(-2);
+      }
+    }
+  }
+  return { exams: result, attempts: attemptsResult };
+}
 
 /** Virtual scene ID used when the user navigates to a page still being generated */
 export const PENDING_SCENE_ID = '__pending__';
@@ -62,6 +98,19 @@ let stageStorageModulePromise: Promise<typeof import('@/lib/utils/stage-storage'
 
 const DEPARTING_STAGE_RETRY_DELAY_MS = 100;
 
+const SAVE_DEBOUNCE_MS = 500;
+const SAVE_BACKOFF_MAX_MS = 30_000;
+let consecutiveFlushFailures = 0;
+
+function nextSaveDelayMs(): number {
+  if (consecutiveFlushFailures === 0) return SAVE_DEBOUNCE_MS;
+  return Math.min(SAVE_DEBOUNCE_MS * 2 ** consecutiveFlushFailures, SAVE_BACKOFF_MAX_MS);
+}
+
+function recordFlushOutcome(failed: boolean): void {
+  consecutiveFlushFailures = failed ? consecutiveFlushFailures + 1 : 0;
+}
+
 function pendingChangeKey(change: PendingChange): string {
   return change.kind === 'scene' ? `scene:${change.sceneId}` : change.kind;
 }
@@ -75,16 +124,21 @@ function resetPendingChanges(stageId: string | null = null): void {
   cancelScheduledSave();
   pendingChanges.clear();
   pendingStageId = stageId;
+  consecutiveFlushFailures = 0;
 }
 
 function schedulePendingSave(): void {
+  // Once a write has failed, keep the already-armed backoff timer. Streaming
+  // chat mutations are already represented by the dirty descriptor; rearming
+  // per delta would collapse the backoff to the base cadence or starve it.
+  if (consecutiveFlushFailures > 0 && saveTimer) return;
   cancelScheduledSave();
   saveTimer = setTimeout(() => {
     saveTimer = null;
     void flushStageSave().catch(() => {
       // flushStageSave logs once and retains the pending entries for retry.
     });
-  }, 500);
+  }, nextSaveDelayMs());
 }
 
 function markPendingChanges(stageId: string | undefined, ...changes: PendingChange[]): void {
@@ -205,6 +259,8 @@ function clearedStageState(state: Pick<StageState, 'generationEpoch'>) {
     blueprint: undefined,
     lessonGroups: [],
     generationComplete: false,
+    exams: {},
+    examAttempts: {},
     generationEpoch: state.generationEpoch + 1,
     generationStatus: 'idle' as const,
     currentGeneratingOrder: -1,
@@ -309,6 +365,25 @@ interface StageState {
   // Gates resume-on-mount so an edited finished deck is not regenerated.
   generationComplete: boolean;
 
+  /**
+   * Viewer-facing ownership facts resolved from the stage-meta sidecar (the
+   * reference's classroom access fields). Defaults are the upstream single-user
+   * ones — `isOwner: true`, `readOnly: false` — so a course that was never
+   * probed (no server sidecar row) stays editable exactly as before; the
+   * sidecar probe overrides them when it answers. These are viewer-scoped and
+   * deliberately NOT persisted with the document.
+   */
+  isOwner: boolean;
+  readOnly: boolean;
+
+  /**
+   * Who produced the current outline ('client' absent / 'server-job'), written
+   * by the workbench stage-freshness sync's delegated initial read. Absent
+   * from the host's original store; the reference carries it so a server-owned
+   * course can be told apart from a client-authored one.
+   */
+  outlineProducer: DocumentProducer | null;
+
   // Transient generation tracking (not persisted)
   generationEpoch: number;
   generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error';
@@ -319,6 +394,16 @@ interface StageState {
       Session-level, recorded as content lands. */
   sceneDepth: Record<string, SceneDepthSummary>;
   failedOutlines: SceneOutline[];
+
+  // Workbench canvas-freshness projections (Mono #1960 Part 2 port).
+  // The workbench stage-freshness sync records the manifest this browser has
+  // actually rendered (`serverManifestByStage`) and the store's save paths may
+  // bump `stageSyncRequest` when a refused write must converge the baseline
+  // before the next save is judged. Both are written by
+  // `lib/workbench/use-workbench-session.ts` / future ownership slices; the
+  // upstream host's own save paths do not consume them yet.
+  serverManifestByStage: Record<string, StageManifest>;
+  stageSyncRequest: number;
 
   // Actions
   setStage: (stage: Stage) => void;
@@ -348,6 +433,18 @@ interface StageState {
   setGenerationComplete: (complete: boolean) => void;
   /** Mark generation complete iff every outline has a scene and none failed. */
   markGenerationCompleteIfDone: () => void;
+
+  // Persisted (with outlines): semester exams + submitted attempts.
+  exams: Partial<Record<ExamKind, ExamSpec>>;
+  examAttempts: Partial<Record<ExamKind, ExamAttempt[]>>;
+  setExamSpec: (spec: ExamSpec) => void;
+  saveExamAttempt: (attempt: ExamAttempt) => void;
+  /**
+   * Apply the stage-meta sidecar's per-viewer facts. `readOnly` follows the
+   * reference's classroom rule: a visitor who is not the owner gets a
+   * read-only classroom.
+   */
+  setViewerAccess: (access: { isOwner: boolean }) => void;
   setGenerationStatus: (status: 'idle' | 'generating' | 'paused' | 'completed' | 'error') => void;
   setCurrentGeneratingOrder: (order: number) => void;
   setGenerationPhase: (phase: 'idle' | 'content' | 'actions' | 'tts' | 'media') => void;
@@ -495,12 +592,19 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   blueprint: undefined,
   lessonGroups: [],
   generationComplete: false,
+  exams: {},
+  examAttempts: {},
+  outlineProducer: null,
+  isOwner: true,
+  readOnly: false,
   generationEpoch: 0,
   generationStatus: 'idle' as const,
   currentGeneratingOrder: -1,
   generationPhase: 'idle' as const,
   sceneDepth: {},
   failedOutlines: [],
+  serverManifestByStage: {},
+  stageSyncRequest: 0,
   skippedOutlineIds: [],
 
   // Actions
@@ -621,8 +725,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   insertSceneAfter: (anchorSceneId, scene) => {
     // Pro mode slide management entry point — inserts after the anchor and
     // rebalances `order` so PPTX export / array position stay consistent.
-    // Edit mode is gated against active regeneration (see useEditModeLock),
-    // so rewriting `order` here is safe — no outline matcher is racing us.
+    // Regeneration is gated by the regen lease, so no outline matcher is
+    // racing us here; cross-tab `order` collisions are last-write-wins.
     const currentStage = get().stage;
     if (!currentStage || scene.stageId !== currentStage.id) {
       log.warn(
@@ -868,6 +972,24 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     }
   },
 
+  setExamSpec: (spec) => {
+    set({ exams: { ...get().exams, [spec.kind]: spec } });
+    void get().saveToStorage();
+  },
+
+  saveExamAttempt: (attempt) => {
+    // Keep only the two most recent attempts per exam so a resubmitted attempt
+    // does not grow the document unboundedly.
+    const attempts = get().examAttempts[attempt.kind] ?? [];
+    const next = [...attempts.filter((a) => a.id !== attempt.id), attempt].slice(-2);
+    set({ examAttempts: { ...get().examAttempts, [attempt.kind]: next } });
+    void get().saveToStorage();
+  },
+
+  setViewerAccess: ({ isOwner }) => {
+    set({ isOwner, readOnly: !isOwner });
+  },
+
   setGenerationStatus: (generationStatus) => set({ generationStatus }),
 
   setCurrentGeneratingOrder: (currentGeneratingOrder) => set({ currentGeneratingOrder }),
@@ -932,6 +1054,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       blueprint,
       lessonGroups,
       generationComplete,
+      exams,
+      examAttempts,
     } = get();
     if (!stage?.id) {
       log.warn('Cannot save: stage.id is required');
@@ -958,6 +1082,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
             blueprint,
             lessonGroups,
             generationComplete,
+            exams,
+            examAttempts,
             createdAt: Date.now(),
             updatedAt: Date.now(),
           },
@@ -1113,6 +1239,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       const outlines = outlinesRecord?.outlines || [];
       const persistedComplete = outlinesRecord?.generationComplete ?? false;
       const persistedBlueprint = outlinesRecord?.blueprint;
+      const persistedExams = sanitizePersistedExams(outlinesRecord, log);
 
       // Pillar 2 stale-running recovery: any phase persisted as `running` was
       // interrupted by the reload — demote it to `pending` (attempts kept) so
@@ -1193,6 +1320,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           blueprint: persistedBlueprint,
           lessonGroups: recoveredLessonGroups,
           generationComplete,
+          exams: persistedExams.exams,
+          examAttempts: persistedExams.attempts,
           // Compute generatingOutlines from persisted outlines minus completed
           // scenes. Once generation is complete the deck is frozen for editing,
           // so an orphaned outline (e.g. from a deleted slide) must NOT surface
@@ -1284,9 +1413,11 @@ function startFlushRound(): FlushRound | null {
           },
         });
       }
+      recordFlushOutcome(failedKeys.size > 0);
       return failedKeys;
     } catch (error) {
       log.error(`Failed to flush pending stage changes for ${stageId}:`, error);
+      recordFlushOutcome(true);
       throw error;
     } finally {
       flushInFlight = null;

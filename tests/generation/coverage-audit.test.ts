@@ -5,7 +5,7 @@ import {
   renderCoverageReport,
 } from '@/lib/generation/coverage-audit';
 import type { DocumentDigest } from '@/lib/generation/document-digest';
-import { chunkSourceText, type PdfChunk } from '@/lib/generation/pdf-retrieval';
+import { chunkSourceText, type PdfChunk } from '@openmaic/generation';
 import type { SceneOutline } from '@/lib/types/generation';
 
 const SOURCE = `Page 1

@@ -80,13 +80,17 @@ Never return a bare array. Never omit `languageDirective`, `courseTitle`, or `ou
 ```json
 {
   "id": "scene_1",
-  "type": "slide" | "quiz" | "interactive" | "pbl" | "exercise" | "derivation" | "glossary" | "reading",
+  "type": "slide" | "quiz" | "interactive" | "pbl" | "exercise" | "derivation" | "glossary" | "reading" | "comparison" | "dataReading" | "tradeoffs",
   "title": "Scene Title",
   "description": "Teaching purpose description",
   "keyPoints": ["Point 1", "Point 2", "Point 3"],
   "order": 1
 }
 ```
+
+**HARD SCHEMA RULES — outlines violating these are rejected:**
+- EVERY object in `outlines` MUST have a `type` field, chosen from the list above. An outline without `type` is invalid.
+- `outlines` contains ONLY scene records. NEVER put lesson titles, section headers, or summary records into `outlines` — lessons belong exclusively in the `lessons` array.
 
 ### Special Notes
 
@@ -109,6 +113,10 @@ Never return a bare array. Never omit `languageDirective`, `courseTitle`, or `ou
    - `derivation` — step-by-step proof/derivation with LaTeX formulas, for formula-heavy lessons.
    - `glossary` — one per unit: the unit's key terms with complete definitions.
    - `reading` — one per unit: an annotated further-reading list (title + why-read).
+- **Analytic scenes** (use where the content genuinely calls for them):
+   - `comparison` — side-by-side table of 2-3 confusable concepts across decision-relevant dimensions (use for "compare X vs Y" material).
+   - `dataReading` — a small plotted dataset plus claims the learner evaluates against it (supported/refuted/insufficient); for quantitative trends and measurements.
+   - `tradeoffs` — a decision under explicit constraints: options with pros/cons and ONE justified recommendation; for architecture/design/method choices.
 - **Scene count**: Governed entirely by the Course Contract above — produce EXACTLY the per-lesson counts it demands. It overrides any other count guidance in this prompt.
 - **Quiz placement**: Insert quizzes per the Course Contract cadence (course-wide positions). Quiz scenes count toward the lesson totals.
 - **Language**: Infer from the user's requirement text and context, then output all content in the inferred language

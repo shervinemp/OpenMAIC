@@ -10,7 +10,7 @@
  * Pure functions only.
  */
 
-import { extractCitationMarkers, type PdfChunk } from './pdf-retrieval';
+import { extractCitationMarkers, type PdfChunk } from '@openmaic/generation';
 import type { DocumentDigest, DigestSectionCard } from './document-digest';
 import type { SceneOutline } from '@/lib/types/generation';
 

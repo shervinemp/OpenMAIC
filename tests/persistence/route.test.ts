@@ -8,6 +8,18 @@ describe('embedded persistence route', () => {
     // backend is selected by PERSISTENCE_DIR (set in .env.local) and is
     // covered by the storage package's conformance tests instead.
     vi.stubEnv('PERSISTENCE_DIR', '');
+    vi.doMock('@/lib/persistence/stage-meta', () => ({
+      ensureStageMetaSchema: vi.fn().mockResolvedValue(undefined),
+      readStageMeta: vi.fn().mockResolvedValue({
+        stageId: 'adapter-test',
+        ownerId: 'adapter-test-owner',
+        isPublic: false,
+        deletedAt: null,
+      }),
+    }));
+    vi.doMock('@/lib/persistence/owner-materials', () => ({
+      ensureOwnerMaterialSchema: vi.fn().mockResolvedValue(undefined),
+    }));
   });
 
   it('returns a clear 404 when DATABASE_URL is unset', async () => {
@@ -53,6 +65,10 @@ describe('embedded persistence route', () => {
     vi.doMock('@openmaic/storage/runtime/pg', () => ({
       ensureSchema,
       PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {},
     }));
     vi.doMock('@openmaic/storage/document/pg', () => ({
       ensureDocumentSchema,

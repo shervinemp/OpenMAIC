@@ -4,6 +4,16 @@ const streamLLMMock = vi.hoisted(() => vi.fn());
 const callLLMMock = vi.hoisted(() => vi.fn());
 const resolveModelFromRequestMock = vi.hoisted(() => vi.fn());
 const resolveModelMock = vi.hoisted(() => vi.fn());
+const searchWebMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@/lib/ai/llm', () => ({
+  streamLLM: streamLLMMock,
+  callLLM: callLLMMock,
+}));
+
+vi.mock('@/lib/server/resolve-model', () => ({
+  resolveModelFromRequest: resolveModelFromRequestMock,
+  resolveModel: resolveModelMock,
 }));
 
 vi.mock('@/lib/web-search', async () => {
@@ -201,6 +211,26 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
   beforeEach(() => {
     resolveModelFromRequestMock.mockReset();
     resolveModelMock.mockReset();
+    streamLLMMock.mockReset();
+    callLLMMock.mockReset();
+    searchWebMock.mockReset();
+    resolveModelFromRequestMock.mockResolvedValue({
+      model: { provider: 'openai', modelId: 'gpt-test' },
+      modelInfo: { outputWindow: 4096, capabilities: {} },
+      modelString: 'openai:gpt-test',
+      providerId: 'openai',
+      modelId: 'gpt-test',
+      thinkingConfig: undefined,
+    });
+    // Single-call path must not be exercised by these tests.
+    streamLLMMock.mockImplementation(() => {
+      throw new Error('single-call streamLLM should not run in multi-unit mode');
+    });
+  });
+
+  afterEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
   });
 
   test('standard preset: syllabus call + per-unit calls assemble a valid blueprint', async () => {
@@ -676,19 +706,31 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(unitDone.map((e) => e.index)).toEqual([1]);
   });
 
-  test('compact courses (single unit) keep the single-call streaming path', async () => {
-    streamLLMMock.mockImplementation(() => ({
-      textStream: (async function* () {
-        yield JSON.stringify({
-          languageDirective: 'Teach in English.',
-          courseTitle: 'Intro Course',
-          lessons: [{ title: 'Lesson 1', objectives: ['obj'] }],
-          audience: 'beginners',
-          objectives: ['o1', 'o2'],
-          outlines: Array.from({ length: 5 }, (_, i) => sceneOutline(`s${i + 1}`, i + 1)),
-        });
-      })(),
-    }));
+  test('compact single-unit courses take the syllabus-first path too', async () => {
+    // Contract mode ALWAYS uses the syllabus + per-lesson chains for ordinary
+    // courses now — the single mega-call broke weak models outright. The
+    // 5-minute contract derives 1 unit / 1 lesson / 5 scenes; the flow mocks
+    // must match that shape exactly.
+    const singleUnitSyllabus = {
+      languageDirective: 'Teach in English.',
+      courseTitle: 'Git Basics',
+      audience: 'beginners',
+      objectives: ['Understand version control', 'Collaborate with branches'],
+      units: [
+        {
+          title: 'Git Fundamentals',
+          objectives: ['Track changes'],
+          lessons: [{ title: 'Git Fundamentals', objectives: ['Commit and branch'] }],
+        },
+      ],
+    };
+    const compactOutlines = {
+      outlines: Array.from({ length: 5 }, (_, i) => sceneOutline(`s${i + 1}`, i + 1)),
+    };
+    setupMultiUnitFlow({
+      syllabus: [singleUnitSyllabus],
+      outline: { 0: () => compactOutlines },
+    });
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
     const response = await POST(
@@ -704,7 +746,10 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     const text = await readStreamBody(response);
     const events = parseSseEvents(text);
     expect(events.find((e) => e.type === 'done')).toBeDefined();
-    expect(callLLMMock).not.toHaveBeenCalled();
-    expect(streamLLMMock).toHaveBeenCalledTimes(1);
+    // The staged path runs entirely on callLLM (syllabus + per-lesson calls +
+    // review gate); the streaming mega-call stays unused.
+    expect(callLLMMock).toHaveBeenCalled();
+    expect(streamLLMMock).not.toHaveBeenCalled();
   });
 });
+
