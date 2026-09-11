@@ -21,6 +21,8 @@
 
 import type { PPTElement, QuizQuestion } from '@openmaic/dsl';
 import {
+  COURSE_DEPTH_FLOORS,
+  SPECIALTY_DEPTH_FLOORS,
   resolveDepthLevel,
   type CourseDepthFloor,
   type CourseDepthLevel,
@@ -170,7 +172,7 @@ export function extractSlideTexts(elements: PPTElement[]): string[] {
 
 /** Profile-scaled floor read (OPENMAIC_GENERATION_PROFILE — the overall cost/quality knob). */
 function scaledCourseFloor(depthLevel: CourseDepthLevel): CourseDepthFloor {
-  const floor = scaledCourseFloor(depthLevel);
+  const floor = COURSE_DEPTH_FLOORS[depthLevel];
   const scale = readGenerationProfile().depthFloorScale;
   if (scale === 1) return floor;
   return {
@@ -182,7 +184,7 @@ function scaledCourseFloor(depthLevel: CourseDepthLevel): CourseDepthFloor {
 }
 
 function scaledSpecialtyFloor(depthLevel: CourseDepthLevel): SpecialtyDepthFloor {
-  const floor = scaledSpecialtyFloor(depthLevel);
+  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
   const scale = readGenerationProfile().depthFloorScale;
   if (scale === 1) return floor;
   return {

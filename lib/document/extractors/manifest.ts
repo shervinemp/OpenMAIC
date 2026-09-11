@@ -133,6 +133,21 @@ const DOCUMENT_EXTRACTOR_MANIFEST: Record<string, DocumentExtractorManifestEntry
       async: true,
     },
   },
+  local_vision: {
+    id: 'local_vision',
+    displayName: 'Local Vision (Qwen2-VL/Llama-3.2-Vision)',
+    version: '1',
+    supportedMimeTypes: [DOCUMENT_MIME_TYPES.pdf],
+    capabilities: {
+      text: true,
+      images: true,
+      tables: true,
+      formulas: true,
+      layout: true,
+      ocr: true,
+      async: false,
+    },
+  },
 };
 
 /** Media extractor metadata (audio/video path). */

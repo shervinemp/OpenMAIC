@@ -424,7 +424,22 @@ function findVendorLeaks(file: string, source: string, vendors: readonly string[
 
     const token = node.getText(sourceFile);
     const normalized = token.toLowerCase();
+    const isStringLiteralLikeToken = ts.isStringLiteralLike(node);
+    const bareNormalized = normalized.replace(/^['"`]|['"`]$/g, '');
     for (const vendor of vendors) {
+      // Taxonomy skip, string literals only: a vendor substring inside a quoted
+      // stage name ("exam-generation" contains "exa") is data, not a leak.
+      // Identifiers (e.g. resolveQwenVoiceCloneModel) stay flagged even when
+      // the vendor is embedded, because embedding IS the leak there.
+      if (isStringLiteralLikeToken) {
+        // Taxonomy skip, string literals only: a quoted token that BEGINS with
+        // a stage word continuing into lowercase ("exam-generation") is
+        // pipeline taxonomy, not a leak. Anything else (URLs, UPPER_SNAKE
+        // provider constants, identifiers) keeps counting.
+        const embedded =
+          bareNormalized.startsWith(vendor) && /^[a-z]/.test(bareNormalized.slice(vendor.length));
+        if (embedded) continue;
+      }
       if (!normalized.includes(vendor)) continue;
       const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
       leaks.push({
