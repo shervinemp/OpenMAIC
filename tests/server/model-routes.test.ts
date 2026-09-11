@@ -382,4 +382,42 @@ describe('model-routes', () => {
       ]),
     );
   });
+
+  describe('thinking presets (OPENMAIC_THINKING_PRESET)', () => {
+    beforeEach(() => {
+      delete process.env.OPENMAIC_THINKING_PRESET;
+    });
+    afterEach(() => {
+      delete process.env.OPENMAIC_THINKING_PRESET;
+    });
+
+    it('unset preset resolves to provider defaults (no thinking override)', async () => {
+      const { presetThinkingFor } = await import('@/lib/server/model-routes');
+      expect(presetThinkingFor('scene-content')).toBeUndefined();
+      expect(presetThinkingFor('scene-outlines-stream')).toBeUndefined();
+    });
+
+    it('apply the preset table exactly, plus unknown values warn and fall through', async () => {
+      const warn = vi.fn();
+      vi.doMock('@/lib/logger', () => ({
+        createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+      }));
+      process.env.OPENMAIC_THINKING_PRESET = 'not-a-preset';
+      const mod = await import('@/lib/server/model-routes');
+      expect(mod.presetThinkingFor('scene-content')).toBeUndefined();
+      expect(warn).toHaveBeenCalled();
+
+      process.env.OPENMAIC_THINKING_PRESET = 'lean';
+      expect(mod.presetThinkingFor('scene-content')).toEqual({ enabled: false });
+      expect(mod.presetThinkingFor('scene-actions')).toEqual({ enabled: false });
+      expect(mod.presetThinkingFor('exam-grading')).toEqual({
+        enabled: true,
+        budgetTokens: 4000,
+      });
+      // composite fallback inherits the parent's preset entry
+      expect(mod.presetThinkingFor('scene-content:quiz')).toEqual({ enabled: false });
+      // unlisted judgment stage (e.g. driver chats) keeps its provider default
+      expect(mod.presetThinkingFor('maic-agent-driver')).toBeUndefined();
+    });
+  });
 });

@@ -16,7 +16,7 @@ import {
 } from '@/lib/server/provider-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
-import { getStageRoute, type LlmStage } from '@/lib/server/model-routes';
+import { getStageRoute, presetThinkingFor, type LlmStage } from '@/lib/server/model-routes';
 
 export interface ResolvedModel extends ModelWithInfo {
   /** Original model string (e.g. "openai/gpt-4o-mini") */
@@ -132,11 +132,14 @@ export async function resolveModel(params: {
   // ThinkingConfig (mode/effort/level/enabled/budgetTokens/…) which callLLM
   // normalizes against the model's capability:
   //  - routed + thinking set → the route's thinking wins (over client thinking).
-  //  - routed + no thinking  → routed model uses its own default; client thinking
-  //    is dropped (it belonged to the client's other model).
+  //  - routed + no thinking  → the OPENMAIC_THINKING_PRESET default for this
+  //    stage applies (validate-gated stages skip CoT, judgment stages keep a
+  //    budget); with no preset match, the routed model uses its own default.
+  //    Client thinking is dropped in both cases (it belonged to the client's
+  //    other model).
   //  - unrouted              → honor the client's thinking config.
   const thinkingConfig: ThinkingConfig | undefined = routed
-    ? stageRoute?.thinking
+    ? (stageRoute?.thinking ?? presetThinkingFor(params.stage))
     : params.thinkingConfig;
 
   return {
