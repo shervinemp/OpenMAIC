@@ -31,7 +31,7 @@ import { ThumbnailInteractive } from '@/components/slide-renderer/components/Thu
 import { useStageStore, useCanvasStore } from '@/lib/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useNearViewport } from '@/lib/hooks/use-near-viewport';
-import type { Scene, SceneType, SlideContent, InteractiveContent } from '@/lib/types/stage';
+import type { Scene, SlideContent, InteractiveContent } from '@/lib/types/stage';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
 
 interface SceneSidebarProps {
