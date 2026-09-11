@@ -5,7 +5,6 @@ import {
   markClassroomGenerationJobRunning,
   markClassroomGenerationJobSucceeded,
   updateClassroomGenerationJobProgress,
-  readClassroomGenerationJob,
 } from '@/lib/server/classroom-job-store';
 
 const log = createLogger('ClassroomJob');
@@ -25,19 +24,8 @@ export function runClassroomGenerationJob(
     try {
       await markClassroomGenerationJobRunning(jobId);
 
-      const jobState = await readClassroomGenerationJob(jobId);
-      let startSceneIndex = 0;
-      if (jobState && jobState.scenes && jobState.scenes.length > 0) {
-        startSceneIndex = jobState.scenes.length;
-        log.info(`Resuming job ${jobId} from scene index ${startSceneIndex}`);
-      }
-
       const result = await generateClassroom(input, {
         baseUrl,
-        startSceneIndex,
-        initialScenes: jobState?.scenes,
-        initialOutlines: jobState?.outlines,
-        stageIdOverride: jobState?.stage?.id,
         onProgress: async (progress) => {
           await updateClassroomGenerationJobProgress(jobId, progress);
         },

@@ -84,15 +84,6 @@ export async function generateMediaForOutlines(
     for (const mg of outline.mediaGenerations) outlineByElement.set(mg.elementId, outline.id);
   }
 
-  // Per-outline phase recording (Pillar 2): each request maps back to its
-  // owning outline so the orchestrator can drive the persisted `media` phase
-  // (running on first start, done/failed once the outline's batch settles).
-  const outlineByElement = new Map<string, string>();
-  for (const outline of outlines) {
-    if (!outline.mediaGenerations) continue;
-    for (const mg of outline.mediaGenerations) outlineByElement.set(mg.elementId, outline.id);
-  }
-
   // Collect all media requests
   const allRequests: MediaGenerationRequest[] = [];
   for (const outline of outlines) {

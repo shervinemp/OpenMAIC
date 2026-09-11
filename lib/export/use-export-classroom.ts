@@ -38,6 +38,7 @@ import type { SceneContent, Scene, Stage } from '@/lib/types/stage';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { accessDocument, type DocumentMigrationDeps } from '@/lib/document-store';
 
+import { inlineSceneContent as inlineSceneContentImpl } from './build-classroom-zip';
 export { inlineSceneContent } from './build-classroom-zip';
 
 const log = createLogger('ExportClassroom');
@@ -144,7 +145,7 @@ export async function buildClassroomExportZip(
     const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
     const manifestScenes: ManifestScene[] = await Promise.all(
       exportScenes.map(async (scene) => {
-        const { content, report } = await inlineSceneContent(scene.content, {
+        const { content, report } = await inlineSceneContentImpl(scene.content, {
           fetcher: sharedFetcher,
         });
         for (const u of report.inlined)

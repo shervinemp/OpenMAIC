@@ -10,7 +10,6 @@ import { documentArtifactToParsedPdfContent, extractDocument } from '@/lib/docum
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
-import { ingestTextToDatabase } from '@/lib/ai/rag/ingest';
 
 const log = createLogger('Parse PDF');
 
@@ -85,12 +84,6 @@ export async function POST(req: NextRequest) {
       },
     };
 
-    if (classroomId && resultWithMetadata.text) {
-      processBackgroundIngestion(resultWithMetadata.text, classroomId).catch((err) => {
-        log.error('Background ingestion failed:', err);
-      });
-    }
-
     return apiSuccess({ data: resultWithMetadata });
   } catch (error) {
     log.error(
@@ -99,10 +92,4 @@ export async function POST(req: NextRequest) {
     );
     return apiError('PARSE_FAILED', 500, error instanceof Error ? error.message : 'Unknown error');
   }
-}
-
-async function processBackgroundIngestion(text: string, classroomId: string) {
-    log.info(`[RAG Worker] Started embedding textbook for ${classroomId}...`);
-    await ingestTextToDatabase(text, classroomId);
-    log.info(`[RAG Worker] Finished embedding for ${classroomId}!`);
 }
