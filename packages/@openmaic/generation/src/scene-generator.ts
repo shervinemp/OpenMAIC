@@ -18,11 +18,11 @@ import type {
 import { isWidgetType, normalizeElement } from '@openmaic/dsl';
 import {
   COURSE_DEPTH_FLOORS,
-  MAX_CONTENT_ATTEMPTS,
   MAX_VISION_IMAGES,
   renderDepthDirective,
   resolveDepthLevel,
 } from './constants.js';
+import { readGenerationProfile } from './profile.js';
 import {
   formatImageDescription,
   formatImagePlaceholder,
@@ -871,7 +871,7 @@ async function generateSlideContent(
   // job model/UI. Edit mode (MAIC Editor) is exempt - user-driven edits may
   // intentionally be minimal.
   const isEditMode = !!(editDirective || baselineContent);
-  const maxAttempts = MAX_CONTENT_ATTEMPTS + 1;
+  const maxAttempts = readGenerationProfile().contentAttempts + 1;
   let depthFeedback: string | undefined;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -1041,7 +1041,7 @@ async function generateQuizContent(
   // substantive stems, plausible distractors, and explanations. Bounded
   // corrective re-prompts; on exhaustion the content is rejected with the
   // report recorded for the job model/UI.
-  const maxAttempts = MAX_CONTENT_ATTEMPTS + 1;
+  const maxAttempts = readGenerationProfile().contentAttempts + 1;
   let depthFeedback: string | undefined;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -1144,7 +1144,7 @@ async function generateValidatedStructured<T>(
     baseUserPrompt = `${prompts.user}\n\n## Source Material (ground your content here)\n\n${options.retrievalContext}\n\nCitation requirements: cite the exact [source p.N] markers shown above for at least ${COURSE_DEPTH_FLOORS[depthLevel].minCitations} of your claims. Never cite a marker that is not listed above.`;
   }
 
-  const maxAttempts = MAX_CONTENT_ATTEMPTS + 1;
+  const maxAttempts = readGenerationProfile().contentAttempts + 1;
   let depthFeedback: string | undefined;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {

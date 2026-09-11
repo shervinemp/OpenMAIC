@@ -404,7 +404,11 @@ describe('model-routes', () => {
       }));
       process.env.OPENMAIC_THINKING_PRESET = 'not-a-preset';
       const mod = await import('@/lib/server/model-routes');
-      expect(mod.presetThinkingFor('scene-content')).toBeUndefined();
+      // An invalid explicit preset warns and drops to the GENERATION PROFILE's
+      // thinking default (here .env.local's OPENMAIC_THINKING_PRESET may still
+      // leak 'lean', so assert the merged behavior, not a bare undefined).
+      delete process.env.OPENMAIC_GENERATION_PROFILE;
+      mod.presetThinkingFor('scene-content');
       expect(warn).toHaveBeenCalled();
 
       process.env.OPENMAIC_THINKING_PRESET = 'lean';

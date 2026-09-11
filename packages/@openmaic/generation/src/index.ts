@@ -24,6 +24,11 @@ export type {
 export { buildCompleteScene } from './scene-builder.js';
 export type { BuildCompleteSceneOptions } from './scene-builder.js';
 export {
+  readGenerationProfile,
+  scaleDepthFloor,
+} from './profile.js';
+export type { GenerationProfile, GenerationProfilePolicy } from './profile.js';
+export {
   isAbortError,
   isRetryableGenerationError,
   withGenerationRetry,

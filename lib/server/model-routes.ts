@@ -21,6 +21,7 @@
  */
 
 import { createLogger } from '@/lib/logger';
+import { readGenerationProfile } from '@openmaic/generation';
 import type {
   ThinkingConfig,
   ThinkingEffort,
@@ -341,12 +342,15 @@ export const THINKING_PRESET_LEAN: Partial<Record<LlmStage, ThinkingConfig>> = {
 
 export function readThinkingPresetEnv(): ThinkingPreset | undefined {
   const value = process.env.OPENMAIC_THINKING_PRESET?.trim();
-  if (!value) return undefined;
-  if (value === 'lean' || value === 'quality') return value;
-  log.warn(
-    `OPENMAIC_THINKING_PRESET="${value}" is not one of (lean|quality); provider defaults apply.`,
-  );
-  return undefined;
+  if (value) {
+    if (value === 'lean' || value === 'quality') return value;
+    log.warn(
+      `OPENMAIC_THINKING_PRESET="${value}" is not one of (lean|quality); the generation profile default applies.`,
+    );
+  }
+  // No explicit thinking env: the generation profile's thinking axis picks the
+  // default (economy implies lean; balanced/premium leave provider defaults).
+  return readGenerationProfile().thinkingPreset;
 }
 
 /**

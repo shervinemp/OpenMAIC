@@ -21,11 +21,12 @@
 
 import type { PPTElement, QuizQuestion } from '@openmaic/dsl';
 import {
-  COURSE_DEPTH_FLOORS,
-  SPECIALTY_DEPTH_FLOORS,
   resolveDepthLevel,
+  type CourseDepthFloor,
   type CourseDepthLevel,
+  type SpecialtyDepthFloor,
 } from './constants.js';
+import { readGenerationProfile, scaleDepthFloor } from './profile.js';
 import { extractCitationMarkers } from './pdf-retrieval.js';
 import type { SceneOutline } from './outline-types.js';
 import type {
@@ -167,13 +168,43 @@ export function extractSlideTexts(elements: PPTElement[]): string[] {
   return texts;
 }
 
+/** Profile-scaled floor read (OPENMAIC_GENERATION_PROFILE — the overall cost/quality knob). */
+function scaledCourseFloor(depthLevel: CourseDepthLevel): CourseDepthFloor {
+  const floor = scaledCourseFloor(depthLevel);
+  const scale = readGenerationProfile().depthFloorScale;
+  if (scale === 1) return floor;
+  return {
+    ...floor,
+    minSubstantive: scaleDepthFloor(floor.minSubstantive, scale),
+    minCitations: scaleDepthFloor(floor.minCitations, scale),
+    minOptions: scaleDepthFloor(floor.minOptions, scale),
+  };
+}
+
+function scaledSpecialtyFloor(depthLevel: CourseDepthLevel): SpecialtyDepthFloor {
+  const floor = scaledSpecialtyFloor(depthLevel);
+  const scale = readGenerationProfile().depthFloorScale;
+  if (scale === 1) return floor;
+  return {
+    ...floor,
+    minProblems: scaleDepthFloor(floor.minProblems, scale),
+    minDerivationSteps: scaleDepthFloor(floor.minDerivationSteps, scale),
+    minGlossaryTerms: scaleDepthFloor(floor.minGlossaryTerms, scale),
+    minReadingItems: scaleDepthFloor(floor.minReadingItems, scale),
+    minComparisonRows: scaleDepthFloor(floor.minComparisonRows, scale),
+    minDataClaims: scaleDepthFloor(floor.minDataClaims, scale),
+    minTradeoffOptions: scaleDepthFloor(floor.minTradeoffOptions, scale),
+    minFreeResponseCriteria: scaleDepthFloor(floor.minFreeResponseCriteria, scale),
+  };
+}
+
 export function validateSlideDepth(
   outline: SceneOutline,
   elements: PPTElement[],
   options: SlideDepthOptions = {},
 ): DepthReport {
   const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
-  const floor = COURSE_DEPTH_FLOORS[depthLevel];
+  const floor = scaledCourseFloor(depthLevel);
   const minSubstantive = options.minSubstantive ?? floor.minSubstantive;
   const requireExample = options.requireExample ?? true;
   const retrievalContext = options.retrievalContext;
@@ -241,7 +272,7 @@ export function validateQuizDepth(
   retrievalContext?: string,
 ): DepthReport {
   const depthLevel = resolveDepthLevel(outline.depthLevel);
-  const floor = COURSE_DEPTH_FLOORS[depthLevel];
+  const floor = scaledCourseFloor(depthLevel);
   const findings: string[] = [];
   let substantiveCount = 0;
 
@@ -320,7 +351,7 @@ export function validateExerciseDepth(
   options: { retrievalContext?: string; depthLevel?: CourseDepthLevel } = {},
 ): DepthReport {
   const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
-  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const floor = scaledSpecialtyFloor(depthLevel);
   const findings: string[] = [];
 
   const worked = problems.filter((p) => (p.statement || '').trim() && (p.solution || '').trim());
@@ -352,7 +383,7 @@ export function validateExerciseDepth(
       .map((p) => `${p.statement} ${p.hint ?? ''} ${p.solution} ${p.analysis ?? ''}`)
       .join(' ');
     findings.push(
-      ...citationFindings(combinedText, options.retrievalContext, COURSE_DEPTH_FLOORS[depthLevel].minCitations),
+      ...citationFindings(combinedText, options.retrievalContext, scaledCourseFloor(depthLevel).minCitations),
     );
   }
 
@@ -365,7 +396,7 @@ export function validateDerivationDepth(
   options: { retrievalContext?: string; depthLevel?: CourseDepthLevel } = {},
 ): DepthReport {
   const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
-  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const floor = scaledSpecialtyFloor(depthLevel);
   const findings: string[] = [];
 
   const complete = steps.filter((s) => (s.latex || '').trim() && (s.explanation || '').trim());
@@ -390,7 +421,7 @@ export function validateDerivationDepth(
   if (options.retrievalContext) {
     const combinedText = steps.map((s) => `${s.claim ?? ''} ${s.explanation}`).join(' ');
     findings.push(
-      ...citationFindings(combinedText, options.retrievalContext, COURSE_DEPTH_FLOORS[depthLevel].minCitations),
+      ...citationFindings(combinedText, options.retrievalContext, scaledCourseFloor(depthLevel).minCitations),
     );
   }
 
@@ -402,7 +433,7 @@ export function validateGlossaryDepth(
   terms: GlossaryTerm[],
 ): DepthReport {
   const depthLevel = resolveDepthLevel(outline.depthLevel);
-  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const floor = scaledSpecialtyFloor(depthLevel);
   const findings: string[] = [];
 
   const complete = terms.filter((t) => (t.term || '').trim() && (t.definition || '').trim());
@@ -433,7 +464,7 @@ export function validateReadingDepth(
   options: { retrievalContext?: string; depthLevel?: CourseDepthLevel } = {},
 ): DepthReport {
   const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
-  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const floor = scaledSpecialtyFloor(depthLevel);
   const findings: string[] = [];
 
   const complete = items.filter((i) => (i.title || '').trim() && (i.whyRead || '').trim());
@@ -462,7 +493,7 @@ export function validateComparisonDepth(
   options: { retrievalContext?: string; depthLevel?: CourseDepthLevel } = {},
 ): DepthReport {
   const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
-  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const floor = scaledSpecialtyFloor(depthLevel);
   const findings: string[] = [];
 
   const subjects = (content.subjects ?? []).filter((s) => s?.trim());
@@ -505,7 +536,7 @@ export function validateComparisonDepth(
       .concat(content.takeaways ?? [])
       .join(' ');
     findings.push(
-      ...citationFindings(combinedText, options.retrievalContext, COURSE_DEPTH_FLOORS[depthLevel].minCitations),
+      ...citationFindings(combinedText, options.retrievalContext, scaledCourseFloor(depthLevel).minCitations),
     );
   }
 
@@ -518,7 +549,7 @@ export function validateDataReadingDepth(
   options: { retrievalContext?: string; depthLevel?: CourseDepthLevel } = {},
 ): DepthReport {
   const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
-  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const floor = scaledSpecialtyFloor(depthLevel);
   const findings: string[] = [];
 
   const series = content.series ?? [];
@@ -567,7 +598,7 @@ export function validateDataReadingDepth(
       .map((claim) => `${claim.statement} ${claim.explanation}`)
       .join(' ');
     findings.push(
-      ...citationFindings(combinedText, options.retrievalContext, COURSE_DEPTH_FLOORS[depthLevel].minCitations),
+      ...citationFindings(combinedText, options.retrievalContext, scaledCourseFloor(depthLevel).minCitations),
     );
   }
 
@@ -580,7 +611,7 @@ export function validateTradeoffsDepth(
   options: { retrievalContext?: string; depthLevel?: CourseDepthLevel } = {},
 ): DepthReport {
   const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
-  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const floor = scaledSpecialtyFloor(depthLevel);
   const findings: string[] = [];
 
   if (!content.context?.trim()) {
@@ -635,7 +666,7 @@ export function validateTradeoffsDepth(
       recommendation?.justification ?? '',
     ].join(' ');
     findings.push(
-      ...citationFindings(combinedText, options.retrievalContext, COURSE_DEPTH_FLOORS[depthLevel].minCitations),
+      ...citationFindings(combinedText, options.retrievalContext, scaledCourseFloor(depthLevel).minCitations),
     );
   }
 
@@ -648,7 +679,7 @@ export function validateFreeResponseDepth(
   options: { retrievalContext?: string; depthLevel?: CourseDepthLevel } = {},
 ): DepthReport {
   const depthLevel = resolveDepthLevel(options.depthLevel ?? outline.depthLevel);
-  const floor = SPECIALTY_DEPTH_FLOORS[depthLevel];
+  const floor = scaledSpecialtyFloor(depthLevel);
   const findings: string[] = [];
 
   if (!content.prompt?.trim()) {
@@ -704,7 +735,7 @@ export function validateFreeResponseDepth(
       content.sampleAnswer,
     ].join(' ');
     findings.push(
-      ...citationFindings(combinedText, options.retrievalContext, COURSE_DEPTH_FLOORS[depthLevel].minCitations),
+      ...citationFindings(combinedText, options.retrievalContext, scaledCourseFloor(depthLevel).minCitations),
     );
   }
 
