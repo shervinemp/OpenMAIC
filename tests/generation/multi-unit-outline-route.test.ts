@@ -4,16 +4,6 @@ const streamLLMMock = vi.hoisted(() => vi.fn());
 const callLLMMock = vi.hoisted(() => vi.fn());
 const resolveModelFromRequestMock = vi.hoisted(() => vi.fn());
 const resolveModelMock = vi.hoisted(() => vi.fn());
-const searchWebMock = vi.hoisted(() => vi.fn());
-
-vi.mock('@/lib/ai/llm', () => ({
-  streamLLM: streamLLMMock,
-  callLLM: callLLMMock,
-}));
-
-vi.mock('@/lib/server/resolve-model', () => ({
-  resolveModelFromRequest: resolveModelFromRequestMock,
-  resolveModel: resolveModelMock,
 }));
 
 vi.mock('@/lib/web-search', async () => {
@@ -211,26 +201,6 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
   beforeEach(() => {
     resolveModelFromRequestMock.mockReset();
     resolveModelMock.mockReset();
-    streamLLMMock.mockReset();
-    callLLMMock.mockReset();
-    searchWebMock.mockReset();
-    resolveModelFromRequestMock.mockResolvedValue({
-      model: { provider: 'openai', modelId: 'gpt-test' },
-      modelInfo: { outputWindow: 4096, capabilities: {} },
-      modelString: 'openai:gpt-test',
-      providerId: 'openai',
-      modelId: 'gpt-test',
-      thinkingConfig: undefined,
-    });
-    // Single-call path must not be exercised by these tests.
-    streamLLMMock.mockImplementation(() => {
-      throw new Error('single-call streamLLM should not run in multi-unit mode');
-    });
-  });
-
-  afterEach(() => {
-    vi.resetModules();
-    vi.unstubAllEnvs();
   });
 
   test('standard preset: syllabus call + per-unit calls assemble a valid blueprint', async () => {

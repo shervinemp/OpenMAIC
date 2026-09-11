@@ -76,7 +76,6 @@ export async function addStageContentToZip(
 
   const audioFiles = await collectAudioFiles(audioEntries);
   const mediaFiles = await collectMediaFiles(stage.id, mediaEntries);
-
   // audioId → zipPath mapping for manifest references.
   const audioIdToPath = new Map<string, string>();
   for (const af of audioFiles) {
@@ -134,7 +133,6 @@ export async function addStageContentToZip(
     }
   }
   const mediaIndex = Object.fromEntries(mediaIndexEntries);
-
   const manifest: ClassroomManifest = {
     formatVersion: CLASSROOM_ZIP_FORMAT_VERSION,
     exportedAt: new Date().toISOString(),
