@@ -180,6 +180,7 @@ export const PROVIDER_SUPPORTED_MIME_TYPES: Record<string, readonly string[]> = 
   mineru: MINERU_SELFHOST_MIMES,
   'mineru-cloud': MINERU_CLOUD_MIMES,
   alidocmind: ALIDOCMIND_MIMES,
+  local_vision: [M.pdf],
   'plain-text': PLAIN_TEXT_MIMES,
 };
 
