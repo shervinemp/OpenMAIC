@@ -357,7 +357,7 @@ export function readThinkingPresetEnv(): ThinkingPreset | undefined {
 export function presetThinkingFor(stage?: string): ThinkingConfig | undefined {
   const preset = readThinkingPresetEnv();
   if (!preset || preset === 'quality' || !stage) return undefined;
-  let key = stage;
+  let key: string | undefined = stage;
   while (key) {
     const entry = THINKING_PRESET_LEAN[key as LlmStage];
     if (entry) return entry;
