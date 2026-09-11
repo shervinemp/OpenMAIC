@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { readGenerationProfile, scaleDepthFloor } from '../src/profile';
 
 /**
  * `readGenerationProfile` reads env per call (no module cache), so each case
@@ -13,8 +14,7 @@ describe('generation profile (overall cost/quality knob)', () => {
     delete process.env.OPENMAIC_THINKING_PRESET;
   });
 
-  it('default profile is balanced with lean thinking as the default', async () => {
-    const { readGenerationProfile } = await import('@openmaic/generation');
+  it('default profile is balanced with lean thinking as the default', () => {
     expect(readGenerationProfile()).toEqual({
       profile: 'balanced',
       depthFloorScale: 1,
@@ -23,9 +23,8 @@ describe('generation profile (overall cost/quality knob)', () => {
     });
   });
 
-  it('economy scales floors down, trims retries, implies lean thinking', async () => {
+  it('economy scales floors down, trims retries, implies lean thinking', () => {
     process.env.OPENMAIC_GENERATION_PROFILE = 'economy';
-    const { readGenerationProfile, scaleDepthFloor } = await import('@openmaic/generation');
     const p = readGenerationProfile();
     expect(p.profile).toBe('economy');
     expect(p.depthFloorScale).toBe(0.75);
@@ -38,27 +37,24 @@ describe('generation profile (overall cost/quality knob)', () => {
     expect(scaleDepthFloor(0, p.depthFloorScale)).toBe(1);
   });
 
-  it('granular overrides beat the profile', async () => {
+  it('granular overrides beat the profile', () => {
     process.env.OPENMAIC_GENERATION_PROFILE = 'economy';
     process.env.OPENMAIC_DEPTH_FLOOR_SCALE = '1';
     process.env.OPENMAIC_CONTENT_ATTEMPTS = '3';
     process.env.OPENMAIC_THINKING_PRESET = 'quality';
-    const { readGenerationProfile } = await import('@openmaic/generation');
     const p = readGenerationProfile();
     expect(p.depthFloorScale).toBe(1);
     expect(p.contentAttempts).toBe(3);
     expect(p.thinkingPreset).toBe('quality');
   });
 
-  it('unknown profile values resolve to balanced (no silent behavior change)', async () => {
+  it('unknown profile values resolve to balanced (no silent behavior change)', () => {
     process.env.OPENMAIC_GENERATION_PROFILE = 'turbo-max';
-    const { readGenerationProfile } = await import('@openmaic/generation');
     expect(readGenerationProfile().profile).toBe('balanced');
   });
 
-  it('depth-floor scale clamps out-of-band values into 0.5..1.5', async () => {
+  it('depth-floor scale clamps out-of-band values into 0.5..1.5', () => {
     process.env.OPENMAIC_DEPTH_FLOOR_SCALE = '99';
-    const { readGenerationProfile } = await import('@openmaic/generation');
     expect(readGenerationProfile().depthFloorScale).toBe(1.5);
     process.env.OPENMAIC_DEPTH_FLOOR_SCALE = '0.1';
     expect(readGenerationProfile().depthFloorScale).toBe(0.5);
