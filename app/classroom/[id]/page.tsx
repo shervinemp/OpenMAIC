@@ -152,11 +152,23 @@ export default function ClassroomDetailPage() {
     // Check if there are pending outlines. A finished deck is frozen for
     // editing: deleting a slide leaves its outline orphaned, but that must not
     // be treated as an interrupted generation and regenerated. Only resume
-    // when generation has not completed.
+    // when generation has not completed. Outlines that failed in a previous
+    // session (content phase failed, no skip) are NOT auto-resumed: they carry
+    // retry cards and the Resume button so the user decides whether a
+    // provider-side failure is worth re-burning tokens. Skipped outlines are
+    // finalized without a scene and are neither resumed nor counted.
     const completedOrders = new Set(scenes.map((s) => s.order));
+    const failedIds = new Set(state.failedOutlines.map((o) => o.id));
+    const skipIds = new Set(state.skippedOutlineIds);
     const hasPending = !generationComplete && outlines.some((o) => !completedOrders.has(o.order));
+    // Auto-resume only never-attempted pending work. A deck whose failures
+    // were restored from the persisted job state pauses instead: the retry
+    // cards + Resume button let the user decide whether to re-burn tokens.
+    const resumable =
+      hasPending &&
+      outlines.some((o) => !completedOrders.has(o.order) && !failedIds.has(o.id) && !skipIds.has(o.id));
 
-    if (hasPending && stage) {
+    if (resumable && stage) {
       generationStartedRef.current = true;
 
       // Params persisted by generation-preview on the session record
@@ -202,9 +214,10 @@ export default function ClassroomDetailPage() {
           Object.assign(imageMapping, await loadImageMapping(storageIds));
         }
         finishResume(imageMapping);
-        // Handoff consumed - the stage document now owns everything. Drop the
-        // session record so it is not left behind for the TTL sweep.
-        await clearGenerationSessionForStage(classroomId);
+        // The params record is deliberately kept: a resumed batch can still
+        // pause again (provider failure, tab close) and a later resume needs
+        // the same media mapping. The TTL sweep reclaims stale records once
+        // the stage settles; clearing here would break the second resume.
       })();
     } else if (outlines.length > 0 && stage) {
       // All scenes are generated, but some media may not have finished.

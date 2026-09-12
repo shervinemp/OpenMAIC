@@ -1032,10 +1032,13 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             store.getState().setGenerationComplete(true);
             options.onComplete?.();
             // Fill-phase drain (Pillar 2 §4.6): scenes whose TTS failed
-            // during the loop get one background retry pass.
+            // during the loop get one background retry pass. Tied to this
+            // run's abort controller so stop() / navigation away does not
+            // keep the queue fetching after the session is gone.
             void drainPendingSceneTTS(
               store.getState().scenes,
               params.languageDirective || params.stageInfo.language,
+              fetchAbortRef.current?.signal,
             );
           }
           store.getState().setGenerationPhase('idle');

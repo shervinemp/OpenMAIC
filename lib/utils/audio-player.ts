@@ -37,6 +37,10 @@ export class AudioPlayer {
   private volume: number = 1;
   private playbackRate: number = 1;
   private requestToken: number = 0;
+  /** Sticky: once destroyed, the player refuses new plays (a destroyed player
+   * must never be resurrected by an in-flight async play call — that is how
+   * narration audio outlives a classroom navigation). */
+  private destroyed: boolean = false;
   /** The object URL backing the current audio element, if any. */
   private blobUrl: string | null = null;
   /**
@@ -97,6 +101,7 @@ export class AudioPlayer {
    * @returns true if audio started playing, false if no audio (TTS disabled or not generated)
    */
   public async play(audioId: string, legacyUrl?: string): Promise<boolean> {
+    if (this.destroyed) return false;
     const requestToken = ++this.requestToken;
     // A new play supersedes any in-flight legacy fetch of the previous one.
     this.abortLegacyFetch();
@@ -289,6 +294,7 @@ export class AudioPlayer {
    * Destroy the player
    */
   public destroy(): void {
+    this.destroyed = true;
     this.stop();
     this.onEndedCallback = null;
   }

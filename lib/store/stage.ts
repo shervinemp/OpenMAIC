@@ -1301,15 +1301,55 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         // outlines are still pending (see stage-mode edit gating), so an
         // interrupted deck cannot be edited into a false "all materialized".
         const inMemoryState = get();
-        const failedOutlines =
+        const inMemoryFailed =
           inMemoryState.stage?.id === stageId ? inMemoryState.failedOutlines : [];
+        // Reload-resume restore (Pillar 2): failed/skip resolutions live in the
+        // persisted job state, so a reload must NOT silently forget them.
+        // - failed outlines: re-hydrated so the retry cards survive a refresh;
+        // - skipped outlines: re-hydrated so a never-generated scene the user
+        //   explicitly closed is not silently regenerated on resume.
+        const failedOutlines = [
+          ...inMemoryFailed,
+          ...recoveredLessonGroups
+            .flatMap((group) => group.jobs)
+            .filter((job) => job.phases.content?.status === 'failed' && job.resolution !== 'skip')
+            .map((job) => outlines.find((o) => o.id === job.outlineId))
+            .filter((o): o is NonNullable<typeof o> => !!o),
+        ];
+        // Dedupe by id (an outline can be in-memory failed AND persisted failed).
+        const seenFailed = new Set<string>();
+        const uniqueFailedOutlines = failedOutlines.filter((o) =>
+          seenFailed.has(o.id) ? false : (seenFailed.add(o.id), true),
+        );
+        const skippedOutlineIds = [
+          ...new Set(
+            recoveredLessonGroups
+              .flatMap((group) => group.jobs)
+              .filter((job) => job.resolution === 'skip')
+              .map((job) => job.outlineId)
+              .filter((id) => !uniqueFailedOutlines.some((o) => o.id === id)),
+          ),
+        ];
         const generationComplete =
           persistedComplete ||
           isDeckComplete({
             outlines,
             scenes: migrated,
-            failedOutlines,
+            failedOutlines: uniqueFailedOutlines,
           });
+        // Hydrate the generation status from persisted job state: a deck that
+        // was paused/interrupted must not surface as a fresh 'idle' with no
+        // resume affordance — unless everything materialized.
+        const hasOpenJobs = recoveredLessonGroups.some((group) =>
+          group.jobs.some(
+            (job) =>
+              job.phases.content?.status === 'pending' ||
+              ((job.phases.content?.status === 'failed' || job.phases.actions?.status === 'failed') &&
+                job.resolution !== 'skip'),
+          ),
+        );
+        const generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error' =
+          generationComplete ? 'completed' : hasOpenJobs ? 'paused' : 'idle';
         set({
           stage: data.stage,
           scenes: migrated,
@@ -1320,6 +1360,9 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           blueprint: persistedBlueprint,
           lessonGroups: recoveredLessonGroups,
           generationComplete,
+          generationStatus,
+          failedOutlines: uniqueFailedOutlines,
+          skippedOutlineIds,
           exams: persistedExams.exams,
           examAttempts: persistedExams.attempts,
           // Compute generatingOutlines from persisted outlines minus completed

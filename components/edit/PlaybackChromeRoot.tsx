@@ -285,6 +285,13 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const presentationIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const cursorSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingCursorRef = useRef<{ stageId: string; cursor: PlaybackCursor } | null>(null);
+    // Auto-play scene advance timer — tracked so navigation away cannot leave
+    // an uncleared timeout mutating the global stage store after unmount.
+    const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const clearAutoAdvanceTimer = () => {
+      if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    };
     const stageRef = useRef<HTMLDivElement>(null);
     // Guard to prevent double flash when manual stop triggers onDiscussionEnd
     const manualStopRef = useRef(false);
@@ -661,6 +668,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     // Initialize playback engine when scene changes
     useEffect(() => {
       let cancelled = false;
+      // Per-effect engine reference: cleanup on scene change/unmount stops the
+      // engine this closure built even if the async init was still between its
+      // cancelled checks (never engineRef.current — a fast remount may have
+      // already installed a new engine there).
+      let sceneEngine: PlaybackEngine | null = null;
       const initializeScene = async () => {
         const previousSceneId = activeSceneIdRef.current;
         if (previousSceneId && previousSceneId !== currentScene?.id) {
@@ -891,7 +903,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             // Auto-play: advance to next scene after a short pause
             const { autoPlayLecture } = useSettingsStore.getState();
             if (autoPlayLecture) {
-              setTimeout(() => {
+              if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
+              autoAdvanceTimerRef.current = setTimeout(() => {
                 const stageState = useStageStore.getState();
                 if (!useSettingsStore.getState().autoPlayLecture) return;
                 const allScenes = stageState.scenes;
@@ -928,7 +941,16 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             }
           },
         });
+        sceneEngine = engine;
 
+        // Mount (or refuse) the engine atomically with respect to unmount: if
+        // the scene changed or the chrome unmounted while loadCursor /
+        // startLecture were awaited, do NOT register the new engine at all —
+        // registering it here is what lets a discarded engine own the shared
+        // audio player and keep narrating to no one.
+        if (cancelled) {
+          return;
+        }
         engineRef.current = engine;
         activeSceneIdRef.current = currentScene.id;
 
@@ -941,6 +963,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               lectureSessionIdRef.current = sessionId;
               lectureActionCounterRef.current = 0;
             }
+            // The startLecture await above can outlive this scene effect: if
+            // cleanup ran meanwhile, starting the engine now would resurrect
+            // narration after unmount audioPlayer.destroy().
+            if (cancelled) return;
             engine.start();
           })();
         } else {
@@ -949,7 +975,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             void engine
               .jumpToAction(savedResumeActionIndex, { autoplay: false })
               .then((restored) => {
-                if (!restored || engineRef.current !== engine) return;
+                if (!restored || engineRef.current !== engine || cancelled) return;
                 updateCurrentPlaybackActionIndex(savedResumeActionIndex);
                 const action = currentScene.actions?.[savedResumeActionIndex];
                 if (action?.type === 'speech') {
@@ -963,6 +989,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       void initializeScene();
       return () => {
         cancelled = true;
+        clearAutoAdvanceTimer();
+        // Stop the engine this closure built even if the async init was
+        // between its cancelled checks when cleanup fires (never
+        // engineRef.current — a fast remount may already have replaced it).
+        void Promise.resolve().then(() => sceneEngine?.stop());
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps -- Only re-run when scene changes, functions are stable refs
     }, [currentScene]);
