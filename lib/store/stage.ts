@@ -1022,6 +1022,33 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       generatingOutlines: generatingOutlines.filter((o) => o.id !== outlineId),
       skippedOutlineIds: [...skippedOutlineIds, outlineId],
     });
+    // Persist the skip resolution onto the job state so the resolution
+    // survives reload (loadFromStorage re-derives skippedOutlineIds from
+    // `resolution === 'skip'`); without this the skip was session-level and
+    // a refresh silently regenerated the scene the user closed.
+    const { blueprint, lessonGroups, stage } = get();
+    if (blueprint && stage) {
+      const lessonIndex = blueprint.lessons.findIndex((lesson) =>
+        lesson.outlines.some((o) => o.id === outlineId),
+      );
+      if (lessonIndex >= 0) {
+        const lessonId = `lesson_${lessonIndex + 1}`;
+        const groups = (
+          lessonGroups.length > 0 ? lessonGroups : buildLessonGroupsFromBlueprint(blueprint)
+        ).map((group) =>
+          group.lessonId !== lessonId
+            ? group
+            : {
+                ...group,
+                jobs: group.jobs.map((job) =>
+                  job.outlineId !== outlineId ? job : { ...job, resolution: 'skip' as const },
+                ),
+              },
+        );
+        set({ lessonGroups: groups });
+        markPendingChanges(stage.id, { kind: 'outline' });
+      }
+    }
     get().markGenerationCompleteIfDone();
   },
 
