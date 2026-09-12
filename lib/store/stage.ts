@@ -1357,22 +1357,52 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
               .filter((id) => !uniqueFailedOutlines.some((o) => o.id === id)),
           ),
         ];
+        // Orphan self-heal: an outline whose job already committed content
+        // (content phase `done`) but whose scene is gone was DELETED by the
+        // user after generation (or its outline prune lagged). It is not
+        // pending work — do not surface it as a generating placeholder or
+        // hold the deck at 'paused'. Determined on the recovered job state,
+        // so it also covers legacy documents that predate pruning.
+        const orphanOutlineIds = new Set(
+          recoveredLessonGroups
+            .flatMap((group) => group.jobs)
+            .filter(
+              (job) =>
+                job.phases.content?.status === 'done' &&
+                !migrated.some((scene) => scene.outlineId === job.outlineId),
+            )
+            .map((job) => job.outlineId),
+        );
         const generationComplete =
           persistedComplete ||
           isDeckComplete({
             outlines,
             scenes: migrated,
             failedOutlines: uniqueFailedOutlines,
-          });
+          }) ||
+          // Every outline either materialized or is a settled orphan (its
+          // content was generated and the scene was afterwards deleted) or
+          // was explicitly skipped by the user. Failed outlines are NOT
+          // settled work — they must still block completion.
+          (uniqueFailedOutlines.length === 0 &&
+            outlines.length > 0 &&
+            outlines.every((o) => {
+              if (migrated.some((s) => s.order === o.order)) return true;
+              if (orphanOutlineIds.has(o.id)) return true;
+              return skippedOutlineIds.includes(o.id);
+            }));
         // Hydrate the generation status from persisted job state: a deck that
         // was paused/interrupted must not surface as a fresh 'idle' with no
-        // resume affordance — unless everything materialized.
+        // resume affordance — unless everything materialized. Settled orphans
+        // are not open work.
         const hasOpenJobs = recoveredLessonGroups.some((group) =>
           group.jobs.some(
             (job) =>
-              job.phases.content?.status === 'pending' ||
-              ((job.phases.content?.status === 'failed' || job.phases.actions?.status === 'failed') &&
-                job.resolution !== 'skip'),
+              ((job.phases.content?.status === 'pending' &&
+                !orphanOutlineIds.has(job.outlineId)) ||
+                ((job.phases.content?.status === 'failed' ||
+                  job.phases.actions?.status === 'failed') &&
+                  job.resolution !== 'skip')),
           ),
         );
         const generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error' =
@@ -1398,7 +1428,10 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           // as a pending placeholder or drive resume regeneration.
           generatingOutlines: generationComplete
             ? []
-            : outlines.filter((o) => !migrated.some((s) => s.order === o.order)),
+            : outlines.filter(
+                (o) =>
+                  !migrated.some((s) => s.order === o.order) && !orphanOutlineIds.has(o.id),
+              ),
           // `mode` is transient UI state, not persisted with the stage.
           // Reset to 'playback' on every load so SPA navigation between
           // classrooms doesn't carry Pro-mode state across — e.g. user
