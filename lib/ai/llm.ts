@@ -303,14 +303,18 @@ function recordUsageSafe(
     try {
       const { normalizeUsage } = await import('@/lib/usage/normalize');
       const { recordUsage } = await import('@/lib/server/usage-storage');
+      const usage = normalizeUsage(rawUsage as never);
       await recordUsage({
         kind: 'llm',
         source: meta.source,
         providerId: meta.providerId,
         modelId: meta.modelId,
         modelString: meta.modelString,
-        usage: normalizeUsage(rawUsage as never),
+        usage,
       });
+      log.info(
+        `[${meta.source}][${meta.modelString}] tokens: input ${usage.inputTokens} (cached-read ${usage.cacheReadTokens}, cache-write ${usage.cacheCreationTokens}), output ${usage.outputTokens} (reasoning ${usage.reasoningTokens})`,
+      );
     } catch (err) {
       log.warn('Usage capture failed (ignored):', err);
     }

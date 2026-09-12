@@ -873,12 +873,16 @@ async function generateSlideContent(
   const isEditMode = !!(editDirective || baselineContent);
   const maxAttempts = readGenerationProfile().contentAttempts + 1;
   let depthFeedback: string | undefined;
+  let parseFeedback: string | undefined;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const attemptUserPrompt =
+    let attemptUserPrompt =
       depthFeedback && !isEditMode
         ? `${userPrompt}\n\n## Depth Correction Required\n\n${depthFeedback}`
         : userPrompt;
+    if (parseFeedback) {
+      attemptUserPrompt = `${attemptUserPrompt}\n\n## Output Format Correction Required\n\n${parseFeedback}`;
+    }
 
     const response = await aiCall(prompts.system, attemptUserPrompt, visionImages);
 
@@ -886,6 +890,13 @@ async function generateSlideContent(
 
     if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {
       log.error(`Failed to parse AI response for: ${outline.title}`);
+      if (attempt < maxAttempts) {
+        // The response is a valid generation that failed schema-shape — a
+        // corrective re-prompt is far cheaper than burning the whole scene.
+        parseFeedback =
+          'Your previous reply could not be parsed as the required JSON schema. Reply with ONLY the JSON object: no markdown fences, no prose before or after, with a top-level "elements" array.';
+        continue;
+      }
       onFailure?.({ code: 'invalid-model-output' });
       return null;
     }
@@ -1043,11 +1054,15 @@ async function generateQuizContent(
   // report recorded for the job model/UI.
   const maxAttempts = readGenerationProfile().contentAttempts + 1;
   let depthFeedback: string | undefined;
+  let parseFeedback: string | undefined;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const attemptUserPrompt = depthFeedback
+    let attemptUserPrompt = depthFeedback
       ? `${baseUserPrompt}\n\n## Depth Correction Required\n\n${depthFeedback}`
       : baseUserPrompt;
+    if (parseFeedback) {
+      attemptUserPrompt = `${attemptUserPrompt}\n\n## Output Format Correction Required\n\n${parseFeedback}`;
+    }
 
     const response = await aiCall(prompts.system, attemptUserPrompt);
 
@@ -1055,6 +1070,11 @@ async function generateQuizContent(
 
     if (!generatedQuestions || !Array.isArray(generatedQuestions)) {
       log.error(`Failed to parse AI response for: ${outline.title}`);
+      if (attempt < maxAttempts) {
+        parseFeedback =
+          'Your previous reply could not be parsed as the required JSON schema. Reply with ONLY the JSON array of question objects: no markdown fences, no prose before or after.';
+        continue;
+      }
       onFailure?.({ code: 'invalid-model-output' });
       return null;
     }
@@ -1146,16 +1166,25 @@ async function generateValidatedStructured<T>(
 
   const maxAttempts = readGenerationProfile().contentAttempts + 1;
   let depthFeedback: string | undefined;
+  let parseFeedback: string | undefined;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const attemptUserPrompt = depthFeedback
+    let attemptUserPrompt = depthFeedback
       ? `${baseUserPrompt}\n\n## Depth Correction Required\n\n${depthFeedback}`
       : baseUserPrompt;
+    if (parseFeedback) {
+      attemptUserPrompt = `${attemptUserPrompt}\n\n## Output Format Correction Required\n\n${parseFeedback}`;
+    }
 
     const response = await aiCall(prompts.system, attemptUserPrompt);
     const payload = parseJsonResponse<T>(response);
     if (!payload || typeof payload !== 'object') {
       log.error(`Failed to parse AI response for: ${outline.title}`);
+      if (attempt < maxAttempts) {
+        parseFeedback =
+          'Your previous reply could not be parsed as the required JSON schema. Reply with ONLY the JSON object required by the schema: no markdown fences, no prose before or after.';
+        continue;
+      }
       return null;
     }
 
