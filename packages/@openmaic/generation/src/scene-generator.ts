@@ -1707,23 +1707,47 @@ export async function generateWidgetContent(
   }
 
   log.info(`Generating ${widgetType} widget for: ${outline.title}`);
-  const response = await aiCall(prompts.system, prompts.user);
-  const html = extractHtml(response, log);
 
-  if (!html) {
-    log.error(`Failed to extract HTML from ${widgetType} response for: ${outline.title}`);
-    options.onFailure?.({ code: 'invalid-model-output' });
-    return null;
+  // Widgets are the scene type most exposed to schema-shape misses (a whole
+  // HTML document must come back; a stray fence or prose breaks extraction).
+  // Give them the same bounded corrective loop the structured scene types
+  // have — one extra parse-informed re-prompt instead of burning the scene.
+  const maxAttempts = readGenerationProfile().contentAttempts + 1;
+  let parseFeedback: string | undefined;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (parseFeedback) {
+      log.warn(
+        `Widget HTML not extractable for "${outline.title}" (attempt ${attempt}/${maxAttempts}); re-prompting with format correction`,
+      );
+    }
+    const attemptUserPrompt = parseFeedback
+      ? `${prompts.user}\n\n## Output Format Correction Required\n\n${parseFeedback}`
+      : prompts.user;
+    const response = await aiCall(prompts.system, attemptUserPrompt);
+    const html = extractHtml(response, log);
+
+    if (html) {
+      // Extract widget config from HTML if present
+      const widgetConfig = extractWidgetConfig(html, widgetType);
+
+      return {
+        html: postProcessInteractiveHtml(html),
+        widgetType,
+        widgetConfig,
+      };
+    }
+
+    if (attempt < maxAttempts) {
+      parseFeedback =
+        'Your previous reply could not be parsed as an HTML document. Reply with ONLY the complete HTML document — start with <!DOCTYPE html>, output no markdown fences, no commentary before or after.';
+      continue;
+    }
   }
 
-  // Extract widget config from HTML if present
-  const widgetConfig = extractWidgetConfig(html, widgetType);
-
-  return {
-    html: postProcessInteractiveHtml(html),
-    widgetType,
-    widgetConfig,
-  };
+  log.error(`Failed to extract HTML from ${widgetType} response for: ${outline.title}`);
+  options.onFailure?.({ code: 'invalid-model-output' });
+  return null;
 }
 
 /**
