@@ -20,7 +20,8 @@ import type {
   PdfImage,
   ImageMapping,
   UserRequirements,
-} from '@/lib/types/generation';
+  } from '@/lib/types/generation';
+import type { ThinkingConfig } from '@/lib/types/provider';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
@@ -48,15 +49,36 @@ export const maxDuration = 300;
  * 500 into a fast, retryable failure. `budgetTokens` remains the SOFT lever
  * (OPENMAIC_THINKING_PRESET / MODEL_ROUTES); this cap only bounds the worst
  * pathological case while keeping a ~2x margin over any observed success.
+ *
+ * Providers count reasoning inside the output budget, so a thinking-enabled
+ * judgment stage (interactive/derivation/exercise/freeResponse) would otherwise
+ * crowd its own JSON payload out of the same 16k envelope. When the resolved
+ * ThinkingConfig carries an EXPLICIT reasoning budget, that budget is added as
+ * headroom above the base cap — the tripwire still catches unbounded reasoning
+ * loops, but anticipated reasoning can never starve the payload. Mindful of the
+ * same failure anatomy, an `enabled` config with NO explicit budget keeps the
+ * base cap: unbounded provider-default reasoning is exactly the pathological
+ * case this cap exists to fail fast on.
  */
 const SCENE_CONTENT_OUTPUT_CAP = 16_000;
 
+/** Explicit reasoning budget to shield from the output cap, if any. */
+function sceneReasoningHeadroom(thinking: ThinkingConfig | undefined): number {
+  if (!thinking || thinking.enabled === false) return 0;
+  const budget = thinking.budgetTokens;
+  return typeof budget === 'number' && Number.isFinite(budget) && budget > 0 ? budget : 0;
+}
+
 /** Never exceed the model's real output window; use the cap when it is smaller. */
-function clampSceneContentOutputBudget(outputWindow: number | undefined): number | undefined {
+function clampSceneContentOutputBudget(
+  outputWindow: number | undefined,
+  thinking?: ThinkingConfig,
+): number | undefined {
+  const headroom = sceneReasoningHeadroom(thinking);
   if (typeof outputWindow !== 'number' || !Number.isFinite(outputWindow) || outputWindow <= 0) {
-    return SCENE_CONTENT_OUTPUT_CAP;
+    return SCENE_CONTENT_OUTPUT_CAP + headroom;
   }
-  return Math.min(outputWindow, SCENE_CONTENT_OUTPUT_CAP);
+  return Math.min(outputWindow, SCENE_CONTENT_OUTPUT_CAP + headroom);
 }
 
 /**
@@ -138,6 +160,13 @@ export async function POST(req: NextRequest) {
     outlineTitle = rawOutline?.title;
     resolvedModelString = modelString;
 
+    // One precomputed output budget for every scene-content call below: the
+    // 16k tripwire plus any explicit reasoning headroom (see the cap comment).
+    const sceneOutputBudget = clampSceneContentOutputBudget(
+      modelInfo?.outputWindow,
+      thinkingConfig,
+    );
+
     // Detect vision capability
     const hasVision = !!modelInfo?.capabilities?.vision;
 
@@ -171,7 +200,7 @@ export async function POST(req: NextRequest) {
                 content: buildVisionUserContent(userPrompt, resolvedImages),
               },
             ],
-            maxOutputTokens: clampSceneContentOutputBudget(modelInfo?.outputWindow),
+            maxOutputTokens: sceneOutputBudget,
             maxRetries: 0,
           },
           'scene-content',
@@ -185,7 +214,7 @@ export async function POST(req: NextRequest) {
           model: languageModel,
           system: systemPrompt,
           prompt: userPrompt,
-          maxOutputTokens: clampSceneContentOutputBudget(modelInfo?.outputWindow),
+          maxOutputTokens: sceneOutputBudget,
           maxRetries: 0,
         },
         'scene-content',
