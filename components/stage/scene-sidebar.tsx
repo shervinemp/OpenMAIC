@@ -708,8 +708,18 @@ export function SceneSidebar({
             </div>
           )}
           {!groupedUnits && scenes.map((scene, index) => renderSceneItem(scene, index))}
+        </div>
 
-
+        {/* Docked generation slot: a separate, always-visible panel UNDER the
+            scroll container (both cards render at most one at a time). Keeping
+            it out of the scroll flow means every completed scene no longer
+            ships the scrolling list a full tile down — the status is fixed to
+            the sidebar bottom and the scene list's scroll position stays put. */}
+        {(generatingOutlines.length > 0 || (isCourseComplete && generatingOutlines.length === 0)) && (
+          <div
+            data-testid="generation-dock"
+            className="shrink-0 p-2 space-y-2 border-t border-r-[6px] border-transparent border-t-gray-100 dark:border-t-gray-800"
+          >
 
           {/* Single placeholder for the next generating page (clickable) */}
           {generatingOutlines.length > 0 &&
@@ -981,7 +991,8 @@ export function SceneSidebar({
                 </div>
               );
             })()}
-        </div>
+          </div>
+        )}
 
         {/* Spacer to push toggle button area */}
         <div className="mt-auto" />
