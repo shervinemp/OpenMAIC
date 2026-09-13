@@ -22,7 +22,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { HOST_AGENT_LIFECYCLE as LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 import { getDocumentStore } from '@/lib/document-store/store';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
-import { useStageStore } from '@/lib/store/stage';
+import { useStageStore, markStagePersistenceDirty } from '@/lib/store/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 import {
@@ -469,20 +469,43 @@ export function useStageFreshnessSync(
           }
           const scenes = [...(doc.scenes as unknown as Scene[])].sort((a, b) => a.order - b.order);
           const record = doc.outline as AppDocumentOutline | undefined;
+          // Self-heal superseded generation attempts: a retry path that minted
+          // a fresh scene id for the same outlineId could previously persist
+          // both attempts. Lesson grouping is 1:1 per outlineId, so claim the
+          // most recently written scene for each outline and drop the rest —
+          // the "Other scenes" catch-all gets nothing to strand.
+          const claimedOutlines = new Set<string>();
+          let healedDuplicate = false;
+          const healedScenes = [...scenes]
+            .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+            .filter((scene) => {
+              const outlineId = scene.outlineId;
+              if (!outlineId) return true;
+              if (claimedOutlines.has(outlineId)) {
+                healedDuplicate = true;
+                return false;
+              }
+              claimedOutlines.add(outlineId);
+              return true;
+            })
+            .sort((a, b) => a.order - b.order);
           const outlines = (record?.outlines as SceneOutline[]) ?? [];
           useStageStore.setState((state) => ({
             stage: (doc.stage as unknown as Stage) ?? state.stage,
-            scenes,
+            scenes: healedScenes,
             outlines,
             // Select the newest page the first time anything exists, then
             // leave the user's selection alone.
             currentSceneId:
-              state.currentSceneId && scenes.some((s) => s.id === state.currentSceneId)
+              state.currentSceneId && healedScenes.some((s) => s.id === state.currentSceneId)
                 ? state.currentSceneId
-                : (scenes[scenes.length - 1]?.id ?? null),
+                : (healedScenes[healedScenes.length - 1]?.id ?? null),
             generationComplete: record?.generationComplete ?? false,
             outlineProducer: record?.producer ?? state.outlineProducer,
           }));
+          if (healedDuplicate) {
+            markStagePersistenceDirty([{ kind: 'structure' }]);
+          }
           renderedManifest.current = manifest;
           recordWriteBaseline(manifest);
           return;

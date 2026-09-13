@@ -705,7 +705,15 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       );
       return;
     }
-    const scenes = [...get().scenes, migrateScene(scene)];
+    // A regenerated scene replaces its outline's previous attempt: several
+    // generation paths mint a fresh scene id for the same outlineId, so a raw
+    // append would strand the superseded scene outside the sidebar's lesson
+    // grouping (the "Other scenes" catch-all). Latest-writer keeps the slot.
+    const scenes = get().scenes.filter(
+      (existing) =>
+        !scene.outlineId || existing.outlineId !== scene.outlineId || existing.id === scene.id,
+    );
+    scenes.push(migrateScene(scene));
     // Remove the matching outline from generatingOutlines (match by order)
     const generatingOutlines = get().generatingOutlines.filter((o) => o.order !== scene.order);
     // Auto-switch from pending page to the newly generated scene

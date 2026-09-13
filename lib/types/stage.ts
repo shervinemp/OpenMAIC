@@ -116,6 +116,15 @@ export type AppScene = DslScene<Action, SceneContent> & {
    * callers fall back to `scene.type`.
    */
   sceneKind?: SceneOutlineKind;
+  /**
+   * Fingerprint of the exact content + action-relevant session inputs the
+   * persisted scene's actions were generated from (content, agents, user
+   * profile, language directive — see `computeActionsSourceHash`). Lets a
+   * retry that regenerates byte-identical content reuse this scene's actions
+   * and rendered TTS instead of re-paying the actions LLM pass. Absent on
+   * pre-guard scenes, where the guard falls back to a fresh actions pass.
+   */
+  actionsSourceHash?: string;
 };
 export type Scene = AppScene;
 
