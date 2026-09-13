@@ -453,7 +453,6 @@ export function splitIntoLessons(
 
     const parsedLesson = parsed.lessons?.[i];
     const first = lessonOutlines[0];
-    const last = lessonOutlines[lessonOutlines.length - 1];
 
     lessons.push({
       title: parsedLesson?.title?.trim() || (first ? `Lesson ${i + 1}: ${first.title}` : `Lesson ${i + 1}`),
@@ -467,6 +466,16 @@ export function splitIntoLessons(
       sceneTarget: target,
       outlines: lessonOutlines,
     });
+  }
+
+  // Overshoot absorption: outlines beyond Σ(lessonTargets) used to fall off
+  // the positional slice silently — never assigned to any lesson, never
+  // validated, never rendered. Attach them to the FINAL lesson instead so
+  // they stay visible and countable; validateBlueprint then sees the last
+  // lesson exceed its target and the corrective loop is fed the real number.
+  if (offset < outlines.length && lessons.length > 0) {
+    const finalLesson = lessons[lessons.length - 1];
+    finalLesson.outlines.push(...outlines.slice(offset));
   }
 
   return lessons;
@@ -680,8 +689,20 @@ export function validateBlueprint(
       errors.push(`lesson ${lessonIndex + 1} has ${count} scenes, above the ${blueprintPreset} cap of ${presetLessonCap}`);
     }
     if (options.tolerance) {
-      if (Math.abs(count - target) > 1) {
-        errors.push(`lesson ${lessonIndex + 1} has ${count} scenes, target ${target} (±1 tolerance)`);
+      // ±1 is a last-resort rescue, BUT only for the final-lesson structure:
+      // an overshoot mid-course is a content-boundary drift that positional
+      // slicing keeps at the wrong lesson seam (the model wrote one scene too
+      // many for an earlier lesson and the later lessons are each one off).
+      // Restricting the tolerance to the last lesson keeps mid-course counts
+      // exact; the last lesson's undershoot is absorbed at the course's end.
+      const isLastLesson = lessonIndex === blueprint.lessons.length - 1;
+      const excess = count - target;
+      if (Math.abs(count - target) > 1 || excess > 0) {
+        errors.push(
+          isLastLesson && excess === 1
+            ? `lesson ${lessonIndex + 1} has ${count} scenes, target ${target} (±1 tolerance)`
+            : `lesson ${lessonIndex + 1} has ${count} scenes, target ${target} (exact)`,
+        );
       }
     } else if (count !== target) {
       errors.push(`lesson ${lessonIndex + 1} has ${count} scenes, target ${target} (exact)`);
@@ -704,6 +725,20 @@ export function validateBlueprint(
   }
   if (total > presetConfig.maxScenes) {
     errors.push(`course has ${total} scenes, above the ${blueprintPreset} cap of ${presetConfig.maxScenes}`);
+  }
+  // Contract-total closure: per-lesson checks each bound a slice, but an
+  // outright overshoot of the course-wide total (e.g. the model emitted
+  // 151 outlines against a 150 target) used to slip past every per-lesson
+  // comparison and rely on positional slicing to hide it. Undershoot is
+  // already caught by the per-lesson exact/tolerance checks; only the
+  // overshoot loses content silently, so it gets its own hard tripwire.
+  const contractTotalSceneTarget = deriveCourseContract(
+    blueprint.durationMinutes,
+    blueprint.courseType,
+    blueprintPreset,
+  ).totalSceneTarget;
+  if (total > contractTotalSceneTarget) {
+    errors.push(`course has ${total} scenes, above the contract total of ${contractTotalSceneTarget}`);
   }
 
   // Unit structure (Phase 2 §15.1): when the contract derives more than one
