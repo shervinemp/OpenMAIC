@@ -36,6 +36,11 @@ import {
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { takeSceneDepthReport, takeSceneDepthSummary } from '@/lib/generation/content-depth';
 import { buildUnitContext } from '@/lib/generation/unit-context';
+import {
+  describeSceneFailure,
+  recordSceneFailure,
+  takeSceneFailure,
+} from '@/lib/server/scene-failure-ledger';
 
 const log = createLogger('Scene Content API');
 
@@ -442,23 +447,41 @@ export async function POST(req: NextRequest) {
       // Phase 2 §15.5: prerequisite coherence — thread what the unit has
       // already taught so this scene builds on it instead of repeating it.
       unitContext: buildUnitContext(effectiveOutline, allOutlines),
+      onFailure: (failure) => {
+        recordSceneFailure({
+          ...failure,
+          outlineId: effectiveOutline.id,
+          outlineTitle: effectiveOutline.title,
+          sceneType: effectiveOutline.type,
+          model: modelString,
+          at: Date.now(),
+        });
+      },
     });
 
     if (!content) {
       log.error(`Failed to generate content for: "${effectiveOutline.title}"`);
 
-      // Depth-contract exhaustion (Pillar 3): the content was rejected for
-      // shallow substance or bad citations — surface the concrete findings
-      // so the client's retry card can show WHY the scene failed.
+      // Failure ledger: surface the concrete cause (failure code raised by the
+      // scene type + depth findings from corrective-loop exhaustion) instead
+      // of a black box, on both the log line and the client's retry card.
+      const failureRecord = takeSceneFailure(effectiveOutline.id);
       const depthReport = takeSceneDepthReport(effectiveOutline.id);
+      if (failureRecord) {
+        failureRecord.findings ??= depthReport?.findings;
+      }
+      const failureDetail = describeSceneFailure(failureRecord);
       const depthDetail = depthReport
         ? ` — depth contract: ${depthReport.findings.join('; ')}`
         : '';
+      const detail = failureDetail ?? (depthDetail ? `depth contract rejected${depthDetail}` : '');
 
       return apiError(
         'GENERATION_FAILED',
         500,
-        `Failed to generate content: ${effectiveOutline.title}${depthDetail}`,
+        `Failed to generate content: ${effectiveOutline.title}${
+          detail ? ` (${detail}${depthReport ? '' : depthDetail})` : ''
+        }`,
       );
     }
 
