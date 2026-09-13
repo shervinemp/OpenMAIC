@@ -12,6 +12,10 @@ import { JsonFileDocumentStore } from '@openmaic/storage/server/file-document-st
 import { JsonFileRuntimeStore } from '@openmaic/storage/server/file-runtime-store';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
+import {
+  getCourseGitScheduler,
+} from '@/lib/persistence/git-course-sync';
+import { GitSyncDocumentStore } from '@/lib/persistence/git-sync-document-store';
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import {
   decideDocumentAccess,
@@ -138,7 +142,12 @@ function createFilePersistenceHandler(dir: string): RequestListener {
     validateScene: validateAppScene,
     validateStage: validateAppStage,
   });
-  return createStorageHttpHandler(runtimeStore, documentStore, {
+  // Optional per-course git versioning: when a course is bound to a repo
+  // (via /api/course-git), every mutating write schedules a debounced commit.
+  // The decorator never fails a write — sync is best-effort by design.
+  const scheduler = getCourseGitScheduler(dir);
+  const wrapped = new GitSyncDocumentStore(documentStore, scheduler);
+  return createStorageHttpHandler(runtimeStore, wrapped, {
     authenticate: authenticatePersistenceRequest,
     authorizeMerge: async () => true,
     authorizeAdmin: async () => true,

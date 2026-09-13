@@ -20,6 +20,7 @@ import { clearDatabase } from '@/lib/utils/database';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore } from '@/lib/store/user-profile';
 import { BackupSettingsCard } from '@/components/backup/backup-settings-card';
+import { GitCourseSettingsCard } from '@/components/settings/git-course-settings';
 import { BACKUP_UI_ENABLED } from '@/lib/backup/config';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
@@ -118,6 +119,9 @@ export function GeneralSettings() {
 
       {/* Data & Local Backup */}
       {BACKUP_UI_ENABLED && <BackupSettingsCard />}
+
+      {/* Course → Git repositories (server persistence only) */}
+      <GitCourseSettingsCard />
 
       {/* Danger Zone - Clear Cache */}
       <div className="relative rounded-xl border border-destructive/30 bg-destructive/[0.03] dark:bg-destructive/[0.06] overflow-hidden">

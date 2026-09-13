@@ -7,6 +7,7 @@ import {
   Download,
   FileDown,
   Film,
+  FolderGit2,
   Loader2,
   Monitor,
   Moon,
@@ -16,6 +17,7 @@ import {
   Sun,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { useStageStore } from '@/lib/store';
@@ -30,6 +32,8 @@ import { VideoExportDialog } from './video-export-dialog';
 import ExamOverlay from '@/components/exam/exam-view';
 import { LanguageSwitcher } from '../language-switcher';
 import { SettingsDialog } from '../settings';
+import { GitBindingDialog } from './git-binding-dialog';
+import { isGitSyncAvailable } from '@/lib/persistence/git-course-client';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -85,6 +89,9 @@ export function HeaderControls({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
   const [examsOpen, setExamsOpen] = useState(false);
+  const [gitDialogOpen, setGitDialogOpen] = useState(false);
+  const gitSyncAvailable = isGitSyncAvailable();
+  const stageId = useStageStore((s) => s.stage?.id ?? null);
   const unitCount = useStageStore((s) => s.blueprint?.units?.length ?? 0);
   const examsAvailable = unitCount >= 2;
 
@@ -404,6 +411,20 @@ export function HeaderControls({
               </div>
             </DropdownMenuItem>
           )}
+          {gitSyncAvailable && (
+            <DropdownMenuItem
+              onSelect={() => setGitDialogOpen(true)}
+              className="cursor-pointer gap-2.5"
+            >
+              <FolderGit2 className="w-4 h-4 text-gray-400 shrink-0" />
+              <div>
+                <div>{t('gitSync.dialogTitle')}</div>
+                <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                  {t('gitSync.menuDesc')}
+                </div>
+              </div>
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -411,6 +432,18 @@ export function HeaderControls({
       {examsAvailable && <ExamOverlay open={examsOpen} onOpenChange={setExamsOpen} />}
       {videoExportEnabled && (
         <VideoExportDialog open={videoDialogOpen} onOpenChange={setVideoDialogOpen} />
+      )}
+      {gitSyncAvailable && (
+        <Dialog open={gitDialogOpen} onOpenChange={setGitDialogOpen}>
+          <DialogContent className="max-w-[460px] p-0">
+            <DialogHeader className="sr-only">{t('gitSync.dialogTitle')}</DialogHeader>
+            <GitBindingDialog
+              stageId={stageId}
+              open={gitDialogOpen}
+              onOpenChange={setGitDialogOpen}
+            />
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

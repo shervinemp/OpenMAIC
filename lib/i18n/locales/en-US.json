@@ -2129,6 +2129,28 @@
     "countFailed": "{{count}} failed",
     "capturing": "Capturing snapshot…"
   },
+  "gitSync": {
+    "cardTitle": "Course → Git repositories",
+    "desc": "Version a course automatically as it generates: every course change is committed into a git repository you point at. Uses the git CLI on this machine; commits are best-effort and can never fail a course save.",
+    "dialogTitle": "Connect to Git",
+    "dialogDesc": "Commit this course's changes into a git repository as it generates.",
+    "menuDesc": "Auto-commit this course to a repo",
+    "connectedLabel": "Connected — changes commit automatically",
+    "courseLabel": "Course",
+    "coursePlaceholder": "Select a course…",
+    "repoLabel": "Repository folder",
+    "repoPlaceholder": "e.g. D:\\Courses\\my-course-notes",
+    "initIfMissing": "Create the repository if the folder is not a repo yet",
+    "connect": "Connect repo",
+    "refresh": "Refresh",
+    "disconnect": "Disconnect",
+    "hint": "Changes commit within ~4 seconds into <courseId>.json inside the repo. Push to a remote after every commit can be enabled with COURSE_GIT_SYNC_PUSH=1.",
+    "allBound": "All courses are connected.",
+    "bindOk": "Repository connected — course changes will be committed automatically.",
+    "unbindOk": "Repository disconnected.",
+    "bindFailed": "Connecting failed.",
+    "loadFailed": "Could not load courses or bindings."
+  },
   "exams": {
     "title": "Exams",
     "midterm": "Midterm Exam",
