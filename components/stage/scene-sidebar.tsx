@@ -222,10 +222,7 @@ export function SceneSidebar({
 
   // One unit open at a time: the unit holding the active scene keeps the mount
   // bound small; other units become a compact, scannable table of contents.
-  const [openUnits, setOpenUnits] = useState<Set<string>>(() => {
-    if (groupedUnits) return new Set([groupedUnits[0].key]);
-    return new Set();
-  });
+  const [openUnits, setOpenUnits] = useState<Set<string>>(new Set());
 
   // Lesson sections collapse too, so an open unit shows a lesson list of ~52
   // titles instead of mounting every scene thumbnail at once (semester preset
