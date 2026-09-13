@@ -137,10 +137,14 @@ export async function resolveModel(params: {
   //    budget); with no preset match, the routed model uses its own default.
   //    Client thinking is dropped in both cases (it belonged to the client's
   //    other model).
-  //  - unrouted              → honor the client's thinking config.
+  //  - unrouted              → honor the client's thinking config; when the
+  //    client carries none, the preset still applies. Otherwise a client that
+  //    never sets thinkingConfig (the common case — the UI sends a bare
+  //    x-model) silently bypasses `OPENMAIC_THINKING_PRESET=lean`, and volume
+  //    stages burn provider-default reasoning on machine-validated JSON.
   const thinkingConfig: ThinkingConfig | undefined = routed
     ? (stageRoute?.thinking ?? presetThinkingFor(params.stage))
-    : params.thinkingConfig;
+    : (params.thinkingConfig ?? presetThinkingFor(params.stage));
 
   return {
     model,

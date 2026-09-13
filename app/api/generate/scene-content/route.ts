@@ -41,6 +41,25 @@ const log = createLogger('Scene Content API');
 export const maxDuration = 300;
 
 /**
+ * Hard ceiling on OUTPUT tokens for one scene-content call. Valid scene JSON is
+ * small (a successful generation in the wild lands in ~3.5–11.5k output tokens
+ * regardless of kind); a run far past this is a reasoning loop burning budget
+ * without finishing — clipping clobbers no real output and turns a minutes-long
+ * 500 into a fast, retryable failure. `budgetTokens` remains the SOFT lever
+ * (OPENMAIC_THINKING_PRESET / MODEL_ROUTES); this cap only bounds the worst
+ * pathological case while keeping a ~2x margin over any observed success.
+ */
+const SCENE_CONTENT_OUTPUT_CAP = 16_000;
+
+/** Never exceed the model's real output window; use the cap when it is smaller. */
+function clampSceneContentOutputBudget(outputWindow: number | undefined): number | undefined {
+  if (typeof outputWindow !== 'number' || !Number.isFinite(outputWindow) || outputWindow <= 0) {
+    return SCENE_CONTENT_OUTPUT_CAP;
+  }
+  return Math.min(outputWindow, SCENE_CONTENT_OUTPUT_CAP);
+}
+
+/**
  * Aggregate budget for the WHOLE resolve-with-refill phase, reused from the
  * shared 15 s ingest-drain constant (the same constant the extraction cache's
  * probe phase reuses). Each probe is an unbounded server-side store round trip
@@ -152,7 +171,7 @@ export async function POST(req: NextRequest) {
                 content: buildVisionUserContent(userPrompt, resolvedImages),
               },
             ],
-            maxOutputTokens: modelInfo?.outputWindow,
+            maxOutputTokens: clampSceneContentOutputBudget(modelInfo?.outputWindow),
             maxRetries: 0,
           },
           'scene-content',
@@ -166,7 +185,7 @@ export async function POST(req: NextRequest) {
           model: languageModel,
           system: systemPrompt,
           prompt: userPrompt,
-          maxOutputTokens: modelInfo?.outputWindow,
+          maxOutputTokens: clampSceneContentOutputBudget(modelInfo?.outputWindow),
           maxRetries: 0,
         },
         'scene-content',
