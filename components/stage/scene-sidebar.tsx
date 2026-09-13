@@ -554,7 +554,7 @@ export function SceneSidebar({
         {/* Scenes List */}
         <div
           data-testid="scene-list"
-          className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-2 scrollbar-thin pt-1"
+          className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-2 scrollbar-thin border-r-[6px] border-transparent pt-1"
         >
           {groupedUnits && (
             <div className="flex flex-col gap-1">
