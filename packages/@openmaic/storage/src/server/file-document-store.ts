@@ -45,11 +45,17 @@ import type {
   DocumentStore,
   DocumentSummary,
   MaicDocument,
+  SaveDocumentOptions,
   SceneLike,
   SceneValidator,
   StageValidator,
 } from '../document/types.js';
-import { DocumentNotFoundError, DocumentVersionError } from '../document/types.js';
+import {
+  DocumentLostUpdateError,
+  DocumentNotFoundError,
+  DocumentVersionError,
+  isStaleOverwrite,
+} from '../document/types.js';
 
 export interface JsonFileDocumentStoreOptions<
   TScene extends SceneLike = Scene,
@@ -180,7 +186,10 @@ export class JsonFileDocumentStore<
     }
   }
 
-  async saveDocument(document: MaicDocument<TScene, TStage>): Promise<void> {
+  async saveDocument(
+    document: MaicDocument<TScene, TStage>,
+    options?: SaveDocumentOptions,
+  ): Promise<void> {
     if (isFutureVersioned(document)) {
       throw new DocumentVersionError(
         document.stage.id,
@@ -215,6 +224,22 @@ export class JsonFileDocumentStore<
         `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
           `stored copy is at DSL version ${JSON.stringify(dslVersionOf(stored))}, newer than this ` +
           `client's ${DSL_VERSION}`,
+      );
+    }
+    // Lost-update fence: the stored copy is newer than the incoming save, so a
+    // concurrent writer (another tab, another browser profile pointed at this
+    // disk, a replayed client) moved the document forward. Refuse rather than
+    // silently clobber newer content; deliberate wholesale restores pass
+    // `allowOlderOverwrite`.
+    if (!options?.allowOlderOverwrite && isStaleOverwrite(stored, document)) {
+      throw new DocumentLostUpdateError(
+        stageId,
+        stored!.stage.updatedAt,
+        document.stage.updatedAt,
+        `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
+          `stored copy is newer (${JSON.stringify(stored!.stage.updatedAt)}) than the ` +
+          `incoming save (${JSON.stringify(document.stage.updatedAt)}); reload and retry, or ` +
+          'pass allowOlderOverwrite for a deliberate restore',
       );
     }
     await this.writeAtomic(stageId, { ...normalized, dslVersion: DSL_VERSION });

@@ -7,7 +7,7 @@
 import { describe, expect, test } from 'vitest';
 import { DSL_VERSION } from '@openmaic/dsl';
 import type { Scene } from '@openmaic/dsl';
-import { DocumentVersionError, type DocumentStore, type MaicDocument } from '../src/index.js';
+import { DocumentLostUpdateError, DocumentVersionError, type DocumentStore, type MaicDocument } from '../src/index.js';
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -298,6 +298,57 @@ export function runDocumentStoreContract(
       const loaded = await store.loadDocument('stage-1');
       expect(loaded!.stage.name).toBe('Intro Course');
     });
+
+    // --- lost-update fence --- 
+
+    test('refuses a stale whole-aggregate overwrite (lost-update fence)', async () => {
+      const store = makeStore();
+      await store.saveDocument(makeDocument()); // updatedAt 2000
+
+      const stale = makeDocument();
+      stale.stage.updatedAt = 100; // strictly older, outside the skew tolerance
+      stale.stage.name = 'Stale Clobber';
+      stale.scenes = [slideScene('stage-1', 'scene-a', 0, 'Stale Only')];
+
+      const failure = store.saveDocument(stale);
+      await expect(failure).rejects.toBeInstanceOf(DocumentLostUpdateError);
+      await expect(failure).rejects.toMatchObject({ stageId: 'stage-1' });
+
+      // the newer stored content survives untouched
+      const loaded = await store.loadDocument('stage-1');
+      expect(loaded!.stage.name).toBe('Intro Course');
+      expect(loaded!.scenes.map((s) => s.id)).toEqual(['scene-a', 'scene-b']);
+    });
+
+    test('allowOlderOverwrite permits a deliberate older restore', async () => {
+      const store = makeStore();
+      await store.saveDocument(makeDocument());
+
+      const stale = makeDocument();
+      stale.stage.updatedAt = 100;
+      stale.stage.name = 'Restored Backup';
+      stale.scenes = [slideScene('stage-1', 'scene-a', 0)];
+      await expect(
+        store.saveDocument(stale, { allowOlderOverwrite: true }),
+      ).resolves.toBeUndefined();
+      expect((await store.loadDocument('stage-1'))!.stage.name).toBe('Restored Backup');
+    });
+
+    test('tolerates equal and near-equal updatedAt saves (clock-skew grace)', async () => {
+      const store = makeStore();
+      await store.saveDocument(makeDocument()); // stage updatedAt 2000
+      // equal: idempotent re-save
+      await expect(store.saveDocument(makeDocument())).resolves.toBeUndefined();
+      // only 1s older: inside the tolerance, not a lost update
+      const slight = makeDocument();
+      slight.stage.updatedAt = 1000;
+      await expect(store.saveDocument(slight)).resolves.toBeUndefined();
+    });
+
+    // A "no timestamp claim" exit is tested implicitly: `isStaleOverwrite`
+    // ignores non-numeric updatedAt, but validateStage requires a number, so a
+    // conforming document always carries the claim — the fence cannot fire
+    // without one.
 
     // --- incremental scene ops ---
 

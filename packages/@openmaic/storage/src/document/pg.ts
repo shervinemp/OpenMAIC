@@ -28,13 +28,20 @@ import type {
   DocumentFolderStore,
   DocumentSummary,
   MaicDocument,
+  SaveDocumentOptions,
   SceneLike,
   SceneValidator,
   StageFreshnessManifest,
   StageFreshnessManifestStore,
   StageValidator,
 } from './types.js';
-import { DocumentFolderLimitError, DocumentNotFoundError, DocumentVersionError } from './types.js';
+import {
+  DocumentFolderLimitError,
+  DocumentLostUpdateError,
+  DocumentNotFoundError,
+  DocumentVersionError,
+  isStaleOverwrite,
+} from './types.js';
 import { assertJsonValue, isLosslessJsonString } from '../runtime/json-value.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
@@ -651,7 +658,10 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     }
   }
 
-  async saveDocument(doc: MaicDocument<TScene, TStage>): Promise<void> {
+  async saveDocument(
+    doc: MaicDocument<TScene, TStage>,
+    options?: SaveDocumentOptions,
+  ): Promise<void> {
     if (isFutureVersioned(doc)) {
       throw new DocumentVersionError(
         doc.stage.id,
@@ -676,6 +686,22 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
           `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
             `stored copy is at DSL version ${JSON.stringify(dslVersionOf(existingStage))}, newer ` +
             `than this client's ${DSL_VERSION}`,
+        );
+      }
+      // Lost-update fence, read and compared inside the save transaction: a
+      // concurrent writer (another tab, an agent tool, a restore) that moved
+      // the stored copy forward since this aggregate was loaded must not be
+      // silently clobbered. Deliberate wholesale restores pass
+      // `allowOlderOverwrite`.
+      if (!options?.allowOlderOverwrite && isStaleOverwrite(existingStage ? { stage: existingStage } : undefined, doc)) {
+        throw new DocumentLostUpdateError(
+          stageId,
+          existingStage!.updatedAt,
+          doc.stage.updatedAt,
+          `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
+            `stored copy is newer (${JSON.stringify(existingStage!.updatedAt)}) than the ` +
+            `incoming save (${JSON.stringify(doc.stage.updatedAt)}); reload and retry, or ` +
+            'pass allowOlderOverwrite for a deliberate restore',
         );
       }
 

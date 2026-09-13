@@ -68,6 +68,57 @@ export class DocumentNotFoundError extends Error {
 }
 
 /**
+ * The incoming aggregate is older than the stored copy — a concurrent writer
+ * moved the document forward while this caller worked from a stale read.
+ * Refuse instead of silently clobbering (the lost-update bug); the caller
+ * reloads and retries, or passes `allowOlderOverwrite` for a deliberate
+ * wholesale restore (backup import, rollback).
+ */
+export class DocumentLostUpdateError extends Error {
+  override readonly name = 'DocumentLostUpdateError';
+
+  constructor(
+    readonly stageId: string,
+    readonly storedUpdatedAt: number,
+    readonly incomingUpdatedAt: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** Optional knobs on a whole-aggregate save. */
+export interface SaveDocumentOptions {
+  /**
+   * Explicitly allow overwriting a stored copy that is NEWER than the incoming
+   * document (by `stage.updatedAt`). Use only for deliberate wholesale
+   * restores — a backup import, a rollback, a re-import — never for routine
+   * saves, which are protected by the stale-write guard.
+   */
+  allowOlderOverwrite?: boolean;
+}
+
+/** Whole-aggregate-save timestamp tolerance: below this skew, "older" reads as equal. */
+export const STALE_WRITE_TOLERANCE_MS = 1_500;
+
+/**
+ * True when `incoming` would silently revert a newer stored copy. Both must
+ * carry a finite numeric `stage.updatedAt`; a missing / non-numeric stamp
+ * (legacy or hand-assembled data) opts OUT of the fence rather than into it —
+ * the caller has no timestamp claim, so there is nothing to compare against.
+ */
+export function isStaleOverwrite(
+  stored: { stage: { updatedAt: unknown } } | null | undefined,
+  incoming: { stage: { updatedAt: unknown } },
+): boolean {
+  const storedAt = typeof stored?.stage.updatedAt === 'number' ? stored.stage.updatedAt : NaN;
+  const incomingAt =
+    typeof incoming.stage.updatedAt === 'number' ? incoming.stage.updatedAt : NaN;
+  if (!Number.isFinite(storedAt) || !Number.isFinite(incomingAt)) return false;
+  return incomingAt < storedAt - STALE_WRITE_TOLERANCE_MS;
+}
+
+/**
  * The portable, embedded form of a persisted course. Storage normalizes it into
  * per-entity rows on write and reassembles it on read.
  *
@@ -184,8 +235,16 @@ export interface DocumentStore<TScene extends SceneLike = Scene, TStage extends 
    * invalid stage or scene throws before anything is written. (Reliably diffing
    * opaque scene content is not attempted; cheap per-scene writes use
    * {@link putScene}.)
+   *
+   * Transparent to concurrent writers: when a stored copy already holds a
+   * NEWER `stage.updatedAt` than the incoming aggregate (outside the clock-skew
+   * tolerance), the write is refused with `DocumentLostUpdateError` instead of
+   * silently dropping the newer content. A deliberate wholesale restore passes
+   * {@link SaveDocumentOptions.allowOlderOverwrite}. Backends read the stored
+   * copy inside the same transaction, so a racing writer still fails loud
+   * rather than clobbers.
    */
-  saveDocument(doc: MaicDocument<TScene, TStage>): Promise<void>;
+  saveDocument(doc: MaicDocument<TScene, TStage>, options?: SaveDocumentOptions): Promise<void>;
 
   /**
    * Reassemble the document for `stageId` (scenes sorted by `order`, outline

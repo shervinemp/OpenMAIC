@@ -25,8 +25,8 @@ export function withPlainJsonDocumentWrites<TStore extends DocumentStore<AppScen
   if (existing) return existing as TStore;
 
   const methods: DocumentStore<AppScene, AppStage> = {
-    saveDocument(document) {
-      return store.saveDocument(omitUndefinedObjectMembers(document));
+    saveDocument(document, options) {
+      return store.saveDocument(omitUndefinedObjectMembers(document), options);
     },
     loadDocument(stageId) {
       return store.loadDocument(stageId);

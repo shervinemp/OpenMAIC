@@ -10,6 +10,7 @@ import type {
   DocumentStore,
   DocumentSummary,
   MaicDocument,
+  SaveDocumentOptions,
   SceneLike,
   SceneValidator,
   StageValidator,
@@ -75,9 +76,12 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
     }
   }
 
-  saveDocument(doc: MaicDocument<TScene, TStage>): Promise<void> {
+  saveDocument(
+    doc: MaicDocument<TScene, TStage>,
+    options?: SaveDocumentOptions,
+  ): Promise<void> {
     return this.tagged({ stageId: doc.stage.id, mode: 'create' }, () =>
-      this.inner.saveDocument(doc),
+      this.inner.saveDocument(doc, options),
     );
   }
 

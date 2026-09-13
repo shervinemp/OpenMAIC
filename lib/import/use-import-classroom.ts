@@ -485,7 +485,9 @@ export async function importClassroomZip(
     // replaces.
     await mutateDocument(
       newStageId,
-      async (_existing, store) => store.saveDocument(document),
+      // Wholesale replacement importing a classroom package is deliberate; it
+      // may carry an older updatedAt, so it opts out of the stale-write fence.
+      async (_existing, store) => store.saveDocument(document, { allowOlderOverwrite: true }),
       {},
       { mode: 'replace' },
     );

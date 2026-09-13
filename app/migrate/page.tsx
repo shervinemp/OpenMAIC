@@ -182,7 +182,12 @@ export default function MigratePage() {
       for (const doc of documents) {
         const id = String(doc.stage.id);
         try {
-          await documentStore.saveDocument(doc as { stage: never; scenes: never[]; outline?: unknown });
+          await documentStore.saveDocument(
+            doc as { stage: never; scenes: never[]; outline?: unknown },
+            // An origin migration re-run is a deliberate wholesale import; it
+            // may carry older updatedAt stamps, so it opts out of the fence.
+            { allowOlderOverwrite: true },
+          );
           next.documents.ok++;
         } catch (cause) {
           next.documents.failed.push({

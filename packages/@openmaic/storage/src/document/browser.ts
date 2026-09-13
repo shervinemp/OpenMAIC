@@ -22,11 +22,17 @@ import type {
   DocumentStore,
   DocumentSummary,
   MaicDocument,
+  SaveDocumentOptions,
   SceneLike,
   SceneValidator,
   StageValidator,
 } from './types.js';
-import { DocumentNotFoundError, DocumentVersionError } from './types.js';
+import {
+  DocumentLostUpdateError,
+  DocumentNotFoundError,
+  DocumentVersionError,
+  isStaleOverwrite,
+} from './types.js';
 import { reassembleDocument, splitDocument, type OutlineRow, type StageRow } from './adapter.js';
 
 const STAGES = 'stages';
@@ -215,7 +221,7 @@ export class BrowserDocumentStore<
     });
   }
 
-  async saveDocument(doc: MaicDocument<TScene, TStage>): Promise<void> {
+  async saveDocument(doc: MaicDocument<TScene, TStage>, options?: SaveDocumentOptions): Promise<void> {
     // Forward-compatibility: refuse to persist (and thereby downgrade) a document
     // written by a newer client. `loadDocument` returns such documents untouched;
     // saving one back would relabel its newer-shaped rows as this older version.
@@ -276,6 +282,25 @@ export class BrowserDocumentStore<
           `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
             `stored copy is at DSL version ${JSON.stringify(dslVersionOf(existingStage))}, newer ` +
             `than this client's ${DSL_VERSION}`,
+        );
+      }
+      // Lost-update fence: a concurrent writer (another tab locking the same
+      // store after we loaded, a device fleet sharing one profile) may have
+      // moved the stored copy forward while this aggregate sat in memory.
+      // Refuse rather than silently clobber newer content; deliberate
+      // wholesale restores pass `allowOlderOverwrite`.
+      if (
+        !options?.allowOlderOverwrite &&
+        isStaleOverwrite(existingStage ? { stage: existingStage } : undefined, doc)
+      ) {
+        throw new DocumentLostUpdateError(
+          stageId,
+          existingStage!.updatedAt,
+          doc.stage.updatedAt,
+          `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
+            `stored copy is newer (${JSON.stringify(existingStage!.updatedAt)}) than the ` +
+            `incoming save (${JSON.stringify(doc.stage.updatedAt)}); reload and retry, or ` +
+            'pass allowOlderOverwrite for a deliberate restore',
         );
       }
       stages.put(stageRow);

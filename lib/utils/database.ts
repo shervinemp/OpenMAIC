@@ -819,7 +819,10 @@ export async function importDatabase(
         document.stage.id,
         async (_existing, store) => {
           const preImage = (await store.loadDocument(document.stage.id)) as AppDocument | null;
-          await store.saveDocument(document);
+          // A backup restore is a deliberate wholesale replacement: it may
+          // legitimately carry an older updatedAt than the live document, so it
+          // opts out of the stale-write fence.
+          await store.saveDocument(document, { allowOlderOverwrite: true });
           importedDocuments.push({ id: document.stage.id, preImage, wasDeleted });
         },
         {},
@@ -940,7 +943,9 @@ export async function importDatabase(
     for (const { id, preImage, wasDeleted } of importedDocuments.reverse()) {
       try {
         await mutateDocument(id, async (_document, store) => {
-          if (preImage) await store.saveDocument(preImage);
+          // Rollback reinstates the pre-import world deliberately: it may be
+          // older by updatedAt, so it opts out of the stale-write fence.
+          if (preImage) await store.saveDocument(preImage, { allowOlderOverwrite: true });
           else await store.deleteDocument(id);
         });
         // The rollback reinstated the pre-import world; reinstate the deletion
