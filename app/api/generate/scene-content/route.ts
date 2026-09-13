@@ -167,6 +167,49 @@ export async function POST(req: NextRequest) {
       thinkingConfig,
     );
 
+    // ── Reasoning-collapse handling (Options A + C) ──
+    // deepseek-style reasoners do not honor `budgetTokens`: when a judgment
+    // stage's scratchpad overshoots, the whole output allowance can be consumed
+    // by reasoning with zero answer left (`output 24000 (reasoning 24000)` in
+    // the wild) — the downstream JSON parse then fails after a ~2min burn that
+    // NO client retry can rescue, because every retry re-derives reasoning.
+    // (a) Option C, prompt-side: a small convergence nudge appended to the
+    // system prompt only when thinking is active; soft, but measurably nudges
+    // scratchpad loops to converge earlier.
+    // (b) Option A, call-side: when a thinking call comes back with (near-)
+    // empty completions while thinking was enabled, IMMEDIATELY re-issue the
+    // same call with thinking hard-disabled at the base cap. Deepseek cannot
+    // be budgeted, so `enabled:false` is the only reliable lever; input tokens
+    // are mostly cache-read hits (observed ~8–10k cached), so the salvage
+    // retry is cheap. A non-thinking failure stays untouched — it is some
+    // other validation/depth problem, not one thinking can be blamed for.
+    const thinkingIsEnabled = !!thinkingConfig && thinkingConfig.enabled !== false;
+    const REASONING_COLLAPSE_TRIGGER_CHARS = 40;
+    const CONVERGENCE_NUDGE =
+      ' Reasoning-budget note: your scratchpad shares a finite output budget with the final JSON. ' +
+      'Keep reasoning brief, converge quickly, and ALWAYS finish with the complete JSON answer.';
+
+    /** A result so short it carries no usable scene JSON. */
+    function isReasoningCollapse(text: string | undefined): boolean {
+      return (text ?? '').trim().length < REASONING_COLLAPSE_TRIGGER_CHARS;
+    }
+
+    const callWithoutThinking = async (
+      buildParams: (maxTokens?: number) => Parameters<typeof callLLM>[0],
+    ): Promise<string> => {
+      const disabledThinking = { ...thinkingConfig, enabled: false } as ThinkingConfig;
+      log.warn(
+        `Reasoning-collapse detected (near-empty payload with thinking on) for "${outlineTitle ?? 'unknown'}"; one salvage retry with thinking disabled at the base cap.`,
+      );
+      const result = await callLLM(
+        buildParams(clampSceneContentOutputBudget(modelInfo?.outputWindow, disabledThinking)),
+        'scene-content',
+        undefined,
+        disabledThinking,
+      );
+      return result.text;
+    };
+
     // Detect vision capability
     const hasVision = !!modelInfo?.capabilities?.vision;
 
@@ -184,44 +227,55 @@ export async function POST(req: NextRequest) {
       userPrompt: string,
       images?: Array<{ id: string; src: string }>,
     ): Promise<string> => {
+      const effectiveSystem = thinkingIsEnabled ? systemPrompt + CONVERGENCE_NUDGE : systemPrompt;
+
+      let result: string;
       if (images?.length && hasVision) {
         // Server-backed transport: `imageMapping` values are allocated asset
         // ids, so the image srcs reach here as ids. Resolve them to the same
         // bytes the base64 path would send BEFORE prompt assembly, keeping the
         // vision prompt byte-identical in both modes (RFC #1153 part 2 B).
         const resolvedImages = await resolveVisionImagesForPrompt(images, req.headers);
-        const result = await callLLM(
-          {
-            model: languageModel,
-            system: systemPrompt,
-            messages: [
-              {
-                role: 'user' as const,
-                content: buildVisionUserContent(userPrompt, resolvedImages),
-              },
-            ],
-            maxOutputTokens: sceneOutputBudget,
-            maxRetries: 0,
-          },
+        const callParams = (maxTokens: number | undefined) => ({
+          model: languageModel,
+          system: effectiveSystem,
+          messages: [
+            {
+              role: 'user' as const,
+              content: buildVisionUserContent(userPrompt, resolvedImages),
+            },
+          ],
+          maxOutputTokens: maxTokens ?? sceneOutputBudget,
+          maxRetries: 0,
+        } as Parameters<typeof callLLM>[0]);
+        const first = await callLLM(
+          callParams(sceneOutputBudget),
           'scene-content',
           undefined,
           thinkingConfig,
         );
-        return result.text;
-      }
-      const result = await callLLM(
-        {
+        result = isReasoningCollapse(first.text) && thinkingIsEnabled
+          ? await callWithoutThinking((maxTokens) => callParams(maxTokens as number))
+          : first.text;
+      } else {
+        const callParams = (maxTokens: number | undefined) => ({
           model: languageModel,
-          system: systemPrompt,
+          system: effectiveSystem,
           prompt: userPrompt,
-          maxOutputTokens: sceneOutputBudget,
+          maxOutputTokens: maxTokens ?? sceneOutputBudget,
           maxRetries: 0,
-        },
-        'scene-content',
-        undefined,
-        thinkingConfig,
-      );
-      return result.text;
+        } as Parameters<typeof callLLM>[0]);
+        const first = await callLLM(
+          callParams(sceneOutputBudget),
+          'scene-content',
+          undefined,
+          thinkingConfig,
+        );
+        result = isReasoningCollapse(first.text) && thinkingIsEnabled
+          ? await callWithoutThinking(callParams)
+          : first.text;
+      }
+      return result;
     };
 
     // ── Apply fallbacks ──
