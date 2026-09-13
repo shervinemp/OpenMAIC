@@ -26,6 +26,10 @@ export class GitSyncDocumentStore implements BaseStore {
     this.scheduler.schedule(stageId, reason, async () => this.inner.loadDocument(stageId));
   }
 
+  private scheduleDelete(stageId: string, reason: string): void {
+    this.scheduler.scheduleDelete(stageId, reason);
+  }
+
   async saveDocument(
     doc: MaicDocument<Scene, Stage>,
     options?: Parameters<BaseStore['saveDocument']>[1],
@@ -44,7 +48,9 @@ export class GitSyncDocumentStore implements BaseStore {
 
   async deleteDocument(stageId: string): Promise<void> {
     await this.inner.deleteDocument(stageId);
-    this.schedule(stageId, 'delete course');
+    // A deleted course must show as a removal in the repo, not a silent
+    // stale file: scheduleDelete persists the removal as its own commit.
+    this.scheduleDelete(stageId, 'delete course');
   }
 
   async putStage(stageId: string, stage: Stage): Promise<void> {

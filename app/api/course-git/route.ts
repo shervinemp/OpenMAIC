@@ -1,4 +1,4 @@
-import { authenticatePersistenceRequest } from '@/lib/persistence/server-auth';
+import { authenticatePersistenceHeaders } from '@/lib/persistence/server-auth';
 
 import {
   bindCourseRepository,
@@ -23,7 +23,7 @@ function persistenceDir(): string | null {
 export async function GET(request: Request): Promise<Response> {
   const dir = persistenceDir();
   if (!dir) return jsonError(503, 'GIT_SYNC_UNAVAILABLE', 'PERSISTENCE_DIR is not configured');
-  if (!(await authenticatePersistenceRequest(request))) {
+  if (!(await authenticatePersistenceHeaders(request.headers))) {
     return jsonError(401, 'UNAUTHENTICATED', 'server persistence requires authentication');
   }
   const stageId = new URL(request.url).searchParams.get('stageId');
@@ -44,7 +44,7 @@ interface BindBody {
 export async function POST(request: Request): Promise<Response> {
   const dir = persistenceDir();
   if (!dir) return jsonError(503, 'GIT_SYNC_UNAVAILABLE', 'PERSISTENCE_DIR is not configured');
-  if (!(await authenticatePersistenceRequest(request))) {
+  if (!(await authenticatePersistenceHeaders(request.headers))) {
     return jsonError(401, 'UNAUTHENTICATED', 'server persistence requires authentication');
   }
   let body: BindBody;
@@ -75,7 +75,7 @@ export async function POST(request: Request): Promise<Response> {
 export async function DELETE(request: Request): Promise<Response> {
   const dir = persistenceDir();
   if (!dir) return jsonError(503, 'GIT_SYNC_UNAVAILABLE', 'PERSISTENCE_DIR is not configured');
-  if (!(await authenticatePersistenceRequest(request))) {
+  if (!(await authenticatePersistenceHeaders(request.headers))) {
     return jsonError(401, 'UNAUTHENTICATED', 'server persistence requires authentication');
   }
   const stageId = new URL(request.url).searchParams.get('stageId');
@@ -83,3 +83,4 @@ export async function DELETE(request: Request): Promise<Response> {
   const removed = await unbindCourseRepository(dir, stageId);
   return Response.json({ removed });
 }
+

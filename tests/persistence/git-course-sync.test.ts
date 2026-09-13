@@ -68,6 +68,15 @@ describe('course git bindings', () => {
       bindCourseRepository({ persistenceDir, stageId: 'stageA', repoPath }),
     ).rejects.toThrow(/not a git repository/);
   });
+
+  it('refuses two stageIds sanitizing to the same snapshot file in one repo', async () => {
+    const persistenceDir = makeTempDir('collide');
+    const repoPath = makeTempDir('repo');
+    await bindCourseRepository({ persistenceDir, stageId: 'a 1', repoPath, init: true });
+    await expect(
+      bindCourseRepository({ persistenceDir, stageId: 'a_1', repoPath }),
+    ).rejects.toThrow(/share the snapshot file/);
+  });
 });
 
 describe('CourseGitCommitScheduler', () => {
@@ -127,5 +136,47 @@ describe('CourseGitCommitScheduler', () => {
       throw new Error('snapshot exploded');
     });
     await expect(scheduler.flushForTesting()).resolves.toBeUndefined();
+  });
+
+  it('commits a removal for scheduleDelete (deleted course vanishes from the repo)', async () => {
+    const persistenceDir = makeTempDir('delete');
+    const repoPath = makeTempDir('delete-repo');
+    await bindCourseRepository({ persistenceDir, stageId: 'stageA', repoPath, init: true });
+    const scheduler = new CourseGitCommitScheduler(persistenceDir, { debounceMs: 1 });
+    const file = join(repoPath, `${sanitizeStageFile('stageA')}.json`);
+    scheduler.schedule('stageA', 'write', async () => DOC_A);
+    await scheduler.flushForTesting();
+    expect(readFileSync(file, 'utf8')).toContain('Course A');
+
+    scheduler.scheduleDelete('stageA', 'delete course');
+    await scheduler.flushForTesting();
+    expect(() => readFileSync(file, 'utf8')).toThrow();
+    const logText = execFileSync('git', ['-C', repoPath, 'log', '--oneline'], {
+      encoding: 'utf8',
+    });
+    expect(logText).toContain('openmaic(stageA): delete course');
+  });
+
+  it('commits two stages of the same repo sequentially (no index-lock races)', async () => {
+    const persistenceDir = makeTempDir('seq');
+    const repoPath = makeTempDir('seq-repo');
+    await bindCourseRepository({ persistenceDir, stageId: 'stageA', repoPath, init: true });
+    await bindCourseRepository({ persistenceDir, stageId: 'stageB', repoPath });
+    const scheduler = new CourseGitCommitScheduler(persistenceDir, { debounceMs: 1 });
+    scheduler.schedule('stageA', 'stage A write', async () => DOC_A);
+    scheduler.schedule('stageB', 'stage B write', async () => ({
+      stage: { id: 'stageB', name: 'Course B' },
+      scenes: [],
+    }));
+    // Both jobs land in ONE flush: flush already partitions per repo and runs
+    // the jobs sequentially, so neither add/commit collides on the index lock.
+    await scheduler.flushForTesting();
+    expect(readFileSync(join(repoPath, 'stageA.json'), 'utf8')).toContain('stageA');
+    expect(readFileSync(join(repoPath, 'stageB.json'), 'utf8')).toContain('stageB');
+    const logText = execFileSync('git', ['-C', repoPath, 'log', '--oneline'], {
+      encoding: 'utf8',
+    }).trim();
+    expect(logText).toContain('openmaic(stageA): stage A write');
+    expect(logText).toContain('openmaic(stageB): stage B write');
   });
 });

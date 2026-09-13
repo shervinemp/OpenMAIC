@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { createLogger } from '@/lib/logger';
@@ -121,6 +121,22 @@ export async function bindCourseRepository(options: {
   if (await getCourseBinding(persistenceDir, stageId)) {
     throw new CourseRepositoryAlreadyBoundError(stageId);
   }
+  // Snapshot files are per-repo (one stage per file). Two bound stages whose
+  // ids sanitize to the SAME file would overwrite each other's snapshots in a
+  // shared repo — refuse that ambiguity at bind time instead of corrupting
+  // history later.
+  const stageFile = sanitizeStageFile(stageId);
+  for (const existing of await readBindings(persistenceDir)) {
+    if (
+      existing.repoPath === repoPath &&
+      sanitizeStageFile(existing.stageId) === stageFile
+    ) {
+      throw new Error(
+        `stageId ${JSON.stringify(stageId)} would share the snapshot file ${JSON.stringify(stageFile + '.json')} ` +
+          `with bound stage ${JSON.stringify(existing.stageId)} in the same repository; use a distinct id`,
+      );
+    }
+  }
   await mkdir(repoPath, { recursive: true });
   try {
     await readFile(join(repoPath, '.git', 'HEAD'), 'utf8');
@@ -151,9 +167,10 @@ export async function unbindCourseRepository(
 }
 
 interface CommitJob {
+  kind: 'upsert' | 'delete';
   stageId: string;
   reason: string;
-  /** Returns the freshest document at commit time (null → nothing to commit). */
+  /** Returns the freshest document at commit time (null → delete semantics). */
   snapshot: () => Promise<unknown>;
 }
 
@@ -174,7 +191,23 @@ export class CourseGitCommitScheduler {
 
   /** Queue a debounced commit for the stage. Never throws. */
   schedule(stageId: string, reason: string, snapshot: () => Promise<unknown>): void {
-    this.pending.set(stageId, { stageId, reason, snapshot });
+    this.pending.set(stageId, { kind: 'upsert', stageId, reason, snapshot });
+    if (this.timer !== null) return;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      void this.flush();
+    }, this.debounceMs);
+    this.timer.unref?.();
+  }
+
+  /** Queue a debounced REMOVAL commit: the repo drops the stage's snapshot. */
+  scheduleDelete(stageId: string, reason: string): void {
+    this.pending.set(stageId, {
+      kind: 'delete',
+      stageId,
+      reason,
+      snapshot: async () => null,
+    });
     if (this.timer !== null) return;
     this.timer = setTimeout(() => {
       this.timer = null;
@@ -195,38 +228,68 @@ export class CourseGitCommitScheduler {
   private async flush(): Promise<void> {
     const jobs = [...this.pending.values()];
     this.pending.clear();
-    const run = this.drain.then(
-      async () =>
-        void (await Promise.all(
-          jobs.map((job) =>
-            this.commit(job).catch((error) => {
-              log.warn(
-                `git commit for ${JSON.stringify(job.stageId)} failed (${job.reason}); ` +
-                  'retrying on the next write',
-                error instanceof Error ? error.message : error,
-              );
-            }),
-          ),
-        )),
-    );
+    const run = this.drain.then(async () => {
+      // Resolve bindings up front and partition by repo: two stages in the
+      // SAME repo must commit one after another (git is single-writer per
+      // worktree — a parallel pair would collide on the index lock), while
+      // distinct repos stay independent.
+      const byRepo = await this.partitionByRepo(jobs);
+      await Promise.all(
+        [...byRepo.values()].map((jobs) => this.commitSequentially(jobs)),
+      );
+    });
     this.drain = run;
     await run;
   }
 
-  private async commit(job: CommitJob): Promise<void> {
-    const binding = await getCourseBinding(this.persistenceDir, job.stageId);
-    if (!binding) return; // unbound between schedule and flush — nothing to do
-    const document = await job.snapshot();
-    if (document === null || document === undefined) return;
+  private async partitionByRepo(
+    jobs: readonly CommitJob[],
+  ): Promise<Map<string, CommitJob[]>> {
+    const byRepo = new Map<string, CommitJob[]>();
+    for (const job of jobs) {
+      const binding = await getCourseBinding(this.persistenceDir, job.stageId);
+      if (!binding) continue; // unbound: nothing to sync
+      const queued = byRepo.get(binding.repoPath);
+      if (queued) queued.push(job);
+      else byRepo.set(binding.repoPath, [job]);
+    }
+    return byRepo;
+  }
+
+  /** One commit at a time within a repo; each job fails soft (log, drop). */
+  private async commitSequentially(jobs: readonly CommitJob[]): Promise<void> {
+    const repoPath = (await getCourseBinding(this.persistenceDir, jobs[0].stageId))!.repoPath;
+    for (const job of jobs) {
+      try {
+        await this.commit(job, repoPath);
+      } catch (error) {
+        log.warn(
+          `git commit for ${JSON.stringify(job.stageId)} failed (${job.reason}); ` +
+            'retrying on the next write',
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+  }
+
+  private async commit(job: CommitJob, repoPath: string): Promise<void> {
     const stageFile = sanitizeStageFile(job.stageId);
-    const target = join(binding.repoPath, `${stageFile}.json`);
-    await mkdir(binding.repoPath, { recursive: true });
-    await writeFile(target, JSON.stringify(document), 'utf8');
-    await git(binding.repoPath, ['add', '--all', `${stageFile}.json`]);
-    const status = await git(binding.repoPath, ['status', '--porcelain', `${stageFile}.json`]);
-    if (!status.stdout.trim()) return; // snapshot identical to the last commit
-    const commitArgs = (identity: boolean): string[] => [
-      ...(!identity ? [] : ['-c', 'user.name=OpenMAIC Course Sync', '-c', 'user.email=openmaic-course-sync@local']),
+    const target = join(repoPath, `${stageFile}.json`);
+    if (job.kind === 'delete') {
+      await rm(target, { force: true });
+    } else {
+      const document = await job.snapshot();
+      if (document === null || document === undefined) return; // deleted mid-window
+      await mkdir(repoPath, { recursive: true });
+      await writeFile(target, JSON.stringify(document), 'utf8');
+    }
+    await git(repoPath, ['add', '--all', `${stageFile}.json`]);
+    const status = await git(repoPath, ['status', '--porcelain', `${stageFile}.json`]);
+    if (!status.stdout.trim()) return; // identical to the last commit
+    const commitArgs = (fixedIdentity: boolean): string[] => [
+      ...(fixedIdentity
+        ? ['-c', 'user.name=OpenMAIC Course Sync', '-c', 'user.email=openmaic-course-sync@local']
+        : []),
       '-c',
       'commit.gpgsign=false',
       'commit',
@@ -236,15 +299,15 @@ export class CourseGitCommitScheduler {
       `openmaic(${stageFile}): ${job.reason}`,
     ];
     try {
-      await git(binding.repoPath, commitArgs(false));
+      await git(repoPath, commitArgs(false));
     } catch {
       // No git identity configured on this machine — fall back to a fixed
-      // sync identity rather than dropping the commit (README caveat: the
-      // user can re-set their own identity with `git commit --amend`).
-      await git(binding.repoPath, commitArgs(true));
+      // sync identity rather than dropping the commit (the user can re-own
+      // the commit with `git commit --amend --reset-author`).
+      await git(repoPath, commitArgs(true));
     }
-    if (this.options.push) {
-      await git(binding.repoPath, ['push']).catch(() => {
+    if (this.push) {
+      await git(repoPath, ['push']).catch(() => {
         log.warn('push failed after commit (no remote configured or auth required)');
       });
     }
