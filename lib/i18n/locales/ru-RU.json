@@ -234,7 +234,7 @@
     "proModeDisabledHint": "Редактирование недоступно на этой странице — откройте слайд курса, чтобы редактировать в Pro-режиме.",
     "resumeGeneration": "Продолжить",
     "recoveryPending": "{{count}} ещё не сгенерировано",
-    "fillNarration": "Дописать недостающую озвучку"
+    "recoveryUmbrella": "Восстановление — продолжается автоматически: {{items}}"
   },
   "edit": {
     "proMode": "Pro",

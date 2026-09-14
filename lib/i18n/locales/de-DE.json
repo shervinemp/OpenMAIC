@@ -233,7 +233,7 @@
     "doneEditing": "Bearbeitung abschließen",
     "proModeDisabledHint": "Diese Seite kann nicht bearbeitet werden — öffne eine Kursfolie, um sie im Pro-Modus zu bearbeiten.",
     "recoveryPending": "{{count}} Seite(n) noch nicht generiert",
-    "fillNarration": "Fehlende Erzählung ergänzen"
+    "recoveryUmbrella": "Wiederherstellung — läuft automatisch: {{items}}"
   },
   "edit": {
     "proMode": "Pro",

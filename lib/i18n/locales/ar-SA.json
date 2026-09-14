@@ -234,7 +234,7 @@
     "proModeDisabledHint": "التحرير غير متاح في هذه الصفحة — افتح شريحة من الدورة للتحرير باستخدام وضع Pro.",
     "resumeGeneration": "استئناف",
     "recoveryPending": "{\\\\\"count\\\\} صفحة/صفحات لم تُولَّد بعد",
-    "fillNarration": "املأ التعليق الصوتي المفقود"
+    "recoveryUmbrella": "الاسترداد — يستمر تلقائياً: {{items}}"
   },
   "edit": {
     "proMode": "احترافي",

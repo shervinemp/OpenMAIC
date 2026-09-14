@@ -12,9 +12,8 @@ import {
   Globe,
   AlertCircle,
   RefreshCw,
-    Trophy,
-    ChevronRight,
-    VolumeX,
+  ChevronRight,
+  VolumeX,
   X,
   Dumbbell,
   Sigma,
@@ -31,12 +30,8 @@ import { ThumbnailInteractive } from '@/components/slide-renderer/components/Thu
 import { useStageStore, useCanvasStore } from '@/lib/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useNearViewport } from '@/lib/hooks/use-near-viewport';
-import { drainPendingSceneTTS } from '@/lib/hooks/use-scene-generator';
-import { createLogger } from '@/lib/logger';
 import type { Scene, SlideContent, InteractiveContent } from '@/lib/types/stage';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
-
-const log = createLogger('SceneSidebar');
 
 interface SceneSidebarProps {
   readonly collapsed: boolean;
@@ -130,9 +125,7 @@ export function SceneSidebar({
         ),
       ).length,
     [scenes],
-  );
-
-  // Heavy-course structure (semester preset): blueprint.units already knows the
+  );  // Heavy-course structure (semester preset): blueprint.units already knows the
   // unit -> lesson -> outline hierarchy. Collapsible unit sections mount ONLY
   // the expanded unit's scene entries instead of one unvirtualized 600-item
   // thumbnail list. Single-unit / blueprint-less courses keep the flat list.
@@ -747,65 +740,38 @@ export function SceneSidebar({
             failed/generating queues — after a reload, a deck with unfinished
             pages still surfaces "finish remaining" instead of silently
             masquerading both as complete and as un-resumable. */}
-        {(generatingOutlines.length > 0 || recoveryPending.length > 0 || (isCourseComplete && generatingOutlines.length === 0)) && (
+        {/* Single RECOVERY SURFACE (one umbrella, no per-phase cards):
+            regenerated pages + missing narration + re-queued media all ride
+            the same automatic train; this line is ONLY a state readout and
+            disappears the moment the queue drains. Exactly one action, only
+            when the automatic path is parked (paused) — otherwise everything
+            here is zero-click. */}
+        {(generatingOutlines.length > 0 || recoveryPending.length > 0 || audioPendingCount > 0) && (
           <div
             data-testid="generation-dock"
             className="shrink-0 p-2 space-y-2 border-t border-r-[6px] border-transparent border-t-gray-100 dark:border-t-gray-800"
           >
-
-          {/* RECOVERY CARD: persisted-basis pending pages (reload-safe). Shown
-              only when the loop is idle; the busy/paused cards own their own
-              affordances. Clicking resumes — generateRemaining picks up exactly
-              the outlines that still lack scenes, including previously failed
-              ones; trails already-generated pages untouched. */}
-          {generatingOutlines.length === 0 && recoveryPending.length > 0 && (() => {
+          {generatingOutlines.length === 0 && (recoveryPending.length > 0 || audioPendingCount > 0) && (() => {
+            const parts: string[] = [];
+            if (recoveryPending.length > 0) parts.push(t('stage.recoveryPending', { count: recoveryPending.length }));
+            if (audioPendingCount > 0) parts.push(t('generation.audioPendingCount', { count: audioPendingCount }));
             return (
-              <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/60 dark:bg-purple-900/20 p-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-purple-700 dark:text-purple-300">
-                    {t('stage.recoveryPending', { count: recoveryPending.length })}
-                  </span>
-                  {onResumeGeneration && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onResumeGeneration();
-                      }}
-                      className="inline-flex items-center gap-1 rounded-md bg-purple-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-purple-500 transition-colors active:scale-95"
-                    >
-                      <Play className="w-3 h-3" />
-                      {t('stage.resumeGeneration')}
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* AUDIO RECOVERY: scenes whose speech actions have no audio yet (TTS
-              outage mid-course, reload, provider flake). One drain pass over the
-              persisted scene list — no regeneration, no restart. */}
-          {generatingOutlines.length === 0 && audioPendingCount > 0 && (() => {
-            return (
-              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-900/20 p-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-                    {t('stage.audioPendingCount', { count: audioPendingCount })}
-                  </span>
+              <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/60 dark:bg-purple-900/20 p-2 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold text-purple-700 dark:text-purple-300 truncate">
+                  {t('stage.recoveryUmbrella', { items: parts.join(', ') })}
+                </span>
+                {onResumeGeneration && generationStatus === 'paused' && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      void drainPendingSceneTTS(useStageStore.getState().scenes?.slice() ?? []).then((restored) => {
-                        if (restored > 0) {
-                          log.info(`Audio drain restored narration for ${restored} scene(s)`);
-                        }
-                      });
+                      onResumeGeneration();
                     }}
-                    className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-amber-500 transition-colors active:scale-95"
+                    className="inline-flex items-center gap-1 rounded-md bg-purple-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-purple-500 transition-colors active:scale-95"
                   >
-                    {t('stage.fillNarration')}
+                    <Play className="w-3 h-3" />
+                    {t('stage.resumeGeneration')}
                   </button>
-                </div>
+                )}
               </div>
             );
           })()}
@@ -977,109 +943,6 @@ export function SceneSidebar({
               );
             })()}
 
-          {/* Course-complete placeholder (shown when outline is exhausted) */}
-          {isCourseComplete &&
-            generatingOutlines.length === 0 &&
-            (() => {
-              const isActive = currentSceneId === PENDING_SCENE_ID;
-              return (
-                <div
-                  key="course-complete-slot"
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      selectScene(PENDING_SCENE_ID);
-                    }
-                  }}
-                  onClick={() => selectScene(PENDING_SCENE_ID)}
-                  className={cn(
-                    'group relative rounded-lg flex flex-col gap-1 p-1.5 transition-all duration-200 cursor-pointer hover:bg-amber-50/60 dark:hover:bg-amber-900/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400',
-                    !isActive && 'opacity-80',
-                    isActive &&
-                      'bg-amber-50 dark:bg-amber-900/20 ring-1 ring-amber-200 dark:ring-amber-700 opacity-100',
-                  )}
-                >
-                  <div className="flex justify-between items-center px-2 pt-0.5">
-                    <div className="flex items-center gap-2 max-w-full">
-                      <span
-                        className={cn(
-                          'text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shrink-0',
-                          isActive
-                            ? 'bg-amber-500 dark:bg-amber-400 text-white shadow-sm shadow-amber-500/30'
-                            : 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400',
-                        )}
-                      >
-                        {scenes.length + 1}
-                      </span>
-                      <span
-                        className={cn(
-                          'text-xs font-bold truncate transition-colors',
-                          isActive
-                            ? 'text-amber-700 dark:text-amber-300'
-                            : 'text-amber-600 dark:text-amber-400',
-                        )}
-                      >
-                        {t('stage.courseComplete')}
-                      </span>
-                    </div>
-                  </div>
-                  <div
-                    className={cn(
-                      'relative aspect-video w-full rounded overflow-hidden ring-1 flex items-center justify-center transition-all',
-                      'bg-amber-50/80 dark:bg-amber-950/20',
-                      isActive
-                        ? 'ring-amber-300 dark:ring-amber-700'
-                        : 'ring-amber-100 dark:ring-amber-900/40',
-                    )}
-                  >
-                    {/* soft radial glow */}
-                    <div
-                      className="absolute inset-0"
-                      style={{
-                        background:
-                          'radial-gradient(circle at 50% 55%, rgba(251, 191, 36, 0.14), transparent 65%)',
-                      }}
-                    />
-                    {/* sparkles (subtle) */}
-                    <svg
-                      viewBox="0 0 20 20"
-                      className="absolute top-1 right-1.5 w-1.5 h-1.5 text-amber-300/70 dark:text-amber-400/60"
-                      aria-hidden
-                    >
-                      <path
-                        d="M10 1 L12 8 L19 10 L12 12 L10 19 L8 12 L1 10 L8 8 Z"
-                        fill="currentColor"
-                      />
-                    </svg>
-                    <svg
-                      viewBox="0 0 20 20"
-                      className="absolute bottom-1 left-1.5 w-1 h-1 text-amber-300/60 dark:text-amber-400/50"
-                      aria-hidden
-                    >
-                      <path
-                        d="M10 1 L12 8 L19 10 L12 12 L10 19 L8 12 L1 10 L8 8 Z"
-                        fill="currentColor"
-                      />
-                    </svg>
-                    <Trophy
-                      className="relative w-8 h-8 text-amber-500 dark:text-amber-400"
-                      strokeWidth={1.6}
-                    />
-                    {lessonProgress && (
-                      <span className="relative mt-1.5 text-[11px] font-semibold text-amber-600/90 dark:text-amber-400/90">
-                        {t('generation.lessonCompletion', {
-                          done: lessonProgress.lessons.filter((l) => l.done === l.total).length,
-                          total: lessonProgress.lessons.length,
-                          scenes: scenes.length,
-                        })}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
           </div>
         )}
 

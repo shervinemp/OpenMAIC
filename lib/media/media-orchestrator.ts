@@ -96,8 +96,29 @@ export async function generateMediaForOutlines(
       // recovery policy ("never give up while generation is configured")
       // re-enqueues them on every pass, so a backend that failed earlier
       // recovers automatically once its cause is fixed.
+      //
+      // Byte-aware completion (auto-recovery for ANY deleted asset): "done"
+      // means bytes exist AND are non-empty. A done-marked task whose
+      // persisted media row vanished (manual delete, quota eviction, profile
+      // wipe) is repaired under the same elementId — nothing else in the deck
+      // is touched. Deterministic terminal failures (errorCode persisted with
+      // an empty placeholder) are NOT re-kicked: a content-policy rejection
+      // would burn the provider every reload without ever succeeding; those
+      // wait for the user (or a changed prompt/config).
       const existing = store.getTask(mg.elementId);
-      if (existing?.status === 'done') continue;
+      if (existing?.status === 'done') {
+        const persisted = await db.mediaFiles
+          .get(mediaFileKey(stageId, mg.elementId))
+          .catch(() => null);
+        if (persisted && (persisted.size ?? 0) > 0) continue;
+        if (persisted?.errorCode) continue;
+        log.info(
+          `Media bytes for ${JSON.stringify(mg.elementId)} are missing though marked done; re-queueing repair`,
+        );
+        useMediaGenerationStore.getState().markPendingForRetry(mg.elementId);
+        allRequests.push(mg);
+        continue;
+      }
       allRequests.push(mg);
     }
   }

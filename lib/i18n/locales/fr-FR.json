@@ -234,7 +234,7 @@
     "proModeDisabledHint": "L’édition n’est pas disponible sur cette page. Ouvrez une diapositive de cours pour la modifier en mode Pro.",
     "resumeGeneration": "Reprendre",
     "recoveryPending": "{{count}} page(s) pas encore générée(s)",
-    "fillNarration": "Compléter la narration manquante"
+    "recoveryUmbrella": "Récupération — poursuite automatique : {{items}}"
   },
   "edit": {
     "proMode": "Pro",
