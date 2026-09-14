@@ -1525,6 +1525,21 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
   // Keep ref in sync so retrySingleOutline can call it
   generateRemainingRef.current = generateRemaining;
 
+  // Queue-walk: after a repair settles (success or contained tts-phase failure),
+  // the next failed outline runs automatically — one red-card click drains the
+  // queue until a LEGITIMATE failure (content/actions hard error) parks it.
+  // The settled outline is excluded when picking the head so a live failure
+  // cannot re-queue into an infinite walk on itself.
+  const retrySingleOutlineRef = useRef<((outlineId: string) => Promise<void>) | null>(null);
+  const walkFailedQueueRef = useRef<(settledId: string | null) => void>(() => undefined);
+  walkFailedQueueRef.current = (settledId: string | null) => {
+    if (generatingRef.current) return;
+    const current = store.getState().failedOutlines;
+    const next = current.find((o) => o.id !== settledId);
+    if (!next) return;
+    void retrySingleOutlineRef.current?.(next.id);
+  };
+
   const stop = useCallback(() => {
     abortRef.current = true;
     store.getState().bumpGenerationEpoch();
@@ -1646,6 +1661,11 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           store.getState().addFailedOutline(outline);
           store.getState().setGenerationStatus('paused');
           store.getState().setGenerationPhase('idle');
+          // Contained failure (scene kept via tts-phase): the walk may move on
+          // to the next failed outline — a hard content/actions failure parks.
+          if (jobResult.failedPhase === 'tts') {
+            walkFailedQueueRef.current(outline.id);
+          }
           return;
         }
 
@@ -1661,6 +1681,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         // Resume remaining generation if there are pending outlines
         if (store.getState().generatingOutlines.length > 0 && lastParamsRef.current) {
           generateRemainingRef.current?.(lastParamsRef.current);
+        } else if (store.getState().failedOutlines.length > 0) {
+          // Continue the failed queue automatically — one Retry click drains
+          // it until a legitimate failure parks the walk.
+          walkFailedQueueRef.current(outline.id);
         } else {
           // This retry may have materialized the final outstanding slide. The
           // generateRemaining completion path is not reached on the retry flow,
@@ -1676,6 +1700,8 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
     },
     [store],
   );
+  // Keep the walk's ref binding current across renders.
+  retrySingleOutlineRef.current = retrySingleOutline;
 
   return { generateRemaining, retrySingleOutline, stop, isGenerating };
 }

@@ -2212,6 +2212,11 @@ export function getModel(config: ModelConfig): ModelWithInfo {
             (providerId === 'lemonade'
               ? getDefaultThinkingConfig(getCatalogThinkingCapability(providerId, config.modelId))
               : undefined);
+          if (providerId === 'deepseek') {
+            log.info(
+              `[DEBUG-osen] compat wrapper provider=${providerId} model=${config.modelId} ctxThinking=${JSON.stringify(thinkingFromContext)}`,
+            );
+          }
           if (thinking && init?.body && typeof init.body === 'string') {
             const extra = getCompatThinkingBodyParams(providerId, config.modelId, thinking);
             if (extra) {
