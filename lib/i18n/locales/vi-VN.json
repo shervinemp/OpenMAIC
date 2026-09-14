@@ -1224,7 +1224,10 @@
       "tts": "Chuyển văn bản thành giọng nói",
       "review": "Mở cài đặt",
       "proceed": "Vẫn tạo"
-    }
+    },
+    "phaseContent": "đang viết nội dung",
+    "phaseActions": "đang sắp slide",
+    "phaseNarration": "đang thu thuyết minh"
   },
   "settings": {
     "title": "Cài đặt",
@@ -2136,9 +2139,9 @@
     "applyUpdate": "Áp dụng cập nhật",
     "backfillMedia": "Đồng bộ phương tiện của trình duyệt này vào kho khóa học",
     "backfillDone": "Hoàn tất — {{uploaded}} đã tải lên, {{existing}} đã đồng bộ, {{missing}} không có dữ liệu.",
-"materializeSection": "Hiện vật hóa khóa học (byte trên máy chủ)",
-"materializeNarration": "Thuyết minh: {{onServer}}/{{declared}} đoạn có byte trên máy chủ",
-"materializeMedia": "Hình ảnh / video: {{onServer}}/{{declared}} tài nguyên có byte trên máy chủ",
+    "materializeSection": "Hiện vật hóa khóa học (byte trên máy chủ)",
+    "materializeNarration": "Thuyết minh: {{onServer}}/{{declared}} đoạn có byte trên máy chủ",
+    "materializeMedia": "Hình ảnh / video: {{onServer}}/{{declared}} tài nguyên có byte trên máy chủ",
     "updateState": "{{state}} · {{scenes}} trang"
   }
 }

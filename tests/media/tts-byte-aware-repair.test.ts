@@ -16,6 +16,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   updateScene: vi.fn(),
+  setRepairActive: vi.fn(),
+  retryFailedOutline: vi.fn(),
   settingsState: vi.fn(),
   fetch: vi.fn(),
 }));
@@ -27,7 +29,13 @@ const ttsCalls: Array<{ audioId: string; text: string; voice: string }> = [];
 const failingTexts = new Set<string>();
 
 vi.mock('@/lib/store/stage', () => ({
-  useStageStore: { getState: () => ({ updateScene: mocks.updateScene }) },
+  useStageStore: {
+    getState: () => ({
+      updateScene: mocks.updateScene,
+      setRepairActive: mocks.setRepairActive,
+      retryFailedOutline: mocks.retryFailedOutline,
+    }),
+  },
 }));
 
 vi.mock('@/lib/store/settings', () => ({

@@ -249,6 +249,9 @@ export default function ClassroomDetailPage() {
       // dispatches per class: TTS drain for narration, the orchestrator's
       // byte-aware requeue (generateMediaForOutlines) for image/video. One
       // dispatch path avoids racing the orchestrator from two entry points.
+      // Media recovery runs as a queue citizen: byte truth hydrates phase
+      // rows on the SAME failed queue first (red cards on the first render),
+      // then the drain/orchestrator consumes entries per class.
       const storeState = useStageStore.getState();
       const storeScenes = storeState.scenes;
       void (async () => {
@@ -257,6 +260,16 @@ export default function ClassroomDetailPage() {
           language: storeState.blueprint?.languageDirective,
           outlines,
           stageId: stage.id,
+          onScenePhaseFailure: (sceneId, phase) => {
+            const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
+            if (!scene?.outlineId) return;
+            useStageStore.getState().recordScenePhase(scene.outlineId, phase, {
+              status: 'failed',
+              error: phase === 'tts' ? 'Narration bytes missing' : 'Generated media bytes missing',
+            });
+            const outline = outlines.find((o) => o.id === scene.outlineId);
+            if (outline) useStageStore.getState().addFailedOutline(outline);
+          },
         });
       })().catch((err) => log.warn('[Classroom] Media repair resume error:', err));
     }

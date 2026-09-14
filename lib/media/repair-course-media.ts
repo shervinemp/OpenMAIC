@@ -62,7 +62,7 @@ const log = createLogger('RepairCourseMedia');
 export interface MediaRepairReport {
   /** Narration refs restored (bytes resolve again). */
   audioRestored: number;
-  /** Narration refs still without resolvable bytes after the passes. */
+  /** Narration refs still missing after the passes. */
   audioStillPending: number;
   /** Non-narration refs found with missing bytes (detection truth, pre-dispatch). */
   mediaPending: number;
@@ -77,6 +77,10 @@ export interface MediaRepairReport {
   mediaUnrecoverable: number;
   /** Narration repair passes actually run (≤ `passes`; stops on first no-op). */
   narrationPassesRun: number;
+  /** Scene ids whose narration was detected dead (pre-drain byte truth). */
+  narrationFailedSceneIds: string[];
+  /** Scene ids generated-media refs missing at detection. */
+  mediaFailedSceneIds: string[];
 }
 
 export interface MediaRepairOptions {
@@ -102,6 +106,13 @@ export interface MediaRepairOptions {
    * dropped).
    */
   additionalAssets?: unknown[];
+  /**
+   * ONE-QUEUE hydration hook (classroom supply): when detection finds a
+   * scene's narration/media dead, the phase row is recorded FIRST so the red
+   * regenerate card exists before the automatic dispatch — the repair
+   * dispatch is a consumer of that queue, not a parallel system.
+   */
+  onScenePhaseFailure?: (sceneId: string, phase: 'tts' | 'media') => void;
 }
 
 /** Narration refs carry the pipeline's stable-request-id shape (see walker). */
@@ -140,7 +151,13 @@ export async function repairCourseMedia(
     mediaRequeued: 0,
     mediaUnrecoverable: 0,
     narrationPassesRun: 0,
+    narrationFailedSceneIds: [],
+    mediaFailedSceneIds: [],
   };
+  // Detection-time phase writes (ONE QUEUE): the classroom supplies this so
+  // dead-narration/media scenes enter the same failed queue with their
+  // phase rows BEFORE the automatic dispatch renders any of the fixes.
+  const recordScenePhaseFailure = options.onScenePhaseFailure;
 
   // ---- Detection sweep (pre-repair truth, per ref) ----
   // Renderer-visible refs only (src/audioId/audioRef/mediaRef/poster):
@@ -169,6 +186,21 @@ export async function repairCourseMedia(
     mediaRefs.forEach((ref, i) => {
       if (!mediaOk[i]) deadMediaRefs.add(ref);
     });
+    // Per-scene byte truth for the ONE QUEUE hydration: a scene with dead
+    // narration/media is byte-truth (the card basis), while extra materials
+    // (stage, agents, exams) only contribute ref counts.
+    if (options.additionalAssets?.includes(material)) continue;
+    const scene = material as { id?: string };
+    const sceneDeadNarration = narratedOk.some((ok) => !ok);
+    const sceneDeadMedia = mediaOk.some((ok) => !ok);
+    if (sceneDeadNarration && scene.id) {
+      report.narrationFailedSceneIds.push(scene.id);
+      recordScenePhaseFailure?.(scene.id, 'tts');
+    }
+    if (sceneDeadMedia && scene.id) {
+      recordScenePhaseFailure?.(scene.id, 'media');
+      report.mediaFailedSceneIds.push(scene.id);
+    }
   }
   report.mediaPending = deadMediaRefs.size;
   report.mediaRequeued = deadMediaRefs.size;

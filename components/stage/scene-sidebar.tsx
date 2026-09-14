@@ -61,6 +61,7 @@ export function SceneSidebar({
   const { scenes, currentSceneId, setCurrentSceneId, generatingOutlines, generationStatus } =
     useStageStore();
   const failedOutlines = useStageStore.use.failedOutlines();
+  const repairActive = useStageStore.use.repairActive();
   const blueprint = useStageStore.use.blueprint();
   const generationPhase = useStageStore.use.generationPhase();
   const sceneDepth = useStageStore.use.sceneDepth();
@@ -721,16 +722,19 @@ export function SceneSidebar({
             persisted invariant (missing outline ⇒ failed regenerate box), so
             the same UI as before also survives reloads. Initiation stays
             manual (Retry per card) unless the user pauses/resumes. */}
-        {generatingOutlines.length > 0 && (
+        {(generatingOutlines.length > 0 || failedOutlines.length > 0) && (
           <div
             data-testid="generation-dock"
             className="shrink-0 p-2 space-y-2 border-t border-r-[6px] border-transparent border-t-gray-100 dark:border-t-gray-800"
           >
 
-          {/* Single placeholder for the next generating page (clickable) */}
-          {generatingOutlines.length > 0 &&
+          {/* Single dock card: the active placeholder, or the failed outline
+              when only the red card remains (ONE QUEUE — any unsettled phase
+              surfaces the same classic regenerate card, Retry/Skip included). */}
+          {(generatingOutlines.length > 0 || failedOutlines.length > 0) &&
             (() => {
-              const outline = generatingOutlines[0];
+              const outline = generatingOutlines[0] ?? failedOutlines[0];
+              if (!outline) return null;
               const isFailed = failedOutlines.some((f) => f.id === outline.id);
               const isRetrying = retryingOutlineId === outline.id;
               const isPaused = generationStatus === 'paused';
@@ -810,12 +814,18 @@ export function SceneSidebar({
                                 e.stopPropagation();
                                 handleRetryOutline(outline.id);
                               }}
-                              disabled={isRetrying}
+                              disabled={
+                                isRetrying || (repairActive === 'narration' || repairActive === 'media')
+                              }
                               className="p-1 -ml-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors active:scale-95 disabled:opacity-50 disabled:active:scale-100"
                               title={t('generation.retryScene')}
                             >
                               <RefreshCw
-                                className={cn('w-3.5 h-3.5', isRetrying && 'animate-spin')}
+                                className={cn(
+                                  'w-3.5 h-3.5',
+                                  (isRetrying || repairActive === 'narration' || repairActive === 'media') &&
+                                    'animate-spin',
+                                )}
                               />
                             </button>
                           ) : (
@@ -875,19 +885,32 @@ export function SceneSidebar({
                     </div>
                     {/* Phase chips (Pillar 2 §4.2): content → actions → tts → media */}
                     {!isFailed && !isPaused && (
-                      <div className="absolute bottom-1 left-1 right-1 flex items-center gap-1">
-                        {(['content', 'actions', 'tts', 'media'] as const).map((phase) => (
-                          <span
-                            key={phase}
-                            className={cn(
-                              'flex-1 h-1 rounded-full transition-colors',
-                              generationPhase === phase
-                                ? 'bg-purple-500 dark:bg-purple-400 animate-pulse'
-                                : 'bg-gray-200 dark:bg-gray-700',
-                            )}
-                          />
-                        ))}
-                      </div>
+                      <>
+                        <div className="absolute bottom-3 left-1 right-1 flex items-center gap-1">
+                          {(['content', 'actions', 'tts', 'media'] as const).map((phase) => (
+                            <span
+                              key={phase}
+                              className={cn(
+                                'flex-1 h-1 rounded-full transition-colors',
+                                generationPhase === phase
+                                  ? 'bg-purple-500 dark:bg-purple-400 animate-pulse'
+                                  : 'bg-gray-200 dark:bg-gray-700',
+                              )}
+                            />
+                          ))}
+                        </div>
+                        {/* What is running, spelled: the chips pulse but the
+                            phase NAME is what a glance should read. */}
+                        <span className="absolute bottom-1 left-1 right-1 text-center text-[9px] font-medium tracking-wide text-purple-500 dark:text-purple-300">
+                          {t(
+                            generationPhase === 'actions'
+                              ? 'generation.phaseActions'
+                              : generationPhase === 'tts'
+                                ? 'generation.phaseNarration'
+                                : 'generation.phaseContent',
+                          )}
+                        </span>
+                      </>
                     )}
                   </div>
                 </div>

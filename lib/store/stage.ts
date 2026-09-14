@@ -268,6 +268,7 @@ function clearedStageState(state: Pick<StageState, 'generationEpoch'>) {
     sceneDepth: {},
     failedOutlines: [],
     skippedOutlineIds: [],
+    repairActive: null,
     generatingOutlines: [],
   };
 }
@@ -457,6 +458,10 @@ interface StageState {
       the deck can complete without it. Session-level (not persisted). */
   skippedOutlineIds: string[];
   skipFailedOutline: (outlineId: string) => void;
+  /** Repair engine activity marker (narration drain / media requeue): on
+      while a repair pass is running, null when settled. Session-level. */
+  repairActive: 'narration' | 'media' | null;
+  setRepairActive: (active: 'narration' | 'media' | null) => void;
 
   // Getters
   getCurrentScene: () => Scene | null;
@@ -606,6 +611,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   serverManifestByStage: {},
   stageSyncRequest: 0,
   skippedOutlineIds: [],
+  repairActive: null,
 
   // Actions
   setStage: (stage) => {
@@ -1003,6 +1009,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   setCurrentGeneratingOrder: (currentGeneratingOrder) => set({ currentGeneratingOrder }),
 
   setGenerationPhase: (generationPhase) => set({ generationPhase }),
+  setRepairActive: (repairActive) => set({ repairActive }),
 
   recordSceneDepth: (order, summary) =>
     set({ sceneDepth: { ...get().sceneDepth, [String(order)]: summary } }),
@@ -1385,10 +1392,26 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           ...inMemoryFailed,
           ...recoveredLessonGroups
             .flatMap((group) => group.jobs)
-            .filter((job) => job.phases.content?.status === 'failed' && job.resolution !== 'skip')
+            .filter(
+              (job) => job.phases.content?.status === 'failed' && job.resolution !== 'skip',
+            )
             .map((job) => outlines.find((o) => o.id === job.outlineId))
             .filter((o): o is NonNullable<typeof o> => !!o),
         ];
+        // Fill-decay rows (tts/media phases failed behind a LIVE scene) hydrate
+        // UNCONDITIONALLY: they are byte-truth repairs on a complete deck, not
+        // interrupted generation — the fill never gates completion and never
+        // freezes with it.
+        const fillFailedOutlines = recoveredLessonGroups
+          .flatMap((group) => group.jobs)
+          .filter(
+            (job) =>
+              job.resolution !== 'skip' &&
+              migrated.some((scene) => scene.outlineId === job.outlineId) &&
+              (job.phases.tts?.status === 'failed' || job.phases.media?.status === 'failed'),
+          )
+          .map((job) => outlines.find((o) => o.id === job.outlineId))
+          .filter((o): o is NonNullable<typeof o> => !!o);
         // Dedupe by id (an outline can be in-memory failed AND persisted failed).
         const seenFailed = new Set<string>();
         const uniqueFailedOutlines = failedOutlines.filter((o) =>
@@ -1444,16 +1467,23 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         // FOLD-IN GUARD (deleted-after-complete deck): the missing-outline
         // invariant folds into failedOutlines ONLY when generation is not
         // settled. A generationComplete deck (user deleted a slide after a
-        // finish, or complete-by-all-materialized) stays frozen — folding
-        // otherwise would resurrect deleted slides as regeneration work.
-        const finalFailedOutlines = generationComplete
-          ? uniqueFailedOutlines
-          : [
-              ...uniqueFailedOutlines,
-              ...recoveryBasis.filter(
-                (o) => !uniqueFailedOutlines.some((f) => f.id === o.id),
-              ),
-            ];
+        // finish, or complete-by-all-materialized) stays frozen for the
+        // CONTENT class — folding otherwise would resurrect deleted slides
+        // as regeneration work. Fill decay (tts/media rows) hydrates above,
+        // unconditionally — its red cards are byte repairs, not resurrection.
+        const finalFailedOutlines = [
+          ...(generationComplete
+            ? uniqueFailedOutlines
+            : [
+                ...uniqueFailedOutlines,
+                ...recoveryBasis.filter(
+                  (o) => !uniqueFailedOutlines.some((f) => f.id === o.id),
+                ),
+              ]),
+          ...fillFailedOutlines.filter(
+            (o) => !uniqueFailedOutlines.some((f) => f.id === o.id),
+          ),
+        ];
         set({
           stage: data.stage,
           scenes: migrated,

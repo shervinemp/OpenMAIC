@@ -163,6 +163,11 @@ export async function generateMediaForOutlines(
           ? { status: 'done' }
           : { status: 'failed', error: `${stats.failed}/${stats.total} media item(s) failed` },
       );
+      if (stats.failed === 0) {
+        // ONE QUEUE: the outline's media phase settled — its red card (if the
+        // fail hydration put it there) drops with the phase.
+        useStageStore.getState().retryFailedOutline(outlineId);
+      }
     }
   }
 }

@@ -272,4 +272,68 @@ describe('lessonGroups job model (Pillar 2)', () => {
     // Terminal failure survives recovery untouched.
     expect(phases.media).toMatchObject({ status: 'failed', attempts: 2 });
   });
+
+  it('ONE QUEUE: fill-decay phase rows hydrate red cards for live scenes (and skips stay settled)', async () => {
+    const sceneFor = (id: string, order: number, outlineId: string) => ({
+      id,
+      stageId: 'stage-1',
+      type: 'slide',
+      title: id,
+      order,
+      outlineId,
+      content: {
+        type: 'slide',
+        canvas: {
+          id: `canvas-${id}`,
+          viewportSize: 1000,
+          viewportRatio: 0.5625,
+          theme: { backgroundColor: '#fff', themeColors: ['#000'], fontColor: '#000', fontName: 'Inter' },
+          elements: [],
+        },
+      },
+    });
+    loadStageDataMock.mockResolvedValue({
+      stage: makeStage(),
+      scenes: [sceneFor('scene-a', 1, 'outline-a'), sceneFor('scene-b', 2, 'outline-b')],
+      currentSceneId: 'scene-a',
+      chats: [],
+      outline: {
+        outlines: [makeOutline('outline-a', 1), makeOutline('outline-b', 2)],
+        blueprint: makeBlueprint(),
+        lessonGroups: [
+          {
+            lessonId: 'lesson_1',
+            jobs: [
+              {
+                outlineId: 'outline-a',
+                phases: {
+                  content: { status: 'done', attempts: 1, updatedAt: 1 },
+                  tts: { status: 'failed', attempts: 1, updatedAt: 1, error: 'bytes gone' },
+                },
+              },
+              {
+                // Skipped: ITS fill failure stays settled.
+                outlineId: 'outline-b',
+                resolution: 'skip',
+                phases: {
+                  content: { status: 'done', attempts: 1, updatedAt: 1 },
+                  tts: { status: 'failed', attempts: 1, updatedAt: 1, error: 'bytes gone' },
+                },
+              },
+            ],
+          },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    });
+
+    await useStageStore.getState().loadFromStorage('stage-1');
+    const state = useStageStore.getState();
+    // A live scene's fill failure surfaces the same red regenerate card —
+    // ONE queue, per-class rows; the skipped job stays settled.
+    expect(state.failedOutlines.map((o) => o.id)).toEqual(['outline-a']);
+    // Fill decay never demotes completion: the deck itself is whole.
+    expect(state.generationComplete).toBe(true);
+  });
 });
