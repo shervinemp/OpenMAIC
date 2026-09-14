@@ -393,9 +393,6 @@ export async function callLLM<T extends GenerateTextParams>(
     try {
       // Resolve effective thinking config: per-call > global env > undefined
       const effectiveThinking = thinking ?? getGlobalThinkingConfig();
-      log.info(
-        `[DEBUG-osen] callLLM source=${source} provider=${getModelProviderId(params)} model=${getModelId(params)} thinking=${JSON.stringify(effectiveThinking)}`,
-      );
       const injectedParams = injectProviderOptions(params, effectiveThinking);
 
       // Wrap in thinkingContext so the custom fetch wrapper in providers.ts
