@@ -64,10 +64,65 @@ function throwIfAborted(signal?: AbortSignal): void {
 }
 
 /**
+ * Per-pass requeue cap (environment-tunable). A stadium-size backlog (e.g. a
+ * first mount after a week-long outage with a local ComfyUI on one GPU)
+ * shouldn't queue EVERY missing row onto the backend at once — the pass
+ * dispatches a bounded slice and the rest waits for the next pass.
+ * `COURSE_MEDIA_REPAIR_REQUEUE_LIMIT` (default 48) caps the dispatch.
+ */
+function repairRequeueLimit(): number | undefined {
+  const raw = process.env.COURSE_MEDIA_REPAIR_REQUEUE_LIMIT?.trim();
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 48;
+}
+
+/**
+ * Per-stage single-flight for mount-time repair dispatch (process-wide).
+ *
+ * `generateMediaForOutlines` is called by BOTH the generation loop and the
+ * classroom's mount repair. A tab reload mid-repair used to spawn a second
+ * concurrent orchestrator against the same stage — both passes paging the
+ * provider's queue (duplicate submissions, double GPU burn, interleaved
+ * markDone). The second call JOINs the first's outcome instead of running
+ * its own dispatch; only 'done'/'full requeue flags normalize on top.
+ */
+const inFlightMediaDispatch = new Map<
+  string,
+  Promise<void>
+>();
+
+function joinOrCreateDispatch(
+  stageId: string,
+  run: () => Promise<void>,
+): Promise<void> {
+  const existing = inFlightMediaDispatch.get(stageId);
+  if (existing) return existing;
+  const promise = run().finally(() => {
+    inFlightMediaDispatch.delete(stageId);
+  });
+  inFlightMediaDispatch.set(stageId, promise);
+  return promise;
+}
+
+/**
  * Launch media generation for all mediaGenerations declared in outlines.
  * Runs in parallel with content/action generation — does not block.
+ *
+ * Per-stage single-flight: a concurrent duplicate call for the same stage
+ * joins the in-flight run instead of stacking duplicate provider dispatches
+ * (reload storms used to double-submit every queued task).
  */
 export async function generateMediaForOutlines(
+  outlines: SceneOutline[],
+  stageId: string,
+  abortSignal?: AbortSignal,
+): Promise<void> {
+  const dispatch = async (): Promise<void> =>
+    generateMediaForOutlinesDispatch(outlines, stageId, abortSignal);
+  return joinOrCreateDispatch(stageId, dispatch);
+}
+
+async function generateMediaForOutlinesDispatch(
   outlines: SceneOutline[],
   stageId: string,
   abortSignal?: AbortSignal,
@@ -106,6 +161,14 @@ export async function generateMediaForOutlines(
       // would burn the provider every reload without ever succeeding; those
       // wait for the user (or a changed prompt/config).
       const existing = store.getTask(mg.elementId);
+      // In-flight dedupe: a task already queued ('pending') or rendering
+      // ('generating') in THIS browser must not be re-submitted by another
+      // orchestrator pass — a mount-time repair racing a generation pass
+      // (or repeated reloads) otherwise submits every queued job AGAIN,
+      // stacking the provider's queue behind duplicates.
+      if (existing && (existing.status === 'pending' || existing.status === 'generating')) {
+        continue;
+      }
       if (existing?.status === 'done') {
         const persistedRow = await (db.mediaFiles as {
           get?: (key: string) => Promise<
@@ -127,11 +190,27 @@ export async function generateMediaForOutlines(
 
   if (allRequests.length === 0) return;
 
+  // Bounded repair pass: a reload storm after a long outage used to queue
+  // EVERY missing row onto the provider at once (one local GPU → minutes of
+  // backlog, repeated mounts piled more). The dispatch stays serial-ordered;
+  // the excess waits for the next pass instead of stacking the backend.
+  const requeueLimit = repairRequeueLimit();
+  const dispatchable =
+    requeueLimit !== undefined && allRequests.length > requeueLimit
+      ? allRequests.slice(0, requeueLimit)
+      : allRequests;
+  if (dispatchable.length < allRequests.length) {
+    log.warn(
+      `Media requeue capped at ${dispatchable.length}/${allRequests.length} requests this pass ` +
+        '(the rest wait for the next repair pass)',
+    );
+  }
+
   // Enqueue all as pending
-  useMediaGenerationStore.getState().enqueueTasks(stageId, allRequests);
+  useMediaGenerationStore.getState().enqueueTasks(stageId, dispatchable);
 
   const mediaStats = new Map<string, { total: number; done: number; failed: number }>();
-  for (const req of allRequests) {
+  for (const req of dispatchable) {
     const outlineId = outlineByElement.get(req.elementId);
     if (!outlineId) continue;
     const stats = mediaStats.get(outlineId) ?? { total: 0, done: 0, failed: 0 };
@@ -141,7 +220,7 @@ export async function generateMediaForOutlines(
   const phaseStarted = new Set<string>();
 
   // Process requests serially — image/video APIs have limited concurrency
-  for (const req of allRequests) {
+  for (const req of dispatchable) {
     if (abortSignal?.aborted) break;
     const outlineId = outlineByElement.get(req.elementId);
     if (outlineId && !phaseStarted.has(outlineId)) {
