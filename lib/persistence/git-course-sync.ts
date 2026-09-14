@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { createLogger } from '@/lib/logger';
@@ -109,6 +109,58 @@ function git(
       },
     );
   });
+}
+
+/**
+ * Cross-process repository write lock.
+ *
+ * In-process commits are already serialized (drain chain), but TWO server
+ * processes (an old `next dev` still alive while a replacement starts — the
+ * exact incident pattern that corrupted loose objects three times) each run
+ * their own serialized chain, and two Interleaved `git add`/commit writers
+ * race inside the same object database. `mkdir` is atomic, so a lock
+ * DIRECTORY under `.git` arbitrates across processes; a stale lock (writer
+ * crashed mid-commit) is stolen after a generous-age window so liveness is
+ * guaranteed. Readers skip it: reads never mutate the object database.
+ */
+
+const GIT_LOCK_MAX_WAIT_MS = 120_000;
+const GIT_LOCK_POLL_MS = 150;
+const GIT_LOCK_STALE_MS = 10 * 60_000;
+
+async function withRepositoryLock<T>(repoPath: string, fn: () => Promise<T>): Promise<T> {
+  const lockDir = join(repoPath, '.git', 'openmaic-git.lock');
+  const startedAt = Date.now();
+  while (true) {
+    try {
+      await mkdir(lockDir);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      try {
+        // Stale steal: a crashed writer's lock cannot be waited out forever.
+        const info = await stat(lockDir);
+        if (Date.now() - info.mtimeMs > GIT_LOCK_STALE_MS) {
+          await rm(lockDir, { recursive: true, force: true });
+          continue;
+        }
+      } catch {
+        // Gone between EEXIST and stat — re-acquire.
+        continue;
+      }
+      if (Date.now() - startedAt > GIT_LOCK_MAX_WAIT_MS) {
+        throw new Error(`repository lock wait exceeded for ${repoPath}`);
+      }
+      await new Promise((settle) => {
+        setTimeout(settle, GIT_LOCK_POLL_MS);
+      });
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    await rm(lockDir, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -281,7 +333,10 @@ export class CourseGitCommitScheduler {
     const repoPath = (await getCourseBinding(this.persistenceDir, jobs[0].stageId))!.repoPath;
     for (const job of jobs) {
       try {
-        await this.commit(job, repoPath);
+        // Cross-process lock: another server instance may hold the repo
+        // concurrently (old dev server alive during a restart). In-process
+        // serialization alone cannot protect against that pair.
+        await withRepositoryLock(repoPath, () => this.commit(job, repoPath));
       } catch (error) {
         log.warn(
           `git commit for ${JSON.stringify(job.stageId)} failed (${job.reason}); ` +
