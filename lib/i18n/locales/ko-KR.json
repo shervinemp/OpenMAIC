@@ -1179,9 +1179,7 @@
       "tts": "음성 합성",
       "review": "설정 열기",
       "proceed": "그래도 생성"
-    },
-    "fillNarration": "내레이션 오디오 복원 중…",
-    "repairMedia": "생성 미디어 재생성 중…"
+    }
   },
   "settings": {
     "title": "설정",
@@ -2140,9 +2138,9 @@
     "applyUpdate": "업데이트 적용",
     "backfillMedia": "이 브라우저의 미디어를 코스 저장소로 동기화",
     "backfillDone": "백필 완료 — {{uploaded}}개 업로드, {{existing}}개 이미 동기화, {{missing}}개 바이트 없음.",
-    "materializeSection": "코스 물질화 (서버의 바이트)",
-    "materializeNarration": "내레이션: {{onServer}}/{{declared}} 클립이 서버에 있습니다",
-    "materializeMedia": "이미지 / 비디오: {{onServer}}/{{declared}} 에셋이 서버에 있습니다",
+"materializeSection": "코스 물질화 (서버의 바이트)",
+"materializeNarration": "내레이션: {{onServer}}/{{declared}} 클립이 서버에 있습니다",
+"materializeMedia": "이미지 / 비디오: {{onServer}}/{{declared}} 에셋이 서버에 있습니다",
     "updateState": "{{state}} · {{scenes}} 장면"
   }
 }

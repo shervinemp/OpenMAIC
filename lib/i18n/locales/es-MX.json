@@ -1179,9 +1179,7 @@
       "tts": "Texto a voz",
       "review": "Revisar ajustes",
       "proceed": "Generar de todos modos"
-    },
-    "fillNarration": "Restaurando audio de narración…",
-    "repairMedia": "Regenerando los medios generados…"
+    }
   },
   "settings": {
     "title": "Configuración",
@@ -2140,9 +2138,9 @@
     "applyUpdate": "Aplicar actualización",
     "backfillMedia": "Sincronizar los medios de este navegador al repo del curso",
     "backfillDone": "Copia completada — {{uploaded}} subidos, {{existing}} ya sincronizados, {{missing}} sin bytes.",
-    "materializeSection": "Materialización del curso (bytes en el servidor)",
-    "materializeNarration": "Narración: {{onServer}}/{{declared}} clips tienen bytes en el servidor",
-    "materializeMedia": "Imágenes / videos: {{onServer}}/{{declared}} activos tienen bytes en el servidor",
+"materializeSection": "Materialización del curso (bytes en el servidor)",
+"materializeNarration": "Narración: {{onServer}}/{{declared}} clips tienen bytes en el servidor",
+"materializeMedia": "Imágenes / videos: {{onServer}}/{{declared}} activos tienen bytes en el servidor",
     "updateState": "{{state}} · {{scenes}} escenas"
   }
 }

@@ -1179,9 +1179,7 @@
       "tts": "تحويل النص إلى كلام",
       "review": "مراجعة الإعدادات",
       "proceed": "التوليد على أي حال"
-    },
-    "fillNarration": "جارٍ استعادة التعليق الصوتي…",
-    "repairMedia": "إعادة توليد الوسائط المنشأة…"
+    }
   },
   "settings": {
     "title": "الإعدادات",
@@ -2160,9 +2158,9 @@
     "applyUpdate": "Apply update",
     "backfillMedia": "Sync this browser's media to the course repo",
     "backfillDone": "Backfill done — {{uploaded}} uploaded, {{existing}} already synced, {{missing}} had no bytes here.",
-    "materializeSection": "تجسيد الدورة (البايتات على الخادم)",
-    "materializeNarration": "التعليق الصوتي: {{onServer}}/{{declared}} مقطعًا لها بايتات على الخادم",
-    "materializeMedia": "الصور / الفيديو: {{onServer}}/{{declared}} أصلًا له بايتات على الخادم",
+"materializeSection": "تجسيد الدورة (البايتات على الخادم)",
+"materializeNarration": "التعليق الصوتي: {{onServer}}/{{declared}} مقطعًا لها بايتات على الخادم",
+"materializeMedia": "الصور / الفيديو: {{onServer}}/{{declared}} أصلًا له بايتات على الخادم",
     "updateState": "{{state}} · {{scenes}} scenes"
   }
 }

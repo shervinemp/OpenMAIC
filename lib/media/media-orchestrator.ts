@@ -9,10 +9,6 @@
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
-import {
-  createRepairProgressReporter,
-  type RepairProgressReporter,
-} from '@/lib/store/repair-progress';
 import { db, mediaFileKey } from '@/lib/utils/database';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { MediaGenerationRequest } from '@/lib/media/types';
@@ -70,17 +66,11 @@ function throwIfAborted(signal?: AbortSignal): void {
 /**
  * Launch media generation for all mediaGenerations declared in outlines.
  * Runs in parallel with content/action generation — does not block.
- *
- * When `repairReporter` is given (repair-dispatch path only), the run also
- * registers on the generic repair-progress channel: one media card with
- * live done/total while the byte-aware requeue processes tasks. The normal
- * generation flow passes nothing and keeps its per-scene phase chips.
  */
 export async function generateMediaForOutlines(
   outlines: SceneOutline[],
   stageId: string,
   abortSignal?: AbortSignal,
-  repairReporter?: RepairProgressReporter,
 ): Promise<void> {
   const settings = useSettingsStore.getState();
   const store = useMediaGenerationStore.getState();
@@ -137,13 +127,6 @@ export async function generateMediaForOutlines(
 
   if (allRequests.length === 0) return;
 
-  // Repair dispatches surface through the generic repair-progress channel;
-  // first-run generation keeps its existing per-scene phase display instead
-  // (same dispatch, no duplicate umbrellas).
-  const progress = repairReporter
-    ? createRepairProgressReporter('media')
-    : null;
-
   // Enqueue all as pending
   useMediaGenerationStore.getState().enqueueTasks(stageId, allRequests);
 
@@ -166,7 +149,6 @@ export async function generateMediaForOutlines(
       useStageStore.getState().recordScenePhase(outlineId, 'media', { status: 'running' });
     }
     await generateSingleMedia(req, stageId, abortSignal);
-    progress?.done(1);
     if (!outlineId) continue;
     if (abortSignal?.aborted) break;
     const stats = mediaStats.get(outlineId);
@@ -183,7 +165,6 @@ export async function generateMediaForOutlines(
       );
     }
   }
-  progress?.end();
 }
 
 /**

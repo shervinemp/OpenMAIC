@@ -1142,9 +1142,7 @@
       "tts": "Sprachausgabe",
       "review": "Einstellungen öffnen",
       "proceed": "Trotzdem generieren"
-    },
-    "fillNarration": "Sprachausgabe wird wiederhergestellt…",
-    "repairMedia": "Generierte Medien werden neu erzeugt…"
+    }
   },
   "settings": {
     "title": "Einstellungen",
@@ -2054,9 +2052,9 @@
     "applyUpdate": "Update anwenden",
     "backfillMedia": "Medien dieses Browsers ins Kurs-Repo syncen",
     "backfillDone": "Backfill fertig — {{uploaded}} hochgeladen, {{existing}} bereits synchronisiert, {{missing}} ohne Bytes.",
-    "materializeSection": "Kurs-Materialisierung (Bytes auf dem Server)",
-    "materializeNarration": "Sprachausgabe: {{onServer}}/{{declared}} Clips haben Bytes auf dem Server",
-    "materializeMedia": "Bilder / Videos: {{onServer}}/{{declared}} Assets haben Bytes auf dem Server",
+"materializeSection": "Kurs-Materialisierung (Bytes auf dem Server)",
+"materializeNarration": "Sprachausgabe: {{onServer}}/{{declared}} Clips haben Bytes auf dem Server",
+"materializeMedia": "Bilder / Videos: {{onServer}}/{{declared}} Assets haben Bytes auf dem Server",
     "updateState": "{{state}} · {{scenes}} Szenen",
     "cardTitle": "Kurs-Repositories",
     "desc": "Kurse an Git-Repositories binden",

@@ -23,10 +23,7 @@ import {
   LineChart,
   GitBranch,
   PenLine,
-  Volume2,
-  Image as ImageIcon,
 } from 'lucide-react';
-import { useActiveRepairProgress } from '@/lib/store/repair-progress';
 import { cn } from '@/lib/utils';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import { ThumbnailInteractive } from '@/components/slide-renderer/components/ThumbnailInteractive';
@@ -64,7 +61,6 @@ export function SceneSidebar({
   const { scenes, currentSceneId, setCurrentSceneId, generatingOutlines, generationStatus } =
     useStageStore();
   const failedOutlines = useStageStore.use.failedOutlines();
-  const repairRuns = useActiveRepairProgress();
   const blueprint = useStageStore.use.blueprint();
   const generationPhase = useStageStore.use.generationPhase();
   const sceneDepth = useStageStore.use.sceneDepth();
@@ -724,10 +720,8 @@ export function SceneSidebar({
         {/* RECOVERY = the classic red regenerate cards, hydrated from the
             persisted invariant (missing outline ⇒ failed regenerate box), so
             the same UI as before also survives reloads. Initiation stays
-            manual (Retry per card) unless the user pauses/resumes. Next to
-            them, ANY class's repair (narration drain, media requeue, …)
-            surfaces through the generic repair-progress channel. */}
-        {(generatingOutlines.length > 0 || repairRuns.length > 0) && (
+            manual (Retry per card) unless the user pauses/resumes. */}
+        {generatingOutlines.length > 0 && (
           <div
             data-testid="generation-dock"
             className="shrink-0 p-2 space-y-2 border-t border-r-[6px] border-transparent border-t-gray-100 dark:border-t-gray-800"
@@ -899,47 +893,6 @@ export function SceneSidebar({
                 </div>
               );
             })()}
-
-          {/* Repair umbrella: one card per active repair class (narration
-              clip drain, generated-media requeue, …) — the repair phase is
-              never silent, from a single generic channel. */}
-          {repairRuns.map((run) => {
-            const isNarration = run.kind === 'narration';
-            const done = Math.min(run.done, run.total);
-            const pct = run.total > 0 ? (100 * done) / run.total : 0;
-            return (
-              <div
-                key={run.id}
-                className="rounded-lg flex flex-col gap-1 p-1.5 bg-amber-50/60 dark:bg-amber-900/10 ring-1 ring-amber-200/70 dark:ring-amber-800/40"
-              >
-                <div className="flex justify-between items-center px-2 pt-0.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shrink-0 bg-amber-500 text-white">
-                      {isNarration ? (
-                        <Volume2 className="w-2.5 h-2.5" />
-                      ) : (
-                        <ImageIcon className="w-2.5 h-2.5" />
-                      )}
-                    </span>
-                    <span className="text-xs font-bold truncate text-amber-700 dark:text-amber-300">
-                      {isNarration
-                        ? t('generation.fillNarration')
-                        : t('generation.repairMedia')}
-                    </span>
-                  </div>
-                  <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 tabular-nums shrink-0">
-                    {done}/{run.total}
-                  </span>
-                </div>
-                <div className="h-1.5 w-full mx-2 mb-1 rounded bg-amber-100 dark:bg-amber-900/40 overflow-hidden">
-                  <div
-                    className="h-full bg-amber-500 rounded transition-[width] duration-300"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
 
           </div>
         )}
