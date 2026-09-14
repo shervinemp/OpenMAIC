@@ -1179,7 +1179,9 @@
       "tts": "音声合成",
       "review": "設定を確認",
       "proceed": "それでも生成する"
-    }
+    },
+    "fillNarration": "ナレーション音声を復元中…",
+    "repairMedia": "生成メディアを再生成中…"
   },
   "settings": {
     "title": "設定",
@@ -2138,9 +2140,9 @@
     "applyUpdate": "更新を適用",
     "backfillMedia": "このブラウザーのメディアをリポジトリへ同期",
     "backfillDone": "バックフィル完了 — {{uploaded}}件アップロード、{{existing}}件は同期済み、{{missing}}件はバイトなし。",
-"materializeSection": "コースの実体化（サーバー上のバイト）",
-"materializeNarration": "ナレーション: {{onServer}}/{{declared}} クリップがサーバー上にあります",
-"materializeMedia": "画像 / 動画: {{onServer}}/{{declared}} アセットがサーバー上にあります",
+    "materializeSection": "コースの実体化（サーバー上のバイト）",
+    "materializeNarration": "ナレーション: {{onServer}}/{{declared}} クリップがサーバー上にあります",
+    "materializeMedia": "画像 / 動画: {{onServer}}/{{declared}} アセットがサーバー上にあります",
     "updateState": "{{state}} · {{scenes}}シーン"
   }
 }

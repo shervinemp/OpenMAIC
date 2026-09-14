@@ -865,24 +865,34 @@ export async function drainPendingSceneTTS(
   if (pendingScenes.length === 0) return 0;
 
   log.info(`TTS background drain: ${pendingScenes.length} scene(s) with pending audio`);
+  // Visible via the generic repair-progress channel — the fill phase renders
+  // as its own dock card, whatever dispatcher drives it.
+  const { createRepairProgressReporter } = await import('@/lib/store/repair-progress');
+  const progress = createRepairProgressReporter('narration');
+  progress.begin(pendingScenes.reduce((total, entry) => total + entry.deadIds.length, 0));
   let restored = 0;
-  for (const { scene, deadIds } of pendingScenes) {
-    if (signal?.aborted) break;
-    try {
-      const result = await generateTTSForScene(scene, language, signal, undefined, deadIds);
-      if (result.recoveredIds.length > 0) {
-        useStageStore.getState().updateScene(scene.id, { actions: scene.actions });
-        restored += 1;
+  try {
+    for (const { scene, deadIds } of pendingScenes) {
+      if (signal?.aborted) break;
+      try {
+        const result = await generateTTSForScene(scene, language, signal, undefined, deadIds);
+        if (result.recoveredIds.length > 0) {
+          useStageStore.getState().updateScene(scene.id, { actions: scene.actions });
+          restored += 1;
+        }
+        progress.done(result.recoveredIds.length);
+        if (result.failedCount > 0) {
+          log.warn(
+            `TTS drain for scene "${scene.title}": ${result.recoveredIds.length} clip(s) restored, ${result.failedCount} still pending`,
+          );
+        }
+      } catch (error) {
+        if (isAbortError(error)) break;
+        log.warn(`TTS drain error for scene "${scene.title}":`, error);
       }
-      if (result.failedCount > 0) {
-        log.warn(
-          `TTS drain for scene "${scene.title}": ${result.recoveredIds.length} clip(s) restored, ${result.failedCount} still pending`,
-        );
-      }
-    } catch (error) {
-      if (isAbortError(error)) break;
-      log.warn(`TTS drain error for scene "${scene.title}":`, error);
     }
+  } finally {
+    progress.end();
   }
   if (restored > 0) {
     log.info(`TTS background drain restored audio for ${restored} scene(s)`);

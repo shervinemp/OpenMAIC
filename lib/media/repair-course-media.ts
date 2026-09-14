@@ -1,6 +1,9 @@
 import { drainPendingSceneTTS } from '@/lib/hooks/use-scene-generator';
 import { createLogger } from '@/lib/logger';
-import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
+import {
+  generateMediaForOutlines,
+} from '@/lib/media/media-orchestrator';
+import type { RepairProgressReporter } from '@/lib/store/repair-progress';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
 import {
@@ -102,6 +105,13 @@ export interface MediaRepairOptions {
    * dropped).
    */
   additionalAssets?: unknown[];
+  /**
+   * Where repair visibility surfaces. The classroom mounts with the
+   * repair-progress reporter, so every dispatched class shows one card with
+   * live done/total; programmatic callers (tests, backfill->upload chains)
+   * may pass nothing.
+   */
+  repairReporter?: RepairProgressReporter;
 }
 
 /** Narration refs carry the pipeline's stable-request-id shape (see walker). */
@@ -184,7 +194,12 @@ export async function repairCourseMedia(
       materializedOrders.has(outline.order),
     );
     try {
-      await generateMediaForOutlines(dispatchOutlines, options.stageId!, options.signal);
+      await generateMediaForOutlines(
+        dispatchOutlines,
+        options.stageId!,
+        options.signal,
+        options.repairReporter,
+      );
     } catch (err) {
       if (options.signal?.aborted) {
         report.audioStillPending = deadNarrationRefs.size;
