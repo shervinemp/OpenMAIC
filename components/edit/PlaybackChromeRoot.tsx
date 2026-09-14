@@ -1498,7 +1498,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           onRetryOutline={onRetryOutline}
           onResumeGeneration={onResumeGeneration}
           onSkipOutline={onSkipOutline ?? ((outlineId) => useStageStore.getState().skipFailedOutline(outlineId))}
-          isCourseComplete={isCourseComplete}
         />
 
         {/* Main Content Area */}

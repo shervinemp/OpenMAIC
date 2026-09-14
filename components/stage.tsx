@@ -346,6 +346,7 @@ export function Stage({
           <PlaybackChromeRoot
             ref={playbackRef}
             onRetryOutline={onRetryOutline}
+            onResumeGeneration={onResumeGeneration}
             canEnterProMode={workbenchPlayback || isEditable}
             onEnterProMode={chromeToggleHandler}
             proModeActive={hosted && workbenchPlayback}

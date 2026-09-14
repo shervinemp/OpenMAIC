@@ -42,7 +42,6 @@ interface SceneSidebarProps {
   readonly onSkipOutline?: (outlineId: string) => void;
   /** Re-kick the scene batch after a provider-failure pause. */
   readonly onResumeGeneration?: () => void;
-  readonly isCourseComplete?: boolean;
 }
 
 const DEFAULT_WIDTH = 220;
@@ -56,7 +55,6 @@ export function SceneSidebar({
   onRetryOutline,
   onSkipOutline,
   onResumeGeneration,
-  isCourseComplete,
 }: SceneSidebarProps) {
   const { t } = useI18n();
   const router = useRouter();
@@ -103,45 +101,6 @@ export function SceneSidebar({
     });
     return { lessons };
   }, [blueprint, scenes, sceneDepth, lessonGroups]);
-
-  // Generation-recovery basis (persisted): blueprint outlines that never
-  // materialized a scene. Independent of the in-memory failed/generating
-  // queues, so after a reload an interrupted course still shows WHAT is
-  // missing and the dock offers to finish it — "robust against any sort of
-  // problem during generation" instead of restart-from-scratch.
-  const recoveryPending = useMemo(() => {
-    if (!blueprint || isCourseComplete) return [];
-    const completedOrders = new Set(scenes.map((scene) => scene.order));
-    return blueprint.lessons
-      .flatMap((lesson) => lesson.outlines)
-      .filter((outline) => !completedOrders.has(outline.order));
-  }, [blueprint, scenes, isCourseComplete]);
-
-  // HYDRATION: restore the interrupted regeneration queue ONCE per stage load
-  // into the store's failed/generating state — the classic red regenerate
-  // cards then render exactly as before (Retry/Skip per scene), only now
-  // they also survive reload. Idempotent: only fires when both queues are
-  // empty (i.e. a genuinely fresh mount) and generation is idle; skipped
-  // outlines stay closed (Pillar 2 §4.9), generation-complete decks hydrate
-  // nothing.
-  const hydratedEpochRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!blueprint || isCourseComplete) return;
-    if (generatingOutlines.length > 0 || recoveryPending.length === 0) return;
-    const queueKey = `${recoveryPending.map((o) => o.id).join(',').length}:${recoveryPending.length}`;
-    if (hydratedEpochRef.current === queueKey) return;
-    if (generationStatus !== 'idle') return;
-
-    const skippedIds = new Set(useStageStore.getState().skippedOutlineIds);
-    const missing = recoveryPending.filter((o) => !skippedIds.has(o.id));
-    if (missing.length === 0) return;
-    hydratedEpochRef.current = queueKey;
-    for (const outline of missing) {
-      useStageStore.getState().addFailedOutline(outline);
-    }
-    useStageStore.getState().setGeneratingOutlines(missing);
-  }, [blueprint, isCourseComplete, recoveryPending, generatingOutlines.length, generationStatus]);
-
 
   // Heavy-course structure (semester preset): blueprint.units already knows the
   // unit -> lesson -> outline hierarchy. Collapsible unit sections mount ONLY

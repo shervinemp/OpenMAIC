@@ -1338,33 +1338,17 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         const inMemoryState = get();
         const inMemoryFailed =
           inMemoryState.stage?.id === stageId ? inMemoryState.failedOutlines : [];
-        // Reload-resume restore (Pillar 2): failed/skip resolutions live in the
-        // persisted job state, so a reload must NOT silently forget them.
-        // - failed outlines: re-hydrated so the retry cards survive a refresh;
-        // - skipped outlines: re-hydrated so a never-generated scene the user
-        //   explicitly closed is not silently regenerated on resume.
-        const failedOutlines = [
-          ...inMemoryFailed,
-          ...recoveredLessonGroups
-            .flatMap((group) => group.jobs)
-            .filter((job) => job.phases.content?.status === 'failed' && job.resolution !== 'skip')
-            .map((job) => outlines.find((o) => o.id === job.outlineId))
-            .filter((o): o is NonNullable<typeof o> => !!o),
-        ];
-        // Dedupe by id (an outline can be in-memory failed AND persisted failed).
-        const seenFailed = new Set<string>();
-        const uniqueFailedOutlines = failedOutlines.filter((o) =>
-          seenFailed.has(o.id) ? false : (seenFailed.add(o.id), true),
+        // LOADING-TIME RECOVERY (invariant-based, deterministic on open):
+        // after persisted state lands, ANY outline that still lacks a scene —
+        // and is not a settled skip or an orphan — is unfinished generation
+        // work, regardless of WHY (crash, tab close, provider outage, job
+        // state debt). Mark it failed right here so the very first UI render
+        // shows the red regenerate box: the recovery check does not depend on
+        // a secondary effect, a lease race, or in-memory session state.
+        const materializedOrders = new Set(migrated.map((s) => s.order));
+        const missingOutlines = outlines.filter(
+          (o) => !materializedOrders.has(o.order),
         );
-        const skippedOutlineIds = [
-          ...new Set(
-            recoveredLessonGroups
-              .flatMap((group) => group.jobs)
-              .filter((job) => job.resolution === 'skip')
-              .map((job) => job.outlineId)
-              .filter((id) => !uniqueFailedOutlines.some((o) => o.id === id)),
-          ),
-        ];
         // Orphan self-heal: an outline whose job already committed content
         // (content phase `done`) but whose scene is gone was DELETED by the
         // user after generation (or its outline prune lagged). It is not
@@ -1381,6 +1365,47 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
             )
             .map((job) => job.outlineId),
         );
+        // Reload-resume restore (Pillar 2): failed/skip resolutions live in the
+        // persisted job state, so a reload must NOT silently forget them.
+        // - failed outlines: re-hydrated so the retry cards survive a refresh;
+        // - skipped outlines: re-hydrated so a never-generated scene the user
+        //   explicitly closed is not silently regenerated on resume.
+        // The recovery invariant's missing set is FOLDED IN: any outline that
+        // still lacks a scene — from whatever failure (crash, tab close,
+        // provider outage, job-state debt) — is unfinished generation work and
+        // surfaces as a red regenerate box on the first render of the load.
+        // Settled savings (skips, orphans) keep their settled status.
+        const skipIdsFromJobs = new Set(
+          recoveredLessonGroups
+            .flatMap((group) => group.jobs)
+            .filter((job) => job.resolution === 'skip')
+            .map((job) => job.outlineId),
+        );
+        const failedOutlines = [
+          ...inMemoryFailed,
+          ...recoveredLessonGroups
+            .flatMap((group) => group.jobs)
+            .filter((job) => job.phases.content?.status === 'failed' && job.resolution !== 'skip')
+            .map((job) => outlines.find((o) => o.id === job.outlineId))
+            .filter((o): o is NonNullable<typeof o> => !!o),
+          ...missingOutlines.filter(
+            (o) => !skipIdsFromJobs.has(o.id) && !orphanOutlineIds.has(o.id),
+          ),
+        ];
+        // Dedupe by id (an outline can be in-memory failed AND persisted failed).
+        const seenFailed = new Set<string>();
+        const uniqueFailedOutlines = failedOutlines.filter((o) =>
+          seenFailed.has(o.id) ? false : (seenFailed.add(o.id), true),
+        );
+        const skippedOutlineIds = [
+          ...new Set(
+            recoveredLessonGroups
+              .flatMap((group) => group.jobs)
+              .filter((job) => job.resolution === 'skip')
+              .map((job) => job.outlineId)
+              .filter((id) => !uniqueFailedOutlines.some((o) => o.id === id)),
+          ),
+        ];
         const generationComplete =
           persistedComplete ||
           isDeckComplete({
