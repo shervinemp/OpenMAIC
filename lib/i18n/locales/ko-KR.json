@@ -232,7 +232,9 @@
     "editCourse": "강좌 편집",
     "doneEditing": "편집 완료",
     "proModeDisabledHint": "이 페이지에서는 편집할 수 없습니다 — 코스 슬라이드를 열면 Pro 모드로 편집할 수 있습니다.",
-    "resumeGeneration": "재개"
+    "resumeGeneration": "재개",
+    "recoveryPending": "아직 생성되지 않은 페이지 {{count}}개",
+    "fillNarration": "누락된 내레이션 채우기"
   },
   "edit": {
     "proMode": "프로 모드",
@@ -649,7 +651,7 @@
   },
   "classroomComplete": {
     "title": "강좌 완료",
-        "trailLabels": {
+    "trailLabels": {
       "slide": "페이지",
       "quiz": "퀴즈",
       "interactive": "인터랙티브",

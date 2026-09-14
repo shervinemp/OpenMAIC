@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { createLogger } from '@/lib/logger';
+import { materializeStageAssets } from '@/lib/persistence/git-sync-assets';
 
 const log = createLogger('CourseGitSync');
 
@@ -295,6 +296,18 @@ export class CourseGitCommitScheduler {
       if (document === null || document === undefined) return; // deleted mid-window
       await mkdir(repoPath, { recursive: true });
       await writeFile(target, JSON.stringify(document), 'utf8');
+      // Full-course snapshot: media the server can resolve rides along (see
+      // git-sync-assets.ts). Unresolvable refs are listed in the stage's
+      // manifest — the browser backfill uploader supplies those bytes first;
+      // copy is best-effort and never fails the commit.
+      await materializeStageAssets(
+        this.persistenceDir,
+        repoPath,
+        job.stageId,
+        document,
+      ).catch((error) => {
+        log.warn(`Asset materialization for ${JSON.stringify(job.stageId)} failed; committing document only:`, error instanceof Error ? error.message : error);
+      });
     }
     await git(repoPath, ['add', '--all', `${stageFile}.json`]);
     const status = await git(repoPath, ['status', '--porcelain', `${stageFile}.json`]);

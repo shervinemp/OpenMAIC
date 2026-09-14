@@ -233,7 +233,9 @@
     "editCourse": "Edit course",
     "doneEditing": "Done editing",
     "proModeDisabledHint": "Editing isn't available on this page — open a course slide to edit with Pro mode.",
-    "resumeGeneration": "Resume"
+    "resumeGeneration": "Resume",
+    "recoveryPending": "{{count}} page(s) not yet generated",
+    "fillNarration": "Fill missing narration"
   },
   "edit": {
     "proMode": "Pro",

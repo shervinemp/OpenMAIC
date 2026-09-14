@@ -645,11 +645,13 @@
     "editCourse": "Editar curso",
     "doneEditing": "Concluir edição",
     "proModeDisabledHint": "A edição não está disponível nesta página — abra um slide do curso para editar no modo Pro.",
-    "resumeGeneration": "Retomar"
+    "resumeGeneration": "Retomar",
+    "recoveryPending": "{{count}} página(s) ainda não geradas",
+    "fillNarration": "Completar narração faltante"
   },
   "classroomComplete": {
     "title": "Curso concluído",
-        "trailLabels": {
+    "trailLabels": {
       "slide": "páginas",
       "quiz": "questionários",
       "interactive": "interativos",

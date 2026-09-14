@@ -232,7 +232,9 @@
     "editCourse": "تحرير الدورة",
     "doneEditing": "إنهاء التحرير",
     "proModeDisabledHint": "التحرير غير متاح في هذه الصفحة — افتح شريحة من الدورة للتحرير باستخدام وضع Pro.",
-    "resumeGeneration": "استئناف"
+    "resumeGeneration": "استئناف",
+    "recoveryPending": "{\\\\\"count\\\\} صفحة/صفحات لم تُولَّد بعد",
+    "fillNarration": "املأ التعليق الصوتي المفقود"
   },
   "edit": {
     "proMode": "احترافي",
@@ -649,7 +651,7 @@
   },
   "classroomComplete": {
     "title": "اكتملت الدورة",
-        "trailLabels": {
+    "trailLabels": {
       "slide": "صفحات",
       "quiz": "اختبارات",
       "interactive": "تفاعلية",

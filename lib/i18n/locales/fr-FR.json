@@ -232,7 +232,9 @@
     "editCourse": "Modifier le cours",
     "doneEditing": "Terminer les modifications",
     "proModeDisabledHint": "L’édition n’est pas disponible sur cette page. Ouvrez une diapositive de cours pour la modifier en mode Pro.",
-    "resumeGeneration": "Reprendre"
+    "resumeGeneration": "Reprendre",
+    "recoveryPending": "{{count}} page(s) pas encore générée(s)",
+    "fillNarration": "Compléter la narration manquante"
   },
   "edit": {
     "proMode": "Pro",
@@ -649,7 +651,7 @@
   },
   "classroomComplete": {
     "title": "Cours terminé",
-        "trailLabels": {
+    "trailLabels": {
       "slide": "pages",
       "quiz": "quiz",
       "interactive": "interactifs",

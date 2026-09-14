@@ -31,8 +31,12 @@ import { ThumbnailInteractive } from '@/components/slide-renderer/components/Thu
 import { useStageStore, useCanvasStore } from '@/lib/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useNearViewport } from '@/lib/hooks/use-near-viewport';
+import { drainPendingSceneTTS } from '@/lib/hooks/use-scene-generator';
+import { createLogger } from '@/lib/logger';
 import type { Scene, SlideContent, InteractiveContent } from '@/lib/types/stage';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
+
+const log = createLogger('SceneSidebar');
 
 interface SceneSidebarProps {
   readonly collapsed: boolean;
@@ -104,6 +108,29 @@ export function SceneSidebar({
     });
     return { lessons };
   }, [blueprint, scenes, sceneDepth, lessonGroups]);
+
+  // Generation-recovery basis (persisted): blueprint outlines that never
+  // materialized a scene. Independent of the in-memory failed/generating
+  // queues, so after a reload an interrupted course still shows WHAT is
+  // missing and the dock offers to finish it — "robust against any sort of
+  // problem during generation" instead of restart-from-scratch.
+  const recoveryPending = useMemo(() => {
+    if (!blueprint || isCourseComplete) return [];
+    const completedOrders = new Set(scenes.map((scene) => scene.order));
+    return blueprint.lessons
+      .flatMap((lesson) => lesson.outlines)
+      .filter((outline) => !completedOrders.has(outline.order));
+  }, [blueprint, scenes, isCourseComplete]);
+
+  const audioPendingCount = useMemo(
+    () =>
+      scenes.filter((scene) =>
+        (scene.actions ?? []).some(
+          (action) => action.type === 'speech' && !!action.text && !action.audioId,
+        ),
+      ).length,
+    [scenes],
+  );
 
   // Heavy-course structure (semester preset): blueprint.units already knows the
   // unit -> lesson -> outline hierarchy. Collapsible unit sections mount ONLY
@@ -714,12 +741,74 @@ export function SceneSidebar({
             scroll container (both cards render at most one at a time). Keeping
             it out of the scroll flow means every completed scene no longer
             ships the scrolling list a full tile down — the status is fixed to
-            the sidebar bottom and the scene list's scroll position stays put. */}
-        {(generatingOutlines.length > 0 || (isCourseComplete && generatingOutlines.length === 0)) && (
+            the sidebar bottom and the scene list's scroll position stays put.
+            RECOVERY INVARIANT: the dock is also driven by PERSISTED facts
+            (blueprint outlines vs stored scenes), not just by the in-memory
+            failed/generating queues — after a reload, a deck with unfinished
+            pages still surfaces "finish remaining" instead of silently
+            masquerading both as complete and as un-resumable. */}
+        {(generatingOutlines.length > 0 || recoveryPending.length > 0 || (isCourseComplete && generatingOutlines.length === 0)) && (
           <div
             data-testid="generation-dock"
             className="shrink-0 p-2 space-y-2 border-t border-r-[6px] border-transparent border-t-gray-100 dark:border-t-gray-800"
           >
+
+          {/* RECOVERY CARD: persisted-basis pending pages (reload-safe). Shown
+              only when the loop is idle; the busy/paused cards own their own
+              affordances. Clicking resumes — generateRemaining picks up exactly
+              the outlines that still lack scenes, including previously failed
+              ones; trails already-generated pages untouched. */}
+          {generatingOutlines.length === 0 && recoveryPending.length > 0 && (() => {
+            return (
+              <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/60 dark:bg-purple-900/20 p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-purple-700 dark:text-purple-300">
+                    {t('stage.recoveryPending', { count: recoveryPending.length })}
+                  </span>
+                  {onResumeGeneration && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onResumeGeneration();
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md bg-purple-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-purple-500 transition-colors active:scale-95"
+                    >
+                      <Play className="w-3 h-3" />
+                      {t('stage.resumeGeneration')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* AUDIO RECOVERY: scenes whose speech actions have no audio yet (TTS
+              outage mid-course, reload, provider flake). One drain pass over the
+              persisted scene list — no regeneration, no restart. */}
+          {generatingOutlines.length === 0 && audioPendingCount > 0 && (() => {
+            return (
+              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-900/20 p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                    {t('stage.audioPendingCount', { count: audioPendingCount })}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void drainPendingSceneTTS(useStageStore.getState().scenes?.slice() ?? []).then((restored) => {
+                        if (restored > 0) {
+                          log.info(`Audio drain restored narration for ${restored} scene(s)`);
+                        }
+                      });
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-amber-500 transition-colors active:scale-95"
+                  >
+                    {t('stage.fillNarration')}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Single placeholder for the next generating page (clickable) */}
           {generatingOutlines.length > 0 &&

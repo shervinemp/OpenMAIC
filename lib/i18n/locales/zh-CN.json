@@ -232,7 +232,9 @@
     "editCourse": "编辑课程",
     "doneEditing": "完成编辑",
     "proModeDisabledHint": "本页不支持编辑——打开任意课程页即可使用 Pro 模式编辑。",
-    "resumeGeneration": "继续生成"
+    "resumeGeneration": "继续生成",
+    "recoveryPending": "尚有 {{count}} 页未生成",
+    "fillNarration": "补齐缺失的旁白"
   },
   "edit": {
     "proMode": "专业模式",
@@ -649,7 +651,7 @@
   },
   "classroomComplete": {
     "title": "课程完成",
-        "trailLabels": {
+    "trailLabels": {
       "slide": "页",
       "quiz": "小测",
       "interactive": "互动",

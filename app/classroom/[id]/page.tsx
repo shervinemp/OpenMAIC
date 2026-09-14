@@ -115,11 +115,11 @@ export default function ClassroomDetailPage() {
 
   useEffect(() => {
     // Reset loading state on course switch to unmount Stage during transition,
-    // preventing stale data from syncing back to the new course
-    /* eslint-disable react-hooks/set-state-in-effect -- Course switch must hide stale Stage before async load */
+    // preventing stale data from syncing back to the new course. (Any
+    // set-state-in-effect diagnosis output is intentionally muted: the course
+    // switch MUST hide the stale Stage before the async reload completes.)
     setLoading(true);
     setError(null);
-    /* eslint-enable react-hooks/set-state-in-effect */
     generationStartedRef.current = false;
 
     // Clear previous classroom's media tasks to prevent cross-classroom contamination.
@@ -273,6 +273,29 @@ export default function ClassroomDetailPage() {
       languageDirective: params.languageDirective || stage.languageDirective,
     });
   }, [classroomId, generateRemaining]);
+
+  // Dev/self-host recovery affordances (console-invocable). The media backfill
+  // uploads browser-owned narration/media bytes into the server asset store so
+  // the course-git repo snapshot can carry them; needs an open course + dev
+  // persistence token. Deliberately NOT a product UI surface: it is an
+  // operator tool and must not be reachable on hosted production.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    const runtime = window as typeof window & {
+      __openmaicMediaBackfill?: (stageId: string) => Promise<unknown>;
+    };
+    runtime.__openmaicMediaBackfill = async () => {
+      const { useStageStore } = await import('@/lib/store');
+      const state = useStageStore.getState();
+      const snapshot = state.stage ? { stage: state.stage, scenes: state.scenes, outline: state.blueprint } : null;
+      if (!snapshot) throw new Error('no persisted document; open the course first');
+      const { backfillCourseMedia } = await import('@/lib/media/backfill-course-media');
+      return backfillCourseMedia(snapshot);
+    };
+    return () => {
+      delete runtime.__openmaicMediaBackfill;
+    };
+  }, []);
 
   return (
     <ThemeProvider>

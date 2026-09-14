@@ -232,7 +232,9 @@
     "editCourse": "Sửa bài học",
     "doneEditing": "Sửa xong",
     "proModeDisabledHint": "Trang này không sửa được — hãy mở một slide bài học để dùng chế độ Pro.",
-    "resumeGeneration": "Tiếp tục"
+    "resumeGeneration": "Tiếp tục",
+    "recoveryPending": "{{count}} trang chưa được tạo",
+    "fillNarration": "Bổ sung phần thuyết minh còn thiếu"
   },
   "edit": {
     "proMode": "Pro",

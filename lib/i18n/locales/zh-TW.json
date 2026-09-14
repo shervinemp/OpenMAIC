@@ -232,7 +232,9 @@
     "editCourse": "編輯課程",
     "doneEditing": "完成編輯",
     "proModeDisabledHint": "此頁面無法編輯——開啟課程投影片以使用 Pro 模式編輯。",
-    "resumeGeneration": "繼續生成"
+    "resumeGeneration": "繼續生成",
+    "recoveryPending": "尚有 {{count}} 頁未生成",
+    "fillNarration": "補齊缺少的旁白"
   },
   "edit": {
     "proMode": "專業模式",
@@ -2031,7 +2033,7 @@
   },
   "classroomComplete": {
     "title": "課程完成",
-        "trailLabels": {
+    "trailLabels": {
       "slide": "頁面",
       "quiz": "小測",
       "interactive": "互動",
