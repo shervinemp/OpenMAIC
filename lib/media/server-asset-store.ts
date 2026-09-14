@@ -76,6 +76,15 @@ export class HttpAssetStore implements StorageProvider {
     }
   }
 
+  /** Header-only existence probe — the server's HEAD avoids the full payload. */
+  async exists(ref: AssetRef): Promise<boolean> {
+    const response = await fetch(this.assetUrl(ref), {
+      method: 'HEAD',
+      headers: await this.authHeaders(),
+    });
+    return response.ok;
+  }
+
   async resolve(ref: AssetRef): Promise<string | null> {
     const response = await fetch(this.assetUrl(ref), { headers: await this.authHeaders() });
     if (!response.ok) return null;

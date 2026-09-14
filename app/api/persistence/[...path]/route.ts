@@ -1,6 +1,6 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import {
@@ -235,6 +235,16 @@ async function handleAssetsRequest(
       return jsonError(500, 'ASSET_WRITE_FAILED', 'asset write failed');
     }
     return new Response(null, { status: 204 });
+  }
+
+  // HEAD = existence probe without the payload: voice-status re-checks and
+  // migration sweeps cost a header round-trip, not a full narration download.
+  if (request.method === 'HEAD') {
+    const info = (await stat(assetPath).catch(() => null))?.isFile();
+    return new Response(null, {
+      status: info ? 200 : 404,
+      headers: { allow: 'GET, PUT, HEAD, DELETE' },
+    });
   }
 
   if (request.method === 'GET') {

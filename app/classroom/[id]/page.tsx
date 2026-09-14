@@ -313,6 +313,7 @@ export default function ClassroomDetailPage() {
     if (process.env.NODE_ENV !== 'development') return;
     const runtime = window as typeof window & {
       __openmaicMediaBackfill?: (stageId: string) => Promise<unknown>;
+      __openmaicStampSceneHashes?: () => Promise<unknown>;
     };
     runtime.__openmaicMediaBackfill = async () => {
       const { useStageStore } = await import('@/lib/store');
@@ -321,6 +322,45 @@ export default function ClassroomDetailPage() {
       if (!snapshot) throw new Error('no persisted document; open the course first');
       const { backfillCourseMedia } = await import('@/lib/media/backfill-course-media');
       return backfillCourseMedia(snapshot);
+    };
+    // Hash-stamp backfill: legacy scenes generated before the actions-source
+    // fingerprint existed carry no actionsSourceHash, so every repair on them
+    // re-pays the full content/actions LLM passes even for a voice-only gap.
+    // This computes their fingerprint from the CURRENT persisted content under
+    // the restored generation params and stamps them — the amortizes one full
+    // pass per legacy scene permanently. Idempotent: stamped scenes are skipped.
+    runtime.__openmaicStampSceneHashes = async () => {
+      const { useStageStore } = await import('@/lib/store');
+      const state = useStageStore.getState();
+      if (!state.stage) throw new Error('no persisted document; open the course first');
+      const { loadGenerationParams } = await import('@/lib/utils/generation-session-store');
+      const restored = await loadGenerationParams(state.stage.id);
+      const {
+        agents,
+        userProfile,
+        languageDirective = state.stage.languageDirective,
+      } = restored ?? {};
+      const { computeActionsSourceHash } = await import('@/lib/utils/content-hash');
+      let stamped = 0;
+      const scenes = state.scenes.map((scene) => {
+        if (scene.actionsSourceHash !== undefined) return scene;
+        stamped += 1;
+        return {
+          ...scene,
+          actionsSourceHash: computeActionsSourceHash({
+            content: scene.content,
+            agents,
+            userProfile,
+            languageDirective,
+          }),
+        };
+      });
+      if (stamped === 0) return { stamped: 0 };
+      // Persisting goes through the store's own save pipeline (debounced
+      // stage-storage flush → server PUT → git scheduler) — no manual write,
+      // the same app-flow path any scene mutation takes.
+      state.setScenes(stamped === state.scenes.length ? [...scenes] : scenes);
+      return { stamped, total: state.scenes.length };
     };
     return () => {
       delete runtime.__openmaicMediaBackfill;
