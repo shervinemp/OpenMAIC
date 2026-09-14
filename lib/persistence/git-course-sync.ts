@@ -31,6 +31,13 @@ export interface CourseRepositoryBinding {
   stageId: string;
   repoPath: string;
   boundAt: number;
+  /**
+   * Inbound gating (git-course-import.ts): when true, the boot-time scanner
+   * may auto-import NEW courses whose snapshots appear in `repoPath` (existing
+   * bound stages never auto-restore; 'update' states always wait for an
+   * explicit apply). Defaults to false — update checks stay passive.
+   */
+  autoLoad?: boolean;
 }
 
 interface BindingFile {
@@ -112,6 +119,7 @@ export async function bindCourseRepository(options: {
   stageId: string;
   repoPath: string;
   init?: boolean;
+  autoLoad?: boolean;
 }): Promise<CourseRepositoryBinding> {
   const { persistenceDir, stageId } = options;
   const repoPath = options.repoPath.trim();
@@ -146,7 +154,12 @@ export async function bindCourseRepository(options: {
     }
     await git(repoPath, ['init']);
   }
-  const binding: CourseRepositoryBinding = { stageId, repoPath, boundAt: Date.now() };
+  const binding: CourseRepositoryBinding = {
+    stageId,
+    repoPath,
+    boundAt: Date.now(),
+    ...(options.autoLoad === undefined ? {} : { autoLoad: !!options.autoLoad }),
+  };
   const bindings = (await readBindings(persistenceDir)).filter(
     (binding) => binding.stageId !== stageId,
   );

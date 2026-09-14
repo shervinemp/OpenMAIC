@@ -54,6 +54,55 @@ export async function register(): Promise<void> {
     console.error('[instrumentation] Agent runtime startup failed', error);
   }
 
+  // Inbound course-git sync (auto-load + update checks). Fully env/opt-in:
+  // COURSE_GIT_SYNC_ON_BOOT enables the startup+periodic scan, and only
+  // bindings flagged autoLoad may auto-IMPORT new courses; 'update' states
+  // always wait for an explicit apply via POST /api/course-git/sync unless
+  // COURSE_GIT_SYNC_AUTO_APPLY explicitly opts in. Fire-and-forget: the boot
+  // scan never delays readiness and never throws into register().
+  try {
+    const syncOnBoot = ['1', 'true'].includes(
+      (process.env.COURSE_GIT_SYNC_ON_BOOT ?? '').trim().toLowerCase(),
+    );
+    if (syncOnBoot) {
+      const { runCourseGitSync, scanCourseUpdates } = await import(
+        '@/lib/persistence/git-course-import'
+      );
+      const dir = process.env.PERSISTENCE_DIR?.trim();
+      if (dir) {
+        const autoApply = ['1', 'true'].includes(
+          (process.env.COURSE_GIT_SYNC_AUTO_APPLY ?? '').trim().toLowerCase(),
+        );
+        void runCourseGitSync(dir, {
+          importNew: autoApply,
+          apply: false,
+          pull: true,
+        }).catch((error) => console.error('[instrumentation] course-git boot sync failed', error));
+        const pollRaw = Number(process.env.COURSE_GIT_SYNC_POLL_MS ?? '0');
+        if (Number.isFinite(pollRaw) && pollRaw >= 5000) {
+          const pollTimer = setInterval(() => {
+            void scanCourseUpdates(dir)
+              .then((updates) => {
+                for (const update of updates) {
+                  if (update.state === 'update') {
+                    console.warn(
+                      `[course-git] update available for course ${update.snapshot.stageId} (${update.snapshot.title}); approve via POST /api/course-git/sync`,
+                    );
+                  }
+                }
+              })
+              .catch((error) =>
+                console.error('[course-git] update poll failed:', error),
+              );
+          }, pollRaw);
+          pollTimer.unref?.();
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[instrumentation] course-git inbound sync setup failed', error);
+  }
+
   let shutdownPromise: Promise<void> | undefined;
   const shutdown = (): Promise<void> => {
     shutdownPromise ??= (async () => {

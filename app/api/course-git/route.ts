@@ -7,6 +7,7 @@ import {
   listCourseBindings,
   unbindCourseRepository,
 } from '@/lib/persistence/git-course-sync';
+import { runCourseGitSync, scanCourseUpdates } from '@/lib/persistence/git-course-import';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,6 +32,22 @@ export async function GET(request: Request): Promise<Response> {
     const binding = await getCourseBinding(dir, stageId);
     return Response.json({ binding: binding ? { ...binding } : null });
   }
+  // `?sync=true`: pull (env-gated) + update scan — every bound repo's
+  // snapshots compared against persistence, applying nothing.
+  if (new URL(request.url).searchParams.get('sync') === 'true') {
+    const { results } = await runCourseGitSync(dir, { pull: true });
+    const updates = await scanCourseUpdates(dir);
+    return Response.json({
+      updates: updates.map((update) => ({
+        stageId: update.snapshot.stageId,
+        title: update.snapshot.title,
+        sceneCount: update.snapshot.sceneCount,
+        repoPath: update.snapshot.repoPath,
+        state: update.state,
+      })),
+      results,
+    });
+  }
   const bindings = await listCourseBindings(dir);
   return Response.json({ bindings });
 }
@@ -39,6 +56,7 @@ interface BindBody {
   stageId?: string;
   repoPath?: string;
   init?: boolean;
+  autoLoad?: boolean;
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -53,7 +71,7 @@ export async function POST(request: Request): Promise<Response> {
   } catch {
     return jsonError(400, 'INVALID_BODY', 'request body must be JSON');
   }
-  const { stageId, repoPath, init } = body;
+  const { stageId, repoPath, init, autoLoad } = body;
   if (!stageId || typeof stageId !== 'string') {
     return jsonError(400, 'INVALID_STAGE_ID', 'stageId is required');
   }
@@ -61,7 +79,13 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError(400, 'INVALID_REPO_PATH', 'repoPath is required');
   }
   try {
-    const binding = await bindCourseRepository({ persistenceDir: dir, stageId, repoPath, init });
+    const binding = await bindCourseRepository({
+      persistenceDir: dir,
+      stageId,
+      repoPath,
+      init,
+      autoLoad: typeof autoLoad === 'boolean' ? autoLoad : undefined,
+    });
     return Response.json({ binding: { ...binding } });
   } catch (error) {
     if (error instanceof CourseRepositoryAlreadyBoundError) {
