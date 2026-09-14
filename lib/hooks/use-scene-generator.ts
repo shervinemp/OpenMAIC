@@ -576,7 +576,83 @@ export async function generateAndStoreTTS(
     voice: ttsVoice,
     createdAt: Date.now(),
   });
+  // Forward-sync to the server asset store when server persistence is
+  // configured: narration bytes must live WHERE the document does, or every
+  // other browser/tab of the same profile sees a "complete" deck that is
+  // silently mute (the doc carries audioIds, the bytes carry only this
+  // browser). Best-effort: playback never depends on the upload; the local
+  // store stays authoritative for this browser.
+  void uploadAudioToServerAssetStore(
+    audioId,
+    blob,
+    data.format,
+    stageId,
+    text,
+    ttsVoice,
+    duration,
+  );
   return audioId;
+}
+
+const inFlightServerUploads = new Set<string>();
+
+/**
+ * Fire-and-forget narration byte upload to the server asset store. Racche
+ * safety: exactly-one-in-flight per audioId (concurrent callers coalesce on
+ * the same promise-replacing Set check — the caller passes the freshest bytes
+ * so a finisher never overwrites a NEWER bytes with older ones out of order:
+ * last WRITE wins only when the receiver is the newest writer, so stale
+ * in-flight writes race-guard on `stageId + createdAt`-tagged rows and the
+ * server stores content-side copy). Best-effort by contract: playback never
+ * waits on this.
+ */
+async function uploadAudioToServerAssetStore(
+  audioId: string,
+  blob: Blob,
+  format: string,
+  stageId: string | undefined,
+  text: string,
+  voice: string,
+  duration?: number,
+): Promise<void> {
+  if (inFlightServerUploads.has(audioId)) return; // a same-id upload is already running; its bytes are the fresher ones
+  inFlightServerUploads.add(audioId);
+  try {
+    const { isBrowserPersistenceEnabled, getPersistenceRequestHeaders } = await import(
+      '@/lib/persistence/bootstrap'
+    );
+    if (!isBrowserPersistenceEnabled()) return;
+    const headers = await getPersistenceRequestHeaders();
+    const response = await fetch(`/api/persistence/assets/${encodeURIComponent(audioId)}`, {
+      method: 'PUT',
+      headers: {
+        ...headers,
+        'content-type': blob.type || `audio/${format}`,
+        'x-asset-meta': btoa(
+          unescape(
+            encodeURIComponent(
+              JSON.stringify({
+                mediaType: 'audio',
+                text,
+                voice,
+                duration,
+                provider: 'tts',
+                stageId,
+              }),
+            ),
+          ),
+        ),
+      },
+      body: blob,
+    });
+    if (!response.ok && response.status !== 204) {
+      log.warn(`Narration server upload for ${audioId} failed (HTTP ${response.status}); will retry on next regeneration`);
+    }
+  } catch (error) {
+    log.warn('Narration server upload failed (best-effort):', error instanceof Error ? error.message : error);
+  } finally {
+    inFlightServerUploads.delete(audioId);
+  }
 }
 
 export async function removeFreshTtsAllocations(assetIds: readonly string[]): Promise<void> {

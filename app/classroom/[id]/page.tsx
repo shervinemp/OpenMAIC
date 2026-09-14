@@ -164,7 +164,10 @@ export default function ClassroomDetailPage() {
     // tokens.
     const completedOrders = new Set(scenes.map((s) => s.order));
     const autoRetryFailed = ['1', 'true'].includes(
-      (process.env.NEXT_PUBLIC_AUTO_RETRY_FAILED_GENERATION ?? '1').trim().toLowerCase(),
+      // Initiation stays MANUAL by default (the red regenerate cards are the
+      // decision interface); set NEXT_PUBLIC_AUTO_RETRY_FAILED_GENERATION=1
+      // to opt into fully automatic re-entry instead.
+      (process.env.NEXT_PUBLIC_AUTO_RETRY_FAILED_GENERATION ?? '0').trim().toLowerCase(),
     );
     const failedIds = new Set(state.failedOutlines.map((o) => o.id));
     const skipIds = new Set(state.skippedOutlineIds);

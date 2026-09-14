@@ -23,9 +23,15 @@ vi.mock('@/lib/utils/database', () => ({
     mediaFiles: {
       put: mocks.mediaPut,
       delete: mocks.mediaDelete,
+      // Byte-aware completion predicate: rows the orchestrator itself wrote
+      // (real bytes) count as present; absent/unwritten keys are missing.
+      get: async (key: string) => mockMediaRows.get(key) ?? undefined,
     },
   },
 }));
+
+/** Persisted media-row mirror the byte-aware skip predicate reads. */
+const mockMediaRows = new Map<string, { size: number; errorCode?: string }>();
 
 import {
   generateMediaForOutlines,
@@ -74,8 +80,13 @@ describe('classic media orchestrator', () => {
 
   beforeEach(() => {
     resetProxyMediaFailureCache();
-    mocks.mediaPut.mockReset().mockResolvedValue(undefined);
-    mocks.mediaDelete.mockReset().mockResolvedValue(undefined);
+    mockMediaRows.clear();
+    mocks.mediaPut.mockReset().mockImplementation(async (row: { id: string; size?: number; errorCode?: string }) => {
+      mockMediaRows.set(row.id, { size: row.size ?? 0, errorCode: row.errorCode });
+    });
+    mocks.mediaDelete.mockReset().mockImplementation(async (key: string) => {
+      mockMediaRows.delete(key);
+    });
     mediaRetrySleep.wait = async () => {};
     mocks.settings.mockReset().mockReturnValue({
       imageGenerationEnabled: true,
@@ -264,6 +275,8 @@ describe('classic media orchestrator', () => {
   });
 
   it('skips completed and disabled requests but re-runs a previously failed task (pass-level recovery)', async () => {
+    // The done task has real persisted bytes → byte-aware completion skips it.
+    mockMediaRows.set(`${stageId}:done`, { size: 2048 });
     useMediaGenerationStore.setState({
       tasks: {
         done: { ...failedTask('done'), status: 'done', objectUrl: 'blob:done', error: undefined },

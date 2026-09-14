@@ -117,15 +117,33 @@ export function SceneSidebar({
       .filter((outline) => !completedOrders.has(outline.order));
   }, [blueprint, scenes, isCourseComplete]);
 
-  const audioPendingCount = useMemo(
-    () =>
-      scenes.filter((scene) =>
-        (scene.actions ?? []).some(
-          (action) => action.type === 'speech' && !!action.text && !action.audioId,
-        ),
-      ).length,
-    [scenes],
-  );  // Heavy-course structure (semester preset): blueprint.units already knows the
+  // HYDRATION: restore the interrupted regeneration queue ONCE per stage load
+  // into the store's failed/generating state — the classic red regenerate
+  // cards then render exactly as before (Retry/Skip per scene), only now
+  // they also survive reload. Idempotent: only fires when both queues are
+  // empty (i.e. a genuinely fresh mount) and generation is idle; skipped
+  // outlines stay closed (Pillar 2 §4.9), generation-complete decks hydrate
+  // nothing.
+  const hydratedEpochRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!blueprint || isCourseComplete) return;
+    if (generatingOutlines.length > 0 || recoveryPending.length === 0) return;
+    const queueKey = `${recoveryPending.map((o) => o.id).join(',').length}:${recoveryPending.length}`;
+    if (hydratedEpochRef.current === queueKey) return;
+    if (generationStatus !== 'idle') return;
+
+    const skippedIds = new Set(useStageStore.getState().skippedOutlineIds);
+    const missing = recoveryPending.filter((o) => !skippedIds.has(o.id));
+    if (missing.length === 0) return;
+    hydratedEpochRef.current = queueKey;
+    for (const outline of missing) {
+      useStageStore.getState().addFailedOutline(outline);
+    }
+    useStageStore.getState().setGeneratingOutlines(missing);
+  }, [blueprint, isCourseComplete, recoveryPending, generatingOutlines.length, generationStatus]);
+
+
+  // Heavy-course structure (semester preset): blueprint.units already knows the
   // unit -> lesson -> outline hierarchy. Collapsible unit sections mount ONLY
   // the expanded unit's scene entries instead of one unvirtualized 600-item
   // thumbnail list. Single-unit / blueprint-less courses keep the flat list.
@@ -740,41 +758,15 @@ export function SceneSidebar({
             failed/generating queues — after a reload, a deck with unfinished
             pages still surfaces "finish remaining" instead of silently
             masquerading both as complete and as un-resumable. */}
-        {/* Single RECOVERY SURFACE (one umbrella, no per-phase cards):
-            regenerated pages + missing narration + re-queued media all ride
-            the same automatic train; this line is ONLY a state readout and
-            disappears the moment the queue drains. Exactly one action, only
-            when the automatic path is parked (paused) — otherwise everything
-            here is zero-click. */}
-        {(generatingOutlines.length > 0 || recoveryPending.length > 0 || audioPendingCount > 0) && (
+        {/* RECOVERY = the classic red regenerate cards, hydrated from the
+            persisted invariant (missing outline ⇒ failed regenerate box), so
+            the same UI as before also survives reloads. Initiation stays
+            manual (Retry per card) unless the user pauses/resumes. */}
+        {generatingOutlines.length > 0 && (
           <div
             data-testid="generation-dock"
             className="shrink-0 p-2 space-y-2 border-t border-r-[6px] border-transparent border-t-gray-100 dark:border-t-gray-800"
           >
-          {generatingOutlines.length === 0 && (recoveryPending.length > 0 || audioPendingCount > 0) && (() => {
-            const parts: string[] = [];
-            if (recoveryPending.length > 0) parts.push(t('stage.recoveryPending', { count: recoveryPending.length }));
-            if (audioPendingCount > 0) parts.push(t('generation.audioPendingCount', { count: audioPendingCount }));
-            return (
-              <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/60 dark:bg-purple-900/20 p-2 flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold text-purple-700 dark:text-purple-300 truncate">
-                  {t('stage.recoveryUmbrella', { items: parts.join(', ') })}
-                </span>
-                {onResumeGeneration && generationStatus === 'paused' && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onResumeGeneration();
-                    }}
-                    className="inline-flex items-center gap-1 rounded-md bg-purple-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-purple-500 transition-colors active:scale-95"
-                  >
-                    <Play className="w-3 h-3" />
-                    {t('stage.resumeGeneration')}
-                  </button>
-                )}
-              </div>
-            );
-          })()}
 
           {/* Single placeholder for the next generating page (clickable) */}
           {generatingOutlines.length > 0 &&

@@ -130,15 +130,17 @@ function audioIdShape(ref: string): boolean {
 }
 
 async function poolBytes(ref: string): Promise<Blob | null> {
-  const { getAssetPool } = await import('@/lib/media/asset-pool');
+  // URL leasing goes through the shared owner (asset-url boundary rule); this
+  // module only reads bytes, it never pins URLs itself.
+  const { withAssetUrl } = await import('@/lib/media/use-asset-url');
   try {
-    const url = await getAssetPool().resolve(ref);
-    if (!url) return null;
-    const response = await fetch(url);
-    if (!response.ok) return null;
-    const blob = await response.blob();
-    if (url.startsWith('blob:')) URL.revokeObjectURL(url);
-    return blob;
+    return await withAssetUrl(ref, async (url) => {
+      if (!url) return null;
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return blob.size > 0 ? blob : null;
+    });
   } catch {
     return null;
   }

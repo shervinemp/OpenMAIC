@@ -107,11 +107,13 @@ export async function generateMediaForOutlines(
       // wait for the user (or a changed prompt/config).
       const existing = store.getTask(mg.elementId);
       if (existing?.status === 'done') {
-        const persisted = await db.mediaFiles
-          .get(mediaFileKey(stageId, mg.elementId))
-          .catch(() => null);
-        if (persisted && (persisted.size ?? 0) > 0) continue;
-        if (persisted?.errorCode) continue;
+        const persistedRow = await (db.mediaFiles as {
+          get?: (key: string) => Promise<
+            { size?: number; errorCode?: string } | undefined
+          >;
+        } | undefined)?.get?.(mediaFileKey(stageId, mg.elementId)).catch(() => undefined);
+        if (persistedRow && (persistedRow.size ?? 0) > 0) continue;
+        if (persistedRow?.errorCode) continue;
         log.info(
           `Media bytes for ${JSON.stringify(mg.elementId)} are missing though marked done; re-queueing repair`,
         );
@@ -344,6 +346,11 @@ async function generateSingleMediaOnce(
       });
       const objectUrl = URL.createObjectURL(blob);
       useMediaGenerationStore.getState().markDone(req.elementId, objectUrl);
+      // Forward-sync to the server asset store (same contract as narration):
+      // the deck's doc scope carries the media ref; bytes must live wherever
+      // the doc does, or every other browser of the profile sees "complete"
+      // but hears sees sees nothing. Best-effort, single-flight per ref.
+      void uploadMediaToServerAssetStore(stageId, req.elementId, blob, 'image/png', { prompt: req.prompt, params: paramsJson });
     } else {
       const result = await callVideoApi(req, abortSignal);
 
@@ -390,7 +397,55 @@ async function generateSingleMediaOnce(
       const objectUrl = URL.createObjectURL(blob);
       const posterObjectUrl = posterBlob ? URL.createObjectURL(posterBlob) : undefined;
       useMediaGenerationStore.getState().markDone(req.elementId, objectUrl, posterObjectUrl);
+      void uploadMediaToServerAssetStore(stageId, req.elementId, blob, 'video/mp4', { prompt: req.prompt, params: paramsJson });
+      if (posterBlob) {
+        void uploadMediaToServerAssetStore(stageId, `${req.elementId}:poster`, posterBlob, 'image/png', {
+          prompt: req.prompt,
+          params: paramsJson,
+          kind: 'poster',
+        });
+      }
     }
+}
+
+/** Best-effort, single-flight server asset upload (shared header/meta seam). */
+const MEDIA_UPLOAD_IN_FLIGHT = new Set<string>();
+
+async function uploadMediaToServerAssetStore(
+  stageId: string,
+  elementId: string,
+  blob: Blob,
+  mime: string,
+  meta: Record<string, unknown>,
+): Promise<void> {
+  const serverKey = `${stageId}:${elementId}`;
+  if (MEDIA_UPLOAD_IN_FLIGHT.has(serverKey)) return;
+  MEDIA_UPLOAD_IN_FLIGHT.add(serverKey);
+  try {
+    const { isBrowserPersistenceEnabled, getPersistenceRequestHeaders } = await import(
+      '@/lib/persistence/bootstrap'
+    );
+    if (!isBrowserPersistenceEnabled()) return;
+    const headers = await getPersistenceRequestHeaders();
+    const response = await fetch(`/api/persistence/assets/${encodeURIComponent(serverKey)}`, {
+      method: 'PUT',
+      headers: {
+        ...headers,
+        'content-type': mime,
+        'x-asset-meta': btoa(
+          unescape(encodeURIComponent(JSON.stringify({ mediaType: mime.startsWith('video') ? 'video' : 'image', ...meta }))),
+        ),
+      },
+      body: blob,
+    });
+    if (!response.ok && response.status !== 204) {
+      log.warn(`Media server upload for ${JSON.stringify(serverKey)} failed (HTTP ${response.status}); will retry on next generation pass`);
+    }
+  } catch (error) {
+    log.warn('Media server upload failed (best-effort):', error instanceof Error ? error.message : error);
+  } finally {
+    MEDIA_UPLOAD_IN_FLIGHT.delete(serverKey);
+  }
 }
 
 async function callImageApi(
