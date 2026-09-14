@@ -18,6 +18,7 @@ import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { measureAudioDuration } from '@/lib/audio/audio-duration';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
+import { loadImageMapping } from '@/lib/utils/image-storage';
 import { resolveAgentVoiceOptions, pickNarratorAgent } from '@/lib/audio/agent-voice';
 import {
   getEnabledProvidersWithVoices,
@@ -1142,7 +1143,38 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
     async (outlineId: string) => {
       const state = store.getState();
       const outline = state.failedOutlines.find((o) => o.id === outlineId);
-      const params = lastParamsRef.current;
+      // RECOVERY INVARIANT (#reload-retry): the ref-only params started a
+      // nothing-burger after a page reload — the retry card became a silent
+      // no-op because `lastParamsRef` dies with the mount. Rebuild from the
+      // persisted generation-session record (IndexedDB) plus live stage data
+      // so post-reload retries actually run.
+      let params = lastParamsRef.current;
+      if (!params && state.stage) {
+        try {
+          const { loadGenerationParams } = await import('@/lib/utils/generation-session-store');
+          const restored = (await loadGenerationParams(state.stage.id)) ?? {};
+          const rebuilt: GenerationParams = {
+            pdfImages: restored.pdfImages,
+            agents: restored.agents,
+            userProfile: restored.userProfile,
+            languageDirective: restored.languageDirective || state.stage.languageDirective,
+            stageInfo: {
+              name: state.stage.name || '',
+              description: state.stage.description,
+              style: state.stage.style,
+            },
+            imageMapping: await loadImageMapping(
+              (restored.pdfImages || [])
+                .map((img) => (img as { storageId?: string }).storageId)
+                .filter((id): id is string => Boolean(id)),
+            ),
+          };
+          params = rebuilt;
+          lastParamsRef.current = params;
+        } catch (error) {
+          log.warn('Retry params fallback load failed:', error);
+        }
+      }
       if (!outline || !state.stage || !params) return;
       const retryEpoch = state.generationEpoch;
 
