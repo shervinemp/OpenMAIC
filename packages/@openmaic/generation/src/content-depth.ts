@@ -169,8 +169,12 @@ export function isIntroSummaryOutline(outline: SceneOutline): boolean {
 
 // ==================== Slide validation ====================
 
-export function extractSlideTexts(elements: PPTElement[]): string[] {
+export function extractSlideTexts(elements: PPTElement[]): {
+  texts: string[];
+  codeBodies: string[];
+} {
   const texts: string[] = [];
+  const codeBodies: string[] = [];
   for (const element of elements) {
     if (element.type === 'text') {
       const content = (element as { content?: unknown }).content;
@@ -181,13 +185,17 @@ export function extractSlideTexts(elements: PPTElement[]): string[] {
     } else if (CODE_ELEMENT_TYPES.has(element.type)) {
       // A code block or formula IS a concrete example for a technical slide
       // (a COPY INTO statement IS the worked example of "loading files into
-      // Delta") — count its text the same way as a labeled example.
-      const code = (element as { code?: unknown; latex?: unknown });
-      const body = typeof code.code === 'string' ? code.code : typeof code.latex === 'string' ? code.latex : '';
-      if (body.trim()) texts.push(body.trim());
+      // Delta"). But its body must NOT enter the prose pool: code shapes
+      // would pollute the caption/substantive sentence statistics (short
+      // identifiers read as captions). Provenance is kept separate and only
+      // feeds the example-evidence count.
+      const code = element as { code?: unknown; latex?: unknown };
+      const body =
+        typeof code.code === 'string' ? code.code : typeof code.latex === 'string' ? code.latex : '';
+      if (body.trim()) codeBodies.push(body.trim());
     }
   }
-  return texts;
+  return { texts, codeBodies };
 }
 
 /** Profile-scaled floor read (OPENMAIC_GENERATION_PROFILE — the overall cost/quality knob). */
@@ -231,7 +239,7 @@ export function validateSlideDepth(
   const requireExample = options.requireExample ?? true;
   const retrievalContext = options.retrievalContext;
 
-  const texts = extractSlideTexts(elements);
+  const { texts, codeBodies } = extractSlideTexts(elements);
   const total = texts.length;
   let substantiveCount = 0;
   let captionCount = 0;
@@ -247,6 +255,10 @@ export function validateSlideDepth(
       captionCount++;
       if (captionSamples.length < 3) captionSamples.push(text);
     }
+  }
+  // Code/formula blocks contribute example evidence ONLY — never prose stats.
+  for (const body of codeBodies) {
+    exampleCount += 1;
   }
 
   const findings: string[] = [];

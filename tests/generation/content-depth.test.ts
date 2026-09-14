@@ -104,12 +104,68 @@ describe('validateSlideDepth', () => {
     expect(report.findings.some((f) => f.includes('no text elements'))).toBe(true);
   });
 
-  test('extractSlideTexts strips HTML and skips non-text elements', () => {
-    const texts = extractSlideTexts([
+  test('extractSlideTexts strips HTML and skips non-text elements; code bodies stay out of the prose pool', () => {
+    const { texts, codeBodies } = extractSlideTexts([
       textElement('a', '<p style="font-size: 14px;">Hello &amp; goodbye&nbsp;now</p>'),
       { id: 'img', type: 'image', left: 0, top: 0, width: 10, height: 10 } as PPTElement,
+      {
+        id: 'code',
+        type: 'code',
+        left: 0,
+        top: 0,
+        width: 10,
+        height: 10,
+        code: 'COPY INTO delta_table FROM read_files(...) FORMAT CSV',
+      } as unknown as PPTElement,
     ]);
     expect(texts).toEqual(['Hello & goodbye now']);
+    // Code shapes must NOT become prose (short identifiers read as captions);
+    // they feed only the example-evidence count.
+    expect(codeBodies).toHaveLength(1);
+    expect(codeBodies[0]).toContain('COPY INTO');
+  });
+
+  test('a code statement IS the worked example of a technical slide (no keyword needed)', () => {
+    const outline = slideOutline('COPY INTO: Loading Files into Delta');
+    const report = validateSlideDepth(outline, [
+      textElement(
+        'a',
+        '<p style="font-size: 14px;">COPY INTO loads files from cloud storage into a Delta table in one statement.</p>',
+      ),
+      textElement('b', '<p style="font-size: 14px;">The file format is declared after the source, then the table writes commit.</p>'),
+      {
+        id: 'code',
+        type: 'code',
+        left: 0,
+        top: 0,
+        width: 10,
+        height: 10,
+        code: 'COPY INTO sales_bronze\nFROM read_files(source_path)\nFILEFORMAT = CSV',
+      } as unknown as PPTElement,
+    ]);
+    expect(report.findings).not.toContain(
+      expect.stringContaining('no concrete example'),
+    );
+    expect(report.exampleCount).toBeGreaterThanOrEqual(1);
+  });
+
+  test('a real number with a unit counts as a concrete fact', () => {
+    const report = validateSlideDepth(slideOutline('Vectorized Engine Benchmarks'), [
+      textElement(
+        'a',
+        '<p style="font-size: 14px;">The new engine cut query latency by 63% on the TPC-DS suite.</p>',
+      ),
+      textElement(
+        'b',
+        'A single shard sustains throughput of 2.1 GB/s while streaming parquet files at 128 MB block size.',
+      ),
+      textElement(
+        'c',
+        'Each shard runs two concurrent streams, so the fleet handles burst loads without spilling compute.',
+      ),
+    ]);
+    expect(report.findings).not.toContain(expect.stringContaining('no concrete example'));
+    expect(report.exampleCount).toBeGreaterThanOrEqual(1);
   });
 
   test('intro/summary detection covers common titles', () => {
