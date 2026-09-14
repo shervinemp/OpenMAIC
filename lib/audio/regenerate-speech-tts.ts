@@ -47,16 +47,22 @@ export function isManagedTtsActive(): boolean {
 
 /** True if an audio blob is cached under this exact audioId. */
 export async function audioExists(audioId: string): Promise<boolean> {
-  return !!(await db.audioFiles.get(audioId));
+  // Canonical byte-truth: a bar of local-mirror emptiness is NOT "unvoiced" —
+  // narration bytes live server-side too, and a local-miss row that the
+  // resolver hydrates (and seeds back) IS playable. Without this, a fresh tab
+  // renders voiced lines as unvoiced (regenerate button) even though bytes
+  // resolve fine — the exact divergence between status and playback.
+  const bytes = await resolveAudioBlob(audioId);
+  return !!bytes && bytes.size > 0;
 }
 
-/** Existence for many audioIds in one IndexedDB round-trip. */
+/** Existence for many audioIds in one pass. */
 export async function audioExistsBulk(audioIds: string[]): Promise<Set<string>> {
   if (audioIds.length === 0) return new Set();
-  const recs = await db.audioFiles.bulkGet(audioIds);
+  const blobs = await Promise.all(audioIds.map((id) => resolveAudioBlob(id)));
   const have = new Set<string>();
-  recs.forEach((r, i) => {
-    if (r) have.add(audioIds[i]);
+  blobs.forEach((b, i) => {
+    if (b && b.size > 0) have.add(audioIds[i]);
   });
   return have;
 }
