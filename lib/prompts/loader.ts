@@ -11,13 +11,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { PromptId, LoadedPrompt, SnippetId } from './types';
-import { createLogger } from '@/lib/logger';
-import {
-  loadPrompt as loadGenerationPrompt,
-  loadSnippet as loadGenerationSnippet,
-  type SnippetId as GenerationSnippetId,
-} from '@openmaic/generation';
-const log = createLogger('PromptLoader');
+import { loadPrompt as loadGenerationPrompt } from '@openmaic/generation';
 
 /**
  * Get the prompts directory path

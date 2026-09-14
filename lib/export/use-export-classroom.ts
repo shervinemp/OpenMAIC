@@ -27,14 +27,9 @@ import {
 } from './classroom-zip-utils';
 import { createLogger } from '@/lib/logger';
 import { buildStageAssetManifest } from '@/lib/media/asset-manifest';
-import {
-  inlineHtmlAssets,
-  createAssetFetcher,
-  type InlineOptions,
-  type InlineReport,
-} from './inline-assets';
+import { createAssetFetcher, type InlineReport } from './inline-assets';
 import { createProxiedFetch } from './proxied-fetch';
-import type { SceneContent, Scene, Stage } from '@/lib/types/stage';
+import type { Scene, Stage } from '@/lib/types/stage';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { accessDocument, type DocumentMigrationDeps } from '@/lib/document-store';
 
