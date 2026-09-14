@@ -1388,14 +1388,14 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
             .filter((job) => job.phases.content?.status === 'failed' && job.resolution !== 'skip')
             .map((job) => outlines.find((o) => o.id === job.outlineId))
             .filter((o): o is NonNullable<typeof o> => !!o),
-          ...missingOutlines.filter(
-            (o) => !skipIdsFromJobs.has(o.id) && !orphanOutlineIds.has(o.id),
-          ),
         ];
         // Dedupe by id (an outline can be in-memory failed AND persisted failed).
         const seenFailed = new Set<string>();
         const uniqueFailedOutlines = failedOutlines.filter((o) =>
           seenFailed.has(o.id) ? false : (seenFailed.add(o.id), true),
+        );
+        const recoveryBasis = missingOutlines.filter(
+          (o) => !skipIdsFromJobs.has(o.id) && !orphanOutlineIds.has(o.id),
         );
         const skippedOutlineIds = [
           ...new Set(
@@ -1424,22 +1424,36 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
               if (orphanOutlineIds.has(o.id)) return true;
               return skippedOutlineIds.includes(o.id);
             }));
-        // Hydrate the generation status from persisted job state: a deck that
-        // was paused/interrupted must not surface as a fresh 'idle' with no
-        // resume affordance — unless everything materialized. Settled orphans
-        // are not open work.
-        const hasOpenJobs = recoveredLessonGroups.some((group) =>
-          group.jobs.some(
-            (job) =>
-              ((job.phases.content?.status === 'pending' &&
-                !orphanOutlineIds.has(job.outlineId)) ||
-                ((job.phases.content?.status === 'failed' ||
-                  job.phases.actions?.status === 'failed') &&
-                  job.resolution !== 'skip')),
-          ),
-        );
         const generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error' =
-          generationComplete ? 'completed' : hasOpenJobs ? 'paused' : 'idle';
+          generationComplete
+            ? 'completed'
+            : (hasOpenJobsFlag() ? 'paused' : 'idle');
+
+        function hasOpenJobsFlag(): boolean {
+          return recoveryBasis.length > 0 || recoveredLessonGroups.some((group) =>
+            group.jobs.some(
+              (job) =>
+                ((job.phases.content?.status === 'pending' &&
+                  !orphanOutlineIds.has(job.outlineId)) ||
+                  ((job.phases.content?.status === 'failed' ||
+                    job.phases.actions?.status === 'failed') &&
+                    job.resolution !== 'skip')),
+            ),
+          );
+        }
+        // FOLD-IN GUARD (deleted-after-complete deck): the missing-outline
+        // invariant folds into failedOutlines ONLY when generation is not
+        // settled. A generationComplete deck (user deleted a slide after a
+        // finish, or complete-by-all-materialized) stays frozen — folding
+        // otherwise would resurrect deleted slides as regeneration work.
+        const finalFailedOutlines = generationComplete
+          ? uniqueFailedOutlines
+          : [
+              ...uniqueFailedOutlines,
+              ...recoveryBasis.filter(
+                (o) => !uniqueFailedOutlines.some((f) => f.id === o.id),
+              ),
+            ];
         set({
           stage: data.stage,
           scenes: migrated,
@@ -1451,7 +1465,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           lessonGroups: recoveredLessonGroups,
           generationComplete,
           generationStatus,
-          failedOutlines: uniqueFailedOutlines,
+          failedOutlines: finalFailedOutlines,
           skippedOutlineIds,
           exams: persistedExams.exams,
           examAttempts: persistedExams.attempts,
