@@ -2136,6 +2136,9 @@
     "applyUpdate": "Áp dụng cập nhật",
     "backfillMedia": "Đồng bộ phương tiện của trình duyệt này vào kho khóa học",
     "backfillDone": "Hoàn tất — {{uploaded}} đã tải lên, {{existing}} đã đồng bộ, {{missing}} không có dữ liệu.",
+"materializeSection": "Hiện vật hóa khóa học (byte trên máy chủ)",
+"materializeNarration": "Thuyết minh: {{onServer}}/{{declared}} đoạn có byte trên máy chủ",
+"materializeMedia": "Hình ảnh / video: {{onServer}}/{{declared}} tài nguyên có byte trên máy chủ",
     "updateState": "{{state}} · {{scenes}} trang"
   }
 }

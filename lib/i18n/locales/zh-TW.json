@@ -2167,6 +2167,9 @@
     "applyUpdate": "套用更新",
     "backfillMedia": "將此瀏覽器的媒體同步到課程儲存庫",
     "backfillDone": "回填完成 — 已上傳 {{uploaded}} 個、已同步 {{existing}} 個、無資料 {{missing}} 個。",
+"materializeSection": "課程實體化（伺服器上的位元組）",
+"materializeNarration": "旁白：{{onServer}}/{{declared}} 段語音已在伺服器有位元組",
+"materializeMedia": "圖片 / 影片：{{onServer}}/{{declared}} 個素材已在伺服器有位元組",
     "updateState": "{{state}} · {{scenes}} 個場景"
   }
 }

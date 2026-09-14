@@ -10,10 +10,12 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   applyRepoSync,
   bindCourseToRepo,
+  fetchCourseMaterialization,
   getCourseBinding,
   scanRepoUpdates,
   unbindCourseRepo,
   type CourseBinding,
+  type CourseMaterialization,
   type RepoUpdateEntry,
   type SyncStageResult,
 } from '@/lib/persistence/git-course-client';
@@ -55,12 +57,18 @@ export function GitBindingDialog({
   const [scanBusy, setScanBusy] = useState(false);
   const [applyResults, setApplyResults] = useState<SyncStageResult[] | null>(null);
   const [backfillStatus, setBackfillStatus] = useState<string | null>(null);
+  const [materialization, setMaterialization] = useState<CourseMaterialization | null>(null);
   const mountedRef = useRef(true);
 
   const refresh = useCallback(async () => {
     if (!stageId) return;
     const current = await getCourseBinding(stageId);
     if (mountedRef.current) setBinding(current);
+    // Live self-containment report (per class: does the server hold the
+    // bytes?). Independent of the binding — shown for bound and unbound
+    // courses alike, since it answers "is this course physically whole".
+    const report = await fetchCourseMaterialization(stageId);
+    if (mountedRef.current) setMaterialization(report);
   }, [stageId]);
 
   useEffect(() => {
@@ -178,6 +186,9 @@ export function GitBindingDialog({
           missing: progress.noBytes,
         }),
       );
+      // The upload just changed server truth — read the fresh counts.
+      const report = await fetchCourseMaterialization(stageId ?? '');
+      if (mountedRef.current) setMaterialization(report);
     } catch (error) {
       setBackfillStatus(error instanceof Error ? error.message : 'backfill failed');
     }
@@ -196,6 +207,34 @@ export function GitBindingDialog({
           </p>
         </div>
       </div>
+
+      {/* Live self-containment: per asset class, does the server hold the
+          bytes? Answers "can this course play/reproduce anywhere" at a
+          glance — and tells you BEFORE a sync whether a backfill is owed. */}
+      {materialization && (
+        <div
+          className={
+            materialization.narration.onServer === materialization.narration.declared &&
+            materialization.media.onServer === materialization.media.declared
+              ? 'rounded-md border border-emerald-500/30 bg-emerald-500/[0.06] px-3 py-2 text-[11px] text-emerald-700 dark:text-emerald-400'
+              : 'rounded-md border border-amber-500/40 bg-amber-500/[0.07] px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400'
+          }
+        >
+          <p className="font-medium">{t('gitSync.materializeSection')}</p>
+          <p className="mt-0.5 text-[10.5px] leading-relaxed break-words">
+            {t('gitSync.materializeNarration', {
+              onServer: materialization.narration.onServer,
+              declared: materialization.narration.declared,
+            })}
+          </p>
+          <p className="text-[10.5px] leading-relaxed break-words">
+            {t('gitSync.materializeMedia', {
+              onServer: materialization.media.onServer,
+              declared: materialization.media.declared,
+            })}
+          </p>
+        </div>
+      )}
 
       {binding ? (
         <div className="space-y-2.5">

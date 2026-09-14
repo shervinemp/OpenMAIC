@@ -2159,6 +2159,9 @@
     "applyUpdate": "Apply update",
     "backfillMedia": "Sync this browser's media to the course repo",
     "backfillDone": "Backfill done — {{uploaded}} uploaded, {{existing}} already synced, {{missing}} had no bytes here.",
+"materializeSection": "Course materialization (bytes on server)",
+"materializeNarration": "Narration: {{onServer}}/{{declared}} clips have bytes on the server",
+"materializeMedia": "Images / videos: {{onServer}}/{{declared}} assets have bytes on the server",
     "updateState": "{{state}} · {{scenes}} scenes"
   },
   "exams": {

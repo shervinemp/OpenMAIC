@@ -2138,6 +2138,9 @@
     "applyUpdate": "Appliquer la mise à jour",
     "backfillMedia": "Synchroniser les médias de ce navigateur vers le dépôt",
     "backfillDone": "Backfill terminé — {{uploaded}} envoyés, {{existing}} déjà synchronisés, {{missing}} sans octets.",
+"materializeSection": "Matérialisation du cours (octets côté serveur)",
+"materializeNarration": "Narration : {{onServer}}/{{declared}} clips ont leurs octets sur le serveur",
+"materializeMedia": "Images / vidéos : {{onServer}}/{{declared}} ressources ont leurs octets sur le serveur",
     "updateState": "{{state}} · {{scenes}} scènes"
   }
 }

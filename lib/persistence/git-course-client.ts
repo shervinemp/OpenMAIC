@@ -113,6 +113,36 @@ export function isGitSyncAvailable(): boolean {
   return isBrowserPersistenceEnabled();
 }
 
+/** Live materialization summary row (server truth, per asset class). */
+export interface CourseMaterialization {
+  stageId: string;
+  narration: { declared: number; onServer: number };
+  media: { declared: number; onServer: number };
+  /** Repo-side committed manifest (what the last snapshot shipped), if bound. */
+  repository?: unknown;
+}
+
+/** Live self-containment report: per class, does the server hold the bytes? */
+export async function fetchCourseMaterialization(
+  stageId: string,
+): Promise<CourseMaterialization | null> {
+  const response = await courseGitFetch(`/report?stageId=${encodeURIComponent(stageId)}`);
+  const data = (await response.json().catch(() => ({}))) as {
+    stageId?: string;
+    narration?: { declared: number; onServer: number };
+    media?: { declared: number; onServer: number };
+    repository?: unknown;
+    error?: { message?: string };
+  };
+  if (!response.ok || !data.stageId || !data.narration || !data.media) return null;
+  return {
+    stageId: data.stageId,
+    narration: data.narration,
+    media: data.media,
+    ...(data.repository !== undefined ? { repository: data.repository } : {}),
+  };
+}
+
 /**
  * Update scan (diff-first, never applies). `pull` is env-gated server-side.
  */

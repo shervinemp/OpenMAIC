@@ -2138,6 +2138,9 @@
     "applyUpdate": "Применить обновление",
     "backfillMedia": "Синхронизировать медиа этого браузера в репозиторий курса",
     "backfillDone": "Выгрузка завершена — {{uploaded}} отправлено, {{existing}} уже синхронизировано, {{missing}} без байтов.",
+"materializeSection": "Материализация курса (байты на сервере)",
+"materializeNarration": "Озвучка: {{onServer}}/{{declared}} клип(ов) с байтами на сервере",
+"materializeMedia": "Изображения / видео: {{onServer}}/{{declared}} ресурс(ов) с байтами на сервере",
     "updateState": "{{state}} · {{scenes}} сцен"
   }
 }

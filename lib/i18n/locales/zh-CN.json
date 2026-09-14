@@ -2167,6 +2167,9 @@
     "applyUpdate": "应用更新",
     "backfillMedia": "将此浏览器的媒体同步到课程仓库",
     "backfillDone": "回填完成 — 已上传 {{uploaded}} 个、已同步 {{existing}} 个、无数据 {{missing}} 个。",
+"materializeSection": "课程实体化（服务器上的字节）",
+"materializeNarration": "旁白：{{onServer}}/{{declared}} 条语音已在服务器有字节",
+"materializeMedia": "图片 / 视频：{{onServer}}/{{declared}} 个素材已在服务器有字节",
     "updateState": "{{state}} · {{scenes}} 个场景"
   }
 }

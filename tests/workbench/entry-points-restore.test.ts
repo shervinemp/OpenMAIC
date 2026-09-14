@@ -19,7 +19,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { act, createElement } from 'react';
+import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -57,9 +57,7 @@ function mount(): Root {
   const root = createRoot(host);
   hosts.push({ root, host });
   return root;
-}
-
-/** Flush the probe's fetch → json → state chain, then the re-render. */
+}/** Flush the probe's fetch → json → state chain, then the re-render. */
 async function flushProbe() {
   await act(async () => {
     await new Promise((settle) => setTimeout(settle, 0));
@@ -140,7 +138,7 @@ describe('entry point 2 — the composer attach control', () => {
       vi.fn(async () => Response.json({ enabled: true, runtimeEnabled: true })),
     );
     const { AttachButton } = await importFreshExtras();
-    const root = mount(null);
+    const root = mount();
     await act(async () => {
       root.render(createElement(AttachButton, { onFiles: () => undefined, label: 'attach' }));
     });
@@ -156,7 +154,7 @@ describe('entry point 2 — the composer attach control', () => {
       vi.fn(async () => Response.json({ enabled: false })),
     );
     const { AttachButton } = await importFreshExtras();
-    const root = mount(null);
+    const root = mount();
     await act(async () => {
       root.render(createElement(AttachButton, { onFiles: () => undefined, label: 'attach' }));
     });

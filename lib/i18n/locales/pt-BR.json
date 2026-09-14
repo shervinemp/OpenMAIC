@@ -2138,6 +2138,9 @@
     "applyUpdate": "Aplicar atualização",
     "backfillMedia": "Sincronizar a mídia deste navegador para o repositório",
     "backfillDone": "Backfill concluído — {{uploaded}} enviados, {{existing}} já sincronizados, {{missing}} sem bytes.",
+"materializeSection": "Materialização do curso (bytes no servidor)",
+"materializeNarration": "Narração: {{onServer}}/{{declared}} clipes têm bytes no servidor",
+"materializeMedia": "Imagens / vídeos: {{onServer}}/{{declared}} ativos têm bytes no servidor",
     "updateState": "{{state}} · {{scenes}} cenas"
   }
 }
