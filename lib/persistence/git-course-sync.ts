@@ -402,9 +402,32 @@ export class CourseGitCommitScheduler {
       await git(repoPath, commitArgs(true));
     }
     if (this.push) {
-      await git(repoPath, ['push']).catch(() => {
-        log.warn('push failed after commit (no remote configured or auth required)');
-      });
+      // Push by explicit remote + branch. A bare `git push` needs an upstream
+      // (`branch.<n>.remote/merge`) configured in the repo; the course repo in
+      // the wild only carries `remote.<n>.url`, so the bare form fails with a
+      // misleading "no remote configured" after every commit. Resolve the
+      // first remote and the current branch instead — explicit and safe.
+      try {
+        const remotes = (await git(repoPath, ['remote'])).stdout.split(/\r?\n/).filter(Boolean);
+        if (remotes.length === 0) {
+          log.warn('push skipped: the bound repository has no git remote configured');
+        } else {
+          const branch = (
+            await git(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
+          ).stdout.trim();
+          const [remote] = remotes;
+          const pushed = await git(repoPath, [
+            'push',
+            ...(branch && branch !== 'HEAD' ? [remote, branch] : [remote]),
+          ]);
+          if (pushed.stderr.trim()) {
+            log.info(`push: ${pushed.stderr.trim()}`);
+          }
+        }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        log.warn(`push failed after commit: ${detail}`);
+      }
     }
   }
 }

@@ -1081,7 +1081,13 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
           error: actionsResult.error || 'Actions generation failed',
         };
       }
-      state.scene = actionsResult.scene;
+      // Stamp EVERY actions result — fresh ones too. Without this the store
+      // carries no fingerprint, the persisted document records none (the DSL
+      // app-field goes through verbatim), and the NEXT repair (even a pure
+      // voice-only one) re-pays the full content/actions LLM passes because
+      // `findReusableActionsScene` requires a defined hash. Stamping here is
+      // what makes the first full pass the ONLY full pass.
+      state.scene = attachActionsSourceHash(actionsResult.scene, contentResult.content, params);
       return { status: 'done' };
     },
   },
