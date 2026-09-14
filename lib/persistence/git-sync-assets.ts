@@ -1,4 +1,5 @@
 import { copyFile, writeFile, mkdir } from 'node:fs/promises';
+import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { createLogger } from '@/lib/logger';
@@ -146,4 +147,72 @@ export async function materializeStageAssets(
 /** Repo-side path of a stage's asset directory (for consumers/tests). */
 export function stageAssetDir(stageId: string): string {
   return join('assets', stageId);
+}
+
+/**
+ * Ingest a course repo's committed media payload back into the server asset
+ * store (apply/import half).
+ *
+ * The snapshot commit copied every resolvable ref's bytes + `.meta` sidecar
+ * into `assets/<stageId>/` (see materializeStageAssets) and audited the rest
+ * in the manifest. On an inbound apply, those bytes copy BACK into
+ * `PERSISTENCE_DIR/assets` so the imported course is materialized in its new
+ * home immediately — no browser backfill owed for what the snapshot already
+ * carried. Idempotent: rows the store already holds are left intact (the
+ * persisted store's newer bytes must not be demoted by a stale snapshot).
+ */
+export async function ingestRepoAssets(
+  persistenceDir: string,
+  repoPath: string,
+  stageId: string,
+  document: unknown,
+): Promise<{ restored: number; alreadyPresent: number; missingRefs: string[] }> {
+  const assetDir = stageAssetDir(stageId);
+  const sources = {
+    bytes: join(repoPath, assetDir),
+    meta: join(repoPath, assetDir, '.meta'),
+  };
+  const targets = {
+    bytes: join(persistenceDir, 'assets'),
+    meta: join(persistenceDir, 'assets', '.meta'),
+  };
+  await mkdir(targets.bytes, { recursive: true });
+  await mkdir(targets.meta, { recursive: true });
+
+  const refs = collectDocumentMediaRefs(document);
+  let restored = 0;
+  let alreadyPresent = 0;
+  const missingRefs: string[] = [];
+  for (const ref of refs) {
+    const source = join(sources.bytes, ref);
+    const target = join(targets.bytes, encodeURIComponent(ref));
+    if (existsSync(target) && statSync(target).size > 0) {
+      alreadyPresent += 1;
+      continue;
+    }
+    if (!existsSync(source)) {
+      missingRefs.push(ref);
+      continue;
+    }
+    await copyFile(source, target);
+    restored += 1;
+    const metaSource = join(sources.meta, `${ref}.json`);
+    if (existsSync(metaSource)) {
+      // Best-effort: a meta write failure never demotes the bytes copy.
+      await copyFile(metaSource, join(targets.meta, `${encodeURIComponent(ref)}.json`)).catch(
+        () => undefined,
+      );
+    }
+  }
+  if (restored > 0) {
+    log.info(
+      `Stage ${JSON.stringify(stageId)}: ${restored}/${refs.length} asset row(s) restored from the repo snapshot`,
+    );
+  }
+  if (missingRefs.length > 0) {
+    log.warn(
+      `Stage ${JSON.stringify(stageId)}: ${missingRefs.length}/${refs.length} refs in the snapshot have no committed bytes either; the browser backfill still owes them`,
+    );
+  }
+  return { restored, alreadyPresent, missingRefs };
 }

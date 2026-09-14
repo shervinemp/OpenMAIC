@@ -317,8 +317,11 @@ export async function runCourseGitSync(
         snapshot.repoPath,
         snapshot.stageId,
         document,
-      ).catch((error) => {
-        log.warn(`Asset ingestion for ${JSON.stringify(snapshot.stageId)} failed:`, error instanceof Error ? error.message : error);
+      ).catch((error: unknown) => {
+        log.warn(
+          `Asset ingestion for ${JSON.stringify(snapshot.stageId)} failed:`,
+          error instanceof Error ? error.message : error,
+        );
         return null;
       });
       const bytesDetail =
