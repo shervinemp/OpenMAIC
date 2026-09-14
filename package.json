@@ -20,7 +20,7 @@
     "check:i18n-keys": "node scripts/check-i18n-keys.mjs",
     "check:node-engine": "node scripts/check-node-engine-contract.mjs",
     "check:package-versions": "node scripts/check-package-version-bumps.mjs",
-    "check": "prettier . --check",
+    "check": "prettier . --check && npm run check:i18n-keys && npm run check:git-health",
     "format": "prettier . --write",
     "test": "vitest run",
     "test:package-tarballs": "node scripts/smoke-test-package-tarballs.mjs",
@@ -31,7 +31,8 @@
     "eval:outline-language": "tsx eval/outline-language/runner.ts",
     "eval:orchestration": "tsx eval/orchestration/runner.ts",
     "eval:orchestration:answering": "tsx eval/orchestration/answering-runner.ts",
-    "eval:orchestration:answer-content": "tsx eval/orchestration/answer-content-runner.ts"
+    "eval:orchestration:answer-content": "tsx eval/orchestration/answer-content-runner.ts",
+    "check:git-health": "node scripts/check-course-git-health.mjs"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^4.0.103",

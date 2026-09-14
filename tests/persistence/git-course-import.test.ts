@@ -115,6 +115,66 @@ describe('inbound course git sync', () => {
     expect(persistedDocuments()).toContain('importStage.json');
   });
 
+  it('manifest-driven materialization: applying a snapshot restores its committed media bytes into the asset store', async () => {
+    // The repo carries a slide with tts narration committed next to the doc.
+    const doc = {
+      stage: { id: 'boundExisting', name: 'Course boundExisting', createdAt: 1, updatedAt: 2 },
+      scenes: [
+        {
+          id: 'scene-0',
+          stageId: 'boundExisting',
+          order: 1,
+          type: 'slide',
+          title: 'With narration',
+          content: {
+            type: 'slide',
+            canvas: {
+              id: 'canvas-0',
+              viewportSize: 1000,
+              viewportRatio: 0.5625,
+              theme: { backgroundColor: '#fff', themeColors: ['#000'], fontColor: '#000', fontName: 'Inter' },
+              elements: [],
+            },
+          },
+          actions: [{ type: 'speech', id: 'a0', text: 'hello', audioId: 'tts_s1_a0' }],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      dslVersion: '0.2.0',
+    };
+    writeFileSync(join(repoPath, 'boundExisting.json'), JSON.stringify(doc), 'utf8');
+    mkdirSync(join(repoPath, 'assets', 'boundExisting', '.meta'), { recursive: true });
+    writeFileSync(
+      join(repoPath, 'assets', 'boundExisting', 'tts_s1_a0'),
+      Buffer.from('wav-wav-wav'),
+    );
+    writeFileSync(
+      join(repoPath, 'assets', 'boundExisting', '.meta', 'tts_s1_a0.json'),
+      JSON.stringify({ mime: 'audio/wav', meta: {}, size: 11 }),
+      'utf8',
+    );
+    persistDocument('boundExisting', makeDoc('boundExisting'));
+    await bindRepo({ autoLoad: true });
+
+    const applied = await runCourseGitSync(persistenceDir, { apply: true, stageIds: ['boundExisting'] });
+    expect(applied.results[0].action).toBe('applied');
+    expect(applied.results[0].detail).toContain('media rows restored: 1');
+
+    // The bytes AND the sidecar landed in the server store under the
+    // encoded ref; the meta content flows through too.
+    const restored = readFileSync(join(persistenceDir, 'assets', 'tts_s1_a0'));
+    expect(restored.toString()).toContain('wav-wav');
+    const meta = JSON.parse(readFileSync(join(persistenceDir, 'assets', '.meta', 'tts_s1_a0.json'), 'utf8')) as {
+      mime?: string;
+    };
+    expect(meta.mime).toBe('audio/wav');
+
+    // Idempotent: a re-apply does not duplicate-restores or demote rows.
+    const again = await runCourseGitSync(persistenceDir, { apply: true, stageIds: ['boundExisting'] });
+    expect(again.results[0].detail).not.toContain('media rows restored: 1');
+  });
+
   it('does not auto-import without the binding autoLoad flag', async () => {
     writeFileSync(join(repoPath, 'importStage.json'), JSON.stringify(makeDoc('importStage')), 'utf8');
     await bindRepo();

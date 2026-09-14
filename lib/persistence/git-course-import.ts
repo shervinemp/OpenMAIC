@@ -38,6 +38,8 @@ const log = createLogger('CourseGitImport');
  *   returned as per-stage results, never thrown into the caller.
  */
 
+import { ingestRepoAssets } from '@/lib/persistence/git-sync-assets';
+
 export interface RepoCourseSnapshot {
   repoPath: string;
   /** Sanitized file name without extension (outbound format). */
@@ -307,14 +309,33 @@ export async function runCourseGitSync(
     try {
       const document = loaded.document as unknown as MaicDocument;
       await store.saveDocument(document as never, { allowOlderOverwrite: true });
+      // Materialize the repo's committed media payload into the server store
+      // (manifest-driven: bytes next to the snapshot restore first; refs the
+      // snapshot itself lacks are the honest remainder).
+      const materials = await ingestRepoAssets(
+        persistenceDir,
+        snapshot.repoPath,
+        snapshot.stageId,
+        document,
+      ).catch((error) => {
+        log.warn(`Asset ingestion for ${JSON.stringify(snapshot.stageId)} failed:`, error instanceof Error ? error.message : error);
+        return null;
+      });
+      const bytesDetail =
+        materials && materials.restored > 0
+          ? ` (media rows restored: ${materials.restored}${materials.missingRefs.length > 0 ? `, ${materials.missingRefs.length} refs still missing` : ''})`
+          : materials && materials.missingRefs.length > 0
+            ? ` (${materials.missingRefs.length} refs missing bytes in the snapshot too)`
+            : '';
       results.push({
         stageId: snapshot.stageId,
         action: isNew ? 'imported' : 'applied',
-        detail: isNew
-          ? `imported "${(document.stage as { title?: string; name?: string }).title ?? (document.stage as { name?: string }).name ?? snapshot.stageId}" from repo`
-          : 'repo snapshot restored over persisted course',
+        detail:
+          (isNew
+            ? `imported "${(document.stage as { title?: string; name?: string }).title ?? (document.stage as { name?: string }).name ?? snapshot.stageId}" from repo`
+            : 'repo snapshot restored over persisted course') + bytesDetail,
       });
-      log.info(`Course ${snapshot.stageId} ${isNew ? 'imported' : 'restored'} from ${snapshot.repoPath}`);
+      log.info(`Course ${snapshot.stageId} ${isNew ? 'imported' : 'restored'} from ${snapshot.repoPath}${bytesDetail}`);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       results.push({ stageId: snapshot.stageId, action: 'rejected', detail: `save failed: ${detail}` });
