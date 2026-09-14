@@ -152,21 +152,26 @@ export default function ClassroomDetailPage() {
     // Check if there are pending outlines. A finished deck is frozen for
     // editing: deleting a slide leaves its outline orphaned, but that must not
     // be treated as an interrupted generation and regenerated. Only resume
-    // when generation has not completed. Outlines that failed in a previous
-    // session (content phase failed, no skip) are NOT auto-resumed: they carry
-    // retry cards and the Resume button so the user decides whether a
-    // provider-side failure is worth re-burning tokens. Skipped outlines are
-    // finalized without a scene and are neither resumed nor counted.
+    // when generation has not completed. Skipped outlines are finalized
+    // without a scene and are neither resumed nor counted.
+    //
+    // Queue semantics ("same train", reload-safe + lossless): the resume
+    // queue is DERIVED from the persisted invariant — outline without a
+    // scene — not from session memory. Previously-failed outlines re-enter
+    // the same train automatically when AUTO_RETRY_FAILED_GENERATION is on
+    // (self-host/dev default); otherwise they stay parked behind retry cards
+    // so the user decides whether a provider-side failure is worth re-burning
+    // tokens.
     const completedOrders = new Set(scenes.map((s) => s.order));
+    const autoRetryFailed = ['1', 'true'].includes(
+      (process.env.NEXT_PUBLIC_AUTO_RETRY_FAILED_GENERATION ?? '1').trim().toLowerCase(),
+    );
     const failedIds = new Set(state.failedOutlines.map((o) => o.id));
     const skipIds = new Set(state.skippedOutlineIds);
-    const hasPending = !generationComplete && outlines.some((o) => !completedOrders.has(o.order));
-    // Auto-resume only never-attempted pending work. A deck whose failures
-    // were restored from the persisted job state pauses instead: the retry
-    // cards + Resume button let the user decide whether to re-burn tokens.
-    const resumable =
-      hasPending &&
-      outlines.some((o) => !completedOrders.has(o.order) && !failedIds.has(o.id) && !skipIds.has(o.id));
+    const outlineIsPending = (id: string, order: number): boolean =>
+      !completedOrders.has(order) && !skipIds.has(id) && !(failedIds.has(id) && !autoRetryFailed);
+    const hasPending = !generationComplete && outlines.some((o) => outlineIsPending(o.id, o.order));
+    const resumable = hasPending && stage ? true : false;
 
     if (resumable && stage) {
       generationStartedRef.current = true;
@@ -242,6 +247,15 @@ export default function ClassroomDetailPage() {
       generateMediaForOutlines(materializedOutlines, stage.id).catch((err) => {
         log.warn('[Classroom] Media generation resume error:', err);
       });
+      // Narration recovery (same-train semantics): a fully materialized deck
+      // whose speech actions are audio-pending gets ONE automatic drain pass
+      // per mount when auto-recovery is on — TTS outages/flakes during a prior
+      // session no longer leave the course permanently silent.
+      const storeScenes = useStageStore.getState().scenes;
+      void (async () => {
+        const { drainPendingSceneTTS } = await import('@/lib/hooks/use-scene-generator');
+        await drainPendingSceneTTS([...storeScenes]);
+      })().catch((err) => log.warn('[Classroom] Narration drain resume error:', err));
     }
     // classroomId: the params lookup and session cleanup are keyed by it. A
     // change re-runs this effect, but `generationStartedRef` still guards the

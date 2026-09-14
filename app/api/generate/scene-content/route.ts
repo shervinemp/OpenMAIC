@@ -476,6 +476,12 @@ export async function POST(req: NextRequest) {
         : '';
       const detail = failureDetail ?? (depthDetail ? `depth contract rejected${depthDetail}` : '');
 
+      log.error(
+        `Failed to generate content for: "${effectiveOutline.title}" — reason: ${
+          detail || 'none recorded (no onFailure raise, no depth report; pipeline returned null silently)'
+        } [model=${modelString ?? 'unknown'}, sceneType=${effectiveOutline.type}]`,
+      );
+
       return apiError(
         'GENERATION_FAILED',
         500,
