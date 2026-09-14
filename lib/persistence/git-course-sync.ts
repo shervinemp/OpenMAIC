@@ -194,13 +194,19 @@ export class CourseGitCommitScheduler {
   private drain: Promise<void> = Promise.resolve();
   private readonly debounceMs: number;
   private readonly push: boolean;
+  private readonly includeMedia: boolean;
 
   constructor(
     private readonly persistenceDir: string,
-    options: { debounceMs?: number; push?: boolean } = {},
+    options: { debounceMs?: number; push?: boolean; includeMedia?: boolean } = {},
   ) {
     this.debounceMs = options.debounceMs ?? envDebounceMs() ?? DEFAULT_DEBOUNCE_MS;
     this.push = options.push ?? false;
+    // Media rides along by default (the "full course" export); set
+    // COURSE_GIT_SYNC_MEDIA=0 when the repo must stay document-only — e.g.
+    // GitHub growth pressure or snapshot-smoke test runs.
+    this.includeMedia =
+      options.includeMedia ?? !['0', 'false'].includes(envFlag(process.env.COURSE_GIT_SYNC_MEDIA));
   }
 
   /** Queue a debounced commit for the stage. Never throws. */
@@ -300,14 +306,16 @@ export class CourseGitCommitScheduler {
       // git-sync-assets.ts). Unresolvable refs are listed in the stage's
       // manifest — the browser backfill uploader supplies those bytes first;
       // copy is best-effort and never fails the commit.
-      await materializeStageAssets(
-        this.persistenceDir,
-        repoPath,
-        job.stageId,
-        document,
-      ).catch((error) => {
-        log.warn(`Asset materialization for ${JSON.stringify(job.stageId)} failed; committing document only:`, error instanceof Error ? error.message : error);
-      });
+      if (this.includeMedia) {
+        await materializeStageAssets(
+          this.persistenceDir,
+          repoPath,
+          job.stageId,
+          document,
+        ).catch((error) => {
+          log.warn(`Asset materialization for ${JSON.stringify(job.stageId)} failed; committing document only:`, error instanceof Error ? error.message : error);
+        });
+      }
     }
     await git(repoPath, ['add', '--all', `${stageFile}.json`]);
     const status = await git(repoPath, ['status', '--porcelain', `${stageFile}.json`]);
@@ -345,6 +353,10 @@ function envDebounceMs(): number | undefined {
   if (!raw) return undefined;
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function envFlag(value: string | undefined): string {
+  return (value ?? '').trim().toLowerCase();
 }
 
 /**
