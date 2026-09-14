@@ -9,6 +9,7 @@
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
+import { mediaProviderBudgets } from '@/lib/media/provider-budgets';
 import { db, mediaFileKey } from '@/lib/utils/database';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { MediaGenerationRequest } from '@/lib/media/types';
@@ -61,19 +62,6 @@ function createAbortError(): Error {
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw createAbortError();
-}
-
-/**
- * Per-pass requeue cap (environment-tunable). A stadium-size backlog (e.g. a
- * first mount after a week-long outage with a local ComfyUI on one GPU)
- * shouldn't queue EVERY missing row onto the backend at once — the pass
- * dispatches a bounded slice and the rest waits for the next pass.
- * `COURSE_MEDIA_REPAIR_REQUEUE_LIMIT` (default 48) caps the dispatch.
- */
-function repairRequeueLimit(): number | undefined {
-  const raw = process.env.COURSE_MEDIA_REPAIR_REQUEUE_LIMIT?.trim();
-  const parsed = raw ? Number(raw) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 48;
 }
 
 /**
@@ -190,18 +178,26 @@ async function generateMediaForOutlinesDispatch(
 
   if (allRequests.length === 0) return;
 
-  // Bounded repair pass: a reload storm after a long outage used to queue
-  // EVERY missing row onto the provider at once (one local GPU → minutes of
-  // backlog, repeated mounts piled more). The dispatch stays serial-ordered;
-  // the excess waits for the next pass instead of stacking the backend.
-  // Cheap jobs first (images before videos): a single heavy video cannot
-  // head-of-line-block the whole image backlog — a 30s image behind a
-  // 5min video starves to the 1800s queue-kill. Stable within each class.
-  const requeueLimit = repairRequeueLimit();
-  const classRank = (type: 'image' | 'video'): number => (type === 'image' ? 0 : 1);
+  // Budget-driven dispatch (provider-budgets.ts): each class carries its
+  // own requeue cap and cost weight — cheap jobs first so one heavy item
+  // (a video) cannot head-of-line-block the cheap backlog (images starve
+  // to the 1800s queue-wait kill behind a 5-minute render). Stable within
+  // each class; the per-class caps bound the provider backlog per pass.
+  const budgets = mediaProviderBudgets();
+  const costRank = (type: MediaGenerationRequest['type']): number =>
+    type === 'video' ? budgets.video.costWeight : budgets.image.costWeight;
+  const classCap = (type: MediaGenerationRequest['type']): number =>
+    type === 'video' ? budgets.video.requeueCap : budgets.image.requeueCap;
+  const perClassTaken = new Map<MediaGenerationRequest['type'], number>();
   const dispatchable = [...allRequests]
-    .sort((a, b) => classRank(a.type) - classRank(b.type))
-    .slice(0, requeueLimit);
+    .sort((a, b) => costRank(a.type) - costRank(b.type))
+    .filter((req) => {
+      const taken = perClassTaken.get(req.type) ?? 0;
+      const cap = classCap(req.type);
+      if (taken >= cap) return false;
+      perClassTaken.set(req.type, taken + 1);
+      return true;
+    });
   if (dispatchable.length < allRequests.length) {
     log.warn(
       `Media requeue capped at ${dispatchable.length}/${allRequests.length} requests this pass ` +

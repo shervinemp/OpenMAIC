@@ -121,6 +121,55 @@ export function isNarrationRef(ref: string): boolean {
 }
 
 /** Player-equivalent byte probe for ANY ref a scene references. */
+function isNarrationRefLocal(ref: string): boolean {
+  return isNarrationRefShape(ref);
+}
+
+/**
+ * Local-first byte detection across a WHOLE set of refs: whichever refs are
+ * unresolvable LOCALLY go to the batched server oracle in ONE chunked pass
+ * (no per-ref round-trips). The local split is deterministic same-source
+ * audio/media chains the player itself uses, so "local missing + server
+ * missing" is exactly dead materialization.
+ */
+async function batchRefResolvesBytes(
+  refs: readonly string[],
+  stageId: string | undefined,
+): Promise<Map<string, boolean>> {
+  const { probeServerAssetPresence, probeLocalAssetPresence } = await import(
+    '@/lib/media/asset-oracle'
+  );
+  const resolved = new Map<string, boolean>();
+  const missingLocally: string[] = [];
+  for (const ref of refs) {
+    const presence = await probeLocalAssetPresence(ref, stageId);
+    if (presence === true) {
+      resolved.set(ref, true);
+    } else {
+      missingLocally.push(ref);
+    }
+  }
+  if (missingLocally.length === 0) return resolved;
+  // Narration refs missing locally go through the AUDIO chain's local
+  // resolution with server fallback untouched — the oracle is authoritative
+  // for the server half; narration falls back to the per-ref resolver (pool
+  // leasing + server-seeding mirror) so a single fatal miss isn't
+  // misdiagnosed when the pool metadata alone is stale.
+  const narrationMisses = missingLocally.filter(isNarrationRefLocal);
+  const nonNarrationMisses = missingLocally.filter((ref) => !isNarrationRefLocal(ref));
+  await Promise.all(
+    narrationMisses.map(async (ref) => {
+      resolved.set(ref, await refResolvesBytes(ref, stageId));
+    }),
+  );
+  const serverPresent = await probeServerAssetPresence(nonNarrationMisses);
+  for (const ref of nonNarrationMisses) {
+    resolved.set(ref, serverPresent.get(ref) === true);
+  }
+  return resolved;
+}
+
+/** Player-equivalent byte probe for ANY ref a scene references. */
 async function refResolvesBytes(ref: string, stageId: string | undefined): Promise<boolean> {
   try {
     if (isNarrationRef(ref)) {
@@ -172,14 +221,21 @@ export async function repairCourseMedia(
     ...scenes,
     ...(options.additionalAssets ?? []),
   ] as unknown[];
+  // Oracle batch: collect every ref ONCE, then resolve in a local-first +
+  // single-batched-server pass (no per-ref round-trips). Scene attribution
+  // happens per material over the resolved map.
+  const resolvedByRef = await batchRefResolvesBytes(
+    detectionTargets.flatMap((material) =>
+      collectDocumentMediaRefs(material, { includeElementIdRefs: false }),
+    ),
+    options.stageId,
+  );
   for (const material of detectionTargets) {
     const refs = collectDocumentMediaRefs(material, { includeElementIdRefs: false });
     const narratedRefs = refs.filter(isNarrationRef);
     const mediaRefs = refs.filter((ref) => !isNarrationRef(ref));
-    const narratedOk = await Promise.all(
-      narratedRefs.map((ref) => refResolvesBytes(ref, options.stageId)),
-    );
-    const mediaOk = await Promise.all(mediaRefs.map((ref) => refResolvesBytes(ref, options.stageId)));
+    const narratedOk = narratedRefs.map((ref) => resolvedByRef.get(ref) === true);
+    const mediaOk = mediaRefs.map((ref) => resolvedByRef.get(ref) === true);
     narratedRefs.forEach((ref, i) => {
       if (!narratedOk[i]) deadNarrationRefs.add(ref);
     });
@@ -253,10 +309,10 @@ export async function repairCourseMedia(
   }
 
   // ---- Post-repair audit: which narration refs are STILL dead ----
-  const stillDead: string[] = [];
-  for (const ref of deadNarrationRefs) {
-    if (!(await refResolvesBytes(ref, options.stageId))) stillDead.push(ref);
-  }
+  const postAudit = await batchRefResolvesBytes([...deadNarrationRefs], options.stageId);
+  const stillDead: string[] = [...deadNarrationRefs].filter(
+    (ref) => postAudit.get(ref) !== true,
+  );
   report.audioStillPending = stillDead.length;
 
   log.info(

@@ -34,6 +34,18 @@ vi.mock('@/lib/media/resolve-stored-bytes', () => ({
   resolveStoredBytes: mocks.resolveStoredBytes,
 }));
 
+// Asset oracle: local probe reads the (mocked) chains, server presence is
+// test-controllable (default: every ref the server holds = true).
+const oracleMocks = vi.hoisted(() => ({
+  probeLocalAssetPresence: vi.fn(),
+  probeServerAssetPresence: vi.fn(),
+}));
+
+vi.mock('@/lib/media/asset-oracle', () => ({
+  probeLocalAssetPresence: oracleMocks.probeLocalAssetPresence,
+  probeServerAssetPresence: oracleMocks.probeServerAssetPresence,
+}));
+
 import { repairCourseMedia } from '@/lib/media/repair-course-media';
 import type { Scene } from '@/lib/types/stage';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -86,6 +98,17 @@ describe('repairCourseMedia — class-agnostic byte detection', () => {
     mocks.generateMediaForOutlines.mockReset().mockResolvedValue(undefined);
     mocks.resolveAudioBlob.mockReset();
     mocks.resolveStoredBytes.mockReset();
+    // Default local probe defers to the diagnosis chains (narration mock);
+    // the server holds everything unless a test overrides (dead-media cases
+    // stub the server probe off per ref).
+    oracleMocks.probeLocalAssetPresence.mockReset().mockResolvedValue(false);
+    oracleMocks.probeServerAssetPresence
+      .mockReset()
+      .mockImplementation(async (refs?: readonly string[]) => {
+        const map = new Map<string, boolean>();
+        for (const ref of refs ?? []) map.set(ref, true);
+        return map;
+      });
   });
 
   afterEach(() => {
@@ -142,10 +165,18 @@ describe('repairCourseMedia — class-agnostic byte detection', () => {
   });
 
   it('dead media refs with a covered task spec requeue the orchestrator and count unrecoverable only for uncovered refs', async () => {
-    // gen_img_1 has bytes (covered, but the src IS dead per resolveStoredBytes);
-    mocks.resolveStoredBytes
-      .mockResolvedValueOnce(null) // gen_img_1 dead
-      .mockResolvedValueOnce(null); // gen_img_2 dead (no task spec also)
+    // The server oracle reports gen_img_1/gen_img_2 as dead — override the
+    // always-true default.
+    oracleMocks.probeServerAssetPresence
+      .mockReset()
+      .mockImplementation(async (refs?: readonly string[]) => {
+        const map = new Map<string, boolean>();
+        for (const ref of refs ?? []) {
+          // gen_img_1 is covered by a task spec; gen_img_2 is unrecoverable.
+          map.set(ref, ref !== 'gen_img_1' && ref !== 'gen_img_2');
+        }
+        return map;
+      });
     mocks.drainPendingSceneTTS.mockResolvedValue(0);
 
     const deckOutline = outline('o1', 1, ['gen_img_1']);

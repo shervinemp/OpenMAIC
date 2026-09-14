@@ -923,26 +923,6 @@ export interface GenerationParams {
   languageDirective?: string;
 }
 
-/** The one per-outline executor: every material class is a PHASE of it. */
-type OutlineJobMode = 'generate' | 'repair';
-
-interface OutlineJobInput {
-  outline: SceneOutline;
-  /** Effective outline (ranked/downgraded variants apply on rerank). */
-  effectiveOutline?: SceneOutline;
-  allOutlines: SceneOutline[];
-  params: GenerationParams;
-  signal: AbortSignal;
-  mode: OutlineJobMode;
-  previousSpeeches: string[];
-  /**
-   * Batch parallelism hands its pre-warmed content in; the pipeline then
-   * skips the content phase's fetch (recording only). Absent → the pipeline
-   * fetches (generate) or reuses the persisted hash (repair).
-   */
-  preComputedContent?: SceneContentResult;
-}
-
 /** Speech action ids whose narration bytes do not currently resolve. */
 async function detectDeadSpeechActionIds(scene: Scene): Promise<string[]> {
   const { resolveAudioBlob } = await import('@/lib/media/resolve-audio-bytes');
@@ -961,73 +941,82 @@ async function detectDeadSpeechActionIds(scene: Scene): Promise<string[]> {
 }
 
 /**
- * THE ONE PER-OUTLINE PIPELINE (generation = regeneration = recovery):
- * content → actions → tts, then (repair mode) a byte-aware media enqueue —
- * every class settled by its own predicate, failures recorded per phase, the
- * scene attached through the store.
+ * THE ONE PER-OUTLINE PIPELINE (generation = regeneration = recovery).
  *
- *   - generate: fresh batch body — content refetches, actions build, tts
- *     renders everything, media rides the global parallel enqueue.
- *   - repair: content is REUSED via the persisted hash (zero tokens) when the
- *     scene survives; actions cascade on that reuse; tts re-renders ONLY the
- *     clips whose bytes are absent; media dispatches through the orchestrator
- *     for this outline alone, skipping settled rows.
- *
- * Failures record their phase row and add the outline to the failed queue;
- * the caller resolves store-level bookkeeping (generating lists, epochs,
- * completion). Progress remains byte-sane: settled classes are never paid
- * for twice.
+ * The material classes are DECLARATIVE descriptors, not a hardcoded switch:
+ * each registry entry declares enabled-ness, its work, and whether failure
+ * re-enters the queue. Adding a future asset class (widget HTML re-bake,
+ * voice re-design, exam assets) = registering one descriptor — no new
+ * subsystem, no per-feature plumbing. The iterator below records phase rows
+ * (running/done/failed), the ONE-QUEUE re-add, and returns the outcome;
+ * call sites keep only orchestration (loops, epochs, leases).
  */
-async function runOutlineJob(input: OutlineJobInput): Promise<{
-  success: boolean;
-  scene?: Scene;
-  failedPhase?: 'content' | 'actions' | 'tts';
-  error?: string;
-}> {
-  const {
-    outline,
-    effectiveOutline,
-    allOutlines,
-    params,
-    signal,
-    mode,
-    previousSpeeches,
-    preComputedContent,
-  } = input;
-  const state = useStageStore.getState();
-  const stageId = state.stage?.id;
-  if (!stageId) return { success: false, failedPhase: 'content', error: 'no stage' };
+type OutlineJobMode = 'generate' | 'repair';
 
-  // ── Phase: content ──
-  let contentResult: SceneContentResult;
-  if (preComputedContent) {
-    contentResult = preComputedContent;
-  } else if (mode === 'repair') {
-    const persistedScene = state.scenes.find((scene) => scene.order === outline.order);
-    const reusableContent =
-      persistedScene &&
-      // Settled iff the persisted scene's hash matches the CURRENT source
-      // inputs (agents, profile, directive): a blueprint edit invalidates the
-      // hash and re-pays content. The actions hash is the content+inputs hash
-      // — same check cascades into actions settlement.
-      persistedScene.actionsSourceHash !== undefined &&
-      persistedScene.actionsSourceHash ===
-        computeActionsSourceHash({
-          content: persistedScene.content,
-          agents: params.agents,
-          userProfile: params.userProfile,
-          languageDirective: params.languageDirective,
-        });
-    if (reusableContent && persistedScene) {
-      contentResult = {
-        success: true,
-        content: persistedScene.content,
-      } as SceneContentResult;
-    } else {
-      useStageStore
-        .getState()
-        .recordScenePhase(outline.id, 'content', { status: 'running' });
-      contentResult = await fetchSceneContent(
+type MaterialPhaseKey = 'content' | 'actions' | 'tts' | 'media';
+
+interface OutlineJobRunState {
+  contentResult?: SceneContentResult;
+  scene?: Scene;
+  previousSpeeches: string[];
+}
+
+interface MaterialPhaseDescriptor {
+  key: MaterialPhaseKey;
+  /**
+   * Whether THIS run should run the phase at all (media only rides in
+   * repair mode; the batch keeps its global parallel enqueue).
+   */
+  enabled: (ctx: { mode: OutlineJobMode }) => boolean;
+  run: (state: OutlineJobRunState, input: OutlineJobInput) => Promise<{
+    status: 'done' | 'failed';
+    error?: string;
+  }>;
+  /** Failed rows re-enter the one queue (content/actions do; tts/media
+      keep the scene and circumstance differ). */
+  readonly queueOnFailure: boolean;
+}
+
+const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
+  {
+    key: 'content',
+    enabled: () => true,
+    queueOnFailure: true,
+    run: async (state, input) => {
+      const { outline, allOutlines, params, signal, mode, preComputedContent } = input;
+      const stageId = useStageStore.getState().stage?.id;
+      if (!stageId) return { status: 'failed', error: 'no stage' };
+      // Bypass paths (pre-warmed batch content / repair hash reuse).
+      if (preComputedContent) {
+        state.contentResult = preComputedContent;
+        return { status: 'done' };
+      }
+      if (mode === 'repair') {
+        const persistedScene = useStageStore
+          .getState()
+          .scenes.find((scene) => scene.order === outline.order);
+        const reusableContent =
+          persistedScene &&
+          // Settled iff the persisted scene's hash matches the CURRENT source
+          // inputs (agents, profile, directive): a blueprint edit invalidates
+          // the hash and re-pays content.
+          persistedScene.actionsSourceHash !== undefined &&
+          persistedScene.actionsSourceHash ===
+            computeActionsSourceHash({
+              content: persistedScene.content,
+              agents: params.agents,
+              userProfile: params.userProfile,
+              languageDirective: params.languageDirective,
+            });
+        if (reusableContent && persistedScene) {
+          state.contentResult = {
+            success: true,
+            content: persistedScene.content,
+          } as SceneContentResult;
+          return { status: 'done' };
+        }
+      }
+      const contentResult = await fetchSceneContent(
         {
           outline,
           allOutlines,
@@ -1041,113 +1030,82 @@ async function runOutlineJob(input: OutlineJobInput): Promise<{
         signal,
       );
       if (!contentResult.success || !contentResult.content) {
-        useStageStore.getState().recordScenePhase(outline.id, 'content', {
-          status: 'failed',
-          error: contentResult.error || 'Content generation failed',
-        });
-        useStageStore.getState().addFailedOutline(outline);
         return {
-          success: false,
-          failedPhase: 'content',
+          status: 'failed',
           error: contentResult.error || 'Content generation failed',
         };
       }
       if (contentResult.depth) {
         useStageStore.getState().recordSceneDepth(outline.order, contentResult.depth);
       }
-      useStageStore.getState().recordScenePhase(outline.id, 'content', { status: 'done' });
-    }
-  } else {
-    contentResult = await fetchSceneContent(
-      {
-        outline,
-        allOutlines,
-        stageId,
-        pdfImages: params.pdfImages,
-        imageMapping: params.imageMapping,
-        stageInfo: params.stageInfo,
-        agents: params.agents,
-        languageDirective: params.languageDirective,
-      },
-      signal,
-    );
-    if (!contentResult.success || !contentResult.content) {
-      useStageStore.getState().recordScenePhase(outline.id, 'content', {
-        status: 'failed',
-        error: contentResult.error || 'Content generation failed',
-      });
-      useStageStore.getState().addFailedOutline(outline);
-      return {
-        success: false,
-        failedPhase: 'content',
-        error: contentResult.error || 'Content generation failed',
-      };
-    }
-    if (contentResult.depth) {
-      useStageStore.getState().recordSceneDepth(outline.order, contentResult.depth);
-    }
-    useStageStore.getState().recordScenePhase(outline.id, 'content', { status: 'done' });
-  }
-
-  // ── Phase: actions ──
-  useStageStore.getState().recordScenePhase(outline.id, 'actions', { status: 'running' });
-  const reusableActionsScene = findReusableActionsScene(
-    (contentResult.effectiveOutline || effectiveOutline || outline).id,
-    contentResult.content,
-    params,
-  );
-  const actionsResult: SceneActionsResult = reusableActionsScene
-    ? ({
-        success: true,
-        scene: attachActionsSourceHash(reusableActionsScene, contentResult.content, params),
-        reused: true,
-      } as SceneActionsResult)
-    : await fetchSceneActions(
-        {
-          outline: contentResult.effectiveOutline || effectiveOutline || outline,
-          allOutlines,
-          content: contentResult.content,
-          stageId,
-          agents: params.agents,
-          previousSpeeches,
-          userProfile: params.userProfile,
-          languageDirective: params.languageDirective,
-        },
-        signal,
+      state.contentResult = contentResult;
+      return { status: 'done' };
+    },
+  },
+  {
+    key: 'actions',
+    enabled: () => true,
+    queueOnFailure: true,
+    run: async (state, input) => {
+      const { effectiveOutline, allOutlines, params, signal } = input;
+      const contentResult = state.contentResult!;
+      const stageId = useStageStore.getState().stage?.id;
+      if (!stageId) return { status: 'failed', error: 'no stage' };
+      const reusableActionsScene = findReusableActionsScene(
+        (contentResult.effectiveOutline || effectiveOutline || input.outline).id,
+        contentResult.content,
+        params,
       );
-
-  if (!actionsResult.success || !actionsResult.scene) {
-    useStageStore.getState().recordScenePhase(outline.id, 'actions', {
-      status: 'failed',
-      error: actionsResult.error || 'Actions generation failed',
-    });
-    useStageStore.getState().addFailedOutline(outline);
-    return {
-      success: false,
-      failedPhase: 'actions',
-      error: actionsResult.error || 'Actions generation failed',
-    };
-  }
-  useStageStore.getState().recordScenePhase(outline.id, 'actions', { status: 'done' });
-  const scene = actionsResult.scene;
-
-  // ── Phase: tts ──
-  const settings = useSettingsStore.getState();
-  if (
-    settings.ttsEnabled &&
-    settings.ttsProviderId !== 'browser-native-tts' &&
-    isTTSProviderEnabled(
-      settings.ttsProviderId,
-      settings.ttsProvidersConfig?.[settings.ttsProviderId],
-    )
-  ) {
-    useStageStore.getState().recordScenePhase(outline.id, 'tts', { status: 'running' });
-    if (mode === 'repair') {
-      // Fill: ONLY the dead clips re-render (byte truth per action).
-      const deadIds = await detectDeadSpeechActionIds(scene);
-      if (deadIds.length === 0) {
-        useStageStore.getState().recordScenePhase(outline.id, 'tts', { status: 'done' });
-      } else {
+      const actionsResult: SceneActionsResult = reusableActionsScene
+        ? ({
+            success: true,
+            scene: attachActionsSourceHash(reusableActionsScene, contentResult.content, params),
+            reused: true,
+          } as SceneActionsResult)
+        : await fetchSceneActions(
+            {
+              outline: contentResult.effectiveOutline || effectiveOutline || input.outline,
+              allOutlines,
+              content: contentResult.content,
+              stageId,
+              agents: params.agents,
+              previousSpeeches: state.previousSpeeches,
+              userProfile: params.userProfile,
+              languageDirective: params.languageDirective,
+            },
+            signal,
+          );
+      if (!actionsResult.success || !actionsResult.scene) {
+        return {
+          status: 'failed',
+          error: actionsResult.error || 'Actions generation failed',
+        };
+      }
+      state.scene = actionsResult.scene;
+      return { status: 'done' };
+    },
+  },
+  {
+    key: 'tts',
+    enabled: () => {
+      const settings = useSettingsStore.getState();
+      return (
+        settings.ttsEnabled &&
+        settings.ttsProviderId !== 'browser-native-tts' &&
+        isTTSProviderEnabled(
+          settings.ttsProviderId,
+          settings.ttsProvidersConfig?.[settings.ttsProviderId],
+        )
+      );
+    },
+    queueOnFailure: false,
+    run: async (state, input) => {
+      const { params, signal, mode } = input;
+      const scene = state.scene!;
+      if (mode === 'repair') {
+        // Fill: ONLY the dead clips re-render (byte truth per action).
+        const deadIds = await detectDeadSpeechActionIds(scene);
+        if (deadIds.length === 0) return { status: 'done' };
         const ttsResult = await generateTTSForScene(
           scene,
           params.languageDirective || params.stageInfo.language,
@@ -1155,58 +1113,105 @@ async function runOutlineJob(input: OutlineJobInput): Promise<{
           undefined,
           deadIds,
         );
-        if (!ttsResult.success) {
-          // The scene stays kept; the FAILED phase row drives the red card.
-          // Caller-side bookkeeping (queue re-add) is the caller's call.
-          useStageStore.getState().recordScenePhase(outline.id, 'tts', {
-            status: 'failed',
-            error: ttsResult.error || 'TTS generation failed',
-          });
-          return {
-            success: false,
-            failedPhase: 'tts',
-            error: ttsResult.error || 'TTS generation failed',
-          };
-        }
-        useStageStore.getState().recordScenePhase(outline.id, 'tts', { status: 'done' });
+        return ttsResult.success
+          ? { status: 'done' }
+          : { status: 'failed', error: ttsResult.error || 'TTS generation failed' };
       }
-    } else {
       const ttsResult = await generateTTSForScene(
         scene,
         params.languageDirective || params.stageInfo.language,
         signal,
       );
-      if (!ttsResult.success) {
-        useStageStore.getState().recordScenePhase(outline.id, 'tts', {
-          status: 'failed',
-          error: ttsResult.error || 'TTS generation failed',
-        });
-        return {
-          success: false,
-          failedPhase: 'tts',
-          error: ttsResult.error || 'TTS generation failed',
-        };
-      }
-      useStageStore.getState().recordScenePhase(outline.id, 'tts', { status: 'done' });
+      return ttsResult.success
+        ? { status: 'done' }
+        : { status: 'failed', error: ttsResult.error || 'TTS generation failed' };
+    },
+  },
+  {
+    key: 'media',
+    enabled: ({ mode }) => mode === 'repair',
+    queueOnFailure: false,
+    run: async (_state, input) => {
+      const { allOutlines, signal } = input;
+      const stageId = useStageStore.getState().stage?.id;
+      if (!stageId) return { status: 'failed', error: 'no stage' };
+      // The repair primitive for generated bytes is the orchestrator's
+      // byte-aware requeue dispatched FOR THIS OUTLINE ONLY (batch keeps
+      // its global parallel enqueue). Healthy rows skip; dead ones re-kick.
+      const { generateMediaForOutlines } = await import('@/lib/media/media-orchestrator');
+      await generateMediaForOutlines(
+        allOutlines.filter((outline) => outline.id === input.outline.id),
+        stageId,
+        signal,
+      ).catch(
+        (err: unknown) =>
+          log.warn(
+            `Media repair enqueue for outline ${JSON.stringify(input.outline.id)} failed:`,
+            err instanceof Error ? err.message : err,
+          ),
+      );
+      return { status: 'done' };
+    },
+  },
+];
+
+interface OutlineJobInput {
+  outline: SceneOutline;
+  /** Effective outline (ranked/downgraded variants apply on rerank). */
+  effectiveOutline?: SceneOutline;
+  allOutlines: SceneOutline[];
+  params: GenerationParams;
+  signal: AbortSignal;
+  mode: OutlineJobMode;
+  previousSpeeches: string[];
+  /**
+   * Batch parallelism hands its pre-warmed content in; the pipeline then
+   * skips the content phase's fetch (recording only). Absent → the pipeline
+   * fetches (generate) or reuses the persisted hash (repair).
+   */
+  preComputedContent?: SceneContentResult;
+}
+
+/**
+ * The executor: one registry walk with phase-row recording centralized —
+ * descriptors declare work and queue-on-failure semantics, the runner owns
+ * the store vocabulary once.
+ */
+async function runOutlineJob(input: OutlineJobInput): Promise<{
+  success: boolean;
+  scene?: Scene;
+  failedPhase?: 'content' | 'actions' | 'tts' | 'media';
+  error?: string;
+}> {
+  const runState: OutlineJobRunState = { previousSpeeches: input.previousSpeeches };
+  const phaseKeyFromDescriptor = (descriptor: MaterialPhaseDescriptor): MaterialPhaseKey =>
+    descriptor.key;
+
+  for (const descriptor of OUTLINE_MATERIAL_PHASES) {
+    const key = phaseKeyFromDescriptor(descriptor);
+    if (!descriptor.enabled({ mode: input.mode })) continue;
+    useStageStore.getState().recordScenePhase(input.outline.id, key, { status: 'running' });
+    const outcome = await descriptor.run(runState, input);
+    if (outcome.status === 'done') {
+      useStageStore.getState().recordScenePhase(input.outline.id, key, { status: 'done' });
+      continue;
     }
+    const error = outcome.error || `${key} generation failed`;
+    useStageStore.getState().recordScenePhase(input.outline.id, key, {
+      status: 'failed',
+      error,
+    });
+    if (descriptor.queueOnFailure || input.mode === 'repair') {
+      useStageStore.getState().addFailedOutline(input.outline);
+    }
+    return {
+      success: false,
+      failedPhase: descriptor.key,
+      error,
+    };
   }
 
-  // ── Phase: media (repair mode) ──
-  // The repair primitive for generated bytes is the orchestrator's
-  // byte-aware requeue dispatched FOR THIS OUTLINE ONLY (batch keeps its
-  // global parallel enqueue). Healthy rows are skipped; dead ones re-kick.
-  if (mode === 'repair') {
-    const { generateMediaForOutlines } = await import('@/lib/media/media-orchestrator');
-    await generateMediaForOutlines(allOutlines.filter((o) => o.id === outline.id), stageId, signal).catch(
-      (err) =>
-        log.warn(
-          `Media repair enqueue for outline ${JSON.stringify(outline.id)} failed:`,
-          err instanceof Error ? err.message : err,
-        ),
-    );
-  }
-
-  return { success: true, scene };
+  return { success: true, scene: runState.scene };
 }
 
 export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
