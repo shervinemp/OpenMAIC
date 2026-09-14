@@ -2,6 +2,7 @@ import { copyFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { createLogger } from '@/lib/logger';
+import { collectDocumentMediaRefs as sharedCollectDocumentMediaRefs } from '@/lib/media/document-media-refs';
 
 const log = createLogger('GitSyncAssets');
 
@@ -29,48 +30,9 @@ export interface StageAssetMaterials {
   missing: string[];
 }
 
-function refIsMediaCandidate(value: string): boolean {
-  if (/^\/assets\//.test(value)) {
-    // Scene elements sometimes carry the pool URL path rather than the raw
-    // ref: strip it, the effective ref is the last segment.
-    return /^[A-Za-z0-9_.-]+$/.test(decodeURIComponent(value.slice('/assets/'.length)));
-  }
-  return (
-    /^[A-Za-z0-9_.-]+$/.test(value) &&
-    !value.startsWith('data:') &&
-    !/^https?:/.test(value) &&
-    !/^[A-Za-z]:[\\/]/.test(value)
-  );
-}
-
-function normalizeRef(value: string): string {
-  const stripped = value.startsWith('/assets/') ? decodeURIComponent(value.slice('/assets/'.length)) : value;
-  // Placeholders (media orchestrator ids like gen_img_1) are generation-time
-  // promises, not media: they carry no bytes anywhere, so a missing entry for
-  // a placeholder is never expected to be satisfiable.
-  return stripped;
-}
-
-/** Every media ref the document references. Opaque-walk, no DSL knowledge. */
+/** Every media ref the document references. Shared walker — defined once. */
 export function collectDocumentMediaRefs(document: unknown): string[] {
-  const refs = new Set<string>();
-  const mediaKeys = new Set(['src', 'audioId', 'audioRef', 'elementId']);
-  const visit = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item);
-      return;
-    }
-    if (value && typeof value === 'object') {
-      for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-        visit(child);
-        if (mediaKeys.has(key) && typeof child === 'string' && refIsMediaCandidate(child)) {
-          refs.add(normalizeRef(child));
-        }
-      }
-    }
-  };
-  visit(document);
-  return [...refs];
+  return sharedCollectDocumentMediaRefs(document);
 }
 
 export async function materializeStageAssets(

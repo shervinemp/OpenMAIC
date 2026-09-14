@@ -17,7 +17,6 @@ import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { createLogger } from '@/lib/logger';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
-import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { fetchStageMeta } from '@/lib/classroom/stage-meta-client';
 import { noteStageOwnership } from '@/lib/classroom/stage-ownership-signal';
@@ -242,24 +241,23 @@ export default function ClassroomDetailPage() {
       // Nothing needs the generation session anymore — drop any record a
       // handoff left behind (single-slide course, refresh-after-completion).
       void clearGenerationSessionForStage(classroomId);
-      // Resume media only for outlines that still have a scene. On a finished
-      // deck the user may have deleted a slide, leaving an orphaned outline;
-      // generating its media would waste API calls on a slide that is gone.
-      const materializedOrders = new Set(scenes.map((s) => s.order));
-      const materializedOutlines = outlines.filter((o) => materializedOrders.has(o.order));
-      generateMediaForOutlines(materializedOutlines, stage.id).catch((err) => {
-        log.warn('[Classroom] Media generation resume error:', err);
-      });
-      // Narration/media recovery (same-train semantics): a fully materialized
-      // deck whose speech actions are audio-pending (or whose bytes were
-      // evicted/deleted mid-life) gets an automatic bounded repair pass per
-      // mount when auto-recovery is on — class-agnostic and player-equivalent
-      // ("does the ref resolve right now"), so any decay mode self-heals.
-      const storeScenes = useStageStore.getState().scenes;
+      // Media recovery (same-train semantics): a fully materialized deck
+      // whose narration or image/video/poster bytes decayed (expired refs,
+      // quota eviction, deleted assets, earlier-generation leftovers) gets an
+      // automatic class-agnostic repair run per mount — detection is
+      // player-equivalent ("does the ref resolve right now") and repair
+      // dispatches per class: TTS drain for narration, the orchestrator's
+      // byte-aware requeue (generateMediaForOutlines) for image/video. One
+      // dispatch path avoids racing the orchestrator from two entry points.
+      const storeState = useStageStore.getState();
+      const storeScenes = storeState.scenes;
       void (async () => {
-        const languageDirective = useStageStore.getState().blueprint?.languageDirective;
         const { repairCourseMedia } = await import('@/lib/media/repair-course-media');
-        await repairCourseMedia([...storeScenes], { language: languageDirective });
+        await repairCourseMedia([...storeScenes], {
+          language: storeState.blueprint?.languageDirective,
+          outlines,
+          stageId: stage.id,
+        });
       })().catch((err) => log.warn('[Classroom] Media repair resume error:', err));
     }
     // classroomId: the params lookup and session cleanup are keyed by it. A

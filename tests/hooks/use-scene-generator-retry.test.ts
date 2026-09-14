@@ -397,10 +397,14 @@ describe('browser scene generation retry wrappers', () => {
       maxRetries: 0,
     });
 
+    // Per-action failure containment: the clip that regenerated keeps its
+    // fresh bytes and id (they are valid, playable audio — reclaiming them
+    // would re-render them next pass); only the failed clip is pending.
     expect(result).toMatchObject({ success: false, failedCount: 1 });
     expect(mocks.poolRemove).not.toHaveBeenCalled();
-    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('tts_s1_speech-1');
-    expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
+    expect(mocks.audioDelete).not.toHaveBeenCalled();
+    expect((scene.actions?.[0] as { audioId?: string }).audioId).toBe('tts_s1_speech-1');
+    expect(scene.actions?.[1]).not.toHaveProperty('audioId');
   });
 
   it('waits for parallel TTS workers before rolling back an abandoned scene', async () => {
@@ -443,6 +447,8 @@ describe('browser scene generation retry wrappers', () => {
     releaseSibling();
     await expect(generating).rejects.toBe(abort);
 
+    // Abort collapse: fresh allocations reclaimed, refs reverted — absent
+    // stays absent, no half-committed ids litter the actions.
     expect(mocks.poolRemove).not.toHaveBeenCalled();
     expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('tts_s1_speech-2');
     expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);

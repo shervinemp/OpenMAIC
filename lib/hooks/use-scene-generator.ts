@@ -673,17 +673,45 @@ export async function generateTTSForScene(
   language?: string,
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<TTSApiResponse>,
-): Promise<{ success: boolean; failedCount: number; error?: string }> {
+  /**
+   * Restrict regeneration to these pre-split action ids (a drain pass that
+   * found only SOME of the scene's narration dead). Byte-aware repair must
+   * never re-render clips that already resolve — the provider call is paid
+   * work, and a re-render under a NEW id would also orphan the healthy rows.
+   * Split descendants (`<id>_tts_<n>`) count as the same logical action.
+   */
+  onlyActionIds?: string[],
+): Promise<{ success: boolean; failedCount: number; recoveredIds: string[]; error?: string }> {
   const providerId = useSettingsStore.getState().ttsProviderId;
   scene.actions = splitLongSpeechActions(scene.actions || [], providerId);
   const speechActions = scene.actions.filter(
     (a): a is SpeechAction => a.type === 'speech' && !!a.text,
   );
-  if (speechActions.length === 0) return { success: true, failedCount: 0 };
+  if (speechActions.length === 0) {
+    return { success: true, failedCount: 0, recoveredIds: [] };
+  }
+  const targets = onlyActionIds
+    ? speechActions.filter((action) =>
+        onlyActionIds.some(
+          (id) => action.id === id || action.id.startsWith(`${id}_tts_`),
+        ),
+      )
+    : speechActions;
+  if (targets.length === 0) {
+    return { success: true, failedCount: 0, recoveredIds: [] };
+  }
 
   let failedCount = 0;
   let lastError: string | undefined;
   const freshAllocations: string[] = [];
+  const recoveredIds: string[] = [];
+  // Per-action failure containment: prior ids of the REGEN TARGETS only.
+  // On any failure, these are restored verbatim — a failed pass can never
+  // strip audio the deck already had, and healthy actions outside the target
+  // set are invisible to this function's failure handling by construction.
+  const previousTargetIds = new Map(
+    targets.map((action) => [action.id, action.audioId] as const),
+  );
 
   // Scene order keeps the provider request correlation label unique. Storage
   // identity is allocated by the pool and is never derived from this value.
@@ -706,6 +734,7 @@ export async function generateTTSForScene(
       if (assetId) {
         action.audioId = assetId;
         freshAllocations.push(assetId);
+        recoveredIds.push(action.id);
       }
     } catch (error) {
       if (isAbortError(error)) throw error;
@@ -733,53 +762,68 @@ export async function generateTTSForScene(
     Math.floor(useSettingsStore.getState().parallelSceneConcurrency ?? 0),
   );
   try {
-    if (ttsConcurrency > 1 && speechActions.length > 1) {
+    if (ttsConcurrency > 1 && targets.length > 1) {
       const settled = await Promise.allSettled(
-        lazyBoundedMap(speechActions, ttsConcurrency, generateOne),
+        lazyBoundedMap(targets, ttsConcurrency, generateOne),
       );
       const rejected = settled.find(
         (result): result is PromiseRejectedResult => result.status === 'rejected',
       );
       if (rejected) throw rejected.reason;
     } else {
-      for (const action of speechActions) {
+      for (const action of targets) {
         await generateOne(action);
       }
     }
   } catch (error) {
+    // Abort/throw path: the whole regeneration collapses. Recovered ids are
+    // not persisted anywhere yet, so their fresh allocations are reclaimed;
+    // the targets revert to their previous refs (absent stays absent — no
+    // `audioId: undefined` keys littering the actions).
     await removeFreshTtsAllocations(freshAllocations);
-    for (const action of speechActions) delete action.audioId;
+    for (const action of targets) {
+      const previous = previousTargetIds.get(action.id);
+      if (previous === undefined) delete action.audioId;
+      else action.audioId = previous;
+    }
     throw error;
   }
 
   if (failedCount > 0) {
-    await removeFreshTtsAllocations(freshAllocations);
-    for (const action of speechActions) delete action.audioId;
+    // Partial failure: clips that DID regenerate keep their fresh bytes and
+    // ids (they are valid, playable audio — deleting them would re-render
+    // them next pass); only the failed targets revert to their prior refs.
+    for (const action of targets) {
+      if (!recoveredIds.includes(action.id)) {
+        const previous = previousTargetIds.get(action.id);
+        if (previous === undefined) delete action.audioId;
+        else action.audioId = previous;
+      }
+    }
   }
 
   return {
     success: failedCount === 0,
     failedCount,
+    recoveredIds,
     error: lastError,
   };
 }
 
 /**
- * Background fill queue (Pillar 2 §4.6): re-run TTS for scenes whose speech
- * actions are missing audio (TTS failed while the loop ran). Drains once
- * after the generation loop finishes; provider failures just leave the
- * audio pending (retryable again via the per-scene affordance).
+ * Background fill queue (Pillar 2 §4.6): re-run TTS for narration whose
+ * audio does not currently resolve. Detection is byte-aware and PER ACTION:
+ * a scene speaks through several clips, and a provider flake usually kills
+ * a subset — regenerating the recovered clips too would both waste paid
+ * provider calls and orphan their healthy rows. Drains once per call;
+ * provider failures leave the still-dead refs pending (retryable again via
+ * the per-scene affordance or the next repair pass).
  */
 export async function drainPendingSceneTTS(
   scenes: Scene[],
   language?: string,
   signal?: AbortSignal,
 ): Promise<number> {
-  const pending = scenes.filter((scene) =>
-    (scene.actions ?? []).some((action) => action.type === 'speech' && !!action.text && !action.audioId),
-  );
-  if (pending.length === 0) return 0;
-
   const settings = useSettingsStore.getState();
   if (
     !settings.ttsEnabled ||
@@ -792,32 +836,47 @@ export async function drainPendingSceneTTS(
     return 0;
   }
 
-  log.info(`TTS background drain: ${pending.length} scene(s) with pending audio`);
+  // Byte-aware pending detection: an audioId alone is not evidence of
+  // playable narration — legacy generations left references whose bytes were
+  // never materialized (or were evicted). A ref counts as pending when it has
+  // no id OR when its bytes do not currently resolve (pool → mirror → server
+  // — the exact chain playback resolves through).
+  const { resolveAudioBlob } = await import('@/lib/media/resolve-audio-bytes');
+  const pendingByScene = await Promise.all(
+    scenes.map(async (scene) => {
+      const speechActions = (scene.actions ?? []).filter(
+        (a): a is SpeechAction => a.type === 'speech' && !!a.text,
+      );
+      if (speechActions.length === 0) return null;
+      const missing = await Promise.all(
+        speechActions.map(async (action) => {
+          if (!action.audioId) return true;
+          const bytes = await resolveAudioBlob(action.audioId);
+          return !bytes || bytes.size === 0;
+        }),
+      );
+      const deadIds = speechActions.filter((_, i) => missing[i]).map((action) => action.id);
+      return deadIds.length > 0 ? { scene, deadIds } : null;
+    }),
+  );
+  const pendingScenes = pendingByScene.filter(
+    (entry): entry is { scene: Scene; deadIds: string[] } => !!entry,
+  );
+  if (pendingScenes.length === 0) return 0;
+
+  log.info(`TTS background drain: ${pendingScenes.length} scene(s) with pending audio`);
   let restored = 0;
-  for (const scene of pending) {
+  for (const { scene, deadIds } of pendingScenes) {
     if (signal?.aborted) break;
     try {
-      // generateTTSForScene clears audioId from ALL speech actions when the
-      // pass fails — including actions that already had working audio. Snapshot
-      // the existing ids and restore them on failure so a failed drain never
-      // strips audio the deck already had.
-      const previousAudioIds = new Map(
-        (scene.actions ?? [])
-          .filter((action) => action.type === 'speech')
-          .map((action) => [action.id, action.audioId] as const),
-      );
-      const result = await generateTTSForScene(scene, language, signal);
-      if (result.success) {
+      const result = await generateTTSForScene(scene, language, signal, undefined, deadIds);
+      if (result.recoveredIds.length > 0) {
         useStageStore.getState().updateScene(scene.id, { actions: scene.actions });
         restored += 1;
-      } else {
-        for (const action of scene.actions ?? []) {
-          if (action.type === 'speech' && previousAudioIds.has(action.id)) {
-            action.audioId = previousAudioIds.get(action.id);
-          }
-        }
+      }
+      if (result.failedCount > 0) {
         log.warn(
-          `TTS drain failed for scene "${scene.title}" (${result.failedCount} clip(s)); audio stays pending`,
+          `TTS drain for scene "${scene.title}": ${result.recoveredIds.length} clip(s) restored, ${result.failedCount} still pending`,
         );
       }
     } catch (error) {

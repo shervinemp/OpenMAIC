@@ -1,43 +1,113 @@
 import { drainPendingSceneTTS } from '@/lib/hooks/use-scene-generator';
 import { createLogger } from '@/lib/logger';
+import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
+import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
+import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
+import { collectDocumentMediaRefs } from '@/lib/media/document-media-refs';
 import type { Scene } from '@/lib/types/stage';
+import type { SceneOutline } from '@/lib/types/generation';
+import type { MediaGenerationRequest } from '@/lib/media/types';
 
 const log = createLogger('RepairCourseMedia');
 
 /**
- * Bounded-repetition media repair wrapper ("same train" / class-agnostic
- * decay handling).
+ * Class-agnostic media repair ("same train").
  *
- * The canonical repair primitive is `drainPendingSceneTTS` — it re-synthesizes
- * narration under the persisted speech-action references, updates the stored
- * scene (so the audioId sticks), and preserves working audio when a pass
- * fails (no stripping-healthy-audio side effects). This wrapper adds what a
- * single pass cannot give: TTS providers flake nondeterministically (Kokoro's
- * "input lines" split, overload refreshes), so repair runs in a small number
- * of passes with idempotent detection — a clip that resolves is never
- * touched, so repeated passes cost nothing on the success path.
+ * One principle, every class: a ref is PENDING iff the bytes it would be
+ * played with do not resolve right now, through the player's own resolution
+ * order — never a narrower per-class proxy:
  *
- * Scope note (class coverage): audio references resolve through the player's
- * own path (pool → audioFiles mirror), so "no audioId / unplayable bytes" is
- * exactly what repair detects. Image/video byte-level repair needs its own
- * generation contracts (media orchestrator already re-kicks unreplaced
- * placeholders on resume); that gener a lization lands with the orchestrator's
- * byte-aware skip predicate — this module covers the audio class fully.
+ *   - Narration refs (`tts_*`/`audio_*`/`speech_*` ids carried by speech
+ *     actions, plus any `/assets/` or pool ref a speech action cites):
+ *     {@link resolveAudioBlob} — pool → `audioFiles` mirror → server asset
+ *     store. Exactly what playback resolves, so "audio-pending" decks (ids
+ *     persisted, bytes never materialized) are detected, not mistaken for
+ *     done.
+ *   - Every other kind of asset/material a scene references (element images,
+ *     videos, posters, cover assets, whiteboard backgrounds — anything the
+ *     opaque ref walk finds in `src`/`elementId`-shaped keys):
+ *     {@link resolveStoredBytes} — pool → Dexie compatibility row → task
+ *     URL: the chain every export surface already trusts, with an
+ *     export-grade policy (error pages and empty bodies are as dead as
+ *     "no bytes").
+ *
+ * Repair dispatches per class:
+ *   - Narration: bounded passes of {@link drainPendingSceneTTS} — byte-aware
+ *     per-clip regeneration; resolving clips are never paid for or
+ *     orphaned, and a partial provider failure keeps every recovered clip.
+ *   - Image/video: {@link generateMediaForOutlines}' byte-aware requeue — a
+ *     done-marked task whose persisted row lost its bytes re-kicks under the
+ *     SAME elementId; deterministic terminal failures stay settled. Orphaned
+ *     outlines (user deleted the slide) are excluded from dispatch: their
+ *     media would be paid generation for a slide that will not render.
+ *
+ * Refs that resolve nowhere AND have no regenerable task spec are reported
+ * honestly (`mediaUnrecoverable`) instead of being silently dropped.
  */
 
 export interface MediaRepairReport {
-  /** Scenes whose narration was restored (bytes present again). */
+  /** Narration refs restored (bytes resolve again). */
   audioRestored: number;
-  /** Scenes that still had audio pending after the last pass. */
+  /** Narration refs still without resolvable bytes after the passes. */
   audioStillPending: number;
-  passes: number;
+  /** Non-narration refs found with missing bytes (detection truth, pre-dispatch). */
+  mediaPending: number;
+  /**
+   * Subset of `mediaPending` handed to the orchestrator's byte-aware
+   * requeue this run. Refs already mid-repair inside a running orchestrator
+   * pass are not double-dispatched (task identity dedupes), and refs with no
+   * task spec cannot be re-queued at all.
+   */
+  mediaRequeued: number;
+  /** Non-narration refs with no regenerable task spec behind them. */
+  mediaUnrecoverable: number;
+  /** Narration repair passes actually run (≤ `passes`; stops on first no-op). */
+  narrationPassesRun: number;
 }
 
 export interface MediaRepairOptions {
-  /** Repair passes (default 2 — TTS providers flake nondeterministically). */
+  /** Narration repair passes (default 2 — TTS providers flake nondeterministically). */
   passes?: number;
   language?: string;
   signal?: AbortSignal;
+  /**
+   * The deck's outlines + the stage id. Together they enable the image/video
+   * dispatch path (the outlines' mediaGenerations carry the regenerable task
+   * specs; the stage id scopes the byte-aware row probe and the compat row).
+   * When omitted, non-narration decay is detected and reported but not
+   * re-queued from here.
+   */
+  outlines?: SceneOutline[];
+  stageId?: string;
+}
+
+/**
+ * Narration ids generated by the app's TTS pipeline. Storage identity is the
+ * generation requestId (`tts_s<order>_<actionId>`) kept stable across
+ * regenerations (`existingAudioId ?? requestId`), plus the legacy shapes the
+ * audioFiles mirror historically used.
+ */
+export function isNarrationRef(ref: string): boolean {
+  return /^(tts_|audio_|speech_)/.test(ref);
+}
+
+/** Player-equivalent byte probe for ANY ref a scene references. */
+async function refResolvesBytes(ref: string, stageId: string | undefined): Promise<boolean> {
+  try {
+    if (isNarrationRef(ref)) {
+      const blob = await resolveAudioBlob(ref);
+      return !!blob && blob.size > 0;
+    }
+    const bytes = await resolveStoredBytes(ref, {
+      stageId,
+      loadCompatRow: true,
+      taskUrlFallback: true,
+      fetchPolicy: { requireOk: true, requireNonEmpty: true },
+    });
+    return !!bytes && bytes.size > 0;
+  } catch {
+    return false;
+  }
 }
 
 export async function repairCourseMedia(
@@ -45,28 +115,98 @@ export async function repairCourseMedia(
   options: MediaRepairOptions = {},
 ): Promise<MediaRepairReport> {
   const passes = Math.max(1, Math.min(4, options.passes ?? 2));
-  const report: MediaRepairReport = { audioRestored: 0, audioStillPending: 0, passes };
+  const report: MediaRepairReport = {
+    audioRestored: 0,
+    audioStillPending: 0,
+    mediaPending: 0,
+    mediaRequeued: 0,
+    mediaUnrecoverable: 0,
+    narrationPassesRun: 0,
+  };
 
-  for (let pass = 0; pass < passes; pass += 1) {
-    const restored = await drainPendingSceneTTS(scenes, options.language, options.signal);
-    if (restored === 0) {
-      log.info(`Media repair pass ${pass + 1}/${passes} restored nothing (nothing pending or provider unavailable); stopping`);
-      break;
+  // ---- Detection sweep (pre-repair truth, per ref) ----
+  // Renderer-visible refs only (src/audioId/audioRef): `elementId` is the
+  // orchestrator's task class, and probing it here would double-count
+  // pending work the orchestrator's own byte-aware requeue already owns.
+  const deadNarrationRefs = new Set<string>();
+  const deadMediaRefs = new Set<string>();
+  for (const scene of scenes) {
+    const refs = collectDocumentMediaRefs(scene, { includeElementIdRefs: false });
+    const narratedRefs = refs.filter(isNarrationRef);
+    const mediaRefs = refs.filter((ref) => !isNarrationRef(ref));
+    const narratedOk = await Promise.all(
+      narratedRefs.map((ref) => refResolvesBytes(ref, options.stageId)),
+    );
+    const mediaOk = await Promise.all(mediaRefs.map((ref) => refResolvesBytes(ref, options.stageId)));
+    narratedRefs.forEach((ref, i) => {
+      if (!narratedOk[i]) deadNarrationRefs.add(ref);
+    });
+    mediaRefs.forEach((ref, i) => {
+      if (!mediaOk[i]) deadMediaRefs.add(ref);
+    });
+  }
+  report.mediaPending = deadMediaRefs.size;
+  report.mediaRequeued = deadMediaRefs.size;
+
+  // ---- Image/video dispatch: byte-aware orchestrator requeue ----
+  const canDispatchMedia = !!(options.outlines && options.stageId);
+  if (canDispatchMedia && deadMediaRefs.size > 0) {
+    // An outline whose slide was deleted must not have its media paid for:
+    // the scene will never render, so the ref is dead by design unless the
+    // outline itself re-materializes.
+    const materializedOrders = new Set(scenes.map((scene) => scene.order));
+    const dispatchOutlines = options.outlines!.filter((outline) =>
+      materializedOrders.has(outline.order),
+    );
+    try {
+      await generateMediaForOutlines(dispatchOutlines, options.stageId!, options.signal);
+    } catch (err) {
+      if (options.signal?.aborted) {
+        report.audioStillPending = deadNarrationRefs.size;
+        log.info('Media repair aborted during image/video dispatch');
+        return report;
+      }
+      log.warn('Image/video repair queue error:', err);
     }
-    report.audioRestored += restored;
-    if (pass < passes - 1) {
-      log.warn(`Media repair pass ${pass + 1}/${passes} restored ${restored} scene(s); another pass — some clips likely still missing`);
+    // Refs with no mediaGenerations spec (cross-profile imports, pre-task
+    // eras) cannot be regenerated from an outline — count them honestly.
+    const taskElementIds = new Set(
+      options.outlines!.flatMap(
+        (outline) => outline.mediaGenerations?.map((mg: MediaGenerationRequest) => mg.elementId) ?? [],
+      ),
+    );
+    let covered = 0;
+    for (const ref of deadMediaRefs) {
+      if (taskElementIds.has(ref)) covered += 1;
     }
+    report.mediaUnrecoverable = report.mediaPending - covered;
+  } else if (!canDispatchMedia && report.mediaPending > 0) {
+    // Nothing dispatchable was configured: everything missing is
+    // unrecoverable from this call — still reported, never dropped.
+    report.mediaUnrecoverable = report.mediaPending;
+    report.mediaRequeued = 0;
   }
 
-  report.audioStillPending = scenes.filter((scene) =>
-    (scene.actions ?? []).some(
-      (action) => action.type === 'speech' && !!action.text && !action.audioId,
-    ),
-  ).length;
+  // ---- Narration dispatch: bounded idempotent passes ----
+  for (let pass = 0; pass < passes; pass += 1) {
+    report.narrationPassesRun = pass + 1;
+    const restored = await drainPendingSceneTTS(scenes, options.language, options.signal);
+    if (restored === 0) break;
+    report.audioRestored += restored;
+  }
+
+  // ---- Post-repair audit: which narration refs are STILL dead ----
+  const stillDead: string[] = [];
+  for (const ref of deadNarrationRefs) {
+    if (!(await refResolvesBytes(ref, options.stageId))) stillDead.push(ref);
+  }
+  report.audioStillPending = stillDead.length;
 
   log.info(
-    `Media repair complete: ${report.audioRestored} scene(s) restored across ${report.passes} pass(es); ${report.audioStillPending} still pending`,
+    `Media repair complete: ${report.audioRestored} narration ref(s) restored across ` +
+      `${report.narrationPassesRun} pass(es); ${report.mediaRequeued} image/video/poster ref(s) ` +
+      `re-queued (${report.mediaUnrecoverable} without a task spec); ` +
+      `${report.audioStillPending} narration ref(s) still pending`,
   );
   return report;
 }

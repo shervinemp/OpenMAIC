@@ -19,7 +19,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { act, createElement, type ReactNode } from 'react';
+import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -51,7 +51,7 @@ async function importFreshExtras(): Promise<
   return await import('@/components/workbench/compose-extras');
 }
 
-function mount(children: ReactNode): Root {
+function mount(): Root {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
