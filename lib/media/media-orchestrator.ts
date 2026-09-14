@@ -194,11 +194,14 @@ async function generateMediaForOutlinesDispatch(
   // EVERY missing row onto the provider at once (one local GPU → minutes of
   // backlog, repeated mounts piled more). The dispatch stays serial-ordered;
   // the excess waits for the next pass instead of stacking the backend.
+  // Cheap jobs first (images before videos): a single heavy video cannot
+  // head-of-line-block the whole image backlog — a 30s image behind a
+  // 5min video starves to the 1800s queue-kill. Stable within each class.
   const requeueLimit = repairRequeueLimit();
-  const dispatchable =
-    requeueLimit !== undefined && allRequests.length > requeueLimit
-      ? allRequests.slice(0, requeueLimit)
-      : allRequests;
+  const classRank = (type: 'image' | 'video'): number => (type === 'image' ? 0 : 1);
+  const dispatchable = [...allRequests]
+    .sort((a, b) => classRank(a.type) - classRank(b.type))
+    .slice(0, requeueLimit);
   if (dispatchable.length < allRequests.length) {
     log.warn(
       `Media requeue capped at ${dispatchable.length}/${allRequests.length} requests this pass ` +
@@ -210,8 +213,7 @@ async function generateMediaForOutlinesDispatch(
   useMediaGenerationStore.getState().enqueueTasks(stageId, dispatchable);
 
   const mediaStats = new Map<string, { total: number; done: number; failed: number }>();
-  for (const req of dispatchable) {
-    const outlineId = outlineByElement.get(req.elementId);
+  for (const req of dispatchable) {    const outlineId = outlineByElement.get(req.elementId);
     if (!outlineId) continue;
     const stats = mediaStats.get(outlineId) ?? { total: 0, done: 0, failed: 0 };
     stats.total += 1;

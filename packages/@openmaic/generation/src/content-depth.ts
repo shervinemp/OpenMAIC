@@ -121,7 +121,20 @@ function wordCount(text: string): number {
 const VERB_RE =
   /\b(is|are|was|were|be|been|being|am|have|has|had|do|does|did|will|would|can|could|should|may|might|must|use|uses|using|used|make|makes|making|create|creates|creating|provide|provides|providing|allow|allows|enable|enables|show|shows|showing|represent|represents|convert|converts|transform|transforms|contain|contains|hold|holds|store|stores|define|defines|describe|describes|explain|explains|declare|declares|become|becomes|produce|produces|run|runs|return|returns|support|supports|include|includes|process|processes|move|moves|change|changes|require|requires|need|needs|take|takes|give|gives|learn|learns|teach|teaches)\b/i;
 
-const EXAMPLE_RE = /\b(example|examples|e\.g\.|for instance|举例|例如|例子|示例|比如|比如说)\b/i;
+const EXAMPLE_RE =
+  /\b(example|examples|e\.g\.|for instance|e\.g|案例|举例|例如|例子|示例|比如|比如说|定义| comprised of| defined as| referring to| refers to)\b/i;
+
+/**
+ * A real number with context — "30 MB", "142%", "2.1 GB/s", "cut latency 63%"
+ * — is concrete evidence the same way a worked example is: a slide can carry
+ * a fact without ever saying the word "example". Texts with a digit-group
+ * followed by a quantity unit OR an inline benchmark/percentage count as
+ * concrete facts.
+ */
+const CONCRETE_NUMBER_RE =
+  /\b\d[\d_,.]*\s*(%|MB|GB|TB|KB|kB|ms|sec|seconds|minutes|GB\/s|MB\/s|x[0-9]*|个|条|万|亿)\b/i;
+
+const CODE_ELEMENT_TYPES = new Set(['code', 'latex']);
 
 const INTRO_SUMMARY_RE =
   /\b(intro|introduction|overview|welcome|agenda|summary|conclusion|recap|review|wrap[- ]?up|outro|closing|总结|回顾|概述|引言|小结|引入|收尾)\b/i;
@@ -165,6 +178,13 @@ export function extractSlideTexts(elements: PPTElement[]): string[] {
         const stripped = stripHtml(content);
         if (stripped) texts.push(stripped);
       }
+    } else if (CODE_ELEMENT_TYPES.has(element.type)) {
+      // A code block or formula IS a concrete example for a technical slide
+      // (a COPY INTO statement IS the worked example of "loading files into
+      // Delta") — count its text the same way as a labeled example.
+      const code = (element as { code?: unknown; latex?: unknown });
+      const body = typeof code.code === 'string' ? code.code : typeof code.latex === 'string' ? code.latex : '';
+      if (body.trim()) texts.push(body.trim());
     }
   }
   return texts;
@@ -220,6 +240,7 @@ export function validateSlideDepth(
 
   for (const text of texts) {
     if (EXAMPLE_RE.test(text)) exampleCount++;
+    if (CONCRETE_NUMBER_RE.test(text)) exampleCount++;
     if (isSubstantiveText(text)) {
       substantiveCount++;
     } else if (isCaptionText(text)) {
