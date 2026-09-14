@@ -74,6 +74,11 @@ export function SceneSidebar({
   // complete, 2 audio pending" completion display.
   const lessonProgress = useMemo(() => {
     if (!blueprint) return null;
+    // Fill-decay membership comes from THE ONE QUEUE (failedOutlines covers
+    // content-failed AND tts/media byte-decayed rows) — a count keyed on
+    // `!audioId` alone would miss the actual decay mode (id present, bytes
+    // gone). The count honestly reports unsettled material a lesson carries.
+    const failedOutlineIds = new Set(failedOutlines.map((outline) => outline.id));
     const mediaStatusByOutline = new Map(
       lessonGroups.flatMap((group) => group.jobs.map((job) => [job.outlineId, job.phases.media])),
     );
@@ -87,21 +92,24 @@ export function SceneSidebar({
         (outline) => sceneDepth[String(outline.order)]?.reworked,
       ).length;
       const mediaFailed = lesson.outlines.filter(
-        (outline) => mediaStatusByOutline.get(outline.id)?.status === 'failed',
+        (outline) =>
+          mediaStatusByOutline.get(outline.id)?.status === 'failed' ||
+          failedOutlineIds.has(outline.id),
       ).length;
       const audioPending = lesson.outlines.filter((outline) => {
         const scene = sceneByOrder.get(outline.order);
         return (
           scene &&
-          (scene.actions ?? []).some(
-            (action) => action.type === 'speech' && !!action.text && !action.audioId,
-          )
+          (failedOutlineIds.has(outline.id) ||
+            (scene.actions ?? []).some(
+              (action) => action.type === 'speech' && !!action.text && !action.audioId,
+            ))
         );
       }).length;
       return { title: lesson.title, total, done, reworked, mediaFailed, audioPending };
     });
     return { lessons };
-  }, [blueprint, scenes, sceneDepth, lessonGroups]);
+  }, [blueprint, scenes, sceneDepth, lessonGroups, failedOutlines]);
 
   // Heavy-course structure (semester preset): blueprint.units already knows the
   // unit -> lesson -> outline hierarchy. Collapsible unit sections mount ONLY
@@ -111,6 +119,7 @@ export function SceneSidebar({
     const units = blueprint?.units;
     if (!units || units.length <= 1) return null;
     const progress = lessonProgress?.lessons ?? [];
+    const failedOutlineIds = new Set(failedOutlines.map((outline) => outline.id));
     const indexByOutlineId = new Map(
       scenes.flatMap((scene, index) =>
         scene.outlineId ? ([[scene.outlineId, index] as const]) : [],
@@ -132,14 +141,23 @@ export function SceneSidebar({
           usedIndices.add(sceneIndex);
         }
         const p = progress[lessonIndex];
+        // ONE-QUEUE-faithful lesson completion: a lesson is done when its
+        // slides are materialized AND the lesson carries no unsettled
+        // material (fill-decayed audio/media re-enter the queue and demote
+        // the lesson back out of "complete").
+        const pending = lesson.outlines.filter((outline) =>
+          failedOutlineIds.has(outline.id),
+        ).length;
+        const done = (p?.done ?? 0) - Math.min(p?.done ?? 0, pending);
         return {
           key: `u${unitIndex}-l${lessonIndex}`,
           title: lesson.title,
           scenes: lessonScenes,
           sceneIndices: lessonIndices,
-          done: p?.done ?? 0,
+          done,
           total: p?.total ?? lesson.outlines.length,
           reworked: p?.reworked ?? 0,
+          pending,
         };
       });
       return {
@@ -170,6 +188,7 @@ export function SceneSidebar({
             done: unmatched.length,
             total: unmatched.length,
             reworked: 0,
+            pending: 0,
           },
         ],
         sceneCount: unmatched.length,
@@ -178,7 +197,7 @@ export function SceneSidebar({
       });
     }
     return sections;
-  }, [blueprint, scenes, lessonProgress, t]);
+  }, [blueprint, scenes, lessonProgress, failedOutlines, t]);
 
   const selectScene = useCallback(
     (sceneId: string) => {
