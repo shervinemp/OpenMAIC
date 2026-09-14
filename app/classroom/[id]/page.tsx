@@ -247,15 +247,17 @@ export default function ClassroomDetailPage() {
       generateMediaForOutlines(materializedOutlines, stage.id).catch((err) => {
         log.warn('[Classroom] Media generation resume error:', err);
       });
-      // Narration recovery (same-train semantics): a fully materialized deck
-      // whose speech actions are audio-pending gets ONE automatic drain pass
-      // per mount when auto-recovery is on — TTS outages/flakes during a prior
-      // session no longer leave the course permanently silent.
+      // Narration/media recovery (same-train semantics): a fully materialized
+      // deck whose speech actions are audio-pending (or whose bytes were
+      // evicted/deleted mid-life) gets an automatic bounded repair pass per
+      // mount when auto-recovery is on — class-agnostic and player-equivalent
+      // ("does the ref resolve right now"), so any decay mode self-heals.
       const storeScenes = useStageStore.getState().scenes;
       void (async () => {
-        const { drainPendingSceneTTS } = await import('@/lib/hooks/use-scene-generator');
-        await drainPendingSceneTTS([...storeScenes]);
-      })().catch((err) => log.warn('[Classroom] Narration drain resume error:', err));
+        const languageDirective = useStageStore.getState().blueprint?.languageDirective;
+        const { repairCourseMedia } = await import('@/lib/media/repair-course-media');
+        await repairCourseMedia([...storeScenes], { language: languageDirective });
+      })().catch((err) => log.warn('[Classroom] Media repair resume error:', err));
     }
     // classroomId: the params lookup and session cleanup are keyed by it. A
     // change re-runs this effect, but `generationStartedRef` still guards the
