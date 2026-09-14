@@ -86,7 +86,7 @@ import {
   retrieveChunks,
   type PdfChunk,
 } from '@openmaic/generation';
-import { lazyBoundedMap, mapWithConcurrency } from '@/lib/utils/concurrency';
+import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import {
   buildUnitReviewSummary,
   summarizeUnitReviewFindings,
@@ -1071,7 +1071,6 @@ export async function POST(req: NextRequest) {
           })),
           req.headers,
         );
-        const resolvedIds = new Set(resolvedVisionImages.map((img) => img.id));
         const visionImageById = new Map(sortedImages.map((img) => [img.id, img] as const));
         const visionDescriptions = resolvedVisionImages.map((img) =>
           formatImagePlaceholder(visionImageById.get(img.id) ?? { ...img, pageNumber: 1, src: '' }),

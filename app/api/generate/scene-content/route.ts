@@ -33,7 +33,6 @@ import {
   resolveVisionImagesForPrompt,
   type VisionPromptImage,
 } from '@/lib/persistence/resolve-vision-images';
-import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { takeSceneDepthReport, takeSceneDepthSummary } from '@/lib/generation/content-depth';
 import { buildUnitContext } from '@/lib/generation/unit-context';
 import {
