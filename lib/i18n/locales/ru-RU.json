@@ -2129,5 +2129,15 @@
     "countSkipped": "{{count}} skipped",
     "countFailed": "{{count}} failed",
     "capturing": "Capturing snapshot…"
+  },
+  "gitSync": {
+    "updatesSection": "Обновления репозитория",
+    "checkUpdates": "Проверить обновления",
+    "noUpdates": "Нет ожидающих обновлений — репозиторий и курс совпадают.",
+    "import": "Импортировать",
+    "applyUpdate": "Применить обновление",
+    "backfillMedia": "Синхронизировать медиа этого браузера в репозиторий курса",
+    "backfillDone": "Выгрузка завершена — {{uploaded}} отправлено, {{existing}} уже синхронизировано, {{missing}} без байтов.",
+    "updateState": "{{state}} · {{scenes}} сцен"
   }
 }

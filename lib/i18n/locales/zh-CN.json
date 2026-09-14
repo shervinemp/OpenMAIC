@@ -2158,5 +2158,15 @@
     "scoreLabel": "总分",
     "submittedAt": "提交于 {{time}}",
     "yourAnswer": "查看你的作答"
+  },
+  "gitSync": {
+    "updatesSection": "仓库更新",
+    "checkUpdates": "检查更新",
+    "noUpdates": "没有待处理的更新 — 仓库与课程一致。",
+    "import": "导入",
+    "applyUpdate": "应用更新",
+    "backfillMedia": "将此浏览器的媒体同步到课程仓库",
+    "backfillDone": "回填完成 — 已上传 {{uploaded}} 个、已同步 {{existing}} 个、无数据 {{missing}} 个。",
+    "updateState": "{{state}} · {{scenes}} 个场景"
   }
 }

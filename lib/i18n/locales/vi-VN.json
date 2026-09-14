@@ -2127,5 +2127,15 @@
         "materialExtraction": null
       }
     }
+  },
+  "gitSync": {
+    "updatesSection": "Cập nhật kho lưu trữ",
+    "checkUpdates": "Kiểm tra cập nhật",
+    "noUpdates": "Không có cập nhật nào — kho và khóa học khớp nhau.",
+    "import": "Nhập",
+    "applyUpdate": "Áp dụng cập nhật",
+    "backfillMedia": "Đồng bộ phương tiện của trình duyệt này vào kho khóa học",
+    "backfillDone": "Hoàn tất — {{uploaded}} đã tải lên, {{existing}} đã đồng bộ, {{missing}} không có dữ liệu.",
+    "updateState": "{{state}} · {{scenes}} trang"
   }
 }

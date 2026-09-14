@@ -652,7 +652,7 @@
   },
   "classroomComplete": {
     "title": "Course complete",
-        "trailLabels": {
+    "trailLabels": {
       "slide": "pages",
       "quiz": "quizzes",
       "interactive": "interactives",
@@ -2151,7 +2151,15 @@
     "bindOk": "Repository connected — course changes will be committed automatically.",
     "unbindOk": "Repository disconnected.",
     "bindFailed": "Connecting failed.",
-    "loadFailed": "Could not load courses or bindings."
+    "loadFailed": "Could not load courses or bindings.",
+    "updatesSection": "Repo updates",
+    "checkUpdates": "Check updates",
+    "noUpdates": "No pending updates — repo and course match.",
+    "import": "Import",
+    "applyUpdate": "Apply update",
+    "backfillMedia": "Sync this browser's media to the course repo",
+    "backfillDone": "Backfill done — {{uploaded}} uploaded, {{existing}} already synced, {{missing}} had no bytes here.",
+    "updateState": "{{state}} · {{scenes}} scenes"
   },
   "exams": {
     "title": "Exams",

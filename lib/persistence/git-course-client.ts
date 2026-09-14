@@ -18,6 +18,23 @@ export interface CourseBinding {
   stageId: string;
   repoPath: string;
   boundAt: number;
+  autoLoad?: boolean;
+}
+
+/** One repo-vs-persistence comparison row (server-side snapshot scan). */
+export interface RepoUpdateEntry {
+  stageId: string;
+  title: string;
+  sceneCount: number;
+  repoPath: string;
+  state: 'new' | 'equal' | 'update' | 'invalid';
+}
+
+/** POST /api/course-git/sync outcome row (approval confluence). */
+export interface SyncStageResult {
+  stageId: string;
+  action: 'imported' | 'applied' | 'equal' | 'skipped' | 'rejected';
+  detail: string;
 }
 
 export interface CourseSummary {
@@ -94,4 +111,41 @@ export async function listUnboundCourses(): Promise<CourseSummary[]> {
 
 export function isGitSyncAvailable(): boolean {
   return isBrowserPersistenceEnabled();
+}
+
+/**
+ * Update scan (diff-first, never applies). `pull` is env-gated server-side.
+ */
+export async function scanRepoUpdates(): Promise<
+  { ok: true; updates: RepoUpdateEntry[] } | { ok: false; message: string }
+> {
+  const response = await courseGitFetch('?sync=true');
+  const data = (await response.json().catch(() => ({}))) as {
+    updates?: RepoUpdateEntry[];
+    error?: { message?: string };
+  };
+  if (!response.ok) {
+    return { ok: false, message: data.error?.message ?? 'update scan failed' };
+  }
+  return { ok: true, updates: data.updates ?? [] };
+}
+
+/** Approval confluence: apply repo updates and/or import autoLoad courses. */
+export async function applyRepoSync(body: {
+  apply?: boolean;
+  importNew?: boolean;
+  stageIds?: string[];
+}): Promise<{ ok: true; results: SyncStageResult[] } | { ok: false; message: string }> {
+  const response = await courseGitFetch('/sync', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  const data = (await response.json().catch(() => ({}))) as {
+    results?: SyncStageResult[];
+    error?: { message?: string };
+  };
+  if (!response.ok) {
+    return { ok: false, message: data.error?.message ?? 'apply failed' };
+  }
+  return { ok: true, results: data.results ?? [] };
 }

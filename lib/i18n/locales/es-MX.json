@@ -2129,5 +2129,15 @@
     "countSkipped": "{{count}} skipped",
     "countFailed": "{{count}} failed",
     "capturing": "Capturing snapshot…"
+  },
+  "gitSync": {
+    "updatesSection": "Actualizaciones del repo",
+    "checkUpdates": "Comprobar actualizaciones",
+    "noUpdates": "Sin actualizaciones pendientes — repo y curso coinciden.",
+    "import": "Importar",
+    "applyUpdate": "Aplicar actualización",
+    "backfillMedia": "Sincronizar los medios de este navegador al repo del curso",
+    "backfillDone": "Copia completada — {{uploaded}} subidos, {{existing}} ya sincronizados, {{missing}} sin bytes.",
+    "updateState": "{{state}} · {{scenes}} escenas"
   }
 }

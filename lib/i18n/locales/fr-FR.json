@@ -2129,5 +2129,15 @@
     "countSkipped": "{{count}} skipped",
     "countFailed": "{{count}} failed",
     "capturing": "Capturing snapshot…"
+  },
+  "gitSync": {
+    "updatesSection": "Mises à jour du dépôt",
+    "checkUpdates": "Vérifier les mises à jour",
+    "noUpdates": "Aucune mise à jour en attente — dépôt et cours sont identiques.",
+    "import": "Importer",
+    "applyUpdate": "Appliquer la mise à jour",
+    "backfillMedia": "Synchroniser les médias de ce navigateur vers le dépôt",
+    "backfillDone": "Backfill terminé — {{uploaded}} envoyés, {{existing}} déjà synchronisés, {{missing}} sans octets.",
+    "updateState": "{{state}} · {{scenes}} scènes"
   }
 }

@@ -8,11 +8,16 @@ import { Check, GitBranch, Loader2, Trash2 } from 'lucide-react';
 
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
+  applyRepoSync,
   bindCourseToRepo,
   getCourseBinding,
+  scanRepoUpdates,
   unbindCourseRepo,
   type CourseBinding,
+  type RepoUpdateEntry,
+  type SyncStageResult,
 } from '@/lib/persistence/git-course-client';
+import { useStageStore } from '@/lib/store';
 
 /**
  * Per-course "Connect to Git…" dialog: bind the CURRENTLY OPEN course to a
@@ -20,6 +25,12 @@ import {
  * header dropdown so the action sits exactly where the user is thinking
  * about the course. Pure bookkeeping — binding changes never touch course
  * content and can never fail a course save.
+ *
+ * When bound, the dialog is also the approval confluence for the inbound
+ * half: a diff-first update scan (new / update / equal) whose entries PUT
+ * through an explicit apply, and the one-click media backfill that hands the
+ * server every byte this browser owns (uploads are idempotent and never
+ * demote playback).
  */
 
 export function GitBindingDialog({
@@ -40,6 +51,10 @@ export function GitBindingDialog({
   const [initMissing, setInitMissing] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const [updates, setUpdates] = useState<RepoUpdateEntry[] | null>(null);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [applyResults, setApplyResults] = useState<SyncStageResult[] | null>(null);
+  const [backfillStatus, setBackfillStatus] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
   const refresh = useCallback(async () => {
@@ -98,6 +113,8 @@ export function GitBindingDialog({
     try {
       if (await unbindCourseRepo(stageId)) {
         setBinding(null);
+        setUpdates(null);
+        setApplyResults(null);
         setMessage({ kind: 'ok', text: t('gitSync.unbindOk') });
         onBindingChanged?.();
       } else {
@@ -108,6 +125,61 @@ export function GitBindingDialog({
         setBusy(false);
         onOpenChange(false);
       }
+    }
+  };
+
+  // ── Update scan + approval apply (inbound half) ──
+  const runUpdateScan = async () => {
+    setScanBusy(true);
+    setApplyResults(null);
+    try {
+      const result = await scanRepoUpdates();
+      if (mountedRef.current) {
+        if (result.ok) {
+          setUpdates(result.updates);
+        } else {
+          setMessage({ kind: 'error', text: result.message });
+        }
+      }
+    } finally {
+      if (mountedRef.current) setScanBusy(false);
+    }
+  };
+
+  const applySelected = async (stageIds: string[], apply: boolean, importNew: boolean) => {
+    setScanBusy(true);
+    try {
+      const result = await applyRepoSync({ apply, importNew, ...(stageIds.length ? { stageIds } : {}) });
+      if (mountedRef.current) {
+        if (result.ok) setApplyResults(result.results);
+        else setMessage({ kind: 'error', text: result.message });
+      }
+    } finally {
+      if (mountedRef.current) setScanBusy(false);
+    }
+  };
+
+  // ── Media backfill (browser → server byte handoff) ──
+  const runMediaBackfill = async () => {
+    setBackfillStatus('collecting references…');
+    const { stage, scenes, blueprint } = useStageStore.getState();
+    const snapshot = stage ? { stage, scenes, outline: blueprint } : null;
+    if (!snapshot) {
+      setBackfillStatus('no course open');
+      return;
+    }
+    try {
+      const { backfillCourseMedia } = await import('@/lib/media/backfill-course-media');
+      const progress = await backfillCourseMedia(snapshot);
+      setBackfillStatus(
+        t('gitSync.backfillDone', {
+          uploaded: progress.uploaded,
+          existing: progress.skippedExisting,
+          missing: progress.noBytes,
+        }),
+      );
+    } catch (error) {
+      setBackfillStatus(error instanceof Error ? error.message : 'backfill failed');
     }
   };
 
@@ -136,6 +208,108 @@ export function GitBindingDialog({
               {binding.repoPath}
             </code>
           </div>
+
+          {/* Approval confluence: scan, then per-entry apply/import. */}
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold text-muted-foreground">
+                {t('gitSync.updatesSection')}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-[10px]"
+                disabled={scanBusy}
+                onClick={() => void runUpdateScan()}
+              >
+                {scanBusy ? (
+                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                ) : (
+                  <GitBranch className="w-3 h-3 mr-1" />
+                )}
+                {t('gitSync.checkUpdates')}
+              </Button>
+            </div>
+
+            {updates !== null && (
+              <div className="space-y-1.5">
+                {updates.filter((entry) => entry.state !== 'equal').length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground px-1">
+                    {t('gitSync.noUpdates')}
+                  </p>
+                ) : (
+                  updates
+                    .filter((entry) => entry.state !== 'equal')
+                    .map((entry) => (
+                      <div
+                        key={`${entry.stageId}:${entry.state}`}
+                        className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-[11.5px] font-medium truncate">{entry.title}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {t('gitSync.updateState', {
+                              state: entry.state,
+                              scenes: entry.sceneCount,
+                            })}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-2 text-[10px] shrink-0"
+                          disabled={scanBusy}
+                          onClick={() =>
+                            void applySelected([entry.stageId], true, entry.state === 'new')
+                          }
+                        >
+                          {entry.state === 'new'
+                            ? t('gitSync.import')
+                            : t('gitSync.applyUpdate')}
+                        </Button>
+                      </div>
+                    ))
+                )}
+              </div>
+            )}
+
+            {applyResults && (
+              <ul className="space-y-1 rounded-md border bg-muted/30 px-2.5 py-2">
+                {applyResults.map((result) => (
+                  <li key={result.stageId} className="text-[10.5px] text-muted-foreground break-all">
+                    <span
+                      className={
+                        result.action === 'applied' || result.action === 'imported'
+                          ? 'text-emerald-600 font-medium'
+                          : undefined
+                      }
+                    >
+                      {result.action}
+                    </span>{' '}
+                    {result.detail}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Media byte handoff (uploads are idempotent). */}
+          <div className="space-y-1.5 pt-1 border-t">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 w-full text-[11px]"
+              disabled={!!backfillStatus && backfillStatus.startsWith('collecting')}
+              onClick={() => void runMediaBackfill()}
+            >
+              <Loader2 className="w-3 h-3 mr-1.5" />
+              {t('gitSync.backfillMedia')}
+            </Button>
+            {backfillStatus && (
+              <p className="text-[10.5px] text-muted-foreground">{backfillStatus}</p>
+            )}
+          </div>
+
           <Button
             size="sm"
             variant="destructive"

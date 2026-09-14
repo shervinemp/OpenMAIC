@@ -318,6 +318,12 @@ export class CourseGitCommitScheduler {
       }
     }
     await git(repoPath, ['add', '--all', `${stageFile}.json`]);
+    if (this.includeMedia) {
+      // Track the materialized media payload with the snapshot (git-sync-assets
+      // writes under assets/<stageId>/); the stage file's add --all above
+      // cannot pull an untracked sibling directory in.
+      await git(repoPath, ['add', '--all', join('assets', stageFile)]).catch(() => undefined);
+    }
     const status = await git(repoPath, ['status', '--porcelain', `${stageFile}.json`]);
     if (!status.stdout.trim()) return; // identical to the last commit
     const commitArgs = (fixedIdentity: boolean): string[] => [

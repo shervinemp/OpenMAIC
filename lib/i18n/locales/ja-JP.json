@@ -2129,5 +2129,15 @@
     "countSkipped": "{{count}} skipped",
     "countFailed": "{{count}} failed",
     "capturing": "Capturing snapshot…"
+  },
+  "gitSync": {
+    "updatesSection": "リポジトリの更新",
+    "checkUpdates": "更新を確認",
+    "noUpdates": "更新はありません — リポジトリとコースは一致しています。",
+    "import": "インポート",
+    "applyUpdate": "更新を適用",
+    "backfillMedia": "このブラウザーのメディアをリポジトリへ同期",
+    "backfillDone": "バックフィル完了 — {{uploaded}}件アップロード、{{existing}}件は同期済み、{{missing}}件はバイトなし。",
+    "updateState": "{{state}} · {{scenes}}シーン"
   }
 }

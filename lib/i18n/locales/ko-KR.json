@@ -2129,5 +2129,15 @@
     "countSkipped": "{{count}} skipped",
     "countFailed": "{{count}} failed",
     "capturing": "Capturing snapshot…"
+  },
+  "gitSync": {
+    "updatesSection": "저장소 업데이트",
+    "checkUpdates": "업데이트 확인",
+    "noUpdates": "대기 중인 업데이트 없음 — 저장소와 코스가 일치합니다.",
+    "import": "가져오기",
+    "applyUpdate": "업데이트 적용",
+    "backfillMedia": "이 브라우저의 미디어를 코스 저장소로 동기화",
+    "backfillDone": "백필 완료 — {{uploaded}}개 업로드, {{existing}}개 이미 동기화, {{missing}}개 바이트 없음.",
+    "updateState": "{{state}} · {{scenes}} 장면"
   }
 }

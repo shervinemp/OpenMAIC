@@ -2043,5 +2043,35 @@
         "materialExtraction": null
       }
     }
+  },
+  "gitSync": {
+    "updatesSection": "Repo-Updates",
+    "checkUpdates": "Updates prüfen",
+    "noUpdates": "Keine ausstehenden Updates — Repo und Kurs stimmen überein.",
+    "import": "Importieren",
+    "applyUpdate": "Update anwenden",
+    "backfillMedia": "Medien dieses Browsers ins Kurs-Repo syncen",
+    "backfillDone": "Backfill fertig — {{uploaded}} hochgeladen, {{existing}} bereits synchronisiert, {{missing}} ohne Bytes.",
+    "updateState": "{{state}} · {{scenes}} Szenen",
+    "cardTitle": "Kurs-Repositories",
+    "desc": "Kurse an Git-Repositories binden",
+    "dialogTitle": "Mit Git verbinden",
+    "dialogDesc": "Versionierung des aktuellen Kurses.",
+    "menuDesc": "Kurs mit einem Repository synchronisieren",
+    "connectedLabel": "Verbunden",
+    "courseLabel": "Kurs",
+    "coursePlaceholder": "Kurs auswählen",
+    "repoLabel": "Repository-Pfad",
+    "repoPlaceholder": "z.B. C:\\Daten\\mein-kurs-repo",
+    "initIfMissing": "Repository anlegen, falls es fehlt",
+    "connect": "Verbinden",
+    "refresh": "Aktualisieren",
+    "disconnect": "Trennen",
+    "hint": "Änderungen werden beim Speichern committet.",
+    "allBound": "Alle Kurse sind gebunden.",
+    "bindOk": "Verbunden.",
+    "unbindOk": "Getrennt.",
+    "bindFailed": "Verbinden fehlgeschlagen.",
+    "loadFailed": "Laden fehlgeschlagen."
   }
 }
