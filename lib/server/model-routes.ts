@@ -147,6 +147,7 @@ export const LLM_STAGES = [
   'scene-content:tradeoffs',
   'scene-content:freeResponse',
   'scene-actions',
+  'scene-verify',
   'agent-profiles',
   'quiz-grade',
   'exam-generation',
@@ -328,6 +329,11 @@ export const THINKING_PRESET_LEAN: Partial<Record<LlmStage, ThinkingConfig>> = {
   'documents-index': { enabled: false },
 
   // Judgment / long-horizon stages: reasoning earns its tokens.
+  // `scene-verify` is the layout/quality judge: enabled WITHOUT budgetTokens —
+  // DeepSeek ignores budgets anyway and runs reasoning to its own cap, which
+  // is the "cranked thinking on the judge" posture. Regeneration stages above
+  // stay lean.
+  'scene-verify': { enabled: true },
   'scene-outlines-stream': { enabled: true, budgetTokens: 6000 },
   'scene-content:interactive': { enabled: true, budgetTokens: 8000 },
   'scene-content:derivation': { enabled: true, budgetTokens: 6000 },
