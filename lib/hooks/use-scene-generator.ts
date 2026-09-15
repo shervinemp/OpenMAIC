@@ -31,6 +31,7 @@ import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { computeActionsSourceHash } from '@/lib/utils/content-hash';
+import { verifyAndRepairSlideLayout } from '@/lib/slides/slide-layout-verify';
 import { createLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { getClientTranslation } from '@/lib/i18n';
@@ -1034,6 +1035,21 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
           status: 'failed',
           error: contentResult.error || 'Content generation failed',
         };
+      }
+      const layout = await verifyAndRepairSlideLayout(contentResult.content);
+      if (layout.repairFailed && layout.repairError) {
+        console.warn(
+          `[layout-verify] outline ${outline.id}: ${layout.repairError}; ${layout.findings.length} finding(s) remain`,
+        );
+        return {
+          status: 'failed',
+          error: 'layout repair failed: ' + (layout.repairError || 'unresolved placement findings'),
+        };
+      }
+      if (layout.repaired || layout.clamped > 0) {
+        console.log(
+          `[layout-verify] scene ${outline.id}: clamped=${layout.clamped} repaired=${layout.repaired} residual=${layout.findings.length}`,
+        );
       }
       if (contentResult.depth) {
         useStageStore.getState().recordSceneDepth(outline.order, contentResult.depth);

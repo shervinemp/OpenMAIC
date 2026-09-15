@@ -13,6 +13,8 @@ interface VerifyRequestBody {
   scene: unknown;
   screenshot?: string;
   mode?: 'check' | 'repair';
+  intent?: 'layout-repair';
+  geometryFindings?: unknown[];
   language?: string;
 }
 
@@ -33,6 +35,16 @@ function extractSlideCanvas(scene: unknown): {
     elements: canvas.elements as Record<string, unknown>[],
   };
 }
+
+const LAYOUT_REPAIR_PROMPT = [
+  'You are a slide-layout repair assistant.',
+  'Input: one slide element list in z-order (early = behind) plus validator findings.',
+  'Output STRICT JSON only: {"elements":[{"id":"...","left":n,"top":n,"width":n,"height":n}, ...]}',
+  '- Every source id must appear EXACTLY once; no additions or deletions.',
+  '- Only left/top/width/height and array ORDER may change. All other fields stay untouched.',
+  '- Every element stays inside the canvas. Width/height may change at most ±20%.',
+  '- Solve overlaps by moving elements apart; keep text readable and hierarchy sensible.',
+].join('\n');
 
 const VERIFY_SYSTEM_PROMPT = [
   'You are a slide-layout quality judge for generated course slides.',
@@ -59,6 +71,53 @@ export async function POST(req: NextRequest) {
       viewportRatio: canvas.viewportRatio,
       elements: canvas.elements as never[],
     });
+
+    if (body.intent === 'layout-repair') {
+      const { model, thinkingConfig } = await resolveModelFromRequest(
+        req,
+        body as never,
+        'scene-verify',
+      );
+      const result = await callLLM(
+        {
+          model,
+          system: LAYOUT_REPAIR_PROMPT,
+          prompt:
+            `Canvas: ${canvas.viewportSize} x ${Math.round(canvas.viewportSize * canvas.viewportRatio)} px. Validator findings: ${JSON.stringify(body.geometryFindings ?? geometryFindings)}\n` +
+            `Element list (z-order, earlier = behind): ${JSON.stringify(
+              canvas.elements.map((element) => ({
+                id: element.id,
+                type: element.type,
+                name: element.name,
+                left: element.left,
+                top: element.top,
+                width: element.width,
+                height: element.height,
+                rotate: element.rotate,
+              })),
+            )}`,
+          maxOutputTokens: 4096,
+          maxRetries: 0,
+        } as never,
+        'scene-verify',
+        undefined,
+        thinkingConfig ?? undefined,
+      );
+      const text = result.text ?? '';
+      try {
+        const start = text.indexOf('{');
+        const end = text.lastIndexOf('}');
+        const parsed = JSON.parse(text.slice(start, end + 1)) as {
+          elements?: Array<Record<string, unknown>>;
+        };
+        if (!Array.isArray(parsed.elements)) {
+          return apiError('INVALID_REQUEST', 422, 'repair response missing elements array');
+        }
+        return apiSuccess({ layoutPatch: { elements: parsed.elements } });
+      } catch {
+        return apiError('INVALID_REQUEST', 422, 'repair response was not parseable JSON');
+      }
+    }
 
     if (body.mode === 'repair') {
       const { changes } = sanitizeSlidePlacement(body.scene as never);
