@@ -370,43 +370,18 @@ export default function ClassroomDetailPage() {
     // the same path any scene mutation uses.
     runtime.__openmaicVerifyCourse = async (options) => {
       const { useStageStore } = await import('@/lib/store');
-      const { validateSlidePlacement, sanitizeSlidePlacement } = await import('@openmaic/dsl');
+      const { sweepCoursePlacement } = await import('@/lib/slides/placement-sweep');
       const state = useStageStore.getState();
       if (!state.stage) throw new Error('no persisted document; open the course first');
-      const summary: Array<{ sceneId: string; sceneTitle: string; findings: Array<{ kind: string; severity: string; message: string }> }> = [];
-      let clamped = 0;
-      const nextScenes = state.scenes.map((scene) => {
-        if (scene.type !== 'slide') return scene;
-        const content = scene.content as { canvas?: unknown } | undefined;
-        const canvas = content?.canvas as
-          | { viewportSize: number; viewportRatio: number; elements: never[] }
-          | undefined;
-        if (!canvas || !Array.isArray(canvas.elements)) return scene;
-        const findings = validateSlidePlacement(canvas);
-        if (findings.length > 0) {
-          summary.push({
-            sceneId: scene.id,
-            sceneTitle: scene.title ?? '',
-            findings: findings.map((finding) => ({
-              kind: finding.kind,
-              severity: finding.severity,
-              message: finding.message,
-            })),
-          });
-        }
-        if (!options?.repair) return scene;
-        const { changes } = sanitizeSlidePlacement(canvas);
-        clamped += changes.length;
-        return changes.length > 0 ? { ...scene } : scene;
-      });
-      if (options?.repair && clamped > 0) {
-        state.setScenes(nextScenes);
+      const result = sweepCoursePlacement(state.scenes as never, options);
+      if (options?.repair && result.elementsClamped > 0) {
+        state.setScenes(result.scenes as never);
       }
       return {
-        scenesChecked: state.scenes.filter((scene) => scene.type === 'slide').length,
-        scenesFlagged: summary.length,
-        elementsClamped: options?.repair ? clamped : 0,
-        summary,
+        scenesChecked: result.scenesChecked,
+        scenesFlagged: result.scenesFlagged,
+        elementsClamped: result.elementsClamped,
+        summary: result.summary,
       };
     };
     return () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   Archive,
   BookCheck,
@@ -13,6 +13,7 @@ import {
   Moon,
   NotebookText,
   Package,
+  Ruler,
   Settings,
   Sun,
 } from 'lucide-react';
@@ -115,6 +116,53 @@ export function HeaderControls({
   );
   const videoRenderPercent = useVideoRenderStore((s) => s.percent);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
+  const [layoutBusy, setLayoutBusy] = useState(false);
+  const [layoutResult, setLayoutResult] = useState<
+    | {
+        clamped: number;
+        flagged: number;
+        lines: Array<{ sceneTitle: string; message: string; severity: string }>;
+      }
+    | null
+  >(null);
+
+  const runPlacementSweep = useCallback(
+    async (repair: boolean) => {
+      setLayoutBusy(true);
+      setLayoutMenuOpen(false);
+      try {
+        const { useStageStore } = await import('@/lib/store');
+        const { sweepScenePlacement } = await import('@/lib/slides/placement-sweep');
+        const state = useStageStore.getState();
+        const current = state.scenes.find(
+          (scene) => scene.id === (state as { currentSceneId?: string }).currentSceneId,
+        );
+        const scene = current ?? state.scenes.find((scene) => scene.type === 'slide');
+        if (!scene) throw new Error('no slide scene');
+        const result = sweepScenePlacement(scene as never, { repair });
+        if (repair && result.elementsClamped > 0) {
+          state.setScenes(
+            state.scenes.map((entry) => (entry.id === scene.id ? result.scene : entry)) as never,
+          );
+        }
+        setLayoutResult({
+          clamped: result.elementsClamped,
+          flagged: result.findings.length,
+          lines: result.findings.map((finding) => ({
+            sceneTitle: scene.title || scene.id,
+            message: finding.message,
+            severity: finding.severity,
+          })),
+        });
+      } catch (error) {
+        console.error('[layout-sweep]', error);
+      } finally {
+        setLayoutBusy(false);
+      }
+    },
+    [],
+  );
 
   // Keep the original full-generation gate for the export menu. Script files
   // are text-only, but the latest review confirmed that this menu intentionally
@@ -224,6 +272,50 @@ export function HeaderControls({
           </button>
         )}
 
+        {/* Layout sweep — deterministic placement probe (overflow + text
+            occlusion) over every slide scene of the open course, ZERO LLM
+            calls. The ruler icon keeps it visually distinct from the
+            generation controls (no palette of spinners/colors); the fix
+            action only moves out-of-bounds elements back inside the
+            canvas and never rewrites content. */}
+        <DropdownMenu modal={false} open={layoutMenuOpen} onOpenChange={setLayoutMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
+              aria-label={t('layoutScan.title')}
+              title={t('layoutScan.title')}
+            >
+              <Ruler className="w-4 h-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" sideOffset={8} className="min-w-[220px]">
+            <DropdownMenuItem
+              onSelect={() => void runPlacementSweep(false)}
+              className="cursor-pointer gap-2.5"
+            >
+              <Ruler className="w-4 h-4 text-gray-400 shrink-0" />
+              <div>
+                <div>{t('layoutScan.scan')}</div>
+                <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                  {t('layoutScan.scanDesc')}
+                </div>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => void runPlacementSweep(true)}
+              className="cursor-pointer gap-2.5"
+            >
+              <Ruler className="w-4 h-4 text-violet-400 shrink-0" />
+              <div>
+                <div>{t('layoutScan.fix')}</div>
+                <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                  {t('layoutScan.fixDesc')}
+                </div>
+              </div>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
         {/* Settings */}
         <button
           onClick={() => setSettingsOpen(true)}
@@ -233,6 +325,50 @@ export function HeaderControls({
           <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
         </button>
       </div>
+
+      <Dialog open={layoutResult !== null || layoutBusy} onOpenChange={(open) => !open && setLayoutResult(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            {layoutBusy
+              ? t('layoutScan.scanning')
+              : layoutResult && layoutResult.flagged === 0
+                ? t('layoutScan.clean')
+                : t('layoutScan.title')}
+          </DialogHeader>
+          {layoutBusy && <Loader2 className="w-4 h-4 animate-spin mx-auto my-6" />}
+          {!layoutBusy && layoutResult && (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {layoutResult.clamped > 0
+                  ? `${t('layoutScan.clamped')} ${layoutResult.clamped}`
+                  : layoutResult.flagged === 0
+                    ? t('layoutScan.cleanDesc')
+                    : `${t('layoutScan.flagged')} ${layoutResult.flagged}`}
+              </p>
+              {layoutResult.lines.length > 0 && (
+                <div className="max-h-64 overflow-y-auto space-y-1.5 rounded-md border border-gray-100 dark:border-gray-800 p-2">
+                  {layoutResult.lines.map((line, index) => (
+                    <div key={index} className="text-[12px] leading-snug">
+                      <span
+                        className={cn(
+                          'font-medium',
+                          line.severity === 'error'
+                            ? 'text-red-500'
+                            : 'text-amber-500',
+                        )}
+                      >
+                        {line.severity === 'error' ? '⛔' : '⚠'}
+                      </span>{' '}
+                      <span className="text-gray-600 dark:text-gray-300">{line.sceneTitle}</span>
+                      <span className="text-gray-400"> — {line.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Pro Switch — toggle property: on/off both clickable, not a
           one-way "Done" button. Disabled only when the current scene

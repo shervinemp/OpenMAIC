@@ -2196,5 +2196,17 @@
     "ariaScore": "Overall score {{pct}} percent",
     "submittedAt": "Submitted {{time}}",
     "yourAnswer": "Show your answer"
+  },
+  "layoutScan": {
+    "title": "Slide layout",
+    "scan": "Check this slide",
+    "scanDesc": "Geometry probe: elements off-canvas or text hidden by shapes (instant, no AI)",
+    "fix": "Fix this slide",
+    "fixDesc": "Pull out-of-bounds elements back to the nearest edge. Content is never rewritten",
+    "scanning": "Scanning slide geometry…",
+    "clean": "All slides clean",
+    "cleanDesc": "No off-canvas or occluded elements found.",
+    "clamped": "Elements moved back inside the canvas:",
+    "flagged": "Flagged findings:"
   }
 }
