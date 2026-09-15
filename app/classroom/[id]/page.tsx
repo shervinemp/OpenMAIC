@@ -314,6 +314,7 @@ export default function ClassroomDetailPage() {
     const runtime = window as typeof window & {
       __openmaicMediaBackfill?: (stageId: string) => Promise<unknown>;
       __openmaicStampSceneHashes?: () => Promise<unknown>;
+      __openmaicVerifyCourse?: (options?: { repair?: boolean }) => Promise<unknown>;
     };
     runtime.__openmaicMediaBackfill = async () => {
       const { useStageStore } = await import('@/lib/store');
@@ -362,8 +363,55 @@ export default function ClassroomDetailPage() {
       state.setScenes(stamped === state.scenes.length ? [...scenes] : scenes);
       return { stamped, total: state.scenes.length };
     };
+    // Placement sweep: the deterministic layout probe over every slide scene of
+    // the open course (overflow + text occlusion, geometry only — no LLM).
+    // With `repair: true` it additionally pulls each hanging/capped element
+    // back inside the canvas bounds, then lets the store's save pipeline flush
+    // the same path any scene mutation uses.
+    runtime.__openmaicVerifyCourse = async (options) => {
+      const { useStageStore } = await import('@/lib/store');
+      const { validateSlidePlacement, sanitizeSlidePlacement } = await import('@openmaic/dsl');
+      const state = useStageStore.getState();
+      if (!state.stage) throw new Error('no persisted document; open the course first');
+      const summary: Array<{ sceneId: string; sceneTitle: string; findings: Array<{ kind: string; severity: string; message: string }> }> = [];
+      let clamped = 0;
+      const nextScenes = state.scenes.map((scene) => {
+        if (scene.type !== 'slide') return scene;
+        const content = scene.content as { canvas?: unknown } | undefined;
+        const canvas = content?.canvas as
+          | { viewportSize: number; viewportRatio: number; elements: never[] }
+          | undefined;
+        if (!canvas || !Array.isArray(canvas.elements)) return scene;
+        const findings = validateSlidePlacement(canvas);
+        if (findings.length > 0) {
+          summary.push({
+            sceneId: scene.id,
+            sceneTitle: scene.title ?? '',
+            findings: findings.map((finding) => ({
+              kind: finding.kind,
+              severity: finding.severity,
+              message: finding.message,
+            })),
+          });
+        }
+        if (!options?.repair) return scene;
+        const { changes } = sanitizeSlidePlacement(canvas);
+        clamped += changes.length;
+        return changes.length > 0 ? { ...scene } : scene;
+      });
+      if (options?.repair && clamped > 0) {
+        state.setScenes(nextScenes);
+      }
+      return {
+        scenesChecked: state.scenes.filter((scene) => scene.type === 'slide').length,
+        scenesFlagged: summary.length,
+        elementsClamped: options?.repair ? clamped : 0,
+        summary,
+      };
+    };
     return () => {
       delete runtime.__openmaicMediaBackfill;
+      delete runtime.__openmaicVerifyCourse;
     };
   }, []);
 
