@@ -9,15 +9,16 @@ const log = createLogger('RepairCourseLayout');
  *
  *   - Detection is always the placement validator (deterministic, zero
  *     tokens, zero false positives by design).
- *   - Repair is only the lossless class: out-of-bounds clamping plus pure
- *     move-only re-stacking. Content is never rewritten; the merge pass is
- *     not honored (allowMerge stays false) so load costs no LLM spend.
- *   - A scene that still carries error-level occlusion after the lossless
- *     pass lands on the persisted layout-debt ledger (`layoutStatus`). It is
- *     NOT pushed into `failedOutlines`: layout debt is not failed content,
- *     and red-carding it would gate a healthy deck behind legacy geometry
- *     and re-spend content tokens. Re-generation stays an explicit,
- *     per-slide choice; the ledger count surfaces how much is pending.
+ *   - Repair starts lossless: out-of-bounds clamping plus pure move-only
+ *     re-stacking. Content is never rewritten — the merge pass is the ONLY
+ *     LLM in the path, delete-only (mergedDeleted ids are dropped rows),
+ *     bounded by the server's 40-call cap, and only fires for rows a
+ *     chunk truly cannot hold. Bounded spend, never a rewrite.
+ *   - Phase truth rides the outline's job envelopes (unified red/green;
+ *     lesson list serves scenes only when the layout phase is done).
+ * A scene that still carries error-level occlusion after the lossless pass
+ * lands on the split terminal (no manual gate; no red-cards, no
+ * completion-gating).
  *
  * Sessions without the persistence token silently skip — repair on load is
  * best-effort, never a hard failure of course open.
@@ -56,7 +57,7 @@ export async function repairCourseLayout(
     const response = await fetch('/api/course-maintenance/layout-repair', {
       method: 'POST',
       headers: { ...headers, 'content-type': 'application/json' },
-      body: JSON.stringify({ courseId, dryRun: false }),
+      body: JSON.stringify({ courseId, dryRun: false, allowMerge: true }),
     });
     if (!response.ok) {
       log.warn('layout repair on load failed (non-fatal)', await response.text().catch(() => ''));
@@ -149,9 +150,10 @@ export async function repairCourseLayout(
     // Stage 3 (self-healing terminal): whatever STILL holds occlusion errors
     // after the lossless pass and the bounded patch pass gets split across
     // canvases — atomic saveDocument on the server, verbatim rows, anchored
-    // action rides, one job envelope per part. No LLM, no user gate: the
-    // splitter is exactly what keeps "a scene must fit or it isn't here" an
-    // automatic doctrine.
+    // action rides, one job envelope per part. Bounded LLM (allowMerge, the
+    // 40-call delete-only reduntancy pruning, never a rewrite): still no
+    // user gate — the splitter is exactly what keeps "a scene must fit or
+    // it isn't here" an automatic doctrine.
     if (summary.residualDebt > 0) {
       const splitResponse = await fetch('/api/course-maintenance/split-apply', {
         method: 'POST',

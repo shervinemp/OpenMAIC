@@ -24,8 +24,11 @@ interface RequestBody {
   actionSourceStamps?: boolean;
   /**
    * Explicitly opt in to the LLM delete-only merge pass for overflow rows.
-   * Default OFF — apply mode is deterministic and spends no tokens unless
-   * this flag is true (red-card content is never rewritten silently).
+   * Default OFF for the MANUAL path (any explicit call stays token-free
+   * unless the caller asks); the ON-LOAD pipeline passes it true — bounded
+   * LLM (40 calls) is acceptable where it materially cures unsplittable
+   * embraces of content redundancy. Red-card content is never rewritten
+   * silently — the pass deletes only clearly redundant rows.
    */
   allowMerge?: boolean;
 }
