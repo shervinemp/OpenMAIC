@@ -58,13 +58,22 @@ export interface SplitApplyDocumentShape {
 const FIRST_ROW_TOP = 40;
 const PIN_GAP = 10;
 
-function canvasOf(scene: Record<string, unknown>): { viewportSize: number; viewportRatio: number; elements: Array<Record<string, unknown>> } | null {
-  const content = scene.content as { type?: string; canvas?: { viewportSize?: number; viewportRatio?: number; elements?: Array<Record<string, unknown>> } } | null;
-  if (!content || content.type !== 'slide' || !content.canvas || !Array.isArray(content.canvas.elements)) return null;
+function canvasOf(scene: Record<string, unknown>): { viewportSize: number; viewportRatio: number; elements: Array<Record<string, unknown>>; rest: Record<string, unknown> } | null {
+  const content = scene.content as { type?: string; canvas?: Record<string, unknown> } | null;
+  const canvas = content?.canvas;
+  if (!content || content.type !== 'slide' || !canvas || !Array.isArray(canvas.elements)) return null;
+  const { viewportSize: vs, viewportRatio: vr, elements, ...rest } = canvas as {
+    viewportSize?: number;
+    viewportRatio?: number;
+    elements: unknown[];
+    [key: string]: unknown;
+  };
   return {
-    viewportSize: content.canvas.viewportSize ?? 1000,
-    viewportRatio: content.canvas.viewportRatio ?? 0.5625,
-    elements: content.canvas.elements,
+    viewportSize: (typeof vs === 'number' ? vs : 1000),
+    viewportRatio: (typeof vr === 'number' ? vr : 0.5625),
+    elements: elements as Array<Record<string, unknown>>,
+    // Theme, background, canvas-level styling: VERBATIM on every part.
+    rest,
   };
 }
 
@@ -92,9 +101,9 @@ function isPinned(element: Record<string, unknown>, canvasArea: number, canvasHe
 
 /** Verbatim rows re-stacked for one chunk canvas + the pinned frame repeated. */
 export function buildChunkCanvas(
-  canvas: { viewportSize: number; viewportRatio: number; elements: Array<Record<string, unknown>> },
+  canvas: { viewportSize: number; viewportRatio: number; elements: Array<Record<string, unknown>>; rest: Record<string, unknown> },
   chunk: { elementIds: string[] },
-): { viewportSize: number; viewportRatio: number; elements: Array<Record<string, unknown>> } | null {
+): { viewportSize: number; viewportRatio: number; elements: Array<Record<string, unknown>>; [key: string]: unknown } | null {
   if (!canvas || !Array.isArray(canvas.elements)) return null;
   const canvasHeight = Math.round(canvas.viewportSize * canvas.viewportRatio);
   const canvasArea = canvas.viewportSize * canvasHeight;
@@ -109,6 +118,7 @@ export function buildChunkCanvas(
     cursor += height + PIN_GAP;
   }
   return {
+    ...canvas.rest,
     viewportSize: canvas.viewportSize,
     viewportRatio: canvas.viewportRatio,
     elements: [...pinned, ...positioned],
