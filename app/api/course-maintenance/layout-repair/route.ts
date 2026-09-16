@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { JsonFileDocumentStore } from '@openmaic/storage/server/file-document-store';
 import { GitSyncDocumentStore } from '@/lib/persistence/git-sync-document-store';
 import { getCourseGitScheduler } from '@/lib/persistence/git-course-sync';
+import { singleFlight } from '@/lib/server/single-flight';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import {
   coerceElementGeometry,
@@ -21,7 +22,7 @@ import {
 } from '@/lib/maintenance/layout-relayout';
 import { callLLM } from '@/lib/ai/llm';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { apiError, apiSuccess, type ApiErrorCode } from '@/lib/server/api-response';
 import { applyLayoutPatch } from '@/lib/slides/slide-layout-verify';
 
 const MERGE_CALL_LIMIT = 40;
@@ -71,6 +72,43 @@ export async function POST(req: NextRequest) {
   const courseId = body.courseId?.trim();
   if (!courseId) return apiError('INVALID_REQUEST', 400, 'courseId is required');
 
+  // Single-flight: the on-load pipeline fires this pass once per classroom
+  // mount, so two tabs (or a reload racing the previous load) would otherwise
+  // run two minutes-long sweeps against the same document concurrently —
+  // duplicated bounded-LLM spend, EPERM rename storms, and writer races. The
+  // second identical request now awaits the first run's result. Keyed by the
+  // WORK: a targeted refresh (`sceneIds`) or a dry run never coalesces with a
+  // full apply pass. The flight returns a plain payload — a shared
+  // `NextResponse` would hand two requests one single-use body stream.
+  const requestedKey = body.sceneIds?.length ? [...body.sceneIds].sort().join(',') : 'full';
+  const jobKey = `layout-repair:${courseId}:${body.dryRun === true ? 'dry' : 'apply'}:${body.allowMerge === true ? 'merge' : 'plain'}:${requestedKey}`;
+  const outcome = await singleFlight(jobKey, () => runLayoutRepair(req, body, courseId, fileDir));
+  return outcome.ok
+    ? apiSuccess(outcome.payload)
+    : apiError(outcome.code, outcome.status, outcome.message);
+}
+
+type LayoutRepairOutcome =
+  | {
+      ok: true;
+      payload: {
+        courseId: string;
+        dryRun: boolean;
+        scenesScanned: number;
+        scenesPlanned: number;
+        reports: Array<
+          RelayoutPlan & { applied: boolean; residualErrors: number; mergedDeleted: string[] }
+        >;
+      };
+    }
+  | { ok: false; code: ApiErrorCode; status: number; message: string };
+
+async function runLayoutRepair(
+  req: NextRequest,
+  body: RequestBody,
+  courseId: string,
+  fileDir: string,
+): Promise<LayoutRepairOutcome> {
   const documentStore = new GitSyncDocumentStore(
     new JsonFileDocumentStore({
       dir: fileDir,
@@ -85,9 +123,11 @@ export async function POST(req: NextRequest) {
     document = await documentStore.loadDocument(courseId);
   } catch (error) {
     console.error('[layout-relayout] load failed', error);
-    return apiError('UPSTREAM_ERROR', 500, 'course load failed');
+    return { ok: false, code: 'UPSTREAM_ERROR', status: 500, message: 'course load failed' };
   }
-  if (!document) return apiError('INVALID_REQUEST', 404, 'course document not found');
+  if (!document) {
+    return { ok: false, code: 'INVALID_REQUEST', status: 404, message: 'course document not found' };
+  }
 
   const requestedIds = body.sceneIds?.length ? body.sceneIds : null;
   const targets = document.scenes.filter(
@@ -394,13 +434,16 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  return apiSuccess({
-    courseId,
-    dryRun: body.dryRun === true,
-    scenesScanned: targets.length,
-    scenesPlanned: reports.length,
-    reports,
-  });
+  return {
+    ok: true,
+    payload: {
+      courseId,
+      dryRun: body.dryRun === true,
+      scenesScanned: targets.length,
+      scenesPlanned: reports.length,
+      reports,
+    },
+  };
 }
 
 async function isUnauthorized(request: NextRequest): Promise<boolean> {

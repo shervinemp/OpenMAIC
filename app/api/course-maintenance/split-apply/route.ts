@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { JsonFileDocumentStore } from '@openmaic/storage/server/file-document-store';
 import { GitSyncDocumentStore } from '@/lib/persistence/git-sync-document-store';
 import { getCourseGitScheduler } from '@/lib/persistence/git-course-sync';
+import { singleFlight } from '@/lib/server/single-flight';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import {
   applySplit,
@@ -9,7 +10,7 @@ import {
   type SplitApplyResult,
 } from '@/lib/maintenance/split-apply';
 import { layoutLedgerOf, residualFindings } from '@/lib/maintenance/layout-relayout';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { apiError, apiSuccess, type ApiErrorCode } from '@/lib/server/api-response';
 
 /**
  * The self-healing terminal for layout debt: splits the ledgered debt scenes
@@ -40,6 +41,44 @@ export async function POST(req: NextRequest) {
   const courseId = body.courseId?.trim();
   if (!courseId) return apiError('INVALID_REQUEST', 400, 'courseId is required');
 
+  // Single-flight (same rationale as layout-repair): the on-load pipeline
+  // fires this per mount; two tabs racing it would split against the same
+  // document twice and fight the writer. Identical requests coalesce; a
+  // targeted request with its own scene subset is its own job. The flight
+  // returns a plain payload — a shared `NextResponse` would hand two requests
+  // one single-use body stream.
+  const requestedKey = body.sceneIds?.length ? [...body.sceneIds].sort().join(',') : 'full';
+  const outcome = await singleFlight(`split-apply:${courseId}:${requestedKey}`, () =>
+    runSplitApply(body, courseId, fileDir),
+  );
+  return outcome.ok
+    ? apiSuccess(outcome.payload)
+    : apiError(outcome.code, outcome.status, outcome.message);
+}
+
+type SplitApplyOutcome =
+  | {
+      ok: true;
+      payload: {
+        courseId: string;
+        scanned: number;
+        applied: number;
+        skipped: number;
+        results: Array<{
+          sceneId: string;
+          originalOrder: number;
+          partScenes: number;
+          partOutlineIds: string[];
+        }>;
+      };
+    }
+  | { ok: false; code: ApiErrorCode; status: number; message: string };
+
+async function runSplitApply(
+  body: { courseId?: string; sceneIds?: string[] },
+  courseId: string,
+  fileDir: string,
+): Promise<SplitApplyOutcome> {
   const documentStore = new GitSyncDocumentStore(
     new JsonFileDocumentStore({
       dir: fileDir,
@@ -54,9 +93,11 @@ export async function POST(req: NextRequest) {
     document = await documentStore.loadDocument(courseId);
   } catch (error) {
     console.error('[split-apply] load failed', error);
-    return apiError('UPSTREAM_ERROR', 500, 'course load failed');
+    return { ok: false, code: 'UPSTREAM_ERROR', status: 500, message: 'course load failed' };
   }
-  if (!document) return apiError('INVALID_REQUEST', 404, 'course document not found');
+  if (!document) {
+    return { ok: false, code: 'INVALID_REQUEST', status: 404, message: 'course document not found' };
+  }
 
   const requested = body.sceneIds?.length ? body.sceneIds : null;
   const targets = (document.scenes as unknown as Array<Record<string, unknown>>).filter(
@@ -85,22 +126,30 @@ export async function POST(req: NextRequest) {
       // Roll the atomic contract the only way an in-memory document can:
       // report the failure; the next on-load pass recomputes the same split
       // from the SAME unchanged whitespace — a failed apply is a no-op win.
-      return apiError('UPSTREAM_ERROR', 500, 'split apply failed at persistence time');
+      return {
+        ok: false,
+        code: 'UPSTREAM_ERROR',
+        status: 500,
+        message: 'split apply failed at persistence time',
+      };
     }
   }
 
-  return apiSuccess({
-    courseId,
-    scanned: targets.length,
-    applied: applied.length,
-    skipped: skipped.length,
-    results: applied.map((result) => ({
-      sceneId: result.sceneId,
-      originalOrder: result.originalOrder,
-      partScenes: result.parts.length,
-      partOutlineIds: result.partOutlineIds,
-    })),
-  });
+  return {
+    ok: true,
+    payload: {
+      courseId,
+      scanned: targets.length,
+      applied: applied.length,
+      skipped: skipped.length,
+      results: applied.map((result) => ({
+        sceneId: result.sceneId,
+        originalOrder: result.originalOrder,
+        partScenes: result.parts.length,
+        partOutlineIds: result.partOutlineIds,
+      })),
+    },
+  };
 }
 
 async function isUnauthorized(request: NextRequest): Promise<boolean> {

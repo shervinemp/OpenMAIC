@@ -24,7 +24,11 @@
  *
  * Durability: every write goes through a temp file + atomic rename, so a
  * crash mid-write leaves either the old or the new aggregate, never a torn
- * file. Concurrency is single-writer (one local user); no locking is needed.
+ * file. Concurrency: incremental writes are read-modify-write, so requests
+ * for the SAME document are serialized in-process (two classroom tabs, or a
+ * maintenance pass racing a classroom save, otherwise lose updates and race
+ * the rename — the Windows EPERM storm). Cross-process contention still
+ * relies on the bounded rename retry below.
  */
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
@@ -67,6 +71,27 @@ export interface JsonFileDocumentStoreOptions<
   validateScene?: SceneValidator;
   /** Stage validator at the write boundary. Defaults to the DSL `validateStage`. */
   validateStage?: StageValidator;
+}
+
+/**
+ * Per-document write mutex (in-process, module-scoped so it spans the
+ * short-lived store instances each request constructs). Incremental writes
+ * are read-modify-write: interleaved requests lose updates AND race the
+ * rename (EPERM/EACCES on Windows). The chain serializes those critical
+ * sections per document path; `writeAtomic`'s retry covers the residual
+ * cross-process / external-reader contention.
+ */
+const documentWriteLocks = new Map<string, Promise<unknown>>();
+
+function withDocumentWriteLock<T>(path: string, task: () => Promise<T>): Promise<T> {
+  const previous = documentWriteLocks.get(path) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(task);
+  const tail = run.catch(() => undefined);
+  documentWriteLocks.set(path, tail);
+  void tail.then(() => {
+    if (documentWriteLocks.get(path) === tail) documentWriteLocks.delete(path);
+  });
+  return run;
 }
 
 function assertValid(result: ReturnType<StageValidator>, label: string): void {
@@ -134,6 +159,10 @@ export class JsonFileDocumentStore<
     return join(this.documentDir(), `${fileName(stageId)}.json`);
   }
 
+  private withDocumentLock<T>(stageId: string, task: () => Promise<T>): Promise<T> {
+    return withDocumentWriteLock(this.documentPath(stageId), task);
+  }
+
   private async readStored(stageId: string): Promise<MaicDocument<TScene, TStage> | null> {
     try {
       const raw = await readFile(this.documentPath(stageId), 'utf8');
@@ -150,7 +179,7 @@ export class JsonFileDocumentStore<
     // Windows (EPERM/EACCES/EBUSY on rename while a concurrent reader or the
     // git-scheduler holds the target open) is a transient race, not a data
     // failure: back off briefly and retry before giving up. Bounded — a lock
-    // held longer than ~1.5s is a real fault worth surfacing.
+    // held longer than ~3s is a real fault worth surfacing.
     // Orphan sweep: crash-dying writers leave `.tmp-*` shells beside the
     // target (each a full document-sized temp). An unchecked pile of them
     // once filled the disk and took the whole pipeline down (ENOSPC on every
@@ -170,7 +199,7 @@ export class JsonFileDocumentStore<
     } catch {
       // hygiene is best-effort; never block the write path
     }
-    const maxAttempts = 4;
+    const maxAttempts = 6;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const tmp = `${path}.tmp-${randomBytes(6).toString('hex')}`;
       try {
@@ -185,7 +214,9 @@ export class JsonFileDocumentStore<
         }
         const code = (error as NodeJS.ErrnoException).code ?? '';
         if (['EPERM', 'EACCES', 'EBUSY'].includes(code) && attempt < maxAttempts) {
-          await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.min(150 * 2 ** (attempt - 1), 1200)),
+          );
           continue;
         }
         throw error;
@@ -256,34 +287,36 @@ export class JsonFileDocumentStore<
       }
       seen.add(scene.id);
     }
-    const stored = await this.readStored(stageId);
-    if (stored && isFutureVersioned(stored)) {
-      throw new DocumentVersionError(
-        stageId,
-        'future',
-        stored.dslVersion,
-        `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
-          `stored copy is at DSL version ${JSON.stringify(dslVersionOf(stored))}, newer than this ` +
-          `client's ${DSL_VERSION}`,
-      );
-    }
-    // Lost-update fence: the stored copy is newer than the incoming save, so a
-    // concurrent writer (another tab, another browser profile pointed at this
-    // disk, a replayed client) moved the document forward. Refuse rather than
-    // silently clobber newer content; deliberate wholesale restores pass
-    // `allowOlderOverwrite`.
-    if (!options?.allowOlderOverwrite && isStaleOverwrite(stored, document)) {
-      throw new DocumentLostUpdateError(
-        stageId,
-        stored!.stage.updatedAt,
-        document.stage.updatedAt,
-        `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
-          `stored copy is newer (${JSON.stringify(stored!.stage.updatedAt)}) than the ` +
-          `incoming save (${JSON.stringify(document.stage.updatedAt)}); reload and retry, or ` +
-          'pass allowOlderOverwrite for a deliberate restore',
-      );
-    }
-    await this.writeAtomic(stageId, { ...normalized, dslVersion: DSL_VERSION });
+    await this.withDocumentLock(stageId, async () => {
+      const stored = await this.readStored(stageId);
+      if (stored && isFutureVersioned(stored)) {
+        throw new DocumentVersionError(
+          stageId,
+          'future',
+          stored.dslVersion,
+          `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
+            `stored copy is at DSL version ${JSON.stringify(dslVersionOf(stored))}, newer than this ` +
+            `client's ${DSL_VERSION}`,
+        );
+      }
+      // Lost-update fence: the stored copy is newer than the incoming save, so a
+      // concurrent writer (another tab, another browser profile pointed at this
+      // disk, a replayed client) moved the document forward. Refuse rather than
+      // silently clobber newer content; deliberate wholesale restores pass
+      // `allowOlderOverwrite`.
+      if (!options?.allowOlderOverwrite && isStaleOverwrite(stored, document)) {
+        throw new DocumentLostUpdateError(
+          stageId,
+          stored!.stage.updatedAt,
+          document.stage.updatedAt,
+          `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
+            `stored copy is newer (${JSON.stringify(stored!.stage.updatedAt)}) than the ` +
+            `incoming save (${JSON.stringify(document.stage.updatedAt)}); reload and retry, or ` +
+            'pass allowOlderOverwrite for a deliberate restore',
+        );
+      }
+      await this.writeAtomic(stageId, { ...normalized, dslVersion: DSL_VERSION });
+    });
   }
 
   async loadDocument(stageId: string): Promise<MaicDocument<TScene, TStage> | null> {
@@ -335,7 +368,7 @@ export class JsonFileDocumentStore<
   }
 
   async deleteDocument(stageId: string): Promise<void> {
-    await this.removeFile(stageId);
+    await this.withDocumentLock(stageId, () => this.removeFile(stageId));
   }
 
   async putStage(stageId: string, stage: TStage): Promise<void> {
@@ -346,41 +379,45 @@ export class JsonFileDocumentStore<
           JSON.stringify(stageId),
       );
     }
-    const stored = await this.readStored(stageId);
-    if (stored === null) {
-      throw new DocumentNotFoundError(
-        stageId,
-        `@openmaic/storage: cannot putStage into missing document ${JSON.stringify(stageId)}`,
-      );
-    }
-    this.assertCurrentForIncrementalWrite(stageId, stored);
-    await this.writeAtomic(stageId, {
-      ...stored,
-      stage: { ...stage, [DSL_VERSION_KEY]: DSL_VERSION },
+    await this.withDocumentLock(stageId, async () => {
+      const stored = await this.readStored(stageId);
+      if (stored === null) {
+        throw new DocumentNotFoundError(
+          stageId,
+          `@openmaic/storage: cannot putStage into missing document ${JSON.stringify(stageId)}`,
+        );
+      }
+      this.assertCurrentForIncrementalWrite(stageId, stored);
+      await this.writeAtomic(stageId, {
+        ...stored,
+        stage: { ...stage, [DSL_VERSION_KEY]: DSL_VERSION },
+      });
     });
   }
 
   async putScene(stageId: string, scene: TScene): Promise<void> {
     assertValid(this.validateSceneFn(scene), `scene ${scene.id}`);
     assertStorableScene(scene, stageId);
-    const stored = await this.readStored(stageId);
-    if (stored === null) {
-      throw new DocumentNotFoundError(
-        stageId,
-        `@openmaic/storage: cannot putScene into missing document ${JSON.stringify(stageId)}`,
-      );
-    }
-    this.assertCurrentForIncrementalWrite(stageId, stored);
-    const scenes = stored.scenes.map((s) => (s.id === scene.id ? scene : s));
-    if (!scenes.some((s) => s.id === scene.id)) scenes.push(scene);
-    // Move the stage's updatedAt forward: every incremental write is a newer
-    // document revision, and the lost-update fence on saveDocument keys on
-    // stage.updatedAt. Without this bump, a stale full-document save (an open
-    // tab replaying an old snapshot) is not detected as stale and silently
-    // clobbers this write — the demonic resurrection we traced in the SCD
-    // lesson's canvases.
-    const stage = { ...stored.stage, updatedAt: Date.now() };
-    await this.writeAtomic(stageId, { ...stored, stage, scenes });
+    await this.withDocumentLock(stageId, async () => {
+      const stored = await this.readStored(stageId);
+      if (stored === null) {
+        throw new DocumentNotFoundError(
+          stageId,
+          `@openmaic/storage: cannot putScene into missing document ${JSON.stringify(stageId)}`,
+        );
+      }
+      this.assertCurrentForIncrementalWrite(stageId, stored);
+      const scenes = stored.scenes.map((s) => (s.id === scene.id ? scene : s));
+      if (!scenes.some((s) => s.id === scene.id)) scenes.push(scene);
+      // Move the stage's updatedAt forward: every incremental write is a newer
+      // document revision, and the lost-update fence on saveDocument keys on
+      // stage.updatedAt. Without this bump, a stale full-document save (an open
+      // tab replaying an old snapshot) is not detected as stale and silently
+      // clobbers this write — the demonic resurrection we traced in the SCD
+      // lesson's canvases.
+      const stage = { ...stored.stage, updatedAt: Date.now() };
+      await this.writeAtomic(stageId, { ...stored, stage, scenes });
+    });
   }
 
   async putPhaseStates(
@@ -388,34 +425,36 @@ export class JsonFileDocumentStore<
     entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
   ): Promise<void> {
     if (entries.length === 0) return;
-    const stored = await this.readStored(stageId);
-    if (stored === null) return;
-    this.assertCurrentForIncrementalWrite(stageId, stored);
-    const outline = (stored.outline ?? {}) as {
-      lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }>;
-    };
-    let touched = 0;
-    for (const entry of entries) {
-      for (const group of outline.lessonGroups ?? []) {
-        const job = (group.jobs ?? []).find((job) => job.outlineId === entry.outlineId);
-        if (!job) continue;
-        job.phases = {
-          ...(job.phases ?? {}),
-          [entry.phase]: {
-            status: entry.status,
-            attempts: entry.attempts,
-            updatedAt: entry.updatedAt,
-            ...(entry.error ? { error: entry.error } : {}),
-          },
-        };
-        touched += 1;
+    await this.withDocumentLock(stageId, async () => {
+      const stored = await this.readStored(stageId);
+      if (stored === null) return;
+      this.assertCurrentForIncrementalWrite(stageId, stored);
+      const outline = (stored.outline ?? {}) as {
+        lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }>;
+      };
+      let touched = 0;
+      for (const entry of entries) {
+        for (const group of outline.lessonGroups ?? []) {
+          const job = (group.jobs ?? []).find((job) => job.outlineId === entry.outlineId);
+          if (!job) continue;
+          job.phases = {
+            ...(job.phases ?? {}),
+            [entry.phase]: {
+              status: entry.status,
+              attempts: entry.attempts,
+              updatedAt: entry.updatedAt,
+              ...(entry.error ? { error: entry.error } : {}),
+            },
+          };
+          touched += 1;
+        }
       }
-    }
-    if (touched === 0) return;
-    await this.writeAtomic(stageId, {
-      ...stored,
-      stage: { ...stored.stage, updatedAt: Date.now() },
-      outline,
+      if (touched === 0) return;
+      await this.writeAtomic(stageId, {
+        ...stored,
+        stage: { ...stored.stage, updatedAt: Date.now() },
+        outline,
+      });
     });
   }
 
@@ -425,10 +464,12 @@ export class JsonFileDocumentStore<
   }
 
   async deleteScene(stageId: string, sceneId: string): Promise<void> {
-    const stored = await this.readStored(stageId);
-    if (stored === null) return;
-    this.assertCurrentForIncrementalWrite(stageId, stored);
-    const scenes = stored.scenes.filter((s) => s.id !== sceneId);
-    await this.writeAtomic(stageId, { ...stored, scenes });
+    await this.withDocumentLock(stageId, async () => {
+      const stored = await this.readStored(stageId);
+      if (stored === null) return;
+      this.assertCurrentForIncrementalWrite(stageId, stored);
+      const scenes = stored.scenes.filter((s) => s.id !== sceneId);
+      await this.writeAtomic(stageId, { ...stored, scenes });
+    });
   }
 }
