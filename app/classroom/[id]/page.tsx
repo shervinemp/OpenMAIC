@@ -272,6 +272,13 @@ export default function ClassroomDetailPage() {
           },
         });
       })().catch((err) => log.warn('[Classroom] Media repair resume error:', err));
+      // Layout truth rides the SAME on-load pipeline: one deterministic,
+      // tokenless sweep per course per session clamps + move-restacks and
+      // keeps the persisted debt ledger honest (write-offs included).
+      void (async () => {
+        const { repairCourseLayout } = await import('@/lib/maintenance/repair-course-layout');
+        await repairCourseLayout(stage.id);
+      })();
     }
     // classroomId: the params lookup and session cleanup are keyed by it. A
     // change re-runs this effect, but `generationStartedRef` still guards the
