@@ -4,8 +4,10 @@ import { GitSyncDocumentStore } from '@/lib/persistence/git-sync-document-store'
 import { getCourseGitScheduler } from '@/lib/persistence/git-course-sync';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import {
+  applyLayoutLedger,
   applyRelayoutMoves,
   computeRelayoutPlan,
+  layoutLedgerOf,
   residualFindings,
   sanitizeSceneCanvas,
   type RelayoutPlan,
@@ -21,6 +23,12 @@ interface RequestBody {
   dryRun?: boolean;
   sceneIds?: string[];
   actionSourceStamps?: boolean;
+  /**
+   * Explicitly opt in to the LLM delete-only merge pass for overflow rows.
+   * Default OFF — apply mode is deterministic and spends no tokens unless
+   * this flag is true (red-card content is never rewritten silently).
+   */
+  allowMerge?: boolean;
 }
 
 const MERGE_SYSTEM_PROMPT = [
@@ -70,24 +78,36 @@ export async function POST(req: NextRequest) {
   }
   if (!document) return apiError('INVALID_REQUEST', 404, 'course document not found');
 
+  const requestedIds = body.sceneIds?.length ? body.sceneIds : null;
   const targets = document.scenes.filter(
-    (scene) => scene.type === 'slide' && (!body.sceneIds || body.sceneIds.includes(scene.id)),
+    (scene) => scene.type === 'slide' && (!requestedIds || requestedIds.includes(scene.id)),
   );
 
   const reports: Array<RelayoutPlan & { applied: boolean; residualErrors: number; mergedDeleted: string[] }> = [];
   const mergeCheckpoint = { used: 0 };
+  const allowMerge = body.allowMerge === true;
 
   for (const scene of targets) {
     const plan = computeRelayoutPlan(scene);
-    if (!plan) continue;
+    if (!plan && !layoutLedgerOf(scene)) {
+      // Clean scene with no debt marker: write off implicitly (nothing to do).
+      continue;
+    }
     let applied = false;
     const mergedDeleted: string[] = [];
 
     if (!body.dryRun) {
-      applyRelayoutMoves(scene, plan);
-      sanitizeSceneCanvas(scene);
+      if (plan) {
+        applyRelayoutMoves(scene, plan);
+        sanitizeSceneCanvas(scene);
+      }
 
-      if (plan.overflowRows.length > 0 && !mergeBudgetCrossed(mergeCheckpoint)) {
+      if (
+        allowMerge &&
+        plan &&
+        plan.overflowRows.length > 0 &&
+        !mergeBudgetCrossed(mergeCheckpoint)
+      ) {
         const { model, thinkingConfig } = await resolveModelFromRequest(req, body as never, 'scene-verify');
         const slideCanvas = (scene.content as { canvas?: { elements?: Array<{ id: string; content?: string }> } } | undefined)?.canvas;
         const rows = slideCanvas?.elements ?? [];
@@ -138,16 +158,52 @@ export async function POST(req: NextRequest) {
       }
 
       const residual = residualFindings(scene);
-      try {
-        await documentStore.putScene(courseId, scene as never);
-        applied = true;
-      } catch (error) {
-        console.error('[layout-relayout] putScene failed', scene.id, error);
-        continue;
+      const ledger = applyLayoutLedger(scene, residual);
+      const beforeErrors = layoutLedgerOf(scene)?.errors ?? 0;
+      const needsWrite =
+        plan !== null || ledger.errors !== beforeErrors || layoutLedgerOf(scene) === null;
+      if (needsWrite) {
+        try {
+          await documentStore.putScene(courseId, scene as never);
+          applied = true;
+        } catch (error) {
+          console.error('[layout-relayout] putScene failed', scene.id, error);
+          continue;
+        }
       }
-      reports.push({ ...plan, applied, residualErrors: residual.filter((f) => f.severity === 'error').length, mergedDeleted });
+      reports.push({
+        ...(plan ?? {
+          sceneId: scene.id,
+          sceneTitle: scene.title ?? '',
+          moved: [],
+          keptPinned: [],
+          overflowRows: [],
+          fitsWithoutMerge: true,
+          findingsBefore: [],
+          findingsAfter: [],
+        }),
+        applied,
+        residualErrors: ledger.errors,
+        mergedDeleted,
+      });
     } else {
-      reports.push({ ...plan, applied, residualErrors: 0, mergedDeleted });
+      const before = residualFindings(scene);
+      const beforeErrors = before.filter((f) => f.severity === 'error').length;
+      reports.push({
+        ...(plan ?? {
+          sceneId: scene.id,
+          sceneTitle: scene.title ?? '',
+          moved: [],
+          keptPinned: [],
+          overflowRows: [],
+          fitsWithoutMerge: true,
+          findingsBefore: [],
+          findingsAfter: [],
+        }),
+        applied,
+        residualErrors: beforeErrors,
+        mergedDeleted,
+      });
     }
   }
 

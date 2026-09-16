@@ -195,3 +195,52 @@ function findFindings(findings: PlacementFinding[]) {
     message: finding.message,
   }));
 }
+
+export interface LayoutLedgerStatus {
+  /** Residual error-severity findings after repair (0 = green, write-off). */
+  errors: number;
+  /** Residual warn-severity findings (advisory, never blocks). */
+  warnings: number;
+  /** Epoch ms of the last status-producing maintenance pass. */
+  checkedAt: number;
+}
+
+/**
+ * Red/green doctrine for the layout-debt ledger: a scene only carries
+ * `layoutStatus` when a maintenance pass actually inspected it. `errors: 0`
+ * is the green state; any nonzero count keeps the scene on the debt list.
+ * Set on the scene object in place (extra fields pass validation and the
+ * store persists scenes verbatim).
+ */
+export function applyLayoutLedger(
+  scene: { content?: unknown },
+  findings: PlacementFinding[],
+): LayoutLedgerStatus {
+  const status: LayoutLedgerStatus = {
+    errors: findings.filter((f) => f.severity === 'error').length,
+    warnings: findings.filter((f) => f.severity === 'warn').length,
+    checkedAt: Date.now(),
+  };
+  (scene as { layoutStatus?: unknown }).layoutStatus = status;
+  return status;
+}
+
+/** Existing debt marker on a scene, when a past pass wrote one. */
+export function layoutLedgerOf(scene: unknown): LayoutLedgerStatus | null {
+  const value = (scene as { layoutStatus?: unknown } | null)?.layoutStatus;
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { errors?: unknown }).errors === 'number' &&
+    typeof (value as { warnings?: unknown }).warnings === 'number' &&
+    typeof (value as { checkedAt?: unknown }).checkedAt === 'number'
+  ) {
+    return value as LayoutLedgerStatus;
+  }
+  return null;
+}
+
+/** Findings from the scene's own hole (validator output) with no context. */
+export function scenePlacementFindings(scene: { content?: unknown }): PlacementFinding[] {
+  return residualFindings(scene);
+}
