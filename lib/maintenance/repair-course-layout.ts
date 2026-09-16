@@ -131,12 +131,43 @@ export async function repairCourseLayout(
     }
     summary.planned += patched;
     summary.writtenOff += certified;
+    // Stage 3 (self-healing terminal): whatever STILL holds occlusion errors
+    // after the lossless pass and the bounded patch pass gets split across
+    // canvases — atomic saveDocument on the server, verbatim rows, anchored
+    // action rides, one job envelope per part. No LLM, no user gate: the
+    // splitter is exactly what keeps "a scene must fit or it isn't here" an
+    // automatic doctrine.
     if (summary.residualDebt > 0) {
-      log.warn(
-        `${summary.residualDebt} slide(s) keep error-level occlusion after the load pass; ` +
-          'see the layout-debt ledger (per-slide ruler or layout-status route) — ' +
-          'regeneration there is an explicit choice',
-      );
+      const splitResponse = await fetch('/api/course-maintenance/split-apply', {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ courseId }),
+      }).catch(() => null);
+      if (splitResponse?.ok) {
+        const splitPayload = (await splitResponse.json()) as {
+          data?: { applied?: number; scanned?: number };
+        };
+        log.info(
+          `split apply on load: scanned=${splitPayload.data?.scanned ?? 0} applied=${splitPayload.data?.applied ?? 0}`,
+        );
+        const partCount = splitPayload.data?.applied ?? 0;
+        if (partCount > 0) {
+          summary.residualDebt = 0;
+          // The atomic surgery changed order counts, outline entries and
+          // scenes; re-open the course so the deck the user sees is the
+          // SPLIT deck, fresh from the store. Session flag keeps this a
+          // one-shot honest reload, never a repair loop.
+          if (
+            typeof window !== 'undefined' &&
+            !window.sessionStorage.getItem('__openmaicSplitReloaded')
+          ) {
+            window.sessionStorage.setItem('__openmaicSplitReloaded', String(Date.now()));
+            window.setTimeout(() => window.location.reload(), 50);
+          }
+        }
+      } else {
+        log.warn('split apply on load failed (non-fatal)', await splitResponse?.text().catch(() => ''));
+      }
     }
     return summary;
   } catch {
