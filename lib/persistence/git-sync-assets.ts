@@ -1,4 +1,4 @@
-import { copyFile, writeFile, mkdir } from 'node:fs/promises';
+import { copyFile, writeFile, mkdir, readFile } from 'node:fs/promises';
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -102,7 +102,9 @@ export async function materializeStageAssets(
   // Self-containment report, written INSIDE the repo: every declared ref is
   // either present (`assets/<stageId>/<ref>`) or listed by name — a missing
   // ref is a decision the operator can audit, not an accident the importer
-  // discovers later.
+  // discovers later. Deterministic except for `generatedAt`: an unchanged
+  // state does NOT rewrite the file (a fresh timestamp on every flush would
+  // keep the repo index permanently dirty and commit-spam the history).
   const manifest = {
     stageId,
     materialization: {
@@ -123,9 +125,33 @@ export async function materializeStageAssets(
       missing.length > 0
         ? 'Refs listed here have bytes neither in this repo nor server-side. Restore the course by materializing them (browser media backfill, or regeneration through the media orchestrator), then re-save the course to re-commit.'
         : 'Course is fully materialized: every declared media ref has bytes committed beside this document.',
-    generatedAt: new Date().toISOString(),
   };
-  await writeFile(join(repoPath, assetDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
+  const manifestPath = join(repoPath, assetDir, 'manifest.json');
+  const stableOf = (value: unknown): string | null => {
+    if (!value || typeof value !== 'object') return null;
+    const entry = value as Record<string, unknown>;
+    return JSON.stringify({
+      stageId: entry.stageId,
+      materialization: entry.materialization,
+      totalRefs: entry.totalRefs,
+      missingRefs: entry.missingRefs,
+      missingNote: entry.missingNote,
+    });
+  };
+  const previousRaw = await readFile(manifestPath, 'utf8').catch(() => null);
+  let previous: unknown = null;
+  try {
+    previous = previousRaw ? JSON.parse(previousRaw) : null;
+  } catch {
+    previous = null;
+  }
+  if (stableOf(previous) !== JSON.stringify(manifest)) {
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ ...manifest, generatedAt: new Date().toISOString() }, null, 2),
+      'utf8',
+    );
+  }
 
   if (missing.length > 0) {
     log.warn(

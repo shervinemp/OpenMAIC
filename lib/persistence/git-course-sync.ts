@@ -248,6 +248,10 @@ export class CourseGitCommitScheduler {
   private readonly push: boolean;
   private readonly includeMedia: boolean;
   private readonly disabled: boolean;
+  /** Repos where git-lfs provisioning already ran (per process lifetime). */
+  private readonly lfsReady = new Set<string>();
+  /** Repos where the missing-git-lfs warning already fired (log once, not per commit). */
+  private readonly lfsWarned = new Set<string>();
 
   constructor(
     private readonly persistenceDir: string,
@@ -299,6 +303,50 @@ export class CourseGitCommitScheduler {
       this.timer = null;
     }
     await this.flush();
+  }
+
+  /**
+   * Idempotent git-lfs provisioning for the bound repository — the media
+   * half of the pipeline. Without this, `assets/` would ride as plain git
+   * blobs (multi-GB zlib objects per commit: slow, disk-hungry, and the
+   * exact profile that once corrupted object files under write pressure).
+   * With it, `git add` routes `assets/**` through the LFS clean filter:
+   * bytes land in the content-addressed LFS store, history carries pointers.
+   *
+   * Runs once per repo per process; every step is safe to repeat. Failure is
+   * soft: media still commits as plain blobs, with one honest warning.
+   */
+  private async ensureLfs(repoPath: string): Promise<boolean> {
+    if (this.lfsReady.has(repoPath)) return true;
+    try {
+      await git(repoPath, ['lfs', 'version']);
+    } catch {
+      if (!this.lfsWarned.has(repoPath)) {
+        this.lfsWarned.add(repoPath);
+        log.warn(
+          'git-lfs is not installed; media will commit as plain git objects. ' +
+            'Install git-lfs (https://git-lfs.com) for lean, corruption-resistant snapshots.',
+        );
+      }
+      return false;
+    }
+    try {
+      // Repo-local filter config + hooks: `git add` then routes assets/**
+      // through the LFS clean filter even on machines without a global install.
+      await git(repoPath, ['lfs', 'install', '--local']);
+      // Writes/updates the `assets/** filter=lfs` entry in .gitattributes;
+      // idempotent when the pattern is already tracked.
+      await git(repoPath, ['lfs', 'track', 'assets/**']);
+      this.lfsReady.add(repoPath);
+      log.info('git-lfs provisioned for course repository (assets/** tracked as LFS pointers)');
+      return true;
+    } catch (error) {
+      log.warn(
+        'git-lfs provisioning failed; media will commit as plain git objects:',
+        error instanceof Error ? error.message : error,
+      );
+      return false;
+    }
   }
 
   private async flush(): Promise<void> {
@@ -376,14 +424,30 @@ export class CourseGitCommitScheduler {
         });
       }
     }
+    // Media pipeline provisioning comes FIRST: the LFS clean filter must be
+    // in place before `git add` touches assets/**, or the bytes would land
+    // as plain zlib blobs in this commit.
+    const lfsReady = this.includeMedia ? await this.ensureLfs(repoPath) : false;
     await git(repoPath, ['add', '--all', `${stageFile}.json`]);
     if (this.includeMedia) {
+      if (lfsReady) {
+        // Version the tracking file with the first media commit (idempotent
+        // when already committed and unchanged).
+        await git(repoPath, ['add', '--all', '.gitattributes']).catch(() => undefined);
+      }
       // Track the materialized media payload with the snapshot (git-sync-assets
       // writes under assets/<stageId>/); the stage file's add --all above
-      // cannot pull an untracked sibling directory in.
+      // cannot pull an untracked sibling directory in. With `assets/**`
+      // tracked as git-lfs, this stages POINTERS — the bytes land in the LFS
+      // store, never as zlib blobs.
       await git(repoPath, ['add', '--all', join('assets', stageFile)]).catch(() => undefined);
     }
-    const status = await git(repoPath, ['status', '--porcelain', `${stageFile}.json`]);
+    const statusPaths = [
+      `${stageFile}.json`,
+      ...(this.includeMedia ? [join('assets', stageFile)] : []),
+      ...(lfsReady ? ['.gitattributes'] : []),
+    ];
+    const status = await git(repoPath, ['status', '--porcelain', ...statusPaths]);
     if (!status.stdout.trim()) return; // identical to the last commit
     const commitArgs = (fixedIdentity: boolean): string[] => [
       ...(fixedIdentity
@@ -392,8 +456,13 @@ export class CourseGitCommitScheduler {
       '-c',
       'commit.gpgsign=false',
       'commit',
-      '--only',
-      `${stageFile}.json`,
+      // Media mode commits the STAGED index wholesale — the json, the staged
+      // LFS asset pointers and .gitattributes alike. (`--only <json>` from
+      // the document-only era silently left every staged asset uncommitted
+      // forever: the media never reached history. `--include <json>` breaks
+      // on the delete flow, where the json no longer exists.) Document-only
+      // mode keeps the historical single-path commit.
+      ...(this.includeMedia ? [] : ['--only', `${stageFile}.json`]),
       '-m',
       `openmaic(${stageFile}): ${job.reason}`,
     ];

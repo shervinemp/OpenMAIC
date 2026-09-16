@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -126,6 +126,50 @@ describe('CourseGitCommitScheduler', () => {
     expect(await listCourseBindings(persistenceDir)).toHaveLength(0);
   });
 
+  it('provisions git-lfs and commits media as LFS pointers (idempotent, no churn)', async () => {
+    const persistenceDir = makeTempDir('media');
+    const repoPath = makeTempDir('media-repo');
+    await bindCourseRepository({ persistenceDir, stageId: 'stageA', repoPath, init: true });
+    // One resolvable narration asset in the store (bytes + meta sidecar).
+    const ref = 'tts_stageA_probe_1';
+    mkdirSync(join(persistenceDir, 'assets', '.meta'), { recursive: true });
+    writeFileSync(join(persistenceDir, 'assets', ref), 'audio-bytes-probe');
+    writeFileSync(
+      join(persistenceDir, 'assets', '.meta', `${ref}.json`),
+      JSON.stringify({ mime: 'audio/wav', meta: {}, size: 17 }),
+    );
+    const document = { ...DOC_A, scenes: [{ audioId: ref }] };
+    const scheduler = new CourseGitCommitScheduler(persistenceDir, {
+      debounceMs: 1,
+      includeMedia: true,
+    });
+    scheduler.schedule('stageA', 'media snapshot', async () => document);
+    await scheduler.flushForTesting();
+
+    // The pipeline itself provisioned LFS tracking for assets/**.
+    expect(readFileSync(join(repoPath, '.gitattributes'), 'utf8')).toContain('assets/**');
+    // The committed asset is a POINTER, not raw bytes (bytes live in the LFS store).
+    const committed = execFileSync('git', ['-C', repoPath, 'show', `HEAD:assets/stageA/${ref}`], {
+      encoding: 'utf8',
+    });
+    expect(committed).toContain('version https://git-lfs.github.com/spec/v1');
+    // Identical snapshot → no commit churn (the manifest timestamp must not
+    // keep the index permanently dirty).
+    const logBefore = execFileSync('git', ['-C', repoPath, 'log', '--oneline'], {
+      encoding: 'utf8',
+    }).trim();
+    scheduler.schedule('stageA', 'unchanged', async () => document);
+    await scheduler.flushForTesting();
+    const logAfter = execFileSync('git', ['-C', repoPath, 'log', '--oneline'], {
+      encoding: 'utf8',
+    }).trim();
+    expect(logAfter).toBe(logBefore);
+    // fsck stays clean over the whole flow.
+    const fsck = execFileSync('git', ['-C', repoPath, 'fsck', '--full', '--no-dangling'], {
+      encoding: 'utf8',
+    });
+    expect(fsck).not.toMatch(/corrupt|missing/);
+  });
   it('never rejects through the persistence path when git fails', async () => {
     const persistenceDir = makeTempDir('fail');
     const repoPath = makeTempDir('fail-repo');
