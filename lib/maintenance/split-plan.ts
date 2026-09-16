@@ -132,6 +132,8 @@ function estimatedRowHeight(element: RectElement): number {
   return 50;
 }
 
+export { estimatedRowHeight as estimateTextRowHeight };
+
 export function computeSplitPlan(scene: {
   id: string;
   title?: string;

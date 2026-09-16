@@ -27,7 +27,7 @@
  * file. Concurrency is single-writer (one local user); no locking is needed.
  */
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import {
@@ -151,6 +151,25 @@ export class JsonFileDocumentStore<
     // git-scheduler holds the target open) is a transient race, not a data
     // failure: back off briefly and retry before giving up. Bounded — a lock
     // held longer than ~1.5s is a real fault worth surfacing.
+    // Orphan sweep: crash-dying writers leave `.tmp-*` shells beside the
+    // target (each a full document-sized temp). An unchecked pile of them
+    // once filled the disk and took the whole pipeline down (ENOSPC on every
+    // write). Bounded best-effort sweep: patterns we own, older than 1
+    // minute — a live writer's tmp is younger than that.
+    try {
+      const dir = this.documentDir();
+      const listing = await readdir(dir).catch(() => [] as string[]);
+      const cutoff = Date.now() - 60_000;
+      for (const name of listing) {
+        if (!name.startsWith(`${fileName(stageId)}.json.tmp-`)) continue;
+        const meta = await stat(join(dir, name)).catch(() => null);
+        if (meta && meta.mtimeMs < cutoff) {
+          await rm(join(dir, name), { force: true }).catch(() => undefined);
+        }
+      }
+    } catch {
+      // hygiene is best-effort; never block the write path
+    }
     const maxAttempts = 4;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const tmp = `${path}.tmp-${randomBytes(6).toString('hex')}`;

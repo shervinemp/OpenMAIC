@@ -155,10 +155,30 @@ export function applySplit(
   const newScenes: Array<Record<string, unknown>> = [];
   const newOutlines: Array<Record<string, unknown>> = [];
 
+  // Collision-safe part ids: nested splits (a part of an older split becomes
+  // its own parent) collide on the bare `${id}__p{k}` pattern — the older
+  // family already owns those ids in this document. A taken id extends by a
+  // fresh short suffix; deterministic per apply, unique across the document.
+  const takenIds = new Set<string>(
+    [...document.scenes, ...((document.outline.outlines ?? []) as Array<Record<string, unknown>>)].map(
+      (entry) => String((entry as { id?: string }).id),
+    ),
+  );
+  const mintPartId = (base: string, k: number): string => {
+    let candidate = `${base}__p${k}`;
+    let salt = 0;
+    while (takenIds.has(candidate)) {
+      salt += 1;
+      candidate = `${base}__p${k}-${salt.toString(36).padStart(2, '0')}${Math.random().toString(36).slice(2, 6)}`;
+    }
+    takenIds.add(candidate);
+    return candidate;
+  };
+
   plan.chunks.forEach((chunk, partIndex) => {
     const isFirst = partIndex === 0;
-    const partOutlineId = isFirst ? outlineId : `${outlineId}__p${partIndex + 1}`;
-    const partSceneId = isFirst ? String(scene.id) : `${String(scene.id)}__p${partIndex + 1}`;
+    const partOutlineId = isFirst ? outlineId : mintPartId(outlineId, partIndex + 1);
+    const partSceneId = isFirst ? String(scene.id) : mintPartId(String(scene.id), partIndex + 1);
     const order = originalOrder + partIndex;
 
     const chunkContent = buildChunkCanvas(canvas, chunk);

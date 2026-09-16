@@ -61,7 +61,12 @@ function effectiveRowHeight(element: RectElement): number {
     const wrappedLines = Math.ceil(plain.length / charsPerLine) || 1;
     const lines = Math.max(explicitLines + 1, wrappedLines);
     const estimated = Math.ceil(lines * fontSize * LINE_HEIGHT_FACTOR + PARAGRAPH_PAD);
-    if (estimated > 0 && estimated < declared) return estimated;
+    // Packing uses the WORSE of estimate/declared: an estimate lower than the
+    // real box under-shifts rows so the same occlusion error survives every
+    // pass (observed on the splitter's authored Answer/Sources rows). The
+    // declared height is the renderer's truth; the estimate is only a floor
+    // for rows whose declaration never got corrected.
+    return Math.max(estimated, declared);
   }
   return declared;
 }
@@ -116,7 +121,24 @@ export function computeRelayoutPlan(scene: {
     (max, entry) => Math.max(max, entry.element.top + entry.element.height),
     0,
   );
-  const contentTopStart = Math.max(pinnedBottom + PIN_GAP, 40);
+  // A pin that hugs the BOTTOM edge (footer bar, quiz footer) is not
+  // something content can be pushed below — its top is the packing
+  // CEILING. Content must then fit ABOVE the bar: start at the margin and
+  // cap the body band at the bar's top. (The naive pinnedBottom-as-floor
+  // put content beyond the canvas — every row "overflowed", nothing moved,
+  // and the occlusion error survived every sweep.)
+  const bottomBarTop = pinnedEntries
+    .filter((entry) => {
+      const element = entry.element;
+      return element.top + element.height >= canvasHeight - 8 && element.top > 40;
+    })
+    .reduce((min, entry) => Math.min(min, entry.element.top), Number.POSITIVE_INFINITY);
+  const contentTopStart = pinnedBottom >= canvasHeight - 8 && Number.isFinite(bottomBarTop)
+    ? Math.max(40, 40)
+    : Math.max(pinnedBottom + PIN_GAP, 40);
+  const contentBottomLimit = Number.isFinite(bottomBarTop)
+    ? Math.min(canvasHeight - EDGE_MARGIN, bottomBarTop - PIN_GAP)
+    : canvasHeight - EDGE_MARGIN;
 
   const movable = working
     .filter((entry) => !pinnedEntries.includes(entry))
@@ -128,7 +150,7 @@ export function computeRelayoutPlan(scene: {
   for (const entry of movable) {
     const { element } = entry;
     const rowHeight = effectiveRowHeight(element);
-    if (cursor + rowHeight > canvasHeight - EDGE_MARGIN) {
+    if (cursor + rowHeight > contentBottomLimit) {
       overflowRows.push(element.id);
       continue;
     }
@@ -357,6 +379,19 @@ export function normalizeFullBleedRows(
   let changed = 0;
   for (const el of canvas.elements) {
     if (el.type !== 'text' || typeof el.content !== 'string' || !el.content) continue;
+    // Null-declared boxes (a patch the ±20% gate failed to reject can carry
+    // null geometry) coerce to the body margin with an estimated height: an
+    // element with no top renders at the canvas top-left or vanishes — both
+    // are unmaterialized rows.
+    if (!Number.isFinite(el.top as number)) {
+      el.top = 40;
+      el.height = estimateTextRowHeight({
+        type: 'text' as const,
+        width: (el as unknown as { width?: number }).width ?? 880,
+        content: el.content,
+      } as never);
+      changed += 1;
+    }
     const span = el.top + el.height;
     if (el.top >= MARGIN && span <= height - MARGIN) continue;
     if (el.top < MARGIN || span > height - MARGIN) changed += 1;
@@ -366,6 +401,87 @@ export function normalizeFullBleedRows(
   }
   return changed;
 }
+
+import { estimateTextRowHeight } from '@/lib/maintenance/split-plan';
+
+const WALL_COVER_RATIO = 0.6;
+const WALL_MIN_CHARS = 600;
+
+/**
+ * Wall-of-text unwrapper — deterministic, byte-preserving. Signature: a text
+ * element covering a large share of the canvas height carrying a wall of
+ * prose: exactly the material one giant row per split part produces. The text
+ * redistributes into one row per paragraph (
+`<p>`-separated) with the
+ * estimated wrapped height per row, stacked from the body margin with even
+ * gaps: same words, same order, same ownership (the original element id rides
+ * the first row so any action anchoring to the wall stays attached). Purports
+ * to layout — no LLM, no rewrite.
+ */
+export function explodeWallRows(
+  scene: { content?: unknown },
+): number {
+  const canvas = (scene.content as {
+    canvas?: { viewportSize?: number; viewportRatio?: number; elements?: Array<Record<string, unknown>>; [key: string]: unknown };
+  } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return 0;
+  const canvasHeight = 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
+  const bodyTop = 40;
+  const bodyBottomLimit = canvasHeight - bodyTop;
+  const wallIndex = canvas.elements.findIndex((el) => {
+    const rect = el as { type?: string; width?: number; height?: number; top?: number; content?: unknown };
+    if (rect.type !== 'text' || typeof rect.content !== 'string') return false;
+    if ((rect.height ?? 0) < WALL_COVER_RATIO * bodyBottomLimit) return false;
+    // A wall has more than one paragraph to redistribute (a lone, tall
+    // heading has nothing to gain from splitting).
+    const paragraphs = splitParagraphs(rect.content);
+    return paragraphs.length >= 2 && paragraphs.reduce((n, p) => n + p.length, 0) >= WALL_MIN_CHARS;
+  });
+  if (wallIndex < 0) return 0;
+  const elementsList = canvas.elements as Array<Record<string, unknown>>;
+  const wall = elementsList[wallIndex] as { id: string; width?: number; left?: number; content: string };
+  const paragraphs = splitParagraphs(wall.content);
+  const width = wall.width ?? 880;
+  // The wall's stack starts BELOW every other content row already on the
+  // canvas (title, hint rows): rows explode INTO the free band, never on top
+  // of the rows whose slot is taken.
+  const otherBottom = elementsList.reduce((max, other) => {
+    const row = other as { type?: string; top?: number; height?: number; content?: unknown };
+    if (other === elementsList[wallIndex] || row.type !== 'text' || typeof row.content !== 'string') return max;
+    return Math.max(max, (row.top ?? 0) + (row.height ?? 0));
+  }, 40);
+  const rows: Array<Record<string, unknown>> = [];
+  let cursor = Math.max(40, otherBottom + 18);
+  paragraphs.forEach((html, i) => {
+    const id = i === 0 ? wall.id : `${wall.id}__r${i}`;
+    const est = estimateTextRowHeight({
+      type: 'text',
+      width,
+      content: html,
+    } as never);
+    if (cursor + est > bodyBottomLimit) return; // paragraph cannot fit — stays in the wall's remains
+    rows.push({
+      ...wall,
+      id,
+      content: html,
+      top: cursor,
+      height: est,
+    });
+    cursor += est + 18;
+  });
+  if (rows.length < 2) return 0;
+  canvas.elements.splice(wallIndex, 1, ...rows);
+  return rows.length - 1;
+};
+
+const splitParagraphs = (html: string): string[] => {
+  const matches = html.match(/<p\b[^>]*>[\s\S]*?<\/p>/g);
+  if (matches && matches.length >= 2) return matches.map((m) => m.trim()).filter(Boolean);
+  // No <p> structure: fall back to double-break blocks, else whole text.
+  const brBlocks = html.split(/(?:<br\s*\/?>\s*){2,}/i).map((block) => block.trim()).filter(Boolean);
+  if (brBlocks.length >= 2) return brBlocks;
+  return [html];
+};
 
 export function applyRelayoutMoves(
   scene: { content?: unknown },

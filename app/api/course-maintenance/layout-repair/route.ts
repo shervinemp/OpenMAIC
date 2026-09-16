@@ -7,6 +7,7 @@ import {
   demoteCoveredDecoratives,
   hasOrphanDecoratives,
   nudgeOffHairlines,
+  explodeWallRows,
   normalizeFullBleedRows,
   stripOrphanDecoratives,
   applyRelayoutMoves,
@@ -131,14 +132,18 @@ export async function POST(req: NextRequest) {
       // split ghost (text left the room, the shape stayed and got repeated)
       // — geometry-legal, invisible to the validator, delete-only to heal.
       demoteCoveredDecoratives(scene);
+      // The wall unwrapper runs FIRST, so the fresh rows the wall breaks into
+      // are what the hairline/full-bleed normalizers see (deterministic row
+      // shaping on the same words, no LLM, no content rewrite).
+      const exploded = explodeWallRows(scene);
       const stripped = stripOrphanDecoratives(scene);
       const nudged = nudgeOffHairlines(scene);
       const normalized = normalizeFullBleedRows(scene);
       // Presentation-pass mutations (z-order, ghosts, hairline grazes,
-      // full-bleed walls) are real changes even when the validator's error
-      // count stays flat: they must reach the store or the pass heals
-      // nothing and reports a phantom fix.
-      const passChanged = stripped + nudged + normalized > 0;
+      // full-bleed walls, wall unwrapping) are real changes even when the
+      // validator's error count stays flat: they must reach the store or the
+      // pass heals nothing and reports a phantom fix.
+      const passChanged = exploded + stripped + nudged + normalized > 0;
       if (plan) {
         applyRelayoutMoves(scene, plan);
         sanitizeSceneCanvas(scene);
@@ -236,13 +241,27 @@ export async function POST(req: NextRequest) {
             if (jsonEnd > jsonStart) {
               // Same contract as the browser train: strict "{elements:[...]}"
               // silhouette, exact-id, ±20% — enforced by the shared helper.
+              // Strictness addition learned the hard way: an element citing
+              // null geometry (no numeric left/top/width/height) is not a
+              // patch, it is a request to corrupt a canvas — reject the whole
+              // element list before the shared helper sees it.
               const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as { elements?: Array<Record<string, unknown>> };
               const elements = parsed.elements;
-              if (Array.isArray(elements)) {
-                const canvas = (scene.content as unknown as { canvas: { elements: Array<Record<string, unknown>> } }).canvas;
-                const patched = applyLayoutPatch(canvas as never, elements as never);
-                if (patched) sanitizeSceneCanvas(scene);
+              const geometryless = Array.isArray(elements)
+                ? elements.some((el) => {
+                    const rect = el as { left?: unknown; top?: unknown; width?: unknown; height?: unknown };
+                    return ![rect.left, rect.top, rect.width, rect.height].every(
+                      (value) => typeof value === 'number' && Number.isFinite(value),
+                    );
+                  })
+                : false;
+              if (!Array.isArray(elements) || geometryless) {
+                console.warn('[layout-relayout] patch tier rejected (missing element list or null geometry)');
+                break;
               }
+              const canvas = (scene.content as unknown as { canvas: { elements: Array<Record<string, unknown>> } }).canvas;
+              const patched = applyLayoutPatch(canvas as never, elements as never);
+              if (patched) sanitizeSceneCanvas(scene);
             }
             break;
           } catch (error) {
