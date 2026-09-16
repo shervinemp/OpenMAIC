@@ -132,12 +132,6 @@ function estimatedRowHeight(element: RectElement): number {
   return 50;
 }
 
-interface AnchoredAction {
-  id: string;
-  elementId?: string;
-  type: string;
-}
-
 export function computeSplitPlan(scene: {
   id: string;
   title?: string;
