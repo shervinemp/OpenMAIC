@@ -5,6 +5,8 @@ import { getCourseGitScheduler } from '@/lib/persistence/git-course-sync';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import {
   demoteCoveredDecoratives,
+  hasOrphanDecoratives,
+  stripOrphanDecoratives,
   applyRelayoutMoves,
   computeRelayoutPlan,
   layoutLedgerOf,
@@ -93,7 +95,21 @@ export async function POST(req: NextRequest) {
 
   for (const scene of targets) {
     const plan = computeRelayoutPlan(scene);
-    if (!plan && !layoutLedgerOf(scene)) {
+    // A slide whose envelope never got a `layout` phase entry (parts born
+    // before layout became the fifth phase) must still be visited once: the
+    // apply branch stamps the phase truthfully and the lesson list's serving
+    // rule — which keys on that phase — then has a real answer for it.
+    const outlineId = (scene as { outlineId?: string }).outlineId;
+    const needsPhaseStamp = !outlineId ? false : !(document as {
+      outline?: { lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }> };
+    }).outline?.lessonGroups?.flatMap?.((jobGroup) => jobGroup.jobs ?? [])
+      .some((job) => job.outlineId === outlineId && job.phases?.layout);
+    // Orphaned decorative shapes (split ghosts) are geometry-legal — the
+    // validator sees nothing and the plan is empty — so they are detected
+    // explicitly and pull their scene into the apply branch, where the
+    // delete-only strip heals them.
+    const hasGhosts = hasOrphanDecoratives(scene);
+    if (!plan && !layoutLedgerOf(scene) && !needsPhaseStamp && !hasGhosts) {
       // Clean scene with no debt marker: write off implicitly (nothing to do).
       continue;
     }
@@ -103,8 +119,12 @@ export async function POST(req: NextRequest) {
     if (!body.dryRun) {
       // Z-order truth pass runs BEFORE planning: a decorative shape on top of
       // the rows it underlies is layering debt the mover cannot cure — the
-      // demote pass is deterministic and touches stacking only.
+      // demote pass is deterministic and touches stacking only. The orphan
+      // strip precedes it: an interior decorative shape no row overlaps is a
+      // split ghost (text left the room, the shape stayed and got repeated)
+      // — geometry-legal, invisible to the validator, delete-only to heal.
       demoteCoveredDecoratives(scene);
+      stripOrphanDecoratives(scene);
       if (plan) {
         applyRelayoutMoves(scene, plan);
         sanitizeSceneCanvas(scene);

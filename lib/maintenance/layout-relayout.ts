@@ -183,7 +183,7 @@ export function demoteCoveredDecoratives(
       if (j === i) continue;
       const upper = elements[j];
       if (upper.type === 'shape' && upper.text === undefined) continue;
-      if (typeof upper.text !== 'string' || !upper.text) continue;
+      if (typeof (upper as { content?: string }).content !== 'string' || !(upper as { content?: string }).content) continue;
       const uBottom = upper.top + upper.height;
       const uRight = upper.left + upper.width;
       const overlapX = Math.min(shapeRight, uRight) - Math.max(shape.left, upper.left);
@@ -201,6 +201,92 @@ export function demoteCoveredDecoratives(
     }
   }
   return demoted > 0 ? sanitizeSlidePlacement(canvas as never).changes.length : 0;
+}
+
+/**
+ * Strip orphaned decorative shapes — the ghost-class failure the validator
+ * cannot see. Signature: an interior shape (decorative: no `text`) with NO
+ * text element overlapping it anywhere on the canvas. This is what a split
+ * leaves behind when the text that covered a shape moves to another part and
+ * an older pin-all-shapes pass repeats the shape to every part: geometry-legal
+ * (no collision error) but a bright box covering nothing on screen.
+ *
+ * Edge-hugging frame shapes (headers/banners/dividers by design, e.g. the 3px
+ * title rule) are exempt — they belong to the shared frame, not to one row of
+ * content. Delete-only; returns the number removed.
+ */
+export function hasOrphanDecoratives(scene: { content?: unknown }, canvasHeight?: number): boolean {
+  const canvas = (scene.content as { canvas?: { elements?: Array<{ id: string; type: string; left: number; top: number; width: number; height: number; text?: unknown }> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return false;
+  const height = typeof canvasHeight === 'number' && canvasHeight > 0
+    ? canvasHeight
+    : 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
+  const elements = canvas.elements;
+  for (const shape of elements) {
+    if (shape.type !== 'shape' || shape.width <= 0 || shape.height <= 0) continue;
+    const bottom = shape.top + shape.height;
+    const edgeHugging = shape.top <= 8 || bottom >= height - 8 || shape.left <= 8;
+    const hairline = shape.height <= 6;
+    if (edgeHugging || hairline) continue;
+    const shapeBottom = shape.top + shape.height;
+    const shapeRight = shape.left + shape.width;
+    let covered = false;
+    for (const upper of elements) {
+      if (upper === shape || upper.type !== 'text') continue;
+      if (typeof (upper as { content?: string }).content !== 'string' || !(upper as { content?: string }).content) continue;
+      const uBottom = upper.top + upper.height;
+      const uRight = upper.left + upper.width;
+      const overlapX = Math.min(shapeRight, uRight) - Math.max(shape.left, upper.left);
+      const overlapY = Math.min(shapeBottom, uBottom) - Math.max(shape.top, upper.top);
+      if (overlapX > 4 && overlapY > 4) {
+        covered = true;
+        break;
+      }
+    }
+    if (!covered) return true;
+  }
+  return false;
+}
+export function stripOrphanDecoratives(scene: { content?: unknown }, canvasHeight?: number): number {
+  const canvas = (scene.content as { canvas?: { elements?: Array<{ id: string; type: string; left: number; top: number; width: number; height: number; text?: unknown }> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return 0;
+  const height = typeof canvasHeight === 'number' && canvasHeight > 0
+    ? canvasHeight
+    : 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
+  let removed = 0;
+  const elements = canvas.elements;
+  for (let i = elements.length - 1; i >= 0; i--) {
+    const shape = elements[i];
+    if (shape.type !== 'shape' || shape.width <= 0 || shape.height <= 0) continue;
+    const bottom = shape.top + shape.height;
+    // Frame membership: touches a canvas edge — or is a hairline (≤6px
+    // section rule). Both belong to the page, not to a content row.
+    const edgeHugging = shape.top <= 8 || bottom >= height - 8 || shape.left <= 8;
+    const hairline = shape.height <= 6;
+    if (edgeHugging || hairline) continue;
+    const shapeBottom = shape.top + shape.height;
+    const shapeRight = shape.left + shape.width;
+    let covered = false;
+    for (const upper of elements) {
+      if (upper === shape || upper.type !== 'text') continue;
+      // Text bodies live in `content` (HTML string) on text elements — a
+      // truth learned from the live document, not the type sketch.
+      if (typeof (upper as { content?: string }).content !== 'string' || !(upper as { content?: string }).content) continue;
+      const uBottom = upper.top + upper.height;
+      const uRight = upper.left + upper.width;
+      const overlapX = Math.min(shapeRight, uRight) - Math.max(shape.left, upper.left);
+      const overlapY = Math.min(shapeBottom, uBottom) - Math.max(shape.top, upper.top);
+      if (overlapX > 4 && overlapY > 4) {
+        covered = true;
+        break;
+      }
+    }
+    if (!covered) {
+      elements.splice(i, 1);
+      removed += 1;
+    }
+  }
+  return removed;
 }
 
 export function applyRelayoutMoves(
