@@ -69,6 +69,24 @@ export function SceneSidebar({
   const viewportSize = useCanvasStore.use.viewportSize();
   const viewportRatio = useCanvasStore.use.viewportRatio();
 
+  // UNIFIED SERVING RULE: scenes whose `layout` phase failed are debt — they
+  // do not render in either sidebar path (flat or blueprint-grouped) until
+  // the layout train reports done. Same ledger family as content/actions.
+  const layoutFailedOutlineIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const group of lessonGroups) {
+      for (const job of group.jobs) {
+        if (job.phases.layout?.status === 'failed') ids.add(job.outlineId);
+      }
+    }
+    return ids;
+  }, [lessonGroups]);
+
+  const servableScenes = useMemo(
+    () => scenes.filter((scene) => !scene.outlineId || !layoutFailedOutlineIds.has(scene.outlineId)),
+    [scenes, layoutFailedOutlineIds],
+  );
+
   // Pillar 2 lesson progress (from the persisted blueprint): per-lesson
   // done/total plus the audio-pending fill count — the "3/4 lessons
   // complete, 2 audio pending" completion display.
@@ -734,7 +752,7 @@ export function SceneSidebar({
               </div>
             </div>
           )}
-          {!groupedUnits && scenes.map((scene, index) => renderSceneItem(scene, index))}
+          {!groupedUnits && servableScenes.map((scene) => renderSceneItem(scene, scene.order))}
         </div>
 
         {/* Docked generation slot: a separate, always-visible panel UNDER the

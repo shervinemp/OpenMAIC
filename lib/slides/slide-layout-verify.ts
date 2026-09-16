@@ -5,7 +5,7 @@ import {
   type SlideContent,
 } from '@openmaic/dsl';
 
-const DEFAULT_REPAIR_CALL_LIMIT = 32;
+const DEFAULT_REPAIR_CALL_LIMIT = 256;
 
 let repairCallsUsed = 0;
 

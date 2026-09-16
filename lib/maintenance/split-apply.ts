@@ -1,4 +1,4 @@
-import { sanitizeSlidePlacement } from '@openmaic/dsl';
+import { validateSlidePlacement, sanitizeSlidePlacement } from '@openmaic/dsl';
 import { computeSplitPlan } from './split-plan';
 
 /**
@@ -28,6 +28,8 @@ export interface SplitApplyPart {
   order: number;
   elementCount: number;
   actionCount: number;
+  /** Validator truth on the built canvas — envelopes seed from this. */
+  residualErrors: number;
 }
 
 export interface SplitApplyResult {
@@ -151,7 +153,14 @@ export function applySplit(
     const order = originalOrder + partIndex;
 
     const chunkContent = buildChunkCanvas(canvas, chunk);
+    if (!chunkContent) return null;
     sanitizeSlidePlacement(chunkContent as never);
+    // Honest phase seed: verify the built canvas like the train would.
+    const partErrors = validateSlidePlacement({
+      viewportSize: chunkContent.viewportSize,
+      viewportRatio: chunkContent.viewportRatio,
+      elements: chunkContent.elements as never,
+    }).filter((f) => f.severity === 'error').length;
 
     const actions = chunk.actionIds
       .map((id) => actionById.get(id))
@@ -185,6 +194,7 @@ export function applySplit(
       order,
       elementCount: chunk.elementIds.length,
       actionCount: actions.length,
+      residualErrors: partErrors,
     });
     partOutlineIds.push(partOutlineId);
     partSceneIds.push(partSceneId);
@@ -236,7 +246,11 @@ export function applySplit(
         phases: {
           content: { status: 'done', attempts: 1, updatedAt: now },
           actions: { status: 'done', attempts: 1, updatedAt: now },
-          layout: { status: 'done', attempts: 1, updatedAt: now },
+          layout: {
+            status: part.residualErrors === 0 ? 'done' : 'failed',
+            attempts: 1,
+            updatedAt: now,
+          },
         },
       });
     }

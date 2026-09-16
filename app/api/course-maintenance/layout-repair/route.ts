@@ -4,7 +4,6 @@ import { GitSyncDocumentStore } from '@/lib/persistence/git-sync-document-store'
 import { getCourseGitScheduler } from '@/lib/persistence/git-course-sync';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import {
-  applyLayoutLedger,
   applyRelayoutMoves,
   computeRelayoutPlan,
   layoutLedgerOf,
@@ -158,17 +157,16 @@ export async function POST(req: NextRequest) {
       }
 
       const residual = residualFindings(scene);
-      const ledger = applyLayoutLedger(scene, residual);
-      // UNIFIED STATE: the layout phase lives in the job envelope now (a
-      // fifth phase beside content/actions/tts/media) — the generation panel
-      // reads the same red/green every other class carries, and the lesson
-      // list serves a scene only when its layout phase is done. The legacy
-      // `layoutStatus` story-debris tag keeps riding the scene for now
-      // (cheap migration window) but the envelope is the truth.
+      const errorCount = residual.filter((f) => f.severity === 'error').length;
+      // UNIFIED STATE: the layout phase lives in the job envelope (a fifth
+      // phase beside content/actions/tts/media) — the single red/green source
+      // for the generation panel and the lesson-list serving rule. Attempts
+      // ratchet only on STATUS TRANSITIONS: a status-only re-check per
+      // session updates the timestamp, not the history.
       const outlineId = (scene as { outlineId?: string }).outlineId;
       if (outlineId) {
         const outlineDoc = document as unknown as {
-          outline?: { lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }> };
+          outline?: { lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, { status?: string; attempts?: number; updatedAt?: number }> }> }> };
         };
         const group = outlineDoc.outline?.lessonGroups?.find((jobGroup) =>
           (jobGroup.jobs ?? []).some((job) => job.outlineId === outlineId),
@@ -177,11 +175,14 @@ export async function POST(req: NextRequest) {
           const job = group.jobs?.find((entry) => entry.outlineId === outlineId);
           if (job) {
             const now = Date.now();
+            const previous = job.phases?.layout as { status?: 'pending' | 'running' | 'done' | 'failed'; attempts?: number } | undefined;
+            const nextStatus = errorCount > 0 ? 'failed' : 'done';
+            const transitioned = previous?.status !== undefined && previous.status !== nextStatus;
             job.phases = {
               ...(job.phases ?? {}),
               layout: {
-                status: ledger.errors > 0 ? 'failed' : 'done',
-                attempts: (((job.phases as { layout?: { attempts?: number } })?.layout?.attempts) ?? 0) + 1,
+                status: nextStatus,
+                attempts: (previous?.attempts ?? 0) + (transitioned ? 1 : 0),
                 updatedAt: now,
               },
             };
@@ -189,8 +190,7 @@ export async function POST(req: NextRequest) {
         }
       }
       const beforeErrors = layoutLedgerOf(scene)?.errors ?? 0;
-      const needsWrite =
-        plan !== null || ledger.errors !== beforeErrors || layoutLedgerOf(scene) === null;
+      const needsWrite = plan !== null || errorCount !== beforeErrors;
       if (needsWrite) {
         try {
           await documentStore.putScene(courseId, scene as never);
@@ -212,7 +212,7 @@ export async function POST(req: NextRequest) {
           findingsAfter: [],
         }),
         applied,
-        residualErrors: ledger.errors,
+        residualErrors: errorCount,
         mergedDeleted,
       });
     } else {
