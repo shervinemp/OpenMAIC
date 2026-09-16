@@ -62,15 +62,17 @@ export async function GET(req: NextRequest) {
     const warnings = findings.filter((f) => f.severity === 'warn').length;
     const ledger = layoutLedgerOf(scene);
     if (ledger && ledger.errors === 0) ledgerGreen += 1;
-    // Red/green doctrine: current validator truth wins over history — a
-    // written-off scene whose errors re-emerge goes back on the list.
-    if (errors > 0 || (ledger && ledger.errors > 0)) {
+    // Red/green doctrine: CURRENT validator truth decides debt. History is
+    // display metadata — a written-off scene is not re-flagged because its
+    // old tag cried wolf, and a never-ledgered scene IS flagged when the
+    // validator finds errors now.
+    if (errors > 0) {
       flagged.push({
         sceneId: scene.id,
         order: scene.order,
         title: scene.title ?? '',
-        errors: Math.max(errors, ledger?.errors ?? 0),
-        warnings: Math.max(warnings, ledger?.warnings ?? 0),
+        errors,
+        warnings,
         ledger: ledger ?? undefined,
       });
     }

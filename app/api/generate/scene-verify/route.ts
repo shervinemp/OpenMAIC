@@ -36,7 +36,39 @@ function extractSlideCanvas(scene: unknown): {
   };
 }
 
-const LAYOUT_REPAIR_PROMPT = [
+/**
+ * The prompt body shared by the browser train and the server maintenance
+ * pass: canvas geometry + validator findings + verbatim element rows
+ * (z-order, earlier = behind). Pure function — no request state.
+ */
+export function buildLayoutRepairRequest(
+  canvas: { viewportSize: number; viewportRatio: number; elements: Array<Record<string, unknown>> },
+  findings: unknown,
+): string {
+  return (
+    `Canvas: ${canvas.viewportSize} x ${Math.round(canvas.viewportSize * canvas.viewportRatio)} px. Validator findings: ${JSON.stringify(findings)}\n` +
+    `Element list (z-order, earlier = behind): ${JSON.stringify(
+      canvas.elements.map((element) => ({
+        id: element.id,
+        type: element.type,
+        name: element.name,
+        left: element.left,
+        top: element.top,
+        width: element.width,
+        height: element.height,
+        rotate: element.rotate,
+      })),
+    )}`
+  );
+}
+
+/**
+ * Also exercised server-side by the maintenance relayout pass (same prompt,
+ * same bounded contract: exact element ids, ±20% resize cap) so a debt scene
+ * the mover and splitter cannot close gets the same patch tier without the
+ * browser open.
+ */
+export const LAYOUT_REPAIR_PROMPT = [
   'You are a slide-layout repair assistant.',
   'Input: one slide element list in z-order (early = behind) plus validator findings.',
   'Output STRICT JSON only: {"elements":[{"id":"...","left":n,"top":n,"width":n,"height":n}, ...]}',
@@ -82,20 +114,7 @@ export async function POST(req: NextRequest) {
         {
           model,
           system: LAYOUT_REPAIR_PROMPT,
-          prompt:
-            `Canvas: ${canvas.viewportSize} x ${Math.round(canvas.viewportSize * canvas.viewportRatio)} px. Validator findings: ${JSON.stringify(body.geometryFindings ?? geometryFindings)}\n` +
-            `Element list (z-order, earlier = behind): ${JSON.stringify(
-              canvas.elements.map((element) => ({
-                id: element.id,
-                type: element.type,
-                name: element.name,
-                left: element.left,
-                top: element.top,
-                width: element.width,
-                height: element.height,
-                rotate: element.rotate,
-              })),
-            )}`,
+          prompt: buildLayoutRepairRequest(canvas, body.geometryFindings ?? geometryFindings),
           maxOutputTokens: 4096,
           maxRetries: 0,
         } as never,

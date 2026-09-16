@@ -155,6 +155,54 @@ export function computeRelayoutPlan(scene: {
   };
 }
 
+/**
+ * Z-order truth pass: a decorative shape (no text) that sits ON TOP of
+ * content rows it mostly covers is behind them in intent — the validator
+ * calls the on-top arrangement an occlusion ERROR. Deterministic fix: move
+ * every fully-covered decorative shape just BELOW the content it underlies
+ * (legal layering: decorative behind text). Content positions/geometry are
+ * untouched; only the stacking order lightens, and the id never changes.
+ * Returns the number of shapes demoted.
+ */
+export function demoteCoveredDecoratives(
+  scene: { content?: unknown },
+): number {
+  const canvas = (scene.content as { canvas?: { elements?: Array<{ id: string; type: string; left: number; top: number; width: number; height: number; text?: unknown }> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return 0;
+  let demoted = 0;
+  const elements = canvas.elements;
+  for (let i = elements.length - 1; i >= 0; i--) {
+    const shape = elements[i];
+    if (shape.type !== 'shape' || shape.text !== undefined) continue;
+    const shapeBottom = shape.top + shape.height;
+    const shapeRight = shape.left + shape.width;
+    // A content row (text element) this shape lays on: the shape's place is
+    // behind the EARLIEST such row (stacking order, not geometry).
+    let firstCoveredIndex = -1;
+    for (let j = 0; j < elements.length; j++) {
+      if (j === i) continue;
+      const upper = elements[j];
+      if (upper.type === 'shape' && upper.text === undefined) continue;
+      if (typeof upper.text !== 'string' || !upper.text) continue;
+      const uBottom = upper.top + upper.height;
+      const uRight = upper.left + upper.width;
+      const overlapX = Math.min(shapeRight, uRight) - Math.max(shape.left, upper.left);
+      const overlapY = Math.min(shapeBottom, uBottom) - Math.max(shape.top, upper.top);
+      const shapeArea = shape.width * shape.height;
+      const covered = shapeArea > 0 ? (Math.max(0, overlapX) * Math.max(0, overlapY)) / shapeArea : 0;
+      if (covered >= 0.95 && (firstCoveredIndex < 0 || j < firstCoveredIndex)) {
+        firstCoveredIndex = j;
+      }
+    }
+    if (firstCoveredIndex >= 0 && i > firstCoveredIndex) {
+      const [moved] = elements.splice(i, 1);
+      elements.splice(firstCoveredIndex, 0, moved);
+      demoted += 1;
+    }
+  }
+  return demoted > 0 ? sanitizeSlidePlacement(canvas as never).changes.length : 0;
+}
+
 export function applyRelayoutMoves(
   scene: { content?: unknown },
   plan: RelayoutPlan,

@@ -108,7 +108,6 @@ export function buildChunkCanvas(
     positioned.push({ ...row, top: cursor });
     cursor += height + PIN_GAP;
   }
-  void canvasHeight; void canvasArea;
   return {
     viewportSize: canvas.viewportSize,
     viewportRatio: canvas.viewportRatio,

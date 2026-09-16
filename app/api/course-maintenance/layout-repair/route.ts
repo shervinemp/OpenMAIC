@@ -4,6 +4,7 @@ import { GitSyncDocumentStore } from '@/lib/persistence/git-sync-document-store'
 import { getCourseGitScheduler } from '@/lib/persistence/git-course-sync';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import {
+  demoteCoveredDecoratives,
   applyRelayoutMoves,
   computeRelayoutPlan,
   layoutLedgerOf,
@@ -14,6 +15,7 @@ import {
 import { callLLM } from '@/lib/ai/llm';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { applyLayoutPatch } from '@/lib/slides/slide-layout-verify';
 
 const MERGE_CALL_LIMIT = 40;
 
@@ -99,6 +101,10 @@ export async function POST(req: NextRequest) {
     const mergedDeleted: string[] = [];
 
     if (!body.dryRun) {
+      // Z-order truth pass runs BEFORE planning: a decorative shape on top of
+      // the rows it underlies is layering debt the mover cannot cure — the
+      // demote pass is deterministic and touches stacking only.
+      demoteCoveredDecoratives(scene);
       if (plan) {
         applyRelayoutMoves(scene, plan);
         sanitizeSceneCanvas(scene);
@@ -159,7 +165,59 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const residual = residualFindings(scene);
+      // TIER 2.b (bounded patch): a scene the mover cannot close AND the
+      // splitter declines (fits one chunk but rows still collide) is the
+      // exact case the ±20%-bounded layout patch heals. One silent retry on
+      // an empty provider response — provider flakiness must not strand a
+      // scene geometry could evidently cure.
+      let residual = residualFindings(scene);
+      if (allowMerge && !mergeBudgetCrossed(mergeCheckpoint)) {
+        mergeCheckpoint.used += 1;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const { LAYOUT_REPAIR_PROMPT, buildLayoutRepairRequest } = await import('@/app/api/generate/scene-verify/route');
+            const { model, thinkingConfig } = await resolveModelFromRequest(req, body as never, 'scene-verify');
+            const result = await callLLM(
+              {
+                model,
+                system: LAYOUT_REPAIR_PROMPT,
+                prompt: buildLayoutRepairRequest((scene.content as unknown as { canvas: { viewportSize: number; viewportRatio: number; elements: Array<Record<string, unknown>> } }).canvas, residual),
+                maxOutputTokens: 4096,
+                maxRetries: 0,
+              } as never,
+              'scene-verify',
+              undefined,
+              thinkingConfig ?? undefined,
+            );
+            const text = result.text ?? '';
+            if (text.length === 0) {
+              console.warn('[layout-relayout] patch tier attempt returned empty text (one retry)', JSON.stringify({
+                model,
+                finishReason: (result as { finishReason?: string }).finishReason,
+              }));
+              continue;
+            }
+            const jsonStart = Math.max(0, text.indexOf('{'));
+            const jsonEnd = text.lastIndexOf('}');
+            if (jsonEnd > jsonStart) {
+              // Same contract as the browser train: strict "{elements:[...]}"
+              // silhouette, exact-id, ±20% — enforced by the shared helper.
+              const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as { elements?: Array<Record<string, unknown>> };
+              const elements = parsed.elements;
+              if (Array.isArray(elements)) {
+                const canvas = (scene.content as unknown as { canvas: { elements: Array<Record<string, unknown>> } }).canvas;
+                const patched = applyLayoutPatch(canvas as never, elements as never);
+                if (patched) sanitizeSceneCanvas(scene);
+              }
+            }
+            break;
+          } catch (error) {
+            console.warn('[layout-relayout] bounded patch failed (non-fatal)', (error as Error).message.slice(0, 120));
+            break;
+          }
+        }
+        residual = residualFindings(scene);
+      }
       const errorCount = residual.filter((f) => f.severity === 'error').length;
       // UNIFIED STATE: the layout phase lives in the job envelope (a fifth
       // phase beside content/actions/tts/media) — the single red/green source
