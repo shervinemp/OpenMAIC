@@ -120,6 +120,15 @@ export function SceneSidebar({
     if (!units || units.length <= 1) return null;
     const progress = lessonProgress?.lessons ?? [];
     const failedOutlineIds = new Set(failedOutlines.map((outline) => outline.id));
+    // UNIFIED SERVING RULE: a scene whose `layout` phase failed is debt — same
+    // ledger family as content/actions/tts/media. It does not render in the
+    // lesson list until the layout train reports done (deterministic pass →
+    // bounded patch → split terminal), and its lesson counts it as pending.
+    const layoutFailedByOutline = new Map(
+      lessonGroups.flatMap((group) =>
+        group.jobs.map((job) => [job.outlineId, job.phases.layout]),
+      ),
+    );
     const indexByOutlineId = new Map(
       scenes.flatMap((scene, index) =>
         scene.outlineId ? ([[scene.outlineId, index] as const]) : [],
@@ -136,6 +145,7 @@ export function SceneSidebar({
         for (const outline of lesson.outlines) {
           const sceneIndex = indexByOutlineId.get(outline.id);
           if (sceneIndex === undefined) continue;
+          if (layoutFailedByOutline.get(outline.id)?.status === 'failed') continue;
           lessonScenes.push(scenes[sceneIndex]);
           lessonIndices.push(sceneIndex);
           usedIndices.add(sceneIndex);
@@ -197,7 +207,7 @@ export function SceneSidebar({
       });
     }
     return sections;
-  }, [blueprint, scenes, lessonProgress, failedOutlines, t]);
+  }, [blueprint, scenes, lessonProgress, failedOutlines, lessonGroups, t]);
 
   const selectScene = useCallback(
     (sceneId: string) => {
@@ -910,10 +920,10 @@ export function SceneSidebar({
                         </>
                       )}
                     </div>
-                    {/* Phase chips (Pillar 2 §4.2): content → actions → tts → media */}
+                    {/* Phase chips (Pillar 2 §4.2): content → actions → tts → media → layout */}
                     {!isFailed && !isPaused && (
                       <div className="absolute bottom-1 left-1 right-1 flex items-center gap-1">
-                        {(['content', 'actions', 'tts', 'media'] as const).map((phase) => (
+                        {(['content', 'actions', 'tts', 'media', 'layout'] as const).map((phase) => (
                           <span
                             key={phase}
                             className={cn(

@@ -28,7 +28,7 @@ export type DocumentProducer = 'client' | 'server-job';
 
 // ==================== Generation job state (Pillar 2) ====================
 
-export type OutlinePhaseName = 'content' | 'actions' | 'tts' | 'media';
+export type OutlinePhaseName = 'content' | 'actions' | 'tts' | 'media' | 'layout';
 
 
 export interface OutlinePhaseState {

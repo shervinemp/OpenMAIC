@@ -72,11 +72,18 @@ export function canSplit(scene: Record<string, unknown>): boolean {
   return !!plan && plan.chunks.length > 1;
 }
 
-function isPinned(element: Record<string, unknown>, canvasArea: number): boolean {
+function isPinned(element: Record<string, unknown>, canvasArea: number, canvasHeight: number): boolean {
   if (element.type === 'line') return true;
   if (element.type === 'image' && (element as { imageType?: string }).imageType === 'background') return true;
   if ((element.width as number) * (element.height as number) >= 0.9 * canvasArea) return true;
-  if (element.type === 'shape') return true;
+  // FRAME-ONLY doctrine (matches the plan stage): only edge-hugging shapes
+  // join the repeated frame; interior shapes are content — diagrams become
+  // rows and ride their chunk, so parts don't occlude their own text.
+  if (element.type === 'shape') {
+    const top = (element.top as number) ?? 0;
+    const bottomEdge = top + ((element.height as number) ?? 0);
+    return top <= 8 || canvasHeight - bottomEdge <= 8 || ((element.left as number) ?? 0) <= 8;
+  }
   if (typeof (element as { opacity?: number }).opacity === 'number' && (element as { opacity?: number }).opacity! < 0.25) return true;
   return false;
 }
@@ -89,7 +96,7 @@ export function buildChunkCanvas(
   if (!canvas || !Array.isArray(canvas.elements)) return null;
   const canvasHeight = Math.round(canvas.viewportSize * canvas.viewportRatio);
   const canvasArea = canvas.viewportSize * canvasHeight;
-  const pinned = canvas.elements.filter((entry) => isPinned(entry, canvasArea));
+  const pinned = canvas.elements.filter((entry) => isPinned(entry, canvasArea, canvasHeight));
   const chunkSet = new Set(chunk.elementIds);
   const chunkRows = canvas.elements.filter((entry) => chunkSet.has(entry.id as string));
   let cursor = FIRST_ROW_TOP;
@@ -229,6 +236,7 @@ export function applySplit(
         phases: {
           content: { status: 'done', attempts: 1, updatedAt: now },
           actions: { status: 'done', attempts: 1, updatedAt: now },
+          layout: { status: 'done', attempts: 1, updatedAt: now },
         },
       });
     }

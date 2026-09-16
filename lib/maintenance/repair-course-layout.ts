@@ -113,6 +113,21 @@ export async function repairCourseLayout(
           if (!layout.repaired && layout.clamped === 0) continue; // nothing changed
           patched += 1;
           touchedIds.push(sceneId);
+          // ONE STATE MACHINE: the layout phase rides the outline's job
+          // envelope (same ledger content/actions/tts/media read). Red cards
+          // and the lesson-list serving rule draw from this — not a sidecar.
+          const outlineId = (scene as unknown as { outlineId?: string }).outlineId;
+          if (outlineId) {
+            try {
+              const { useStageStore } = await import('@/lib/store');
+              useStageStore.getState().recordScenePhase(outlineId, 'layout', {
+                status: layout.repairFailed ? 'failed' : 'done',
+                error: layout.repairFailed ? (layout.repairError ?? 'layout debt unresolved') : undefined,
+              });
+            } catch {
+              // Phase recording is best-effort; geometry truth still stands.
+            }
+          }
           if (!layout.repairFailed) {
             certified += 1;
             updateStoreScene(sceneId, layout.content);

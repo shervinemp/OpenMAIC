@@ -79,7 +79,7 @@ export function computeRowLayout(content: unknown): RowLayout | null {
   const pinnedIds: string[] = [];
   const rows: RowLayout['rows'] = [];
   for (const element of canvas.elements) {
-    if (isPinned(element, canvasArea)) {
+    if (isPinned(element, canvasArea, canvasHeight)) {
       pinnedIds.push(element.id);
       continue;
     }
@@ -101,11 +101,20 @@ export function computeRowLayout(content: unknown): RowLayout | null {
   };
 }
 
-function isPinned(element: RectElement, canvasArea: number): boolean {
+function isPinned(element: RectElement, canvasArea: number, canvasHeight: number): boolean {
   if (element.type === 'line') return true;
   if (element.type === 'image' && element.imageType === 'background') return true;
   if (element.width * element.height >= 0.9 * canvasArea) return true;
-  if (element.type === 'shape' && element.text === undefined) return true;
+  // FRAME-ONLY doctrine: a decorative shape is part of the repeated frame
+  // only when it hugs the canvas edge (top banner / bottom band / left rail).
+  // Interior shapes are content — figures like diagrams (a star-schema
+  // center) are built from shapes, and repeating them on every chunk
+  // occludes each chunk's text rows. Figures ride the chunking like everyone.
+  if (element.type === 'shape' && element.text === undefined) {
+    const top = element.top ?? 0;
+    const bottomEdge = top + element.height;
+    return top <= 8 || canvasHeight - bottomEdge <= 8 || (element.left ?? 0) <= 8;
+  }
   if (typeof element.opacity === 'number' && element.opacity < 0.25) return true;
   return false;
 }

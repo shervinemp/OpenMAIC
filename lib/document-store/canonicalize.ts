@@ -61,6 +61,7 @@ export function buildLessonGroupsFromBlueprint(blueprint: CourseBlueprint): Less
         actions: pendingPhase(),
         tts: pendingPhase(),
         media: pendingPhase(),
+        layout: pendingPhase(),
       },
     })),
   }));
@@ -87,7 +88,10 @@ export function canonicalizeOutlineV2(
 
   // A legacy deck marked complete had its content and actions committed;
   // fill phases (tts/media) stay pending and re-run on next open (bounded
-  // by provider health).
+  // by provider health). The legacy scene-level `layoutStatus` flag folds
+  // into these envelopes on the next deterministic layout pass — the server
+  // maintenance writer stamps `phases.layout` per slide scene on every run,
+  // so no separate migration pass is needed.
   if (generationComplete) {
     for (const group of lessonGroups) {
       for (const job of group.jobs) {

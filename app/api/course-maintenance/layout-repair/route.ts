@@ -159,6 +159,35 @@ export async function POST(req: NextRequest) {
 
       const residual = residualFindings(scene);
       const ledger = applyLayoutLedger(scene, residual);
+      // UNIFIED STATE: the layout phase lives in the job envelope now (a
+      // fifth phase beside content/actions/tts/media) — the generation panel
+      // reads the same red/green every other class carries, and the lesson
+      // list serves a scene only when its layout phase is done. The legacy
+      // `layoutStatus` story-debris tag keeps riding the scene for now
+      // (cheap migration window) but the envelope is the truth.
+      const outlineId = (scene as { outlineId?: string }).outlineId;
+      if (outlineId) {
+        const outlineDoc = document as unknown as {
+          outline?: { lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }> };
+        };
+        const group = outlineDoc.outline?.lessonGroups?.find((jobGroup) =>
+          (jobGroup.jobs ?? []).some((job) => job.outlineId === outlineId),
+        );
+        if (group) {
+          const job = group.jobs?.find((entry) => entry.outlineId === outlineId);
+          if (job) {
+            const now = Date.now();
+            job.phases = {
+              ...(job.phases ?? {}),
+              layout: {
+                status: ledger.errors > 0 ? 'failed' : 'done',
+                attempts: (((job.phases as { layout?: { attempts?: number } })?.layout?.attempts) ?? 0) + 1,
+                updatedAt: now,
+              },
+            };
+          }
+        }
+      }
       const beforeErrors = layoutLedgerOf(scene)?.errors ?? 0;
       const needsWrite =
         plan !== null || ledger.errors !== beforeErrors || layoutLedgerOf(scene) === null;
