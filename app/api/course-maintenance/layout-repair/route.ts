@@ -4,7 +4,9 @@ import { GitSyncDocumentStore } from '@/lib/persistence/git-sync-document-store'
 import { getCourseGitScheduler } from '@/lib/persistence/git-course-sync';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import {
+  coerceElementGeometry,
   demoteCoveredDecoratives,
+  hasNonFiniteGeometry,
   hasOrphanDecoratives,
   nudgeOffHairlines,
   explodeWallRows,
@@ -102,7 +104,13 @@ export async function POST(req: NextRequest) {
   const phaseWrites: Array<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }> = [];
 
   for (const scene of targets) {
-    const plan = computeRelayoutPlan(scene);
+    // Skip gate uses a CHEAP pre-plan on raw geometry: the honest plan is
+    // computed only AFTER the deterministic passes, because the passes
+    // change the geometry the plan packs. (Computing once up-front and
+    // applying after the passes is the stale-plan bug: the moves overwrite
+    // the passes' own fixes — and with NaN-poisoned legacy rects, NaN
+    // cursors that serialize to null tops on disk.)
+    const prePlan = computeRelayoutPlan(scene);
     // A slide whose envelope never got a `layout` phase entry (parts born
     // before layout became the fifth phase) must still be visited once: the
     // apply branch stamps the phase truthfully and the lesson list's serving
@@ -117,7 +125,11 @@ export async function POST(req: NextRequest) {
     // explicitly and pull their scene into the apply branch, where the
     // delete-only strip heals them.
     const hasGhosts = hasOrphanDecoratives(scene);
-    if (!plan && !layoutLedgerOf(scene) && !needsPhaseStamp && !hasGhosts) {
+    // Non-finite rects (null tops, undefined heights on legacy elements)
+    // pull their scene in even when the validator is silent: the coercion
+    // pass that fixes them only runs inside the apply branch.
+    const hasBadGeometry = hasNonFiniteGeometry(scene);
+    if (!prePlan && !layoutLedgerOf(scene) && !needsPhaseStamp && !hasGhosts && !hasBadGeometry) {
       // Clean scene with no debt marker: write off implicitly (nothing to do).
       continue;
     }
@@ -125,6 +137,10 @@ export async function POST(req: NextRequest) {
     const mergedDeleted: string[] = [];
 
     if (!body.dryRun) {
+      // Geometry coercion FIRST: non-finite rects poison every sum the plan
+      // math touches (NaN cursor → NaN writes → null tops on disk). Then the
+      // deterministic truth passes, in dependency order.
+      const coerced = coerceElementGeometry(scene);
       // Z-order truth pass runs BEFORE planning: a decorative shape on top of
       // the rows it underlies is layering debt the mover cannot cure — the
       // demote pass is deterministic and touches stacking only. The orphan
@@ -140,10 +156,12 @@ export async function POST(req: NextRequest) {
       const nudged = nudgeOffHairlines(scene);
       const normalized = normalizeFullBleedRows(scene);
       // Presentation-pass mutations (z-order, ghosts, hairline grazes,
-      // full-bleed walls, wall unwrapping) are real changes even when the
-      // validator's error count stays flat: they must reach the store or the
-      // pass heals nothing and reports a phantom fix.
-      const passChanged = exploded + stripped + nudged + normalized > 0;
+      // full-bleed walls, wall unwrapping, geometry coercion) are real
+      // changes even when the validator's error count stays flat: they must
+      // reach the store or the pass heals nothing and reports a phantom fix.
+      const passChanged = coerced + exploded + stripped + nudged + normalized > 0;
+      // The HONEST plan — computed on the post-pass geometry it will move.
+      const plan = computeRelayoutPlan(scene);
       if (plan) {
         applyRelayoutMoves(scene, plan);
         sanitizeSceneCanvas(scene);
@@ -299,22 +317,20 @@ export async function POST(req: NextRequest) {
             const nextStatus = errorCount > 0 || elementCount === 0 ? 'failed' : 'done';
             const nextError = elementCount === 0 && errorCount === 0 ? 'empty canvas — unmaterialized part' : undefined;
             const transitioned = previous?.status !== undefined && previous.status !== nextStatus;
-            job.phases = {
-              ...(job.phases ?? {}),
-              layout: {
-                status: nextStatus,
-                attempts: (previous?.attempts ?? 0) + (transitioned ? 1 : 0),
-                updatedAt: now,
-                ...(nextError ? { error: nextError } : {}),
-              },
-            };
-            phaseWrites.push({
-              outlineId,
-              phase: 'layout',
+            const entry = {
               status: nextStatus,
               attempts: (previous?.attempts ?? 0) + (transitioned ? 1 : 0),
               updatedAt: now,
               ...(nextError ? { error: nextError } : {}),
+            };
+            job.phases = {
+              ...(job.phases ?? {}),
+              layout: entry,
+            };
+            phaseWrites.push({
+              outlineId,
+              phase: 'layout',
+              ...entry,
             });
           }
         }
@@ -346,10 +362,13 @@ export async function POST(req: NextRequest) {
         mergedDeleted,
       });
     } else {
+      // Dry run reports the pre-pass plan: no mutation, so no honest
+      // post-pass plan exists — prePlan is exactly what a real run would see
+      // on entry.
       const before = residualFindings(scene);
       const beforeErrors = before.filter((f) => f.severity === 'error').length;
       reports.push({
-        ...(plan ?? {
+        ...(prePlan ?? {
           sceneId: scene.id,
           sceneTitle: scene.title ?? '',
           moved: [],

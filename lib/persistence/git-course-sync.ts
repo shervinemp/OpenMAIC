@@ -247,13 +247,15 @@ export class CourseGitCommitScheduler {
   private readonly debounceMs: number;
   private readonly push: boolean;
   private readonly includeMedia: boolean;
+  private readonly disabled: boolean;
 
   constructor(
     private readonly persistenceDir: string,
-    options: { debounceMs?: number; push?: boolean; includeMedia?: boolean } = {},
+    options: { debounceMs?: number; push?: boolean; includeMedia?: boolean; disabled?: boolean } = {},
   ) {
     this.debounceMs = options.debounceMs ?? envDebounceMs() ?? DEFAULT_DEBOUNCE_MS;
     this.push = options.push ?? false;
+    this.disabled = options.disabled ?? false;
     // Media rides along by default (the "full course" export); set
     // COURSE_GIT_SYNC_MEDIA=0 when the repo must stay document-only — e.g.
     // GitHub growth pressure or snapshot-smoke test runs.
@@ -263,6 +265,7 @@ export class CourseGitCommitScheduler {
 
   /** Queue a debounced commit for the stage. Never throws. */
   schedule(stageId: string, reason: string, snapshot: () => Promise<unknown>): void {
+    if (this.disabled) return;
     this.pending.set(stageId, { kind: 'upsert', stageId, reason, snapshot });
     if (this.timer !== null) return;
     this.timer = setTimeout(() => {
@@ -274,6 +277,7 @@ export class CourseGitCommitScheduler {
 
   /** Queue a debounced REMOVAL commit: the repo drops the stage's snapshot. */
   scheduleDelete(stageId: string, reason: string): void {
+    if (this.disabled) return;
     this.pending.set(stageId, {
       kind: 'delete',
       stageId,
@@ -449,13 +453,26 @@ function envFlag(value: string | undefined): string {
  */
 const schedulers = new Map<string, CourseGitCommitScheduler>();
 
+/**
+ * The snapshot writer is best-effort: COURSE_GIT_SYNC=0 disables it entirely
+ * (a repository whose git layer intermittently corrupts objects can only
+ * cost disk churn — the durable .data store holds the truth).
+ */
+const COURSE_GIT_SYNC_DISABLED = ['0', 'false'].includes(
+  (process.env.COURSE_GIT_SYNC ?? '').trim().toLowerCase(),
+);
+
 export function getCourseGitScheduler(persistenceDir: string): CourseGitCommitScheduler {
   let scheduler = schedulers.get(persistenceDir);
   if (!scheduler) {
     const push = ['1', 'true'].includes(
       (process.env.COURSE_GIT_SYNC_PUSH ?? '').trim().toLowerCase(),
     );
-    scheduler = new CourseGitCommitScheduler(persistenceDir, { debounceMs: envDebounceMs(), push });
+    scheduler = new CourseGitCommitScheduler(persistenceDir, {
+      debounceMs: envDebounceMs(),
+      push,
+      disabled: COURSE_GIT_SYNC_DISABLED,
+    });
     schedulers.set(persistenceDir, scheduler);
   }
   return scheduler;

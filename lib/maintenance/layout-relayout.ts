@@ -3,6 +3,7 @@ import {
   validateSlidePlacement,
   type PlacementFinding,
 } from '@openmaic/dsl';
+import { estimateTextRowHeight } from '@/lib/maintenance/split-plan';
 
 export interface RelayoutMove {
   elementId: string;
@@ -50,7 +51,7 @@ function stripHtml(html: string): string {
 }
 
 function effectiveRowHeight(element: RectElement): number {
-  const declared = element.height;
+    const declared = Number.isFinite(element.height) ? element.height : 0;
   if (element.type === 'text' && typeof (element as { content?: string }).content === 'string') {
     const content = (element as { content?: string }).content as string;
     const fontSizeMatch = /(?:font-size\s*:\s*)?(\d+(?:\.\d+)?)px/.exec(content);
@@ -117,10 +118,19 @@ export function computeRelayoutPlan(scene: {
   }
 
   const pinnedEntries = working.filter((entry) => isPinned(entry.element, canvasArea));
-  const pinnedBottom = pinnedEntries.reduce(
-    (max, entry) => Math.max(max, entry.element.top + entry.element.height),
-    0,
-  );
+  // NaN guard: legacy rects with non-finite top/height poison every sum they
+  // touch (cursor becomes NaN, writes become null). The route coerces first,
+  // but the plan must be robust for any caller — skip the unmeasurable.
+  const finiteTop = (element: RectElement): number =>
+    Number.isFinite(element.top) ? element.top : Number.POSITIVE_INFINITY;
+  const finiteSpan = (element: RectElement): number | null => {
+    const span = element.top + element.height;
+    return Number.isFinite(span) ? span : null;
+  };
+  const pinnedBottom = pinnedEntries.reduce((max, entry) => {
+    const span = finiteSpan(entry.element);
+    return span === null ? max : Math.max(max, span);
+  }, 0);
   // A pin that hugs the BOTTOM edge (footer bar, quiz footer) is not
   // something content can be pushed below — its top is the packing
   // CEILING. Content must then fit ABOVE the bar: start at the margin and
@@ -130,11 +140,13 @@ export function computeRelayoutPlan(scene: {
   const bottomBarTop = pinnedEntries
     .filter((entry) => {
       const element = entry.element;
-      return element.top + element.height >= canvasHeight - 8 && element.top > 40;
+      const span = element.top + element.height;
+      return Number.isFinite(span) && Number.isFinite(element.top)
+        && span >= canvasHeight - 8 && element.top > 40;
     })
     .reduce((min, entry) => Math.min(min, entry.element.top), Number.POSITIVE_INFINITY);
   const contentTopStart = pinnedBottom >= canvasHeight - 8 && Number.isFinite(bottomBarTop)
-    ? Math.max(40, 40)
+    ? 40
     : Math.max(pinnedBottom + PIN_GAP, 40);
   const contentBottomLimit = Number.isFinite(bottomBarTop)
     ? Math.min(canvasHeight - EDGE_MARGIN, bottomBarTop - PIN_GAP)
@@ -142,7 +154,7 @@ export function computeRelayoutPlan(scene: {
 
   const movable = working
     .filter((entry) => !pinnedEntries.includes(entry))
-    .sort((a, b) => a.element.top - b.element.top || a.index - b.index);
+    .sort((a, b) => finiteTop(a.element) - finiteTop(b.element) || a.index - b.index);
 
   const moved: RelayoutMove[] = [];
   const overflowRows: string[] = [];
@@ -379,19 +391,8 @@ export function normalizeFullBleedRows(
   let changed = 0;
   for (const el of canvas.elements) {
     if (el.type !== 'text' || typeof el.content !== 'string' || !el.content) continue;
-    // Null-declared boxes (a patch the ±20% gate failed to reject can carry
-    // null geometry) coerce to the body margin with an estimated height: an
-    // element with no top renders at the canvas top-left or vanishes — both
-    // are unmaterialized rows.
-    if (!Number.isFinite(el.top as number)) {
-      el.top = 40;
-      el.height = estimateTextRowHeight({
-        type: 'text' as const,
-        width: (el as unknown as { width?: number }).width ?? 880,
-        content: el.content,
-      } as never);
-      changed += 1;
-    }
+    // Geometry validity is owned by coerceElementGeometry (the route's first
+    // pass): by the time normalization runs, tops/heights are finite.
     const span = el.top + el.height;
     if (el.top >= MARGIN && span <= height - MARGIN) continue;
     if (el.top < MARGIN || span > height - MARGIN) changed += 1;
@@ -402,11 +403,64 @@ export function normalizeFullBleedRows(
   return changed;
 }
 
-import { estimateTextRowHeight } from '@/lib/maintenance/split-plan';
-
 const WALL_COVER_RATIO = 0.6;
 const WALL_MIN_CHARS = 600;
 
+/**
+ * Geometry coercion — the NaN-guard every pass needs. Legacy canvases carry
+ * non-finite rects (`top: null` from a patch tier that once accepted null
+ * geometry, `height: undefined` on line elements). Any bare arithmetic on
+ * them (`top + height`) yields NaN, which then flows through the packing
+ * cursor into `element.top = NaN` and lands on disk as `top: null` —
+ * a self-inflicted corruption loop. Coercion runs FIRST, before planning:
+ * non-finite fields become honest body-margin defaults, numeric fields are
+ * untouched. Returns the number of elements touched.
+ */
+export function coerceElementGeometry(scene: { content?: unknown }): number {
+  const canvas = (scene.content as { canvas?: { elements?: Array<Record<string, unknown>> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return 0;
+  let touched = 0;
+  for (const entry of canvas.elements) {
+    const el = entry as { type?: string; left?: unknown; top?: unknown; width?: unknown; height?: unknown; content?: unknown };
+    let changed = false;
+    if (!Number.isFinite(el.top)) {
+      el.top = 40;
+      changed = true;
+    }
+    if (!Number.isFinite(el.left)) {
+      el.left = 60;
+      changed = true;
+    }
+    if (!Number.isFinite(el.width) || (el.width as number) <= 0) {
+      el.width = 880;
+      changed = true;
+    }
+    if (!Number.isFinite(el.height) || (el.height as number) <= 0) {
+      el.height = el.type === 'line'
+        ? 3
+        : el.type === 'text' && typeof el.content === 'string' && el.content
+          ? estimateTextRowHeight({
+              type: 'text' as const,
+              width: el.width as number,
+              content: el.content,
+            } as never)
+          : 60;
+      changed = true;
+    }
+    if (changed) touched += 1;
+  }
+  return touched;
+}
+
+/** True when any element on the canvas carries a non-finite rect field. */
+export function hasNonFiniteGeometry(scene: { content?: unknown }): boolean {
+  const canvas = (scene.content as { canvas?: { elements?: Array<Record<string, unknown>> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return false;
+  return canvas.elements.some((entry) => {
+    const el = entry as { left?: unknown; top?: unknown; width?: unknown; height?: unknown };
+    return ![el.left, el.top, el.width, el.height].every((value) => Number.isFinite(value));
+  });
+}
 /**
  * Wall-of-text unwrapper — deterministic, byte-preserving. Signature: a text
  * element covering a large share of the canvas height carrying a wall of
