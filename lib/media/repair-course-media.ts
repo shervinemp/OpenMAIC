@@ -248,6 +248,11 @@ export async function repairCourseMedia(
     const refs = collectDocumentMediaRefs(material, { includeElementIdRefs: false });
     const narratedRefs = refs.filter(isNarrationRef);
     const mediaRefs = refs.filter((ref) => !isNarrationRef(ref));
+    // Declared BEFORE the bookkeeping closures below run: they attribute dead
+    // refs per material, and a `const` declared after their call sites threw
+    // a TDZ ReferenceError the moment any ref was actually dead — crashing
+    // the whole repair before it could run.
+    const scene = material as { id?: string };
     const narratedOk = narratedRefs.map((ref) => resolvedByRef.get(ref) === true);
     const mediaOk = mediaRefs.map((ref) => resolvedByRef.get(ref) === true);
     narratedRefs.forEach((ref, i) => {
@@ -274,7 +279,6 @@ export async function repairCourseMedia(
     // narration/media is byte-truth (the card basis), while extra materials
     // (stage, agents, exams) only contribute ref counts.
     if (options.additionalAssets?.includes(material)) continue;
-    const scene = material as { id?: string };
     const sceneDeadNarration = narratedOk.some((ok) => !ok);
     const sceneDeadMedia = mediaOk.some((ok) => !ok);
     if (sceneDeadNarration && scene.id) {

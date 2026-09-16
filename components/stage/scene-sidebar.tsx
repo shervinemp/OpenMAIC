@@ -238,33 +238,6 @@ export function SceneSidebar({
     [onSceneSelect, setCurrentSceneId],
   );
 
-  const unitKeyForScene = useCallback(
-    (sceneId: string): string | null => {
-      if (!groupedUnits) return null;
-      for (const unit of groupedUnits) {
-        if (unit.lessons.some((lesson) => lesson.scenes.some((scene) => scene.id === sceneId))) {
-          return unit.key;
-        }
-      }
-      return null;
-    },
-    [groupedUnits],
-  );
-
-  const lessonKeyForScene = useCallback(
-    (sceneId: string): string | null => {
-      if (!groupedUnits) return null;
-      for (const unit of groupedUnits) {
-        const lesson = unit.lessons.find((lesson) =>
-          lesson.scenes.some((scene) => scene.id === sceneId),
-        );
-        if (lesson) return lesson.key;
-      }
-      return null;
-    },
-    [groupedUnits],
-  );
-
   // One unit open at a time: the unit holding the active scene keeps the mount
   // bound small; other units become a compact, scannable table of contents.
   const [openUnits, setOpenUnits] = useState<Set<string>>(new Set());
@@ -274,14 +247,37 @@ export function SceneSidebar({
   // can put a full lecture per lesson).
   const [openLessons, setOpenLessons] = useState<Set<string>>(new Set());
 
+  const revealedSceneRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!groupedUnits || !currentSceneId) return;
-    const activeKey = unitKeyForScene(currentSceneId);
-    if (!activeKey) return;
-    const activeLessonKey = lessonKeyForScene(currentSceneId);
-    setOpenUnits(new Set([activeKey]));
-    if (activeLessonKey) {
-      setOpenLessons(new Set([activeLessonKey]));
+    // Reveal ONCE per navigation. `groupedUnits` is rebuilt on every store
+    // tick (phase records, scene arrivals, debt updates), and re-running the
+    // reveal on those rebuilds collapsed the reader's expanded units and
+    // lessons back to the active scene's section — the "sidebar resets during
+    // regeneration" bug. Only an actual `currentSceneId` change (or the tree
+    // resolving for the first time) may move the view now.
+    if (revealedSceneRef.current === currentSceneId) return;
+    revealedSceneRef.current = currentSceneId;
+    const activeUnit = groupedUnits.find((unit) =>
+      unit.lessons.some((lesson) => lesson.scenes.some((scene) => scene.id === currentSceneId)),
+    );
+    // Debt-hidden scene (layout failed → re-admitted by the train): the reader's
+    // view stays untouched — and must not pop open later when the scene returns.
+    if (!activeUnit) return;
+    const activeLesson = activeUnit.lessons.find((lesson) =>
+      lesson.scenes.some((scene) => scene.id === currentSceneId),
+    );
+    if (!openUnits.has(activeUnit.key)) {
+      // A different unit: the unit accordion follows the navigation.
+      setOpenUnits(new Set([activeUnit.key]));
+      if (activeLesson) {
+        setOpenLessons(new Set([activeLesson.key]));
+      }
+    } else if (activeLesson && !openLessons.has(activeLesson.key)) {
+      // Same unit: keep every lesson the reader opened; just admit the active
+      // one (canvas/keyboard navigation can target a collapsed lesson).
+      setOpenLessons((prev) => new Set(prev).add(activeLesson.key));
     }
     // Keep the newly-active scene visible when its lesson auto-expands.
     requestAnimationFrame(() => {
@@ -290,7 +286,7 @@ export function SceneSidebar({
       );
       target?.scrollIntoView({ block: 'nearest' });
     });
-  }, [currentSceneId, groupedUnits, unitKeyForScene, lessonKeyForScene]);
+  }, [currentSceneId, groupedUnits, openUnits, openLessons]);
 
   const [retryingOutlineId, setRetryingOutlineId] = useState<string | null>(null);
 
