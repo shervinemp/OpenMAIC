@@ -291,6 +291,19 @@ export interface DocumentStore<TScene extends SceneLike = Scene, TStage extends 
   putScene(stageId: string, scene: TScene): Promise<void>;
 
   /**
+   * Persist job-envelope phase entries into the document's outline in one
+   * incremental write (the UNIFIED STATE truth: a fifth phase beside
+   * content/actions/tts/media). Merges entry-wise — an absent outline or job
+   * is skipped silently (no new entities are created by phase bookkeeping).
+   * Like putScene, moves stage.updatedAt forward so the lost-update fence
+   * stays honest. Throws on stale/newer-versioned documents.
+   */
+  putPhaseStates(
+    stageId: string,
+    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+  ): Promise<void>;
+
+  /**
    * Read a single scene, migrated forward via its parent document's version.
    * `null` if the scene or its document is absent.
    */

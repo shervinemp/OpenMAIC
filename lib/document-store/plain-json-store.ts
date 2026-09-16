@@ -43,6 +43,9 @@ export function withPlainJsonDocumentWrites<TStore extends DocumentStore<AppScen
     putScene(stageId, scene) {
       return store.putScene(stageId, omitUndefinedObjectMembers(scene));
     },
+    putPhaseStates(stageId, entries) {
+      return store.putPhaseStates(stageId, entries);
+    },
     getScene(stageId, sceneId) {
       return store.getScene(stageId, sceneId);
     },

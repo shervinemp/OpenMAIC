@@ -133,6 +133,32 @@ export function createFakeDocumentStore(): FakeDocumentStore {
       });
       bumpScene(stageId, scene.id);
     },
+    async putPhaseStates(
+      stageId: string,
+      entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+    ) {
+      const doc = docs.get(stageId);
+      if (!doc) return;
+      const outline = (doc.outline ?? {}) as {
+        lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }>;
+      };
+      for (const entry of entries) {
+        for (const group of outline.lessonGroups ?? []) {
+          const job = (group.jobs ?? []).find((job) => job.outlineId === entry.outlineId);
+          if (!job) continue;
+          job.phases = {
+            ...(job.phases ?? {}),
+            [entry.phase]: {
+              status: entry.status,
+              attempts: entry.attempts,
+              updatedAt: entry.updatedAt,
+              ...(entry.error ? { error: entry.error } : {}),
+            },
+          };
+        }
+      }
+      bumpStage(stageId);
+    },
     async getScene(stageId: string, sceneId: string) {
       return docs.get(stageId)?.scenes.find((scene) => scene.id === sceneId) ?? null;
     },

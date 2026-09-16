@@ -63,6 +63,15 @@ export class GitSyncDocumentStore implements BaseStore {
     this.schedule(stageId, `upsert page ${JSON.stringify(scene.order)} "${scene.title}"`);
   }
 
+  async putPhaseStates(
+    stageId: string,
+    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+  ): Promise<void> {
+    if (entries.length === 0) return;
+    await this.inner.putPhaseStates(stageId, entries);
+    this.schedule(stageId, `phase states (${entries.length} outline job entries)`);
+  }
+
   getScene(stageId: string, sceneId: string) {
     return this.inner.getScene(stageId, sceneId);
   }

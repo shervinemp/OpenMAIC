@@ -453,6 +453,40 @@ export class BrowserDocumentStore<
     });
   }
 
+  async putPhaseStates(
+    stageId: string,
+    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+  ): Promise<void> {
+    if (entries.length === 0) return;
+    await this.txRun([OUTLINES], 'readwrite', async (tx) => {
+      const outlines = tx.objectStore(OUTLINES);
+      const row = (await reqP<{ stageId: string; outline: unknown } | undefined>(outlines.get(stageId)));
+      if (!row) return;
+      const outline = (row.outline ?? {}) as {
+        lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }>;
+      };
+      let touched = 0;
+      for (const entry of entries) {
+        for (const group of outline.lessonGroups ?? []) {
+          const job = (group.jobs ?? []).find((job) => job.outlineId === entry.outlineId);
+          if (!job) continue;
+          job.phases = {
+            ...(job.phases ?? {}),
+            [entry.phase]: {
+              status: entry.status,
+              attempts: entry.attempts,
+              updatedAt: entry.updatedAt,
+              ...(entry.error ? { error: entry.error } : {}),
+            },
+          };
+          touched += 1;
+        }
+      }
+      if (touched === 0) return;
+      outlines.put({ stageId, outline });
+    });
+  }
+
   async getScene(stageId: string, sceneId: string): Promise<TScene | null> {
     const stageRow = await this.txRun([STAGES], 'readonly', (tx) =>
       reqP<StageRow<TStage> | undefined>(tx.objectStore(STAGES).get(stageId)),

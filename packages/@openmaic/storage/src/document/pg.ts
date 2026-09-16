@@ -1059,6 +1059,52 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     });
   }
 
+  async putPhaseStates(
+    stageId: string,
+    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+  ): Promise<void> {
+    if (entries.length === 0) return;
+    await this.transaction(async (queryable) => {
+      const stored = await this.loadStage(queryable, stageId, 'update');
+      if (!stored) return;
+      if (dslVersionOf(stored) !== DSL_VERSION) {
+        throw this.currentVersionError('putPhaseStates into', stageId, stored);
+      }
+      const current = await queryable.query<StoredJsonRow>(
+        `SELECT data FROM document_outlines WHERE stage_id = $1`,
+        [stageId],
+      );
+      if (current.rows.length === 0) return;
+      const outline = decodeJson<Record<string, unknown>>(current.rows[0].data) as {
+        lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }>;
+      };
+      let touched = 0;
+      for (const entry of entries) {
+        for (const group of outline.lessonGroups ?? []) {
+          const job = (group.jobs ?? []).find((job) => job.outlineId === entry.outlineId);
+          if (!job) continue;
+          job.phases = {
+            ...(job.phases ?? {}),
+            [entry.phase]: {
+              status: entry.status,
+              attempts: entry.attempts,
+              updatedAt: entry.updatedAt,
+              ...(entry.error ? { error: entry.error } : {}),
+            },
+          };
+          touched += 1;
+        }
+      }
+      if (touched === 0) return;
+      const stamp = new Date().toISOString();
+      await queryable.query(
+        `UPDATE document_outlines SET data = $2::jsonb, updated_at = $3 WHERE stage_id = $1`,
+        [stageId, encodeJson(outline, `document outline ${stageId}`), stamp],
+      );
+      await queryable.query(`UPDATE document_stages SET updated_at = $2 WHERE id = $1`, [stageId, stamp]);
+    });
+  }
+
   async getScene(stageId: string, sceneId: string): Promise<TScene | null> {
     if (!isPgQueryableKey(stageId) || !isPgQueryableKey(sceneId)) return null;
     return this.transaction(async (queryable) => {

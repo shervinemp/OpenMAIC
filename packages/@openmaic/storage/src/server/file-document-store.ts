@@ -354,7 +354,50 @@ export class JsonFileDocumentStore<
     this.assertCurrentForIncrementalWrite(stageId, stored);
     const scenes = stored.scenes.map((s) => (s.id === scene.id ? scene : s));
     if (!scenes.some((s) => s.id === scene.id)) scenes.push(scene);
-    await this.writeAtomic(stageId, { ...stored, scenes });
+    // Move the stage's updatedAt forward: every incremental write is a newer
+    // document revision, and the lost-update fence on saveDocument keys on
+    // stage.updatedAt. Without this bump, a stale full-document save (an open
+    // tab replaying an old snapshot) is not detected as stale and silently
+    // clobbers this write — the demonic resurrection we traced in the SCD
+    // lesson's canvases.
+    const stage = { ...stored.stage, updatedAt: Date.now() };
+    await this.writeAtomic(stageId, { ...stored, stage, scenes });
+  }
+
+  async putPhaseStates(
+    stageId: string,
+    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+  ): Promise<void> {
+    if (entries.length === 0) return;
+    const stored = await this.readStored(stageId);
+    if (stored === null) return;
+    this.assertCurrentForIncrementalWrite(stageId, stored);
+    const outline = (stored.outline ?? {}) as {
+      lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }>;
+    };
+    let touched = 0;
+    for (const entry of entries) {
+      for (const group of outline.lessonGroups ?? []) {
+        const job = (group.jobs ?? []).find((job) => job.outlineId === entry.outlineId);
+        if (!job) continue;
+        job.phases = {
+          ...(job.phases ?? {}),
+          [entry.phase]: {
+            status: entry.status,
+            attempts: entry.attempts,
+            updatedAt: entry.updatedAt,
+            ...(entry.error ? { error: entry.error } : {}),
+          },
+        };
+        touched += 1;
+      }
+    }
+    if (touched === 0) return;
+    await this.writeAtomic(stageId, {
+      ...stored,
+      stage: { ...stored.stage, updatedAt: Date.now() },
+      outline,
+    });
   }
 
   async getScene(stageId: string, sceneId: string): Promise<TScene | null> {

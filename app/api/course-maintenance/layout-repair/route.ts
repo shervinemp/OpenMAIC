@@ -6,6 +6,8 @@ import { validateAppScene, validateAppStage } from '@/lib/document-store/validat
 import {
   demoteCoveredDecoratives,
   hasOrphanDecoratives,
+  nudgeOffHairlines,
+  normalizeFullBleedRows,
   stripOrphanDecoratives,
   applyRelayoutMoves,
   computeRelayoutPlan,
@@ -92,6 +94,11 @@ export async function POST(req: NextRequest) {
   const reports: Array<RelayoutPlan & { applied: boolean; residualErrors: number; mergedDeleted: string[] }> = [];
   const mergeCheckpoint = { used: 0 };
   const allowMerge = body.allowMerge === true;
+  // Job-envelope phase writes coalesce into ONE incremental outline write at
+  // the end: the route mutates document.outline in memory only, so without
+  // an explicit phase write every stamp silently evaporates at the request
+  // boundary (putScene persists a scene, not the outline).
+  const phaseWrites: Array<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }> = [];
 
   for (const scene of targets) {
     const plan = computeRelayoutPlan(scene);
@@ -124,7 +131,14 @@ export async function POST(req: NextRequest) {
       // split ghost (text left the room, the shape stayed and got repeated)
       // — geometry-legal, invisible to the validator, delete-only to heal.
       demoteCoveredDecoratives(scene);
-      stripOrphanDecoratives(scene);
+      const stripped = stripOrphanDecoratives(scene);
+      const nudged = nudgeOffHairlines(scene);
+      const normalized = normalizeFullBleedRows(scene);
+      // Presentation-pass mutations (z-order, ghosts, hairline grazes,
+      // full-bleed walls) are real changes even when the validator's error
+      // count stays flat: they must reach the store or the pass heals
+      // nothing and reports a phantom fix.
+      const passChanged = stripped + nudged + normalized > 0;
       if (plan) {
         applyRelayoutMoves(scene, plan);
         sanitizeSceneCanvas(scene);
@@ -257,7 +271,14 @@ export async function POST(req: NextRequest) {
           if (job) {
             const now = Date.now();
             const previous = job.phases?.layout as { status?: 'pending' | 'running' | 'done' | 'failed'; attempts?: number } | undefined;
-            const nextStatus = errorCount > 0 ? 'failed' : 'done';
+            // Materialization truth joins collision truth: a zero-element
+            // slide canvas is an unmaterialized page (the old splitter could
+            // leave its first chunk empty). Rendering "empty" with a green
+            // phase would be a lie on the lesson list — the serving rule
+            // hides failed layouts, which is exactly right for a blank part.
+            const elementCount = (scene.content as { canvas?: { elements?: unknown[] } } | undefined)?.canvas?.elements?.length ?? 0;
+            const nextStatus = errorCount > 0 || elementCount === 0 ? 'failed' : 'done';
+            const nextError = elementCount === 0 && errorCount === 0 ? 'empty canvas — unmaterialized part' : undefined;
             const transitioned = previous?.status !== undefined && previous.status !== nextStatus;
             job.phases = {
               ...(job.phases ?? {}),
@@ -265,13 +286,22 @@ export async function POST(req: NextRequest) {
                 status: nextStatus,
                 attempts: (previous?.attempts ?? 0) + (transitioned ? 1 : 0),
                 updatedAt: now,
+                ...(nextError ? { error: nextError } : {}),
               },
             };
+            phaseWrites.push({
+              outlineId,
+              phase: 'layout',
+              status: nextStatus,
+              attempts: (previous?.attempts ?? 0) + (transitioned ? 1 : 0),
+              updatedAt: now,
+              ...(nextError ? { error: nextError } : {}),
+            });
           }
         }
       }
       const beforeErrors = layoutLedgerOf(scene)?.errors ?? 0;
-      const needsWrite = plan !== null || errorCount !== beforeErrors;
+      const needsWrite = plan !== null || errorCount !== beforeErrors || passChanged;
       if (needsWrite) {
         try {
           await documentStore.putScene(courseId, scene as never);
@@ -315,6 +345,15 @@ export async function POST(req: NextRequest) {
         mergedDeleted,
       });
     }
+  }
+
+  // One coalesced write for every phase stamp this run produced — the
+  // envelope is the single red/green source for the lesson list, so the
+  // stamps must survive the request boundary.
+  if (!body.dryRun && phaseWrites.length > 0) {
+    await documentStore.putPhaseStates(courseId, phaseWrites as never).catch((error) => {
+      console.warn('[layout-relayout] phase write failed (non-fatal)', (error as Error).message.slice(0, 140));
+    });
   }
 
   return apiSuccess({

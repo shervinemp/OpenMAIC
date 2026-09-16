@@ -295,6 +295,78 @@ export function stripOrphanDecoratives(scene: { content?: unknown }, canvasHeigh
   return removed;
 }
 
+/**
+ * Nudge rows off hairline rules — the proximity-debt class the collision
+ * gates cannot see. Signature: a text row whose vertical span grazes a
+ * hairline (≤6px decorative rule) by ≤6px, or cuts through it, where the
+ * graze reads as visual sloppiness (the rule is a section line UNDER the
+ * header, not the row's underline). A 3px graze is design-safe for an
+ * underline but a defect when the rule belongs to the header band above.
+ * Deterministic and idempotent: the row moves BELOW the line with a fixed
+ * 8px margin; stacking order, geometry elsewhere and content untouched.
+ * Returns the number of rows nudged.
+ */
+export function nudgeOffHairlines(scene: { content?: unknown }): number {
+  const canvas = (scene.content as { canvas?: { elements?: Array<{ id: string; type: string; left: number; top: number; width: number; height: number; content?: string }> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return 0;
+  const elements = canvas.elements;
+  let nudged = 0;
+  for (const line of elements) {
+    if (line.type !== 'shape' || line.height > 6 || line.width <= 0) continue;
+    const lineBottom = line.top + line.height;
+    for (const row of elements) {
+      if (row === line || row.type !== 'text') continue;
+      if (typeof row.content !== 'string' || !row.content) continue;
+      const rowBottom = row.top + row.height;
+      // Graze (≤6px intrusions) or crossing counts; a row fully below or
+      // fully above with margin is already clean.
+      const overlapY = Math.min(rowBottom, lineBottom) - Math.max(row.top, line.top);
+      const graze = (overlapY > 0 && overlapY <= 6) || (row.top < line.top && rowBottom > lineBottom);
+      if (!graze) continue;
+      // Horizontal kinship: the rule must visually belong to this row's
+      // column region (any horizontal overlap counts for a full-width rule).
+      const overlapX = Math.min(row.left + row.width, line.left + line.width) - Math.max(row.left, line.left);
+      if (overlapX <= 4) continue;
+      row.top = lineBottom + 8;
+      nudged += 1;
+    }
+  }
+  return nudged;
+}
+
+/**
+ * Full-bleed normalization — the wall-of-text class the old splitter left
+ * behind (single rows pinned at y=0 with height spanning the entire canvas).
+ * A text row starting above the body margin (or ending below it) sits
+ * edge-to-edge on a framed deck and reads as a broken page, but is
+ * geometry-legal to every collision gate (nothing overlaps; the box simply
+ * fills the canvas). Deterministic: text rows are clamped into the
+ * [MARGIN, canvasHeight−MARGIN] band; shape/image frame elements are exempt
+ * (they legitimately hug edges). Content untouched; returns rows changed.
+ */
+export function normalizeFullBleedRows(
+  scene: { content?: unknown },
+  canvasHeight?: number,
+): number {
+  const MARGIN = 40;
+  const canvas = (scene.content as { canvas?: { elements?: Array<{ type: string; left: number; top: number; width: number; height: number; content?: string }> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return 0;
+  const height = typeof canvasHeight === 'number' && canvasHeight > 0
+    ? canvasHeight
+    : 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
+  let changed = 0;
+  for (const el of canvas.elements) {
+    if (el.type !== 'text' || typeof el.content !== 'string' || !el.content) continue;
+    const span = el.top + el.height;
+    if (el.top >= MARGIN && span <= height - MARGIN) continue;
+    if (el.top < MARGIN || span > height - MARGIN) changed += 1;
+    el.top = Math.max(MARGIN, el.top);
+    el.height = Math.min(el.height, height - MARGIN - el.top);
+    if (el.height <= 0) el.height = 60;
+  }
+  return changed;
+}
+
 export function applyRelayoutMoves(
   scene: { content?: unknown },
   plan: RelayoutPlan,

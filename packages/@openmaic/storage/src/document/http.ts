@@ -293,6 +293,21 @@ export class HttpDocumentStore<
     );
   }
 
+  async putPhaseStates(
+    stageId: string,
+    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+  ): Promise<void> {
+    // Job-envelope phase truth is a maintenance-tier concept on backends the
+    // HTTP document routes do not model; callers (the classroom pipelines)
+    // treat a refusal as non-fatal and keep going, so no silent drop — an
+    // explicit unsupported answer.
+    throw new HttpDocumentStoreError(
+      501,
+      'PHASE_STATES_UNSUPPORTED',
+      '@openmaic/storage: HttpDocumentStore cannot persist job-envelope phase states',
+    );
+  }
+
   async getScene(stageId: string, sceneId: string): Promise<TScene | null> {
     try {
       return await this.request<TScene>(
