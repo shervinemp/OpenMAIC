@@ -32,7 +32,16 @@ export interface CourseLayoutRepairReport {
 /** One repair per course per session; re-runs are redundant sweeps. */
 const appliedCourses = new Set<string>();
 
-export async function repairCourseLayout(courseId: string): Promise<CourseLayoutRepairReport | null> {
+interface SceneLike {
+  id: string;
+  type: string;
+  content?: unknown;
+}
+
+export async function repairCourseLayout(
+  courseId: string,
+  scenes: SceneLike[] = [],
+): Promise<CourseLayoutRepairReport | null> {
   if (!courseId || appliedCourses.has(courseId)) return null;
   appliedCourses.add(courseId);
   const { isBrowserPersistenceEnabled, getPersistenceRequestHeaders } = await import(
@@ -71,9 +80,60 @@ export async function repairCourseLayout(courseId: string): Promise<CourseLayout
       `layout repair on load: scanned=${summary.scanned} planned=${summary.planned} ` +
         `writtenOff=${summary.writtenOff} residualDebt=${summary.residualDebt}`,
     );
+
+    // Stage 2 (fill-decay class): scenes the deterministic pass could not
+    // cure get one bounded layout-patch pass per session — content is reused
+    // verbatim (zero content tokens), the patch respects the ±20% / exact-id
+    // contract, and scenes it cannot fully cure simply stay on the ledger
+    // (splitter / selective regeneration territory; never red-carded, never
+    // completion-gating). The global repair budget cap inside the utility
+    // bounds the whole pass.
+    const sceneIdSet = new Set(scenes.map((s) => s.id));
+    let patched = 0;
+    let certified = 0;
+    const touchedIds: string[] = [];
+    if (scenes.length > 0) {
+      const statusResponse = await fetch(
+        `/api/course-maintenance/layout-status?courseId=${encodeURIComponent(courseId)}`,
+        { headers },
+      );
+      if (statusResponse.ok) {
+        const status = (await statusResponse.json()) as {
+          data?: { flagged?: Array<{ sceneId: string }> };
+        };
+        const debtIds: string[] = [];
+        for (const entry of status.data?.flagged ?? []) {
+          if (sceneIdSet.has(entry.sceneId)) debtIds.push(entry.sceneId);
+        }
+        for (const sceneId of debtIds) {
+          const scene = scenes.find((s) => s.id === sceneId);
+          if (!scene) continue;
+          const { verifyAndRepairSlideLayout } = await import('@/lib/slides/slide-layout-verify');
+          const layout = await verifyAndRepairSlideLayout(scene.content);
+          if (!layout.repaired && layout.clamped === 0) continue; // nothing changed
+          patched += 1;
+          touchedIds.push(sceneId);
+          if (!layout.repairFailed) {
+            certified += 1;
+            updateStoreScene(sceneId, layout.content);
+          }
+        }
+        // Refresh the ledger for the scenes the fill pass changed (the
+        // deterministic writer recomputes and stores their real status).
+        if (patched > 0) {
+          await fetch('/api/course-maintenance/layout-repair', {
+            method: 'POST',
+            headers: { ...headers, 'content-type': 'application/json' },
+            body: JSON.stringify({ courseId, sceneIds: [...touchedIds], dryRun: false }),
+          }).catch(() => {});
+        }
+      }
+    }
+    summary.planned += patched;
+    summary.writtenOff += certified;
     if (summary.residualDebt > 0) {
       log.warn(
-        `${summary.residualDebt} slide(s) keep error-level occlusion after the lossless pass; ` +
+        `${summary.residualDebt} slide(s) keep error-level occlusion after the load pass; ` +
           'see the layout-debt ledger (per-slide ruler or layout-status route) — ' +
           'regeneration there is an explicit choice',
       );
@@ -82,4 +142,14 @@ export async function repairCourseLayout(courseId: string): Promise<CourseLayout
   } catch {
     return null;
   }
+}
+
+function updateStoreScene(sceneId: string, content: unknown): void {
+  void (async () => {
+    const { useStageStore } = await import('@/lib/store');
+    const state = useStageStore.getState();
+    state.setScenes(
+      state.scenes.map((entry) => (entry.id === sceneId ? { ...entry, content } : entry)) as never,
+    );
+  })();
 }

@@ -277,7 +277,7 @@ export default function ClassroomDetailPage() {
       // keeps the persisted debt ledger honest (write-offs included).
       void (async () => {
         const { repairCourseLayout } = await import('@/lib/maintenance/repair-course-layout');
-        await repairCourseLayout(stage.id);
+        await repairCourseLayout(stage.id, [...storeScenes]);
       })();
     }
     // classroomId: the params lookup and session cleanup are keyed by it. A

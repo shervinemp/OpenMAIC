@@ -1014,6 +1014,25 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
             success: true,
             content: persistedScene.content,
           } as SceneContentResult;
+          // Verify-on-reuse: the layout step is part of the train, not part of
+          // the content pass — hash-matching the text must not skip geometry
+          // repair. Debt scenes re-run through the queue get the same
+          // deterministic clamp + bounded layout patch fresh content gets.
+          const layout = await verifyAndRepairSlideLayout(persistedScene.content);
+          if (layout.repairFailed && layout.repairError) {
+            console.warn(
+              `[layout-verify] outline ${outline.id} (reused content): ${layout.repairError}; ${layout.findings.length} finding(s) remain`,
+            );
+            return {
+              status: 'failed',
+              error: 'layout repair failed: ' + (layout.repairError || 'unresolved placement findings'),
+            };
+          }
+          if (layout.repaired || layout.clamped > 0) {
+            console.log(
+              `[layout-verify] scene ${outline.id} (reused content): clamped=${layout.clamped} repaired=${layout.repaired} residual=${layout.findings.length}`,
+            );
+          }
           return { status: 'done' };
         }
       }
