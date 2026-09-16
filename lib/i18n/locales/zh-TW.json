@@ -234,7 +234,8 @@
     "proModeDisabledHint": "此頁面無法編輯——開啟課程投影片以使用 Pro 模式編輯。",
     "resumeGeneration": "繼續生成",
     "recoveryPending": "尚有 {{count}} 頁未生成",
-    "recoveryUmbrella": "復原 — 自動繼續：{{items}}"
+    "recoveryUmbrella": "復原 — 自動繼續：{{items}}",
+    "ungroupedScenes": "Other scenes"
   },
   "edit": {
     "proMode": "專業模式",
@@ -2160,7 +2161,8 @@
     "frAnswerLabel": "第 {{n}} 題作答",
     "scoreLabel": "總分",
     "submittedAt": "提交於 {{time}}",
-    "yourAnswer": "查看你的作答"
+    "yourAnswer": "查看你的作答",
+    "ariaScore": "Overall score {{pct}} percent"
   },
   "gitSync": {
     "updatesSection": "儲存庫更新",
@@ -2173,6 +2175,38 @@
     "materializeSection": "課程實體化（伺服器上的位元組）",
     "materializeNarration": "旁白：{{onServer}}/{{declared}} 段語音已在伺服器有位元組",
     "materializeMedia": "圖片 / 影片：{{onServer}}/{{declared}} 個素材已在伺服器有位元組",
-    "updateState": "{{state}} · {{scenes}} 個場景"
+    "updateState": "{{state}} · {{scenes}} 個場景",
+    "cardTitle": "Course → Git repositories",
+    "desc": "Version a course automatically as it generates: every course change is committed into a git repository you point at. Uses the git CLI on this machine; commits are best-effort and can never fail a course save.",
+    "dialogTitle": "Connect to Git",
+    "dialogDesc": "Commit this course's changes into a git repository as it generates.",
+    "menuDesc": "Auto-commit this course to a repo",
+    "connectedLabel": "Connected — changes commit automatically",
+    "courseLabel": "Course",
+    "coursePlaceholder": "Select a course…",
+    "repoLabel": "Repository folder",
+    "repoPlaceholder": "e.g. D:\\Courses\\my-course-notes",
+    "initIfMissing": "Create the repository if the folder is not a repo yet",
+    "connect": "Connect repo",
+    "refresh": "Refresh",
+    "disconnect": "Disconnect",
+    "hint": "Changes commit within ~4 seconds into <courseId>.json inside the repo. Push to a remote after every commit can be enabled with COURSE_GIT_SYNC_PUSH=1.",
+    "allBound": "All courses are connected.",
+    "bindOk": "Repository connected — course changes will be committed automatically.",
+    "unbindOk": "Repository disconnected.",
+    "bindFailed": "Connecting failed.",
+    "loadFailed": "Could not load courses or bindings."
+  },
+  "layoutScan": {
+    "title": "Slide layout",
+    "scan": "Check this slide",
+    "scanDesc": "Geometry probe: elements off-canvas or text hidden by shapes (instant, no AI)",
+    "fix": "Fix this slide",
+    "fixDesc": "Pull out-of-bounds elements back to the nearest edge. Content is never rewritten",
+    "scanning": "Scanning slide geometry…",
+    "clean": "All slides clean",
+    "cleanDesc": "No off-canvas or occluded elements found.",
+    "clamped": "Elements moved back inside the canvas:",
+    "flagged": "Flagged findings:"
   }
 }

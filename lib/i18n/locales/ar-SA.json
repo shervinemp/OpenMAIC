@@ -234,7 +234,8 @@
     "proModeDisabledHint": "التحرير غير متاح في هذه الصفحة — افتح شريحة من الدورة للتحرير باستخدام وضع Pro.",
     "resumeGeneration": "استئناف",
     "recoveryPending": "{\\\\\"count\\\\} صفحة/صفحات لم تُولَّد بعد",
-    "recoveryUmbrella": "الاسترداد — يستمر تلقائياً: {{items}}"
+    "recoveryUmbrella": "الاسترداد — يستمر تلقائياً: {{items}}",
+    "ungroupedScenes": "Other scenes"
   },
   "edit": {
     "proMode": "احترافي",
@@ -2165,5 +2166,47 @@
     "materializeNarration": "التعليق الصوتي: {{onServer}}/{{declared}} مقطعًا لها بايتات على الخادم",
     "materializeMedia": "الصور / الفيديو: {{onServer}}/{{declared}} أصلًا له بايتات على الخادم",
     "updateState": "{{state}} · {{scenes}} scenes"
+  },
+  "exams": {
+    "title": "Exams",
+    "midterm": "Midterm Exam",
+    "final": "Final Exam",
+    "needSemester": "Exams are available for semester courses (a unit-based course with at least two units).",
+    "notGenerated": "Not generated yet",
+    "generate": "Generate",
+    "generating": "Generating…",
+    "start": "Start",
+    "retake": "Retake",
+    "review": "Review",
+    "comp": "{{mc}} MC · {{fr}} written · units {{from}}–{{to}}",
+    "lastScore": "last score {{pct}}%",
+    "grading": "Grading your written answers…",
+    "submit": "Submit exam",
+    "ungraded": "not graded",
+    "mcSection": "Section A — Multiple choice",
+    "mcIntro": "One correct answer each. Distractors encode common misconceptions — read carefully.",
+    "frSection": "Section B — Constructed response",
+    "frIntro": "Graded per rubric by an AI assessor. Write 8–14 focused sentences per answer.",
+    "rubricShow": "Rubric: {{n}} criteria · {{pts}} points",
+    "weightEssential": "essential",
+    "weightImportant": "key",
+    "frPlaceholder": "Write your answer…",
+    "frAnswerLabel": "Your answer for question",
+    "scoreLabel": "Overall score",
+    "ariaScore": "Overall score {{pct}} percent",
+    "submittedAt": "Submitted {{time}}",
+    "yourAnswer": "Show your answer"
+  },
+  "layoutScan": {
+    "title": "Slide layout",
+    "scan": "Check this slide",
+    "scanDesc": "Geometry probe: elements off-canvas or text hidden by shapes (instant, no AI)",
+    "fix": "Fix this slide",
+    "fixDesc": "Pull out-of-bounds elements back to the nearest edge. Content is never rewritten",
+    "scanning": "Scanning slide geometry…",
+    "clean": "All slides clean",
+    "cleanDesc": "No off-canvas or occluded elements found.",
+    "clamped": "Elements moved back inside the canvas:",
+    "flagged": "Flagged findings:"
   }
 }
