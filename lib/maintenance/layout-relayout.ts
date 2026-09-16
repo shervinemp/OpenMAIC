@@ -223,8 +223,11 @@ export function hasOrphanDecoratives(scene: { content?: unknown }, canvasHeight?
     : 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
   const elements = canvas.elements;
   for (const shape of elements) {
-    if (shape.type !== 'shape' || shape.width <= 0 || shape.height <= 0) continue;
+    if (shape.type !== 'shape' && shape.type !== 'image') continue;
+    if (shape.width <= 0 || shape.height <= 0) continue;
     const bottom = shape.top + shape.height;
+    // Frame membership: touches a canvas edge — or is a hairline (≤6px
+    // section rule). Both belong to the page, not to a content row.
     const edgeHugging = shape.top <= 8 || bottom >= height - 8 || shape.left <= 8;
     const hairline = shape.height <= 6;
     if (edgeHugging || hairline) continue;
@@ -233,6 +236,8 @@ export function hasOrphanDecoratives(scene: { content?: unknown }, canvasHeight?
     let covered = false;
     for (const upper of elements) {
       if (upper === shape || upper.type !== 'text') continue;
+      // Text bodies live in `content` (HTML string) on text elements — a
+      // truth learned from the live document, not the type sketch.
       if (typeof (upper as { content?: string }).content !== 'string' || !(upper as { content?: string }).content) continue;
       const uBottom = upper.top + upper.height;
       const uRight = upper.left + upper.width;
@@ -257,7 +262,8 @@ export function stripOrphanDecoratives(scene: { content?: unknown }, canvasHeigh
   const elements = canvas.elements;
   for (let i = elements.length - 1; i >= 0; i--) {
     const shape = elements[i];
-    if (shape.type !== 'shape' || shape.width <= 0 || shape.height <= 0) continue;
+    if (shape.type !== 'shape' && shape.type !== 'image') continue;
+    if (shape.width <= 0 || shape.height <= 0) continue;
     const bottom = shape.top + shape.height;
     // Frame membership: touches a canvas edge — or is a hairline (≤6px
     // section rule). Both belong to the page, not to a content row.

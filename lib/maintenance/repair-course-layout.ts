@@ -167,20 +167,24 @@ export async function repairCourseLayout(
         log.info(
           `split apply on load: scanned=${splitPayload.data?.scanned ?? 0} applied=${splitPayload.data?.applied ?? 0}`,
         );
+        // Applied>0 means the deck changed structurally: reload so the user
+        // sees the SPLIT deck. Applied===0 with residual debt is a no-op pass
+        // (_validator timing, an in-flight write, a declined cluster) — the
+        // residual then survives the session by luck. Reload anyway (one-shot,
+        // same flag): the next pass re-plans from fresh truth instead of a
+        // session that ends with debt it could not close.
         const partCount = splitPayload.data?.applied ?? 0;
         if (partCount > 0) {
           summary.residualDebt = 0;
-          // The atomic surgery changed order counts, outline entries and
-          // scenes; re-open the course so the deck the user sees is the
-          // SPLIT deck, fresh from the store. Session flag keeps this a
-          // one-shot honest reload, never a repair loop.
-          if (
-            typeof window !== 'undefined' &&
-            !window.sessionStorage.getItem('__openmaicSplitReloaded')
-          ) {
-            window.sessionStorage.setItem('__openmaicSplitReloaded', String(Date.now()));
-            window.setTimeout(() => window.location.reload(), 50);
-          }
+        } else {
+          log.info('split apply was a no-op; deferring residual to the next pass (one-shot reload)');
+        }
+        if (
+          typeof window !== 'undefined' &&
+          !window.sessionStorage.getItem('__openmaicSplitReloaded')
+        ) {
+          window.sessionStorage.setItem('__openmaicSplitReloaded', String(Date.now()));
+          window.setTimeout(() => window.location.reload(), 50);
         }
       } else {
         log.warn('split apply on load failed (non-fatal)', await splitResponse?.text().catch(() => ''));

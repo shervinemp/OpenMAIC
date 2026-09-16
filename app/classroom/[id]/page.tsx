@@ -270,6 +270,14 @@ export default function ClassroomDetailPage() {
             const outline = outlines.find((o) => o.id === scene.outlineId);
             if (outline) useStageStore.getState().addFailedOutline(outline);
           },
+          // The failure hook's symmetry: when the repair dispatch restores
+          // every ref a scene needs, the recorded failure must lift — a red
+          // card that outlives its fix is a lie on the panel.
+          onScenePhaseResolved: (sceneId, phase) => {
+            const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
+            if (!scene?.outlineId) return;
+            useStageStore.getState().recordScenePhase(scene.outlineId, phase, { status: 'done' });
+          },
         });
       })().catch((err) => log.warn('[Classroom] Media repair resume error:', err));
       // Layout truth rides the SAME on-load pipeline: one deterministic,

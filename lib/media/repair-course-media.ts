@@ -113,6 +113,14 @@ export interface MediaRepairOptions {
    * dispatch is a consumer of that queue, not a parallel system.
    */
   onScenePhaseFailure?: (sceneId: string, phase: 'tts' | 'media') => void;
+  /**
+   * ONE-QUEUE resolution hook (the symmetry the failure hook needs): when a
+   * scene the dispatcher recorded failed now passes the post-repair byte
+   * audit (every ref the player resolves), the phase row flips to done —
+   * without this the failed state from a transient provider drop would
+   * persist forever even though the bytes are back (the stale red card).
+   */
+  onScenePhaseResolved?: (sceneId: string, phase: 'tts' | 'media') => void;
 }
 
 /** Narration refs carry the pipeline's stable-request-id shape (see walker). */
@@ -207,6 +215,7 @@ export async function repairCourseMedia(
   // dead-narration/media scenes enter the same failed queue with their
   // phase rows BEFORE the automatic dispatch renders any of the fixes.
   const recordScenePhaseFailure = options.onScenePhaseFailure;
+  const recordScenePhaseResolved = options.onScenePhaseResolved;
 
   // ---- Detection sweep (pre-repair truth, per ref) ----
   // Renderer-visible refs only (src/audioId/audioRef/mediaRef/poster):
@@ -217,6 +226,11 @@ export async function repairCourseMedia(
   // their dead refs are honest unrecoverables.
   const deadNarrationRefs = new Set<string>();
   const deadMediaRefs = new Set<string>();
+  // Per-scene dead-ref bookkeeping for the post-repair audit: a scene
+  // recorded failed by the hydration hook must be re-audited SPECIFICALLY on
+  // its own refs — the flat ref set alone cannot attribute resurrection.
+  const deadNarrationByScene = new Map<string, Set<string>>();
+  const deadMediaByScene = new Map<string, Set<string>>();
   const detectionTargets = [
     ...scenes,
     ...(options.additionalAssets ?? []),
@@ -237,10 +251,24 @@ export async function repairCourseMedia(
     const narratedOk = narratedRefs.map((ref) => resolvedByRef.get(ref) === true);
     const mediaOk = mediaRefs.map((ref) => resolvedByRef.get(ref) === true);
     narratedRefs.forEach((ref, i) => {
-      if (!narratedOk[i]) deadNarrationRefs.add(ref);
+      if (!narratedOk[i]) {
+        deadNarrationRefs.add(ref);
+        if (scene.id) {
+          const set = deadNarrationByScene.get(scene.id) ?? new Set<string>();
+          set.add(ref);
+          deadNarrationByScene.set(scene.id, set);
+        }
+      }
     });
     mediaRefs.forEach((ref, i) => {
-      if (!mediaOk[i]) deadMediaRefs.add(ref);
+      if (!mediaOk[i]) {
+        deadMediaRefs.add(ref);
+        if (scene.id) {
+          const set = deadMediaByScene.get(scene.id) ?? new Set<string>();
+          set.add(ref);
+          deadMediaByScene.set(scene.id, set);
+        }
+      }
     });
     // Per-scene byte truth for the ONE QUEUE hydration: a scene with dead
     // narration/media is byte-truth (the card basis), while extra materials
@@ -314,6 +342,28 @@ export async function repairCourseMedia(
     (ref) => postAudit.get(ref) !== true,
   );
   report.audioStillPending = stillDead.length;
+
+  // ---- Post-repair resolution: flip phases back to done where every ref
+  // of a scene the failure hook recorded now resolves. Media gets the same
+  // audit after the orchestrator dispatch (queue consumers ran synchronously
+  // through generateMediaForOutlines' requeue above).
+  if (recordScenePhaseResolved) {
+    for (const [sceneId, refs] of deadNarrationByScene) {
+      if ([...refs].every((ref) => postAudit.get(ref) === true)) {
+        recordScenePhaseResolved(sceneId, 'tts');
+      }
+    }
+  }
+  if (canDispatchMedia && deadMediaRefs.size > 0) {
+    const mediaPostAudit = await batchRefResolvesBytes([...deadMediaRefs], options.stageId);
+    if (recordScenePhaseResolved) {
+      for (const [sceneId, refs] of deadMediaByScene) {
+        if ([...refs].every((ref) => mediaPostAudit.get(ref) === true)) {
+          recordScenePhaseResolved(sceneId, 'media');
+        }
+      }
+    }
+  }
 
   log.info(
     `Media repair complete: ${report.audioRestored} narration ref(s) restored across ` +

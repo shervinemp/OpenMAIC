@@ -147,9 +147,31 @@ export class JsonFileDocumentStore<
   private async writeAtomic(stageId: string, document: unknown): Promise<void> {
     await mkdir(this.documentDir(), { recursive: true });
     const path = this.documentPath(stageId);
-    const tmp = `${path}.tmp-${randomBytes(6).toString('hex')}`;
-    await writeFile(tmp, JSON.stringify(document), 'utf8');
-    await rename(tmp, path);
+    // Windows (EPERM/EACCES/EBUSY on rename while a concurrent reader or the
+    // git-scheduler holds the target open) is a transient race, not a data
+    // failure: back off briefly and retry before giving up. Bounded — a lock
+    // held longer than ~1.5s is a real fault worth surfacing.
+    const maxAttempts = 4;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const tmp = `${path}.tmp-${randomBytes(6).toString('hex')}`;
+      try {
+        await writeFile(tmp, JSON.stringify(document), 'utf8');
+        await rename(tmp, path);
+        return;
+      } catch (error) {
+        try {
+          await rm(tmp, { force: true });
+        } catch {
+          // best effort cleanup
+        }
+        const code = (error as NodeJS.ErrnoException).code ?? '';
+        if (['EPERM', 'EACCES', 'EBUSY'].includes(code) && attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 
   private async removeFile(stageId: string): Promise<void> {
