@@ -23,6 +23,8 @@
     "check": "prettier . --check && npm run check:i18n-keys && npm run check:git-health",
     "format": "prettier . --write",
     "test": "vitest run",
+    "test:full:1": "vitest run tests/workbench tests/agent-runtime tests/edit tests/pbl tests/media tests/audio tests/lib",
+    "test:full:2": "vitest run tests/server tests/document tests/generation tests/export tests/store tests/video-export tests/web-search tests/persistence tests/ai tests/api tests/i18n tests/prompts tests/classroom tests/quiz tests/utils tests/runtime tests/chat tests/playback tests/config tests/settings tests/orchestration tests/action tests/backup tests/ci tests/components tests/document-store tests/dsl tests/eval tests/generation-preview tests/hooks tests/import tests/maintenance tests/packages tests/rag tests/scene-renderers tests/security tests/slide-renderer tests/slides tests/ui tests/usage tests/prosemirror tests/providers tests/workflows",
     "test:package-tarballs": "node scripts/smoke-test-package-tarballs.mjs",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",

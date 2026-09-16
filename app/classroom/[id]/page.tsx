@@ -278,6 +278,11 @@ export default function ClassroomDetailPage() {
       void (async () => {
         const { repairCourseLayout } = await import('@/lib/maintenance/repair-course-layout');
         await repairCourseLayout(stage.id, [...storeScenes]);
+        // Split-terminal parts (and any other materially-present scene) get
+        // their content fingerprint in the same session — the load pipeline
+        // closes the re-verification debt itself, no console ritual.
+        const { stampCourseSceneHashes } = await import('@/lib/maintenance/stamp-scene-hashes');
+        await stampCourseSceneHashes(stage.id);
       })();
     }
     // classroomId: the params lookup and session cleanup are keyed by it. A

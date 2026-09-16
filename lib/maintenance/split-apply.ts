@@ -214,13 +214,23 @@ export function applySplit(
   }
 
   // LESSON GROUPS: 1 job per outline keeps the load-time recovery scan and
-  // the generation terminal pointing at already-materialized work.
+  // the generation terminal pointing at already-materialized work. Phase
+  // envelopes are marked done — the part IS the materialized rows, content
+  // and actions arrived verbatim from the original scene — so the generation
+  // panel does not render the parts as bare pending envelopes.
   const lessonId = (outlineRecord as { lessonId?: string }).lessonId;
   const group = (document.outline.lessonGroups.find((g) => g.lessonId === lessonId) ?? null) as { lessonId: string; jobs?: Array<Record<string, unknown>> } | null;
   if (group) {
     group.jobs = (group.jobs ?? []).filter((job) => job.outlineId !== outlineId);
+    const now = Date.now();
     for (const part of parts) {
-      group.jobs.push({ outlineId: part.outlineId, phases: {} });
+      group.jobs.push({
+        outlineId: part.outlineId,
+        phases: {
+          content: { status: 'done', attempts: 1, updatedAt: now },
+          actions: { status: 'done', attempts: 1, updatedAt: now },
+        },
+      });
     }
   }
 
