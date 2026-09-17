@@ -83,6 +83,7 @@ export async function repairCourseLayout(
       scenesScanned?: number;
       scenesPlanned?: number;
       pruned?: number;
+      skippedFresh?: number;
       reports?: Array<{ applied?: boolean; residualErrors?: number }>;
     }>(await response.json());
     const reports = payload?.reports ?? [];

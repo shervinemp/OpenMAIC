@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
 import type { DocumentStore } from '../src/document/types.js';
+import { DocumentLostUpdateError } from '../src/document/types.js';
 import { JsonFileDocumentStore } from '../src/server/file-document-store.js';
 import { makeDocument, runDocumentStoreContract, slideScene } from './document-contract.js';
 
@@ -50,5 +51,38 @@ describe('JsonFileDocumentStore', () => {
     expect(loaded?.scenes.map((s) => s.id).sort()).toEqual(
       ['scene-a', 'scene-b', ...extraIds].sort(),
     );
+  });
+
+  // A stale room-tab heartbeat used to lower `stage.updatedAt` below a
+  // maintenance write's revision, disarming the saveDocument lost-update
+  // fence so the tab's next full save clobbered repaired content.
+  test('never lowers the stage clock on putStage', async () => {
+    await store.saveDocument(makeDocument());
+    const loaded = await store.loadDocument('stage-1');
+    const newer = loaded!.stage.updatedAt + 10_000;
+    await store.putStage('stage-1', { ...loaded!.stage, updatedAt: newer });
+    await store.putStage('stage-1', { ...loaded!.stage, updatedAt: loaded!.stage.updatedAt });
+    const after = await store.loadDocument('stage-1');
+    expect(after!.stage.updatedAt).toBe(newer);
+  });
+
+  // Two tabs hold the same scene; one was repaired meanwhile. The stale copy
+  // must not overwrite the newer one.
+  test('refuses stale scene writes and accepts equal or newer ones', async () => {
+    await store.saveDocument(makeDocument());
+    const loaded = await store.loadDocument('stage-1');
+    const scene = loaded!.scenes.find((s) => s.id === 'scene-a')!;
+    const baseUpdatedAt = Number((scene as { updatedAt?: number }).updatedAt) || 0;
+    const newerScene = { ...scene, updatedAt: baseUpdatedAt + 5, title: 'newer' };
+    await store.putScene('stage-1', newerScene);
+
+    await expect(
+      store.putScene('stage-1', { ...scene, updatedAt: baseUpdatedAt + 1, title: 'stale' }),
+    ).rejects.toBeInstanceOf(DocumentLostUpdateError);
+
+    // Equal timestamp re-write stays legal (idempotent flush).
+    await store.putScene('stage-1', newerScene);
+    const after = await store.loadDocument('stage-1');
+    expect(after!.scenes.find((s) => s.id === 'scene-a')!.title).toBe('newer');
   });
 });

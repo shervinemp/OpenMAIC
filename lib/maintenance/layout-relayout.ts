@@ -597,11 +597,12 @@ export interface LayoutLedgerStatus {
 export function applyLayoutLedger(
   scene: { content?: unknown },
   findings: PlacementFinding[],
+  now: number = Date.now(),
 ): LayoutLedgerStatus {
   const status: LayoutLedgerStatus = {
     errors: findings.filter((f) => f.severity === 'error').length,
     warnings: findings.filter((f) => f.severity === 'warn').length,
-    checkedAt: Date.now(),
+    checkedAt: now,
   };
   (scene as { layoutStatus?: unknown }).layoutStatus = status;
   return status;
@@ -620,6 +621,28 @@ export function layoutLedgerOf(scene: unknown): LayoutLedgerStatus | null {
     return value as LayoutLedgerStatus;
   }
   return null;
+}
+
+/**
+ * Incremental-sweep predicate: green evidence newer than the scene's last
+ * content change — and within the age cap — means the scene can skip a full
+ * pass. Debt scenes (errors > 0) are never fresh: they stay in every pass
+ * until cured. The age cap forces a periodic re-check because scene edits do
+ * not all advance `updatedAt` reliably; a visit past the cap refreshes the
+ * evidence, so the sweep stays fast between refreshes.
+ */
+export const LAYOUT_EVIDENCE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function isLayoutEvidenceFresh(
+  scene: unknown,
+  now: number = Date.now(),
+  maxAgeMs: number = LAYOUT_EVIDENCE_MAX_AGE_MS,
+): boolean {
+  const ledger = layoutLedgerOf(scene);
+  if (!ledger || ledger.errors > 0) return false;
+  const updatedAt = Number((scene as { updatedAt?: unknown } | null)?.updatedAt) || 0;
+  if (ledger.checkedAt < updatedAt) return false;
+  return now - ledger.checkedAt < maxAgeMs;
 }
 
 /** Findings from the scene's own hole (validator output) with no context. */

@@ -388,9 +388,21 @@ export class JsonFileDocumentStore<
         );
       }
       this.assertCurrentForIncrementalWrite(stageId, stored);
+      // The stage clock is monotonic: a stage write may never move
+      // `updatedAt` BACKWARD. A stale tab's heartbeat used to lower it below
+      // a maintenance write's revision, which disarmed the saveDocument
+      // lost-update fence and let the tab's next full save clobber repaired
+      // content. Max(stored, incoming) keeps the clock at the newest value
+      // either writer has seen.
+      const storedUpdatedAt = Number(stored.stage.updatedAt) || 0;
+      const incomingUpdatedAt = Number(stage.updatedAt) || 0;
       await this.writeAtomic(stageId, {
         ...stored,
-        stage: { ...stage, [DSL_VERSION_KEY]: DSL_VERSION },
+        stage: {
+          ...stage,
+          updatedAt: Math.max(storedUpdatedAt, incomingUpdatedAt),
+          [DSL_VERSION_KEY]: DSL_VERSION,
+        },
       });
     });
   }
@@ -407,6 +419,25 @@ export class JsonFileDocumentStore<
         );
       }
       this.assertCurrentForIncrementalWrite(stageId, stored);
+      // Stale-scene fence: two tabs hold the same scene and one of them was
+      // repaired meanwhile. The stale copy (older `updatedAt`) must not
+      // overwrite the newer one. Equal timestamps pass (idempotent re-write
+      // of an unchanged scene); newer content always wins.
+      const existing = stored.scenes.find((s) => s.id === scene.id) as
+        | { updatedAt?: unknown }
+        | undefined;
+      const storedSceneUpdatedAt = Number(existing?.updatedAt) || 0;
+      const incomingUpdatedAt = Number((scene as { updatedAt?: unknown }).updatedAt) || 0;
+      if (existing && incomingUpdatedAt < storedSceneUpdatedAt) {
+        throw new DocumentLostUpdateError(
+          stageId,
+          storedSceneUpdatedAt,
+          incomingUpdatedAt,
+          `@openmaic/storage: refusing stale scene write ${JSON.stringify(scene.id)} in document ` +
+            `${JSON.stringify(stageId)} — the stored copy is newer ` +
+            `(${storedSceneUpdatedAt}) than the incoming write (${incomingUpdatedAt}); reload and retry`,
+        );
+      }
       const scenes = stored.scenes.map((s) => (s.id === scene.id ? scene : s));
       if (!scenes.some((s) => s.id === scene.id)) scenes.push(scene);
       // Move the stage's updatedAt forward: every incremental write is a newer

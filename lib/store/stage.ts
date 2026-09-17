@@ -763,8 +763,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       if (scene.id !== sceneId) return scene;
       const content = mergeSceneContentForUpdate(scene.content, updates.content) ?? scene.content;
       // Rebind `type` to the merged content's kind (a type-only patch can no
-      // longer desync the discriminant from the content).
-      return makeScene({ ...scene, ...updates }, content);
+      // longer desync the discriminant from the content). The revision clock
+      // advances with the edit: maintenance passes use it to know which
+      // scenes changed, and the server's stale-scene fence uses it to refuse
+      // out-of-date copies.
+      return makeScene({ ...scene, ...updates, updatedAt: Date.now() }, content);
     });
     set({ scenes });
     markPendingChanges(get().stage?.id, { kind: 'scene', sceneId });

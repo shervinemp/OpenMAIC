@@ -2,10 +2,13 @@ import { NextRequest } from 'next/server';
 import { createCourseDocumentStore } from '@/lib/persistence/course-document-store';
 import { singleFlight } from '@/lib/server/single-flight';
 import {
+  applyLayoutLedger,
   coerceElementGeometry,
   demoteCoveredDecoratives,
   hasNonFiniteGeometry,
   hasOrphanDecoratives,
+  isLayoutEvidenceFresh,
+  LAYOUT_EVIDENCE_MAX_AGE_MS,
   nudgeOffHairlines,
   explodeWallRows,
   normalizeFullBleedRows,
@@ -95,6 +98,7 @@ type LayoutRepairOutcome =
         scenesScanned: number;
         scenesPlanned: number;
         pruned: number;
+        skippedFresh: number;
         reports: Array<
           RelayoutPlan & { applied: boolean; residualErrors: number; mergedDeleted: string[] }
         >;
@@ -149,10 +153,21 @@ async function runLayoutRepair(
     }
   }
   const prunedIds = new Set(prunePlan.sceneIds);
-  const targets = document.scenes.filter(
-    (scene) =>
-      scene.type === 'slide' && !prunedIds.has(scene.id) && (!requestedIds || requestedIds.includes(scene.id)),
-  );
+  // Incremental sweep: a full pass skips scenes whose green ledger evidence is
+  // newer than their last change (and within the age cap). Without this, every
+  // classroom open re-ran the full deterministic sweep over ~1,600 scenes
+  // (~30 min of CPU). A targeted request always visits exactly its ids; debt
+  // scenes are never fresh, so healing still converges every pass.
+  let skippedFresh = 0;
+  const targets = document.scenes.filter((scene) => {
+    if (scene.type !== 'slide' || prunedIds.has(scene.id)) return false;
+    if (requestedIds) return requestedIds.includes(scene.id);
+    if (isLayoutEvidenceFresh(scene)) {
+      skippedFresh += 1;
+      return false;
+    }
+    return true;
+  });
 
   const reports: Array<RelayoutPlan & { applied: boolean; residualErrors: number; mergedDeleted: string[] }> = [];
   const mergeCheckpoint = { used: 0 };
@@ -190,7 +205,21 @@ async function runLayoutRepair(
     // pass that fixes them only runs inside the apply branch.
     const hasBadGeometry = hasNonFiniteGeometry(scene);
     if (!prePlan && !layoutLedgerOf(scene) && !needsPhaseStamp && !hasGhosts && !hasBadGeometry) {
-      // Clean scene with no debt marker: write off implicitly (nothing to do).
+      // Clean scene with no debt marker. Persist a green ledger ONCE so the
+      // incremental sweep can skip it on future passes: freshness must be
+      // stored evidence (in-memory stamping dies at the request boundary),
+      // and without this write-off the cleanest scenes were re-visited on
+      // every pass forever.
+      if (!body.dryRun) {
+        const stamp = Date.now();
+        applyLayoutLedger(scene, [], stamp);
+        (scene as { updatedAt?: number }).updatedAt = stamp;
+        try {
+          await documentStore.putScene(courseId, scene as never);
+        } catch (error) {
+          console.error('[layout-relayout] ledger write-off failed', scene.id, error);
+        }
+      }
       continue;
     }
     let applied = false;
@@ -395,10 +424,25 @@ async function runLayoutRepair(
           }
         }
       }
-      const beforeErrors = layoutLedgerOf(scene)?.errors ?? 0;
-      const needsWrite = plan !== null || errorCount !== beforeErrors || passChanged;
+      const beforeLedger = layoutLedgerOf(scene);
+      // The visit stamp is the single clock for this scene's revision AND its
+      // evidence: `checkedAt === updatedAt` is what lets the incremental
+      // predicate skip the scene on future passes. A ledger-only write
+      // refreshes evidence past the age cap; a content write doubles as the
+      // revision for the store's stale-scene fence.
+      const visitStamp = Date.now();
+      const ledger = applyLayoutLedger(scene, residual, visitStamp);
+      const evidenceExpired =
+        !!beforeLedger && visitStamp - beforeLedger.checkedAt >= LAYOUT_EVIDENCE_MAX_AGE_MS;
+      const ledgerChanged =
+        !beforeLedger ||
+        evidenceExpired ||
+        beforeLedger.errors !== ledger.errors ||
+        beforeLedger.warnings !== ledger.warnings;
+      const needsWrite = plan !== null || passChanged || ledgerChanged;
       if (needsWrite) {
         try {
+          (scene as { updatedAt?: number }).updatedAt = visitStamp;
           await documentStore.putScene(courseId, scene as never);
           applied = true;
         } catch (error) {
@@ -462,6 +506,7 @@ async function runLayoutRepair(
       scenesScanned: targets.length,
       scenesPlanned: reports.length,
       pruned,
+      skippedFresh,
       reports,
     },
   };
