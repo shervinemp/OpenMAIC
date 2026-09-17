@@ -1,8 +1,5 @@
 import { NextRequest } from 'next/server';
-import { JsonFileDocumentStore } from '@openmaic/storage/server/file-document-store';
-import { GitSyncDocumentStore } from '@/lib/persistence/git-sync-document-store';
-import { getCourseGitScheduler } from '@/lib/persistence/git-course-sync';
-import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
+import { createCourseDocumentStore } from '@/lib/persistence/course-document-store';
 import { computeSplitPlan, planSummary, type SplitPlan } from '@/lib/maintenance/split-plan';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 
@@ -33,14 +30,7 @@ export async function POST(req: NextRequest) {
   const courseId = body.courseId?.trim();
   if (!courseId) return apiError('INVALID_REQUEST', 400, 'courseId is required');
 
-  const documentStore = new GitSyncDocumentStore(
-    new JsonFileDocumentStore({
-      dir: fileDir,
-      validateScene: validateAppScene,
-      validateStage: validateAppStage,
-    }),
-    getCourseGitScheduler(fileDir),
-  );
+  const documentStore = createCourseDocumentStore(fileDir);
 
   let document;
   try {

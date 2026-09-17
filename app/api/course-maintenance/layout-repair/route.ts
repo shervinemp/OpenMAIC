@@ -1,9 +1,6 @@
 import { NextRequest } from 'next/server';
-import { JsonFileDocumentStore } from '@openmaic/storage/server/file-document-store';
-import { GitSyncDocumentStore } from '@/lib/persistence/git-sync-document-store';
-import { getCourseGitScheduler } from '@/lib/persistence/git-course-sync';
+import { createCourseDocumentStore } from '@/lib/persistence/course-document-store';
 import { singleFlight } from '@/lib/server/single-flight';
-import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import {
   coerceElementGeometry,
   demoteCoveredDecoratives,
@@ -24,6 +21,7 @@ import { callLLM } from '@/lib/ai/llm';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { apiError, apiSuccess, type ApiErrorCode } from '@/lib/server/api-response';
 import { applyLayoutPatch } from '@/lib/slides/slide-layout-verify';
+import { applyEmptyPartPrune, findEmptyPartPrune } from '@/lib/maintenance/prune-empty-parts';
 
 const MERGE_CALL_LIMIT = 40;
 
@@ -96,6 +94,7 @@ type LayoutRepairOutcome =
         dryRun: boolean;
         scenesScanned: number;
         scenesPlanned: number;
+        pruned: number;
         reports: Array<
           RelayoutPlan & { applied: boolean; residualErrors: number; mergedDeleted: string[] }
         >;
@@ -109,14 +108,7 @@ async function runLayoutRepair(
   courseId: string,
   fileDir: string,
 ): Promise<LayoutRepairOutcome> {
-  const documentStore = new GitSyncDocumentStore(
-    new JsonFileDocumentStore({
-      dir: fileDir,
-      validateScene: validateAppScene,
-      validateStage: validateAppStage,
-    }),
-    getCourseGitScheduler(fileDir),
-  );
+  const documentStore = createCourseDocumentStore(fileDir);
 
   let document;
   try {
@@ -130,8 +122,36 @@ async function runLayoutRepair(
   }
 
   const requestedIds = body.sceneIds?.length ? body.sceneIds : null;
+  // DELETE-ONLY remediation for the empty-split-leftover class (the old
+  // splitter could leave its first chunk empty while every row went to the
+  // later parts; an empty canvas has no validator errors, so patch and split
+  // both no-op and the part parks hidden forever). Proven-redundant empty
+  // slide parts — a same-base sibling holds the content — are removed with
+  // their outline references and job envelopes. Full passes only: a targeted
+  // refresh must not mutate scenes outside its subset. Persisted with ONE
+  // saveDocument BEFORE the per-scene loop: putScene re-adds unknown ids, so a
+  // loop-write before the prune would resurrect what we removed.
+  const prunePlan =
+    requestedIds === null
+      ? findEmptyPartPrune(document as never)
+      : { sceneIds: [] as string[], outlineIds: [] as string[] };
+  let pruned = 0;
+  if (!body.dryRun && prunePlan.sceneIds.length > 0) {
+    const applied = applyEmptyPartPrune(document as never, prunePlan);
+    try {
+      await documentStore.saveDocument(document as never);
+      pruned = applied.removedSceneIds.length;
+    } catch (error) {
+      console.error(
+        '[layout-relayout] empty-part prune save failed (non-fatal)',
+        (error as Error).message.slice(0, 140),
+      );
+    }
+  }
+  const prunedIds = new Set(prunePlan.sceneIds);
   const targets = document.scenes.filter(
-    (scene) => scene.type === 'slide' && (!requestedIds || requestedIds.includes(scene.id)),
+    (scene) =>
+      scene.type === 'slide' && !prunedIds.has(scene.id) && (!requestedIds || requestedIds.includes(scene.id)),
   );
 
   const reports: Array<RelayoutPlan & { applied: boolean; residualErrors: number; mergedDeleted: string[] }> = [];
@@ -441,6 +461,7 @@ async function runLayoutRepair(
       dryRun: body.dryRun === true,
       scenesScanned: targets.length,
       scenesPlanned: reports.length,
+      pruned,
       reports,
     },
   };

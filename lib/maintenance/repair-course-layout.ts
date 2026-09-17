@@ -1,4 +1,5 @@
 import { createLogger } from '@/lib/logger';
+import { readApiPayload } from '@/lib/utils/api-payload';
 
 const log = createLogger('RepairCourseLayout');
 
@@ -28,10 +29,25 @@ export interface CourseLayoutRepairReport {
   planned: number;
   writtenOff: number;
   residualDebt: number;
+  /** Empty split-leftover parts pruned by this pass (delete-only cleanup). */
+  pruned: number;
 }
 
 /** One repair per course per session; re-runs are redundant sweeps. */
 const appliedCourses = new Set<string>();
+
+/**
+ * One structural-change reload per browser session. The deck changed
+ * server-side (a split applied, empty parts pruned) and the loaded store no
+ * longer matches what the document says — reload once so the user sees the
+ * real deck. The sessionStorage flag guards against reload loops.
+ */
+function reloadOnceForStructuralChange(): void {
+  if (typeof window === 'undefined') return;
+  if (window.sessionStorage.getItem('__openmaicSplitReloaded')) return;
+  window.sessionStorage.setItem('__openmaicSplitReloaded', String(Date.now()));
+  window.setTimeout(() => window.location.reload(), 50);
+}
 
 interface SceneLike {
   id: string;
@@ -63,24 +79,30 @@ export async function repairCourseLayout(
       log.warn('layout repair on load failed (non-fatal)', await response.text().catch(() => ''));
       return null;
     }
-    const payload = (await response.json()) as {
-      data?: {
-        scenesScanned?: number;
-        scenesPlanned?: number;
-        reports?: Array<{ applied?: boolean; residualErrors?: number }>;
-      };
-    };
-    const reports = payload.data?.reports ?? [];
+    const payload = readApiPayload<{
+      scenesScanned?: number;
+      scenesPlanned?: number;
+      pruned?: number;
+      reports?: Array<{ applied?: boolean; residualErrors?: number }>;
+    }>(await response.json());
+    const reports = payload?.reports ?? [];
     const summary: CourseLayoutRepairReport = {
-      scanned: payload.data?.scenesScanned ?? 0,
-      planned: payload.data?.scenesPlanned ?? 0,
+      scanned: payload?.scenesScanned ?? 0,
+      planned: payload?.scenesPlanned ?? 0,
       writtenOff: reports.filter((entry) => (entry.residualErrors ?? 0) === 0).length,
       residualDebt: reports.filter((entry) => (entry.residualErrors ?? 0) > 0).length,
+      pruned: payload?.pruned ?? 0,
     };
     log.info(
       `layout repair on load: scanned=${summary.scanned} planned=${summary.planned} ` +
-        `writtenOff=${summary.writtenOff} residualDebt=${summary.residualDebt}`,
+        `writtenOff=${summary.writtenOff} residualDebt=${summary.residualDebt} pruned=${summary.pruned}`,
     );
+    // Empty parts were removed: the loaded store still holds them, so reload
+    // once so the lesson list reflects the pruned deck.
+    if (summary.pruned > 0) {
+      reloadOnceForStructuralChange();
+      return summary;
+    }
 
     // Stage 2 (fill-decay class): scenes the deterministic pass could not
     // cure get one bounded layout-patch pass per session — content is reused
@@ -99,11 +121,11 @@ export async function repairCourseLayout(
         { headers },
       );
       if (statusResponse.ok) {
-        const status = (await statusResponse.json()) as {
-          data?: { flagged?: Array<{ sceneId: string }> };
-        };
+        const status = readApiPayload<{ flagged?: Array<{ sceneId: string }> }>(
+          await statusResponse.json(),
+        );
         const debtIds: string[] = [];
-        for (const entry of status.data?.flagged ?? []) {
+        for (const entry of status?.flagged ?? []) {
           if (sceneIdSet.has(entry.sceneId)) debtIds.push(entry.sceneId);
         }
         for (const sceneId of debtIds) {
@@ -161,11 +183,11 @@ export async function repairCourseLayout(
         body: JSON.stringify({ courseId }),
       }).catch(() => null);
       if (splitResponse?.ok) {
-        const splitPayload = (await splitResponse.json()) as {
-          data?: { applied?: number; scanned?: number };
-        };
+        const splitPayload = readApiPayload<{ applied?: number; scanned?: number }>(
+          await splitResponse.json(),
+        );
         log.info(
-          `split apply on load: scanned=${splitPayload.data?.scanned ?? 0} applied=${splitPayload.data?.applied ?? 0}`,
+          `split apply on load: scanned=${splitPayload?.scanned ?? 0} applied=${splitPayload?.applied ?? 0}`,
         );
         // Applied>0 means the deck changed structurally: reload so the user
         // sees the SPLIT deck. Applied===0 with residual debt is a no-op pass
@@ -173,19 +195,13 @@ export async function repairCourseLayout(
         // residual then survives the session by luck. Reload anyway (one-shot,
         // same flag): the next pass re-plans from fresh truth instead of a
         // session that ends with debt it could not close.
-        const partCount = splitPayload.data?.applied ?? 0;
+        const partCount = splitPayload?.applied ?? 0;
         if (partCount > 0) {
           summary.residualDebt = 0;
         } else {
           log.info('split apply was a no-op; deferring residual to the next pass (one-shot reload)');
         }
-        if (
-          typeof window !== 'undefined' &&
-          !window.sessionStorage.getItem('__openmaicSplitReloaded')
-        ) {
-          window.sessionStorage.setItem('__openmaicSplitReloaded', String(Date.now()));
-          window.setTimeout(() => window.location.reload(), 50);
-        }
+        reloadOnceForStructuralChange();
       } else {
         log.warn('split apply on load failed (non-fatal)', await splitResponse?.text().catch(() => ''));
       }

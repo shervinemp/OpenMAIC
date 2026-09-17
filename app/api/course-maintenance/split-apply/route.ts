@@ -1,9 +1,6 @@
 import { NextRequest } from 'next/server';
-import { JsonFileDocumentStore } from '@openmaic/storage/server/file-document-store';
-import { GitSyncDocumentStore } from '@/lib/persistence/git-sync-document-store';
-import { getCourseGitScheduler } from '@/lib/persistence/git-course-sync';
+import { createCourseDocumentStore } from '@/lib/persistence/course-document-store';
 import { singleFlight } from '@/lib/server/single-flight';
-import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import {
   applySplit,
   type SplitApplyDocumentShape,
@@ -79,14 +76,7 @@ async function runSplitApply(
   courseId: string,
   fileDir: string,
 ): Promise<SplitApplyOutcome> {
-  const documentStore = new GitSyncDocumentStore(
-    new JsonFileDocumentStore({
-      dir: fileDir,
-      validateScene: validateAppScene,
-      validateStage: validateAppStage,
-    }),
-    getCourseGitScheduler(fileDir),
-  );
+  const documentStore = createCourseDocumentStore(fileDir);
 
   let document;
   try {
