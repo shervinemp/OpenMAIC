@@ -298,6 +298,17 @@ export class AudioPlayer {
     this.stop();
     this.onEndedCallback = null;
   }
+
+  /**
+   * Whether this player has been torn down. `play()` refuses forever after
+   * `destroy()`; owners that share an instance across a dev-mode StrictMode
+   * remount (the unmount-only cleanup destroys it, then the replayed setup
+   * keeps using the same ref) must replace it before it silently eats every
+   * narration line.
+   */
+  public isDestroyed(): boolean {
+    return this.destroyed;
+  }
 }
 
 /**

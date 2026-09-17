@@ -767,6 +767,18 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         const widgetSendMessage = (type: string, payload: Record<string, unknown>) =>
           useWidgetIframeStore.getState().getSendMessage(sceneIdForWidget)?.(type, payload);
 
+        // StrictMode (dev, on by default) replays mount effects: setup → the
+        // unmount-only cleanup destroys the ref's player → setup again. The
+        // destroyed flag is sticky by design (a zombie engine must not
+        // resurrect narration after teardown), so the remounted engine would
+        // otherwise be handed a player whose play() is a permanent no-op —
+        // every narration line silently degrading to the reading timer.
+        // A destroyed player is stale teardown state, not user intent: the
+        // engine about to be built gets a fresh one.
+        if (audioPlayerRef.current.isDestroyed()) {
+          audioPlayerRef.current = createAudioPlayer();
+        }
+
         // Create ActionEngine for playback (with audioPlayer for TTS and widget messaging)
         const actionEngine = new ActionEngine(
           useStageStore,
