@@ -267,6 +267,17 @@ export function applySplit(
   const lessonId = (outlineRecord as { lessonId?: string }).lessonId;
   const group = (document.outline.lessonGroups.find((g) => g.lessonId === lessonId) ?? null) as { lessonId: string; jobs?: Array<Record<string, unknown>> } | null;
   if (group) {
+    // Narration/media verdicts survive the split: the part actions carry the
+    // original audio references verbatim, so a failed or pending tts/media
+    // phase applies to the parts unchanged. Dropping them would make a split
+    // scene structurally invisible to the fill-decay repair queue, which keys
+    // off `phases.tts.status === 'failed'` / `phases.media.status === 'failed'`.
+    const originalJob = (group.jobs ?? []).find((job) => job.outlineId === outlineId) as
+      | { phases?: { tts?: unknown; media?: unknown } }
+      | undefined;
+    const inheritedPhases: Record<string, unknown> = {};
+    if (originalJob?.phases?.tts) inheritedPhases.tts = originalJob.phases.tts;
+    if (originalJob?.phases?.media) inheritedPhases.media = originalJob.phases.media;
     group.jobs = (group.jobs ?? []).filter((job) => job.outlineId !== outlineId);
     const now = Date.now();
     for (const part of parts) {
@@ -280,6 +291,7 @@ export function applySplit(
             attempts: 1,
             updatedAt: now,
           },
+          ...inheritedPhases,
         },
       });
     }

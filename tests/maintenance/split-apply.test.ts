@@ -108,4 +108,40 @@ describe('split-apply', () => {
     expect(new Set(actionIds).size).toBe(32); // 30 spots + opener + sibling speech
     expect(actionIds.length).toBe(32);
   });
+
+  it('carries tts/media verdicts onto every part job (fill-decay stays visible)', () => {
+    const doc = document();
+    const group = doc.outline.lessonGroups[0];
+    const original = (group.jobs as Array<Record<string, unknown>>).find((job) => job.outlineId === 'scene_8')!;
+    (original.phases as Record<string, unknown>).tts = {
+      status: 'failed',
+      attempts: 1,
+      error: 'Narration bytes missing',
+    };
+    (original.phases as Record<string, unknown>).media = { status: 'pending', attempts: 0 };
+
+    const result = applySplit(doc, 'sceneA')!;
+    const partJobs = (group.jobs as Array<Record<string, unknown>>).filter((job) =>
+      result.parts.some((part) => part.outlineId === job.outlineId),
+    );
+    expect(partJobs.length).toBe(result.parts.length);
+    for (const job of partJobs) {
+      const phases = job.phases as Record<string, { status: string; error?: string }>;
+      expect(phases.tts?.status).toBe('failed');
+      expect(phases.tts?.error).toBe('Narration bytes missing');
+      expect(phases.media?.status).toBe('pending');
+    }
+  });
+
+  it('leaves jobs without narration phases phase-free after the split', () => {
+    const doc = document();
+    const result = applySplit(doc, 'sceneA')!;
+    const partJobs = (doc.outline.lessonGroups[0].jobs as Array<Record<string, unknown>>).filter((job) =>
+      result.parts.some((part) => part.outlineId === job.outlineId),
+    );
+    for (const job of partJobs) {
+      expect((job.phases as Record<string, unknown>).tts).toBeUndefined();
+      expect((job.phases as Record<string, unknown>).media).toBeUndefined();
+    }
+  });
 });
