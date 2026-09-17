@@ -16,6 +16,12 @@ const log = createLogger('AudioPlayer');
  * endpoint must not pin a playback line indefinitely. */
 const LEGACY_URL_FETCH_TIMEOUT_MS = 15_000;
 
+/** One warning per distinct missing ref, then silence: a TTS-disabled deck
+ * legitimately skips every line, and the point is a breadcrumb, not a log
+ * storm. */
+const warnedMissingAudioIds = new Set<string>();
+const MISSING_AUDIO_WARN_LIMIT = 5;
+
 /** Bytes an audio id currently resolves to, pool first. Loaded lazily to keep
  * this module importable without the media graph. */
 async function resolveBytes(audioId: string): Promise<Blob | null> {
@@ -101,7 +107,15 @@ export class AudioPlayer {
    * @returns true if audio started playing, false if no audio (TTS disabled or not generated)
    */
   public async play(audioId: string, legacyUrl?: string): Promise<boolean> {
-    if (this.destroyed) return false;
+    if (this.destroyed) {
+      // Should be unreachable since owners replace torn-down players (see
+      // isDestroyed), but a sticky no-op here is exactly how narration went
+      // missing with zero traces: keep it loud instead of silent.
+      log.warn(
+        `play() called on a destroyed player; narration for ${audioId || '(no id)'} is being skipped`,
+      );
+      return false;
+    }
     const requestToken = ++this.requestToken;
     // A new play supersedes any in-flight legacy fetch of the previous one.
     this.abortLegacyFetch();
@@ -138,7 +152,20 @@ export class AudioPlayer {
       }
 
       if (!blob && !directUrl) {
-        // Pre-generated audio does not exist (generation failed), skip silently
+        // Pre-generated audio does not exist (generation failed, or a
+        // TTS-disabled deck): the engine decides between browser TTS and the
+        // reading timer. The fallback itself is by design, but a completely
+        // quiet skip made a missing-narration report indistinguishable from
+        // playback; leave a breadcrumb for the first few distinct refs so the
+        // next investigation starts from evidence.
+        if (
+          audioId &&
+          !warnedMissingAudioIds.has(audioId) &&
+          warnedMissingAudioIds.size < MISSING_AUDIO_WARN_LIMIT
+        ) {
+          warnedMissingAudioIds.add(audioId);
+          log.warn(`No pre-generated narration bytes for ${audioId}; falling back to TTS/reading beat`);
+        }
         return false;
       }
 

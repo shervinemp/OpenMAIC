@@ -1,6 +1,9 @@
 import { db } from '@/lib/utils/database';
+import { createLogger } from '@/lib/logger';
 import { isConcreteMediaAddress } from './resolve-media-ref';
 import { withAssetUrl } from './use-asset-url';
+
+const log = createLogger('AudioBytes');
 
 /**
  * Bytes an audio reference currently resolves to.
@@ -42,6 +45,20 @@ const inFlightServerLookup = new Map<string, Promise<Blob | null>>();
 const SERVER_MISS_TTL_MS = 30_000;
 const serverMissUntil = new Map<string, number>();
 
+/** Auth failures are configuration, not absence — silently folding them into
+ * the 30s miss cache makes a credentials regression present exactly like
+ * missing narration. Warn rate-limited (one per minute) so the signal exists
+ * without a per-ref storm. */
+let lastAuthWarnAt = 0;
+function warnUnauthorized(status: number): void {
+  const now = Date.now();
+  if (now - lastAuthWarnAt < 60_000) return;
+  lastAuthWarnAt = now;
+  log.warn(
+    `Narration byte fetch unauthorized (HTTP ${status}); persistence credentials are missing or stale`,
+  );
+}
+
 function knownMissing(audioId: string): boolean {
   const until = serverMissUntil.get(audioId);
   if (until === undefined) return false;
@@ -74,6 +91,7 @@ async function fetchServerAudioBlob(audioId: string): Promise<Blob | null> {
         headers,
       });
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) warnUnauthorized(response.status);
         serverMissUntil.set(audioId, Date.now() + SERVER_MISS_TTL_MS);
         return null;
       }
