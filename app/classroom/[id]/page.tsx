@@ -254,12 +254,32 @@ export default function ClassroomDetailPage() {
       // then the drain/orchestrator consumes entries per class.
       const storeState = useStageStore.getState();
       const storeScenes = storeState.scenes;
+      // Stale-failure reconciliation input: persisted failed phase rows keyed
+      // by scene id (lessonGroups jobs are outline-keyed). The repair audit
+      // lifts these the moment byte truth disproves them — a red card must
+      // not outlive its fix just because no dead ref exists this session.
+      const failedPhasesBySceneId = new Map<string, Set<'tts' | 'media'>>();
+      {
+        const jobByOutlineId = new Map(
+          storeState.lessonGroups.flatMap((group) =>
+            (group.jobs ?? []).map((job) => [job.outlineId, job] as const),
+          ),
+        );
+        for (const scene of storeScenes) {
+          const job = scene.outlineId ? jobByOutlineId.get(scene.outlineId) : undefined;
+          const phases = new Set<'tts' | 'media'>();
+          if (job?.phases?.tts?.status === 'failed') phases.add('tts');
+          if (job?.phases?.media?.status === 'failed') phases.add('media');
+          if (phases.size > 0) failedPhasesBySceneId.set(scene.id, phases);
+        }
+      }
       void (async () => {
         const { repairCourseMedia } = await import('@/lib/media/repair-course-media');
         await repairCourseMedia([...storeScenes], {
           language: storeState.blueprint?.languageDirective,
           outlines,
           stageId: stage.id,
+          persistedFailedPhases: failedPhasesBySceneId,
           onScenePhaseFailure: (sceneId, phase) => {
             const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
             if (!scene?.outlineId) return;

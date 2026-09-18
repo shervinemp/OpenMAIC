@@ -143,6 +143,8 @@ export async function register(): Promise<void> {
     return shutdownPromise;
   };
 
-  process.once('SIGTERM', () => void shutdown());
-  process.once('SIGINT', () => void shutdown());
+  // Registered via dynamic import: this module also gets compiled for the
+  // Edge runtime, where `process.once` doesn't exist (see signal-handlers.ts).
+  const { registerSignalHandlers } = await import('@/lib/server/signal-handlers');
+  registerSignalHandlers(() => void shutdown());
 }

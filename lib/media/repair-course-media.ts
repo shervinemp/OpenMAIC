@@ -121,6 +121,15 @@ export interface MediaRepairOptions {
    * persist forever even though the bytes are back (the stale red card).
    */
   onScenePhaseResolved?: (sceneId: string, phase: 'tts' | 'media') => void;
+  /**
+   * Persisted failed phase rows, keyed by scene id (the ONE QUEUE's stored
+   * truth). A row left over from an earlier decay whose bytes verify healthy
+   * has no dispatcher to flip it in this run (the resolution hook above only
+   * iterates scenes that had DEAD refs), so the red card would outlive its
+   * fix across sessions. With this map the audit lifts those stale rows the
+   * moment byte truth disproves them.
+   */
+  persistedFailedPhases?: ReadonlyMap<string, ReadonlySet<'tts' | 'media'>>;
 }
 
 /** Narration refs carry the pipeline's stable-request-id shape (see walker). */
@@ -165,11 +174,21 @@ async function batchRefResolvesBytes(
   // misdiagnosed when the pool metadata alone is stale.
   const narrationMisses = missingLocally.filter(isNarrationRefLocal);
   const nonNarrationMisses = missingLocally.filter((ref) => !isNarrationRefLocal(ref));
-  await Promise.all(
-    narrationMisses.map(async (ref) => {
-      resolved.set(ref, await refResolvesBytes(ref, stageId));
-    }),
-  );
+  // Bounded fan-out: narration resolution DOWNLOADS bytes (pool resolve →
+  // server fetch → mirror seed), and an unbounded Promise.all over a whole
+  // deck's misses stampedes the dev server and the browser's connection
+  // pool — observed as hundreds of transient null resolutions, which then
+  // read as "still dead" and (wrongly) leave stale failed phases in place.
+  // Chunking keeps the pass fast without the self-inflicted failure mode.
+  const NARRATION_RESOLVE_CONCURRENCY = 8;
+  for (let i = 0; i < narrationMisses.length; i += NARRATION_RESOLVE_CONCURRENCY) {
+    const chunk = narrationMisses.slice(i, i + NARRATION_RESOLVE_CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (ref) => {
+        resolved.set(ref, await refResolvesBytes(ref, stageId));
+      }),
+    );
+  }
   const serverPresent = await probeServerAssetPresence(nonNarrationMisses);
   for (const ref of nonNarrationMisses) {
     resolved.set(ref, serverPresent.get(ref) === true);
@@ -231,6 +250,10 @@ export async function repairCourseMedia(
   // its own refs — the flat ref set alone cannot attribute resurrection.
   const deadNarrationByScene = new Map<string, Set<string>>();
   const deadMediaByScene = new Map<string, Set<string>>();
+  // Scenes whose refs of a class ALL verify this run — the candidates for
+  // lifting a stale persisted failure (see persistedFailedPhases).
+  const healthyNarrationScenes = new Set<string>();
+  const healthyMediaScenes = new Set<string>();
   const detectionTargets = [
     ...scenes,
     ...(options.additionalAssets ?? []),
@@ -288,6 +311,12 @@ export async function repairCourseMedia(
     if (sceneDeadMedia && scene.id) {
       recordScenePhaseFailure?.(scene.id, 'media');
       report.mediaFailedSceneIds.push(scene.id);
+    }
+    if (scene.id) {
+      // Zero refs of a class is "nothing to verify", not "healthy": lifting a
+      // failed row needs positive byte evidence.
+      if (narratedRefs.length > 0 && !sceneDeadNarration) healthyNarrationScenes.add(scene.id);
+      if (mediaRefs.length > 0 && !sceneDeadMedia) healthyMediaScenes.add(scene.id);
     }
   }
   report.mediaPending = deadMediaRefs.size;
@@ -366,6 +395,31 @@ export async function repairCourseMedia(
           recordScenePhaseResolved(sceneId, 'media');
         }
       }
+    }
+  }
+
+  // ---- Stale-failure reconciliation ----
+  // A phase row recorded failed by an earlier decay whose refs verify healthy
+  // right now would keep its red card forever: the resolution hook above only
+  // sees scenes that had dead refs THIS run. Byte truth is the predicate's
+  // only input, so lifting is always allowed and never invents health.
+  if (recordScenePhaseResolved && options.persistedFailedPhases) {
+    let lifted = 0;
+    for (const [sceneId, phases] of options.persistedFailedPhases) {
+      if (phases.has('tts') && healthyNarrationScenes.has(sceneId)) {
+        recordScenePhaseResolved(sceneId, 'tts');
+        lifted += 1;
+      }
+      if (phases.has('media') && healthyMediaScenes.has(sceneId)) {
+        recordScenePhaseResolved(sceneId, 'media');
+        lifted += 1;
+      }
+    }
+    if (lifted > 0) {
+      log.info(
+        `Reconciled ${lifted} stale failed phase row(s) against byte truth ` +
+          `(${options.persistedFailedPhases.size} persisted failed scene(s) audited)`,
+      );
     }
   }
 

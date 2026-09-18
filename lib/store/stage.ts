@@ -956,6 +956,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         jobs: group.jobs.map((job) => {
           if (job.outlineId !== outlineId) return job;
           const previous = job.phases[phase];
+          // A job can lack the phase key entirely (legacy rows, split parts,
+          // scenes whose narration was materialized out-of-band). Treat a
+          // missing row as attempts: 0 instead of crashing the caller — a
+          // repair that resolved every ref must be able to record `done`.
+          const attempts = previous?.attempts ?? 0;
           return {
             ...job,
             phases: {
@@ -963,7 +968,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
               [phase]: {
                 ...previous,
                 ...patch,
-                attempts: patch.status === 'running' ? previous.attempts + 1 : previous.attempts,
+                attempts: patch.status === 'running' ? attempts + 1 : attempts,
                 updatedAt: now,
               },
             },

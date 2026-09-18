@@ -232,4 +232,47 @@ describe('repairCourseMedia — class-agnostic byte detection', () => {
       expect.arrayContaining(['speech_abc', 'audio_leg2']),
     );
   });
+
+  it('lifts a persisted failed phase when byte truth disproves it (stale red card)', async () => {
+    mocks.resolveAudioBlob.mockResolvedValue(AUDIO_BYTES);
+    mocks.resolveStoredBytes.mockResolvedValue(MEDIA_BYTES);
+    mocks.drainPendingSceneTTS.mockResolvedValue(0);
+    const onScenePhaseResolved = vi.fn();
+    const onScenePhaseFailure = vi.fn();
+
+    await repairCourseMedia(
+      [scene({ id: 's1', order: 1, audioIds: ['tts_s1_a0'], srcRefs: ['gen_img_1'] })],
+      {
+        stageId: 'stage-1',
+        outlines: [outline('o1', 1, ['gen_img_1'])],
+        persistedFailedPhases: new Map([['s1', new Set(['tts', 'media'] as const)]]),
+        onScenePhaseFailure,
+        onScenePhaseResolved,
+      },
+    );
+
+    expect(onScenePhaseFailure).not.toHaveBeenCalled();
+    expect(onScenePhaseResolved).toHaveBeenCalledWith('s1', 'tts');
+    expect(onScenePhaseResolved).toHaveBeenCalledWith('s1', 'media');
+  });
+
+  it('keeps a persisted failed phase when the bytes still do not resolve', async () => {
+    mocks.resolveAudioBlob.mockResolvedValue(null);
+    mocks.resolveStoredBytes.mockResolvedValue(null);
+    oracleMocks.probeServerAssetPresence.mockReset().mockResolvedValue(new Map());
+    mocks.drainPendingSceneTTS.mockResolvedValue(0);
+    const onScenePhaseResolved = vi.fn();
+
+    await repairCourseMedia(
+      [scene({ id: 's1', order: 1, audioIds: ['tts_s1_a0'], srcRefs: ['gen_img_1'] })],
+      {
+        stageId: 'stage-1',
+        outlines: [outline('o1', 1, ['gen_img_1'])],
+        persistedFailedPhases: new Map([['s1', new Set(['tts', 'media'] as const)]]),
+        onScenePhaseResolved,
+      },
+    );
+
+    expect(onScenePhaseResolved).not.toHaveBeenCalled();
+  });
 });
