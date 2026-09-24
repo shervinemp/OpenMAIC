@@ -298,10 +298,15 @@ async function handleAssetsRequest(
   if (request.method === 'GET') {
     try {
       const bytes = await readFile(assetPath);
-      const stored = JSON.parse(await readFile(metaPath, 'utf8')) as {
-        mime?: unknown;
-      };
-      const mime = typeof stored?.mime === 'string' ? stored.mime : 'application/octet-stream';
+      // The sidecar only carries the MIME type: bytes without one (a copy
+      // whose meta write failed, a manually restored file) are still the
+      // asset HEAD reports as present — serve them as octet-stream instead
+      // of a 404 that contradicts the existence probe.
+      const stored = (await readFile(metaPath, 'utf8')
+        .then((raw) => JSON.parse(raw) as { mime?: unknown })
+        .catch(() => null)) ?? { mime: undefined };
+      const mime =
+        typeof stored.mime === 'string' && stored.mime ? stored.mime : 'application/octet-stream';
       return new Response(bytes, {
         status: 200,
         headers: { 'content-type': mime },
