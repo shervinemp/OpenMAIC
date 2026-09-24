@@ -702,11 +702,18 @@ export async function parseWithMinerUDocument(
   return extractMinerUResult(fileResult);
 }
 
+/** Default model id for the local vision OCR endpoint (override: LOCAL_VISION_OCR_MODEL). */
+const LOCAL_VISION_DEFAULT_MODEL = 'qwen2-vl';
+/** Per-page OCR request budget — a local VLM on consumer hardware is slow, not hung. */
+const LOCAL_VISION_PAGE_TIMEOUT_MS = 5 * 60_000;
+
 /**
  * Local Vision API implementation
  *
  * Uses a local OpenAI-compatible endpoint (vLLM/Ollama running Qwen2-VL or
- * similar) to perform OCR and layout analysis on rendered PDF pages.
+ * similar) to perform OCR and layout analysis on rendered PDF pages. The
+ * model id defaults to `qwen2-vl`; set LOCAL_VISION_OCR_MODEL to the name the
+ * endpoint serves (e.g. `qwen2.5vl:7b` on Ollama).
  */
 async function parseWithLocalVision(
   config: PDFParserConfig,
@@ -716,16 +723,21 @@ async function parseWithLocalVision(
   const numPages = pdf.numPages;
 
   let fullText = '';
-  const allImages: string[] = [];
-  const baseUrl = config.baseUrl || 'http://127.0.0.1:11434/v1';
+  const baseUrl = (config.baseUrl || 'http://127.0.0.1:11434/v1').replace(/\/+$/, '');
+  const model = process.env.LOCAL_VISION_OCR_MODEL?.trim() || LOCAL_VISION_DEFAULT_MODEL;
 
   for (let i = 1; i <= numPages; i++) {
-    const imageArrayBuffer = await renderPageAsImage(new Uint8Array(pdfBuffer), i, { scale: 2 });
-    const base64Image = Buffer.from(imageArrayBuffer).toString('base64');
-    const imageUrl = `data:image/png;base64,${base64Image}`;
+    // Rendering in Node needs an explicit canvas implementation (unpdf throws
+    // 'Parameter "canvasImport" is required in Node.js environment' without
+    // it). Reuse the already-parsed document instead of re-parsing per page.
+    const imageUrl = await renderPageAsImage(pdf, i, {
+      scale: 2,
+      canvasImport: () => import('@napi-rs/canvas'),
+      toDataURL: true,
+    });
 
     const payload = {
-      model: 'qwen2-vl',
+      model,
       messages: [
         {
           role: 'user',
@@ -742,24 +754,32 @@ async function parseWithLocalVision(
 
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+      },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(LOCAL_VISION_PAGE_TIMEOUT_MS),
     });
 
     if (!response.ok) {
-      throw new Error(`Local Vision OCR error: ${response.statusText}`);
+      const detail = (await response.text().catch(() => '')).slice(0, 200);
+      throw new Error(
+        `Local Vision OCR error on page ${i} (${response.status}): ${detail || response.statusText}`,
+      );
     }
 
     const data = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
     const pageText = data.choices?.[0]?.message?.content || '';
-    fullText += `\n\n--- Page ${i} ---\n\n${pageText}`;
+    // Same page marker the unpdf path emits, so chunk citations anchor alike.
+    fullText += `\n\n[Page ${i}]\n\n${pageText}`;
   }
 
   return {
     text: fullText.trim(),
-    images: allImages,
+    images: [],
     metadata: {
       pageCount: numPages,
       parser: 'local_vision',
