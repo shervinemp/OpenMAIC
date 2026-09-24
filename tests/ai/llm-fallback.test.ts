@@ -36,10 +36,7 @@ describe('callLLM provider fallback', () => {
       .mockRejectedValueOnce(new Error('Error from provider: Endpoint is unavailable'))
       .mockResolvedValueOnce({ text: 'fallback ok', usage: {} });
 
-    const result = await callLLM(
-      { model: asModel(primaryModel), prompt: 'hi' },
-      'fallback-test',
-    );
+    const result = await callLLM({ model: asModel(primaryModel), prompt: 'hi' }, 'fallback-test');
 
     expect(result.text).toBe('fallback ok');
     expect(generateTextMock).toHaveBeenCalledTimes(2);
@@ -55,9 +52,9 @@ describe('callLLM provider fallback', () => {
     const abort = new DOMException('Aborted', 'AbortError');
     generateTextMock.mockRejectedValue(abort);
 
-    await expect(callLLM({ model: asModel({ provider: 'x' }), prompt: 'hi' }, 'fallback-test')).rejects.toThrow(
-      'Aborted',
-    );
+    await expect(
+      callLLM({ model: asModel({ provider: 'x' }), prompt: 'hi' }, 'fallback-test'),
+    ).rejects.toThrow('Aborted');
     expect(generateTextMock).toHaveBeenCalledTimes(1);
     expect(resolveModelMock).not.toHaveBeenCalled();
   });
@@ -66,9 +63,9 @@ describe('callLLM provider fallback', () => {
     vi.stubEnv('OPENMAIC_FALLBACK_MODEL', '');
     generateTextMock.mockRejectedValue(new Error('Insufficient Balance'));
 
-    await expect(callLLM({ model: asModel({ provider: 'x' }), prompt: 'hi' }, 'fallback-test')).rejects.toThrow(
-      'Insufficient Balance',
-    );
+    await expect(
+      callLLM({ model: asModel({ provider: 'x' }), prompt: 'hi' }, 'fallback-test'),
+    ).rejects.toThrow('Insufficient Balance');
     expect(generateTextMock).toHaveBeenCalledTimes(1);
   });
 
@@ -83,6 +80,76 @@ describe('callLLM provider fallback', () => {
     expect(resolveModelMock).not.toHaveBeenCalled();
   });
 
+  test('a rate-limited primary swaps to the fallback model instead of pausing', async () => {
+    generateTextMock
+      .mockRejectedValueOnce(Object.assign(new Error('Too Many Requests'), { statusCode: 429 }))
+      .mockResolvedValueOnce({ text: 'fallback ok', usage: {} });
+
+    const result = await callLLM(
+      { model: asModel({ provider: 'openrouter', modelId: 'free' }), prompt: 'hi' },
+      'fallback-test',
+    );
+
+    expect(result.text).toBe('fallback ok');
+    expect(generateTextMock).toHaveBeenCalledTimes(2);
+  });
+
+  test('a rate limit on the last attempt surfaces immediately instead of sleeping first', async () => {
+    vi.stubEnv('OPENMAIC_FALLBACK_MODEL', '');
+    vi.useFakeTimers();
+    try {
+      generateTextMock.mockRejectedValue(
+        Object.assign(new Error('Too Many Requests'), { statusCode: 429 }),
+      );
+      // No timers are advanced: a pre-throw pause would hang this await.
+      await expect(
+        callLLM({ model: asModel({ provider: 'x' }), prompt: 'hi' }, 'fallback-test'),
+      ).rejects.toThrow('Too Many Requests');
+      expect(generateTextMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('a rate limit with attempts left pauses, then retries; abort cuts the pause short', async () => {
+    vi.stubEnv('OPENMAIC_FALLBACK_MODEL', '');
+    vi.useFakeTimers();
+    try {
+      generateTextMock
+        .mockRejectedValueOnce(Object.assign(new Error('rate limited'), { statusCode: 429 }))
+        .mockResolvedValueOnce({ text: 'second try', usage: {} });
+      const pending = callLLM(
+        { model: asModel({ provider: 'x' }), prompt: 'hi' },
+        'fallback-test',
+        {
+          retries: 1,
+          validate: () => true,
+        },
+      );
+      await vi.advanceTimersByTimeAsync(20_000);
+      await expect(pending).resolves.toMatchObject({ text: 'second try' });
+      expect(generateTextMock).toHaveBeenCalledTimes(2);
+
+      generateTextMock.mockReset();
+      generateTextMock.mockRejectedValue(
+        Object.assign(new Error('rate limited'), { statusCode: 429 }),
+      );
+      const controller = new AbortController();
+      const aborted = callLLM(
+        { model: asModel({ provider: 'x' }), prompt: 'hi', abortSignal: controller.signal },
+        'fallback-test',
+        { retries: 1, validate: () => true },
+      );
+      const assertion = expect(aborted).rejects.toThrow();
+      await vi.advanceTimersByTimeAsync(1_000);
+      controller.abort();
+      await assertion;
+      expect(generateTextMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('fallback failure propagates after the single swap', async () => {
     const primaryModel = { provider: 'openrouter', modelId: 'x-preview-f-free' };
     generateTextMock.mockRejectedValue(new Error('Insufficient Balance'));
@@ -94,4 +161,3 @@ describe('callLLM provider fallback', () => {
     expect(generateTextMock).toHaveBeenCalledTimes(2);
   });
 });
-
