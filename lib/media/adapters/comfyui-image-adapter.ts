@@ -393,6 +393,20 @@ function patchWorkflow(
     }
   }
 
+  // --- Qwen-Image 2.1 text encoder resolution hint -----------------------------
+  // TextEncodeQwenImage21 conditions on a `resolution` hint; a stale 1024 hint
+  // at a non-square or larger canvas conditions text rendering wrong. Keep it
+  // in sync with the latent size (same rule as scripts/censorship-bench.mjs).
+  if (dims) {
+    for (const node of Object.values(workflow)) {
+      if ((node as { class_type?: unknown })?.class_type !== 'TextEncodeQwenImage21') continue;
+      const encoderInputs = nodeInputs(node);
+      if (encoderInputs && typeof encoderInputs['resolution'] === 'number') {
+        encoderInputs['resolution'] = Math.min(dims.width, dims.height);
+      }
+    }
+  }
+
   // --- KSampler seed ---------------------------------------------------------
   const samplerNodeId = findNodeIdByTitle(workflow, 'KSampler');
   if (samplerNodeId) {
