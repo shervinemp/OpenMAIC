@@ -101,13 +101,13 @@ export const maxDuration = 300;
 /**
  * Extract the languageDirective from the streamed wrapper JSON.
  * Matches `"languageDirective":"<value>"` in partial JSON like:
- *   {"languageDirective":"τö¿Σ╕¡µûçµÄêΦ»╛...","outlines":[...
+ *   {"languageDirective":"用中文授课...","outlines":[...
  */
 function extractLanguageDirective(buffer: string): string | null {
   // The directive is the first key of the wrapper object, so it can only ever
   // appear in the head of the buffer. Bound the scan to keep this O(1) per
-  // streamed chunk ΓÇö it is called on the full, growing buffer on every chunk,
-  // which is otherwise O(n┬▓) over the stream.
+  // streamed chunk — it is called on the full, growing buffer on every chunk,
+  // which is otherwise O(n²) over the stream.
   const head = buffer.length > 8192 ? buffer.slice(0, 8192) : buffer;
   const match = head.match(/"languageDirective"\s*:\s*"((?:[^"\\]|\\.)*)"/);
   if (!match) return null;
@@ -120,7 +120,7 @@ function extractLanguageDirective(buffer: string): string | null {
 
 /**
  * Extract the courseTitle from the streamed wrapper JSON.
- * Same head-bound scan as `extractLanguageDirective` ΓÇö the title is a
+ * Same head-bound scan as `extractLanguageDirective` — the title is a
  * top-level key near the start of the wrapper object, so it only appears in
  * the buffer head. Returns the decoded title, or null if not yet streamed.
  */
@@ -149,7 +149,7 @@ function extractCourseTitle(buffer: string): string | null {
 
 /**
  * Full-buffer fallback, run once after the stream completes: recovers a title
- * the model emitted after the `outlines` array or beyond the 8KB head window ΓÇö
+ * the model emitted after the `outlines` array or beyond the 8KB head window —
  * cases the head-bound `extractCourseTitle` scan would miss. Only invoked when
  * the streaming scan produced nothing, so the extra full-buffer regex is paid once.
  */
@@ -162,7 +162,7 @@ function extractCourseTitleFromComplete(buffer: string): string | null {
  * Recover the optional wrapper metadata (`lessons`, `units`, `audience`,
  * `objectives`) from the completed stream. The incremental parser only
  * handles the `outlines` array, so a single full-buffer JSON.parse is paid
- * once at completion ΓÇö the model emits a conforming wrapper per the prompt
+ * once at completion — the model emits a conforming wrapper per the prompt
  * contract, and any failure falls back to derived values.
  */
 function extractWrapperMeta(buffer: string): Partial<ParsedOutlineResponse> | null {
@@ -183,7 +183,7 @@ function extractWrapperMeta(buffer: string): Partial<ParsedOutlineResponse> | nu
  * Incremental JSON array parser.
  * Extracts complete top-level objects from a partially-streamed JSON array,
  * resuming from `scanFrom` (an index into `buffer`) so the growing buffer is
- * scanned only ONCE across the whole stream ΓÇö O(n) total instead of O(n┬▓).
+ * scanned only ONCE across the whole stream — O(n) total instead of O(n²).
  * Supports both a flat array `[{...},{...}]` and a wrapper object
  * `{"languageDirective":"...","outlines":[{...},{...}]}`, with or without a
  * markdown ```json fence (the array is located by content, not by stripping).
@@ -241,7 +241,7 @@ function extractNewOutlines(
         try {
           results.push(JSON.parse(buffer.substring(objectStart, i + 1)));
         } catch {
-          // Incomplete or invalid JSON ΓÇö skip
+          // Incomplete or invalid JSON — skip
         }
         objectStart = -1;
         consumed = i + 1;
@@ -1041,7 +1041,7 @@ export async function POST(req: NextRequest) {
     // Build user profile string for language inference context
     const userProfileText =
       requirements.userNickname || requirements.userBio
-        ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` ΓÇö ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
+        ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` — ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
         : '';
 
     // Detect vision capability
@@ -1367,7 +1367,7 @@ export async function POST(req: NextRequest) {
               ).textStream;
 
               for await (const chunk of textStream) {
-                // Stop doing work the moment the client goes away ΓÇö otherwise
+                // Stop doing work the moment the client goes away — otherwise
                 // generation keeps running and buffering for a dead connection.
                 if (req.signal?.aborted) {
                   stopHeartbeat();
@@ -1639,7 +1639,7 @@ export async function POST(req: NextRequest) {
             controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));
           } else {
             // All retries exhausted (no outlines, or the contract was never
-            // satisfied ΓÇö never accept a broken deck).
+            // satisfied — never accept a broken deck).
             log.error(
               `Outline generation failed after ${MAX_STREAM_RETRIES + 1} attempts: ${lastError}`,
             );
@@ -1665,7 +1665,7 @@ export async function POST(req: NextRequest) {
           try {
             controller.close();
           } catch {
-            // already closed ΓÇö ignore
+            // already closed — ignore
           }
         }
       },

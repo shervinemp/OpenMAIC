@@ -124,11 +124,11 @@ export interface GeneratedReadingContent {
   items: ReadingItem[];
 }
 
-// ==================== Analytic scene kinds (Phase 2 ┬º15.9) ====================
+// ==================== Analytic scene kinds (Phase 2 §15.9) ====================
 
 /**
  * One dimension row of a compare-and-contrast table. `cells[i]` is what the
- * row says about `subjects[i]` ΓÇö a complete sentence per cell, not a label.
+ * row says about `subjects[i]` — a complete sentence per cell, not a label.
  */
 export interface ComparisonRow {
   id: string;
@@ -195,7 +195,7 @@ export interface GeneratedTradeoffsContent {
   recommendation: {
     /** Name of the chosen option (must match an option's name). */
     choice: string;
-    /** Why it wins under the stated constraints ΓÇö not a generic platitude. */
+    /** Why it wins under the stated constraints — not a generic platitude. */
     justification: string;
   };
 }
