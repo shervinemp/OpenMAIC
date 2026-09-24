@@ -285,6 +285,59 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(done.blueprint.sizePreset).toBe('standard');
   });
 
+  test('media element ids are course-unique although every lesson numbers from gen_img_1', async () => {
+    // Every lesson call independently emits gen_img_1 on its first scene —
+    // the media store keys tasks by elementId, so the route must rewrite them.
+    const withMedia = (lessonIndex: number) => {
+      const { outlines } = lessonOutlines(lessonIndex);
+      outlines[0] = {
+        ...outlines[0],
+        mediaGenerations: [
+          { type: 'image', prompt: `diagram ${lessonIndex}`, elementId: 'gen_img_1' },
+        ],
+      } as (typeof outlines)[number];
+      return { outlines };
+    };
+    setupMultiUnitFlow({
+      outline: Object.fromEntries(
+        [0, 1, 2, 3, 4, 5].map((li) => [li, () => withMedia(li)] as const),
+      ),
+    });
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        requirements: REQUIREMENTS,
+        sizePreset: 'standard',
+        pdfText: '',
+        pdfImages: [],
+        imageMapping: {},
+        researchContext: '',
+      }) as unknown as Parameters<typeof POST>[0],
+    );
+    const events = parseSseEvents(await readStreamBody(response));
+    const done = events.find((e) => e.type === 'done');
+    expect(done).toBeDefined();
+
+    const elementIds = (
+      done.outlines as Array<{ mediaGenerations?: Array<{ elementId: string }> }>
+    ).flatMap((outline) => outline.mediaGenerations?.map((mg) => mg.elementId) ?? []);
+    expect(elementIds).toHaveLength(6);
+    expect(new Set(elementIds).size).toBe(6);
+    expect(elementIds.every((id) => id.startsWith('gen_img_') && id !== 'gen_img_1')).toBe(true);
+
+    // The streamed outline events carry the same ids the done event persists.
+    const streamedIds = events
+      .filter((e) => e.type === 'outline')
+      .flatMap(
+        (e) =>
+          (e.data as { mediaGenerations?: Array<{ elementId: string }> }).mediaGenerations?.map(
+            (mg) => mg.elementId,
+          ) ?? [],
+      );
+    expect(streamedIds.sort()).toEqual([...elementIds].sort());
+  });
+
   test('per-lesson prompt carries a lesson-scoped contract (correct global numbering + course-wide style guide)', async () => {
     setupMultiUnitFlow();
 

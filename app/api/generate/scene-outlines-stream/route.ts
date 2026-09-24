@@ -883,9 +883,13 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
       );
     }
 
+    // Every lesson call numbers its media from gen_img_1 / gen_vid_1, and the
+    // media store keys tasks by elementId: without course-unique ids, lesson
+    // 2's gen_img_1 would reuse (or overwrite) lesson 1's image. Same rewrite
+    // the single-call path applies to the whole deck.
     // Attach per-scene retrieval context from the unit's web research —
     // same machinery as the PDF path (Pillar 3b), citation markers "[source N]".
-    const groundedOutlines = lessonOutlines.map((outline) => {
+    const groundedOutlines = uniquifyMediaElementIds(lessonOutlines).map((outline) => {
       if (outline.retrievalContext || unitChunks.length === 0) return outline;
       const query = `${outline.title}\n${outline.description}\n${(outline.keyPoints ?? []).join('\n')}`;
       const retrieved = retrieveChunks(query, unitChunks);
