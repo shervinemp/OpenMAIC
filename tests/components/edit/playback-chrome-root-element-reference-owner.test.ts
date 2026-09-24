@@ -341,6 +341,9 @@ vi.mock('@/lib/action/engine', () => ({ ActionEngine: class {} }));
 vi.mock('@/lib/utils/audio-player', () => ({
   createAudioPlayer: () => ({
     destroy: vi.fn(),
+    // PlaybackChromeRoot swaps in a fresh player when the ref's player was
+    // destroyed by a StrictMode effect replay.
+    isDestroyed: vi.fn(() => false),
     setMuted: vi.fn(),
     setVolume: vi.fn(),
     setPlaybackRate: vi.fn(),
