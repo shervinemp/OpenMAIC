@@ -85,4 +85,18 @@ describe('JsonFileDocumentStore', () => {
     const after = await store.loadDocument('stage-1');
     expect(after!.scenes.find((s) => s.id === 'scene-a')!.title).toBe('newer');
   });
+
+  // A tab that still holds a deleted scene must not resurrect it with a
+  // stale full save: the deletion advances the stage clock like putScene.
+  test('a stale full save cannot resurrect a deleted scene', async () => {
+    const original = makeDocument();
+    await store.saveDocument(original);
+    const stale = await store.loadDocument('stage-1');
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await store.deleteScene('stage-1', 'scene-a');
+
+    await expect(store.saveDocument(stale!)).rejects.toBeInstanceOf(DocumentLostUpdateError);
+    const after = await store.loadDocument('stage-1');
+    expect(after!.scenes.map((s) => s.id)).toEqual(['scene-b']);
+  });
 });

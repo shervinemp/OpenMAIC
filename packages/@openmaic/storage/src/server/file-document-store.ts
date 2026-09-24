@@ -500,7 +500,12 @@ export class JsonFileDocumentStore<
       if (stored === null) return;
       this.assertCurrentForIncrementalWrite(stageId, stored);
       const scenes = stored.scenes.filter((s) => s.id !== sceneId);
-      await this.writeAtomic(stageId, { ...stored, scenes });
+      if (scenes.length === stored.scenes.length) return;
+      // A deletion is a newer revision like any putScene: advance the stage
+      // clock so a stale full-document save (a tab still holding the scene)
+      // trips the lost-update fence instead of resurrecting it.
+      const stage = { ...stored.stage, updatedAt: Date.now() };
+      await this.writeAtomic(stageId, { ...stored, stage, scenes });
     });
   }
 }
