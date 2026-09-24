@@ -7,7 +7,11 @@
  *     restores
  *   - `courses/<n>-<name>/…` — every course in the same per-course layout the
  *     single-classroom export uses (rebuilt via `addStageContentToZip` from the
- *     persisted document, so no in-memory store is required)
+ *     persisted document, so no in-memory store is required), plus
+ *     `openmaic-course-state.json`: the document's outline record (outlines,
+ *     blueprint + lesson job state, exams + graded attempts, completion) and
+ *     each scene's outline binding — state the classroom ZIP format does not
+ *     carry. Backups without the file restore as before.
  *   - `settings.json`    — persisted settings with API keys/tokens stripped
  *
  * `buildFullBackupZip` produces the same ZIP in memory (no download) so the
@@ -25,7 +29,7 @@ import type JSZip from 'jszip';
 
 import { BrowserKVStore } from '@openmaic/storage';
 import { deleteStageData, listStages } from '@/lib/utils/stage-storage';
-import { accessDocument } from '@/lib/document-store';
+import { accessDocument, mutateDocument } from '@/lib/document-store';
 import { addStageContentToZip } from '@/lib/export/build-classroom-zip';
 import { importClassroomZip } from '@/lib/import/use-import-classroom';
 import type { Scene, Stage } from '@/lib/types/stage';
@@ -58,6 +62,16 @@ export interface FullBackupManifest {
 
 export type RestoreMode = 'replace' | 'skip' | 'add';
 
+/** Per-course sidecar with the document state the classroom ZIP cannot carry. */
+export const COURSE_STATE_FILE = 'openmaic-course-state.json';
+
+interface BackupCourseState {
+  /** The persisted outline record, verbatim. */
+  outline: Record<string, unknown>;
+  /** Scene identity by order: the classroom import mints new scene ids. */
+  scenes: Array<{ order: number; id: string; outlineId?: string }>;
+}
+
 export interface RestoreBackupOptions {
   /**
    * How to handle a course that is already present in this browser:
@@ -87,7 +101,10 @@ function isSecretKey(key: string): boolean {
     lower === 'api_key' ||
     lower.includes('accesskey') ||
     lower.includes('secret') ||
-    lower.includes('token')
+    lower.includes('password') ||
+    // accessToken / refreshToken / token — but not token COUNTS such as
+    // budgetTokens or maxTokens, which are ordinary settings.
+    /token(?!s)/.test(lower)
   );
 }
 
@@ -170,6 +187,18 @@ export async function buildFullBackupZip(
           latestName: access.document.stage.name,
         },
       );
+      const outline = access.document.outline;
+      if (outline && typeof outline === 'object') {
+        const state: BackupCourseState = {
+          outline: outline as Record<string, unknown>,
+          scenes: (access.document.scenes as Scene[]).map((scene) => ({
+            order: scene.order,
+            id: scene.id,
+            ...(scene.outlineId ? { outlineId: scene.outlineId } : {}),
+          })),
+        };
+        zip.file(`${prefix}/${COURSE_STATE_FILE}`, JSON.stringify(state));
+      }
       packedCourses.push({
         path: prefix,
         name: access.document.stage.name || 'untitled',
@@ -245,6 +274,56 @@ async function findExistingStages(): Promise<ExistingStage[]> {
     log.error('Restore: could not enumerate existing stages:', error);
     return [];
   }
+}
+
+/**
+ * Re-attach the backed-up outline record to a freshly imported course and
+ * rebind its scenes to their outlines (matched by order — the import minted
+ * new scene ids). Best-effort: a failure leaves the course restored exactly
+ * as a plain classroom import would.
+ */
+async function restoreCourseState(courseZip: JSZip, stageId: string): Promise<void> {
+  const entry = courseZip.file(COURSE_STATE_FILE);
+  if (!entry) return; // backup predates the sidecar
+  let state: BackupCourseState;
+  try {
+    state = JSON.parse(await entry.async('text')) as BackupCourseState;
+  } catch (error) {
+    log.warn(
+      `Restore: unreadable ${COURSE_STATE_FILE} for ${stageId}; course state skipped`,
+      error,
+    );
+    return;
+  }
+  if (!state?.outline || typeof state.outline !== 'object') return;
+  const byOrder = new Map((state.scenes ?? []).map((scene) => [scene.order, scene] as const));
+  await mutateDocument(stageId, async (existing, store) => {
+    if (!existing) return;
+    const newIdByOldId = new Map<string, string>();
+    const scenes = existing.scenes.map((scene) => {
+      const source = byOrder.get(scene.order);
+      if (!source) return scene;
+      newIdByOldId.set(source.id, scene.id);
+      return source.outlineId ? { ...scene, outlineId: source.outlineId } : scene;
+    });
+    const outline = { ...state.outline };
+    if (Array.isArray(outline.lessonGroups)) {
+      outline.lessonGroups = (
+        outline.lessonGroups as Array<{ jobs?: Array<{ sceneId?: string }> }>
+      ).map((group) => ({
+        ...group,
+        jobs: (group.jobs ?? []).map((job) =>
+          job.sceneId && newIdByOldId.has(job.sceneId)
+            ? { ...job, sceneId: newIdByOldId.get(job.sceneId) }
+            : job,
+        ),
+      }));
+    }
+    await store.saveDocument(
+      { ...existing, scenes, outline: outline as unknown as typeof existing.outline },
+      { allowOlderOverwrite: true },
+    );
+  });
 }
 
 function courseDirOf(manifestCourses: BackupCourse[], dir: string): BackupCourse | undefined {
@@ -323,7 +402,10 @@ export async function restoreFullBackup(
         if (!path.startsWith(dir)) continue;
         courseZip.file(path.slice(dir.length), await entry.async('uint8array'));
       }
-      await importClassroomZip(courseZip);
+      const restoredStageId = await importClassroomZip(courseZip);
+      await restoreCourseState(courseZip, restoredStageId).catch((error: unknown) => {
+        log.warn(`Full backup restore: course state for "${label}" not restored:`, error);
+      });
       // Replace only after the import committed: a failed import must never
       // destroy the course the user already has.
       if (duplicate && mode === 'replace') {

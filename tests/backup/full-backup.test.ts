@@ -27,6 +27,16 @@ describe('sanitizeValue', () => {
     expect(out).toEqual({});
   });
 
+  it('strips passwords and credential tokens but keeps token-count settings', () => {
+    const out = sanitizeValue({
+      proxyPassword: 'p',
+      refreshToken: 'r',
+      thinking: { budgetTokens: 4000 },
+      maxTokens: 8000,
+    }) as Record<string, unknown>;
+    expect(out).toEqual({ thinking: { budgetTokens: 4000 }, maxTokens: 8000 });
+  });
+
   it('keeps ordinary settings untouched', () => {
     const out = sanitizeValue({ ttsVoice: 'af_heart', speed: 1.2 }) as Record<string, unknown>;
     expect(out).toEqual({ ttsVoice: 'af_heart', speed: 1.2 });
