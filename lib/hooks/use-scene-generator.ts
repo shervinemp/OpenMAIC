@@ -1065,6 +1065,11 @@ interface SemanticPhaseAttempts {
   hadAttempt: boolean;
 }
 
+/**
+ * Semantics attempts recorded for an outline, INCLUDING the attempt that is
+ * running now: `runOutlineJob` records `status: 'running'` (which bumps
+ * `attempts`) before the descriptor's `run` reads this.
+ */
 function semanticPhaseAttempts(outlineId: string): SemanticPhaseAttempts {
   const lessonGroups = useStageStore.getState().lessonGroups;
   const job = (lessonGroups ?? [])
@@ -1076,6 +1081,14 @@ function semanticPhaseAttempts(outlineId: string): SemanticPhaseAttempts {
     hadAttempt: phase?.status !== undefined,
   };
 }
+
+/**
+ * Phases whose failure never un-materializes the scene: content + actions
+ * produced a playable scene, and the failed phase is a fill/curation row the
+ * red card (or the next repair pass) owns. Content/actions failures are the
+ * only ones that leave no scene behind.
+ */
+const SCENE_KEEPING_PHASES: ReadonlySet<MaterialPhaseKey> = new Set(['tts', 'media', 'semantics']);
 
 const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [  {
     key: 'content',
@@ -1313,7 +1326,9 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [  {
       // ratchet already records): exhausted attempts keep the scene but fail
       // the phase, so the red card persists instead of looping.
       const attemptState = semanticPhaseAttempts(outlineId);
-      if (attemptState.attempts >= SEMANTICS_PHASE_MAX_ATTEMPTS && attemptState.hadAttempt) {
+      // `attempts` already counts this run, so the cap allows exactly
+      // SEMANTICS_PHASE_MAX_ATTEMPTS real checks before failing fast.
+      if (attemptState.attempts > SEMANTICS_PHASE_MAX_ATTEMPTS && attemptState.hadAttempt) {
         return { status: 'failed', error: 'semantics attempts exhausted' };
       }
       // Delete-only auto-fixes: provenance artifacts and dead anchors never
@@ -1333,7 +1348,7 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [  {
   },
 ];
 
-interface OutlineJobInput {
+export interface OutlineJobInput {
   outline: SceneOutline;
   /** Effective outline (ranked/downgraded variants apply on rerank). */
   effectiveOutline?: SceneOutline;
@@ -1353,12 +1368,17 @@ interface OutlineJobInput {
 /**
  * The executor: one registry walk with phase-row recording centralized —
  * descriptors declare work and queue-on-failure semantics, the runner owns
- * the store vocabulary once.
+ * the store vocabulary once. Exported for tests; the hook is the only
+ * production caller.
  */
-async function runOutlineJob(input: OutlineJobInput): Promise<{
+export async function runOutlineJob(input: OutlineJobInput): Promise<{
   success: boolean;
+  /**
+   * The materialized scene — also on failure, whenever content + actions
+   * already produced one (a failed tts/media/semantics phase keeps it).
+   */
   scene?: Scene;
-  failedPhase?: 'content' | 'actions' | 'tts' | 'media' | 'semantics';
+  failedPhase?: MaterialPhaseKey;
   error?: string;
 }> {
   const runState: OutlineJobRunState = { previousSpeeches: input.previousSpeeches };
@@ -1386,6 +1406,7 @@ async function runOutlineJob(input: OutlineJobInput): Promise<{
       success: false,
       failedPhase: descriptor.key,
       error,
+      ...(runState.scene ? { scene: runState.scene } : {}),
     };
   }
 
@@ -1626,15 +1647,18 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               pausedByFailureOrAbort = true;
               break;
             }
-            if (jobResult.failedPhase === 'tts') {
-              // TTS is a background fill phase (Pillar 2 §4.6): failure never
-              // fails the scene and never pauses the batch. The scene is
-              // added with its speech actions missing audioId, and TTS is
-              // retried by the repair queue / the per-scene UI affordance.
+            if (jobResult.failedPhase && SCENE_KEEPING_PHASES.has(jobResult.failedPhase)) {
+              // TTS/media are background fill phases (Pillar 2 §4.6) and
+              // semantics is a curation gate: failure never fails the scene
+              // and never pauses the batch. The scene is added as-is (TTS:
+              // speech actions missing audioId) and the failed row is retried
+              // by the repair queue / the per-scene UI affordance.
               log.warn(
-                `TTS failed for scene "${outline.title}" — scene kept, audio pending: ${jobResult.error ?? 'unknown error'}`,
+                `${jobResult.failedPhase} phase failed for scene "${outline.title}" — scene kept: ${jobResult.error ?? 'unknown error'}`,
               );
-              options.onSceneTtsFailed?.(outline, jobResult.error || 'TTS generation failed');
+              if (jobResult.failedPhase === 'tts') {
+                options.onSceneTtsFailed?.(outline, jobResult.error || 'TTS generation failed');
+              }
               // The scene still materialized: the phase row recorded failed
               // (the red card it drives comes from fill decay hydration),
               // but the batch carries on without demoting the outline.
@@ -1840,24 +1864,28 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
         if (!jobResult.success) {
           const failedPhase = jobResult.failedPhase ?? 'content';
-          if (jobResult.failedPhase === 'tts') {
-            // TTS fill failed: scene kept, phase row drives the red card.
-            store.getState().recordScenePhase(outline.id, 'tts', {
-              status: 'failed',
-              error: jobResult.error || 'TTS generation failed',
-            });
-          } else {
-            store.getState().recordScenePhase(outline.id, failedPhase, {
-              status: 'failed',
-              error: jobResult.error || `${failedPhase} generation failed`,
-            });
+          const sceneKept = SCENE_KEEPING_PHASES.has(failedPhase);
+          store.getState().recordScenePhase(outline.id, failedPhase, {
+            status: 'failed',
+            error: jobResult.error || `${failedPhase} generation failed`,
+          });
+          // A fill/curation failure (tts/media/semantics) still produced a
+          // playable scene: land it, so the retry card repairs the missing
+          // row instead of re-paying content + actions on the next attempt.
+          if (
+            sceneKept &&
+            jobResult.scene &&
+            store.getState().generationEpoch === retryEpoch
+          ) {
+            removeGeneratingOutline();
+            useStageStore.getState().addScene(jobResult.scene);
           }
           store.getState().addFailedOutline(outline);
           store.getState().setGenerationStatus('paused');
           store.getState().setGenerationPhase('idle');
-          // Contained failure (scene kept via tts-phase): the walk may move on
-          // to the next failed outline — a hard content/actions failure parks.
-          if (jobResult.failedPhase === 'tts') {
+          // Contained failure (scene kept): the walk may move on to the next
+          // failed outline — a hard content/actions failure parks.
+          if (sceneKept) {
             walkFailedQueueRef.current(outline.id);
           }
           return;
