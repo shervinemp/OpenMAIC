@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -163,6 +163,19 @@ describe('embedded persistence route: file-backed mode', () => {
       await expect(handle(authorized('/assets/audio-abc123'))).resolves.toMatchObject({
         status: 404,
       });
+    });
+
+    it('serves bytes whose meta sidecar is missing (HEAD and GET agree)', async () => {
+      const handle = await makeRoute();
+      await mkdir(join(dir, 'assets'), { recursive: true });
+      await writeFile(join(dir, 'assets', 'restored-ref'), Uint8Array.from([1, 2, 3]));
+
+      const head = await handle(authorized('/assets/restored-ref', { method: 'HEAD' }));
+      expect(head.status).toBe(200);
+      const get = await handle(authorized('/assets/restored-ref'));
+      expect(get.status).toBe(200);
+      expect(get.headers.get('content-type')).toBe('application/octet-stream');
+      expect(new Uint8Array(await get.arrayBuffer())).toEqual(Uint8Array.from([1, 2, 3]));
     });
 
     it('answers 404 for a missing ref and rejects path traversal', async () => {
