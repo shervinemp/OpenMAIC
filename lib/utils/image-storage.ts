@@ -129,6 +129,32 @@ export async function loadImageMapping(imageIds: string[]): Promise<Record<strin
   return mapping;
 }
 
+/**
+ * Rebuild the imageMapping for resuming a generation from persisted
+ * `pdfImages`. A server-backed deployment stored allocated asset ids on the
+ * images (RFC #1153 part 2 B) and the routes resolve those bytes
+ * server-side; per source (N4) the set may MIX asset ids and IndexedDB
+ * copies (a source whose cache write failed materialized its own images).
+ * The mapping merges both instead of choosing one transport for the whole
+ * set and silently dropping the other half.
+ */
+export async function loadResumeImageMapping(
+  pdfImages: ReadonlyArray<{ id: string; assetId?: string; storageId?: string }> | undefined,
+): Promise<Record<string, string>> {
+  const images = pdfImages ?? [];
+  const mapping: Record<string, string> = {};
+  for (const img of images) {
+    if (img.assetId) mapping[img.id] = img.assetId;
+  }
+  const storageIds = images
+    .filter((img) => !img.assetId && img.storageId)
+    .map((img) => img.storageId as string);
+  if (storageIds.length > 0) {
+    Object.assign(mapping, await loadImageMapping(storageIds));
+  }
+  return mapping;
+}
+
 /** Extract the original image ID from `session_<10-character nanoid>_<image ID>`. */
 export function extractOriginalImageId(storageId: string): string | undefined {
   const prefixLength = 'session_'.length + SESSION_ID_LENGTH;

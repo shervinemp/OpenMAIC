@@ -16,6 +16,7 @@ import {
   extractOriginalImageId,
   loadImageMapping,
   loadPdfBlob,
+  loadResumeImageMapping,
   storeImages,
   storePdfBlob,
 } from '@/lib/utils/image-storage';
@@ -139,6 +140,29 @@ describe('image file persistence', () => {
     await expect(loadImageMapping(['session_abc123def4_img_1'])).resolves.toEqual({
       img_1: `data:image/webp;base64,${Buffer.from(bytes).toString('base64')}`,
     });
+  });
+
+  it('resume mapping merges allocated asset ids with IndexedDB copies', async () => {
+    const bytes = [0x01, 0x02];
+    imageFilesMock.get.mockResolvedValue({
+      blob: Uint8Array.from(bytes).buffer,
+      mimeType: 'image/png',
+    });
+
+    await expect(
+      loadResumeImageMapping([
+        { id: 'img_1', assetId: 'ast_server_1', storageId: 'session_abc123def4_img_1' },
+        { id: 'img_2', storageId: 'session_abc123def4_img_2' },
+        { id: 'img_3' },
+      ]),
+    ).resolves.toEqual({
+      img_1: 'ast_server_1',
+      img_2: `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`,
+    });
+    // The asset-id image is never re-read from IndexedDB.
+    expect(imageFilesMock.get).toHaveBeenCalledTimes(1);
+    expect(imageFilesMock.get).toHaveBeenCalledWith('session_abc123def4_img_2');
+    await expect(loadResumeImageMapping(undefined)).resolves.toEqual({});
   });
 
   it('rolls back every earlier image when a later write fails and preserves the cause', async () => {
