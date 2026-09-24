@@ -501,6 +501,8 @@ type StagePersistenceSnapshot = Pick<
   | 'blueprint'
   | 'lessonGroups'
   | 'generationComplete'
+  | 'exams'
+  | 'examAttempts'
 >;
 
 function persistenceSnapshot(state: StageState): StagePersistenceSnapshot {
@@ -514,6 +516,8 @@ function persistenceSnapshot(state: StageState): StagePersistenceSnapshot {
     blueprint,
     lessonGroups,
     generationComplete,
+    exams,
+    examAttempts,
   } = state;
   return {
     stage,
@@ -525,6 +529,8 @@ function persistenceSnapshot(state: StageState): StagePersistenceSnapshot {
     blueprint,
     lessonGroups,
     generationComplete,
+    exams,
+    examAttempts,
   };
 }
 
@@ -562,6 +568,12 @@ async function persistDirtySnapshot(
         blueprint: snapshot.blueprint,
         lessonGroups: snapshot.lessonGroups,
         generationComplete: snapshot.generationComplete,
+        // The outline record is written WHOLE (documentSnapshot replaces it),
+        // so every outline field the store owns must ride along — without the
+        // exams here, the next outline-dirty flush (phase transitions,
+        // blueprint edits, skips) wiped generated exams and graded attempts.
+        exams: snapshot.exams,
+        examAttempts: snapshot.examAttempts,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       },
@@ -1561,7 +1573,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
             ? []
             : outlines.filter(
                 (o) =>
-                  !migrated.some((s) => s.order === o.order) && !orphanOutlineIds.has(o.id),
+                  !migrated.some((s) => s.order === o.order) &&
+                  !orphanOutlineIds.has(o.id) &&
+                  // A skipped outline is settled: it never regenerates, so it
+                  // must not render as a "generating" placeholder either.
+                  !skippedOutlineIds.includes(o.id),
               ),
           // `mode` is transient UI state, not persisted with the stage.
           // Reset to 'playback' on every load so SPA navigation between
