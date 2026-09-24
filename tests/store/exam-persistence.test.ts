@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 /**
  * Exam artifacts stored on the stage store: cap on retained attempts and
  * clearing with the stage. The typed `exams` / `examAttempts` fields ride the
- * opaque `AppDocumentOutline` snapshot (see persistence-types.ts), which is
- * compile-time pinned without further runtime plumbing.
+ * `AppDocumentOutline` record on every save path (see exam-outline-flush.test.ts
+ * for the outline-dirty flush).
  */
 
 import { useStageStore } from '@/lib/store/stage';
