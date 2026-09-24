@@ -23,8 +23,18 @@ function post(body: unknown, url = 'http://localhost/api/exam/grade-fr'): NextRe
 }
 
 const rubric = [
-  { id: 'r1', criterion: 'Names the storage format tradeoff', weight: 'essential', lookFor: 'delta/parquet + openness' },
-  { id: 'r2', criterion: 'Justifies compute split', weight: 'important', lookFor: 'storage/compute separation' },
+  {
+    id: 'r1',
+    criterion: 'Names the storage format tradeoff',
+    weight: 'essential',
+    lookFor: 'delta/parquet + openness',
+  },
+  {
+    id: 'r2',
+    criterion: 'Justifies compute split',
+    weight: 'important',
+    lookFor: 'storage/compute separation',
+  },
 ];
 
 describe('POST /api/exam/grade-fr', () => {
@@ -86,9 +96,28 @@ describe('POST /api/exam/grade-fr', () => {
     expect(j.score).toBe(5);
   });
 
+  it('asks for per-criterion verdicts by default (withCriteria omitted)', async () => {
+    mocks.callLLM.mockResolvedValue({
+      text: JSON.stringify({
+        score: 6,
+        comment: 'ok',
+        criteria: [{ id: 'r1', met: true, comment: 'fine' }],
+      }),
+    });
+    const res = await POST(post(body({ withCriteria: undefined })) as never);
+    expect(res.status).toBe(200);
+    expect(String(mocks.callLLM.mock.lastCall?.[0].system)).toContain('"criteria"');
+    const j = JSON.parse(await (res as unknown as Response).text()) as {
+      criteria?: Array<{ id: string }>;
+    };
+    expect(j.criteria?.map((c) => c.id)).toEqual(['r1']);
+  });
+
   it('400s when the answer is empty or the rubric is missing', async () => {
     const res1 = await POST(post(body({ userAnswer: '   ' })) as never);
     expect(res1.status).toBe(400);
+    const nonString = await POST(post(body({ userAnswer: 42 })) as never);
+    expect(nonString.status).toBe(400);
     const res2 = await POST(post(body({ rubric: [] })) as never);
     expect(res2.status).toBe(400);
     const res3 = await POST(post(body({ maxPoints: -3 })) as never);
