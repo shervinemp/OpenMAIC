@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 
 import { createLogger } from '@/lib/logger';
-import { materializeStageAssets } from '@/lib/persistence/git-sync-assets';
+import { materializeStageAssets, stageAssetDir } from '@/lib/persistence/git-sync-assets';
 
 const log = createLogger('CourseGitSync');
 
@@ -178,6 +178,15 @@ export async function bindCourseRepository(options: {
   const repoPath = options.repoPath.trim();
   if (!stageId || !repoPath) {
     throw new Error('stageId and repoPath are both required');
+  }
+  // A relative path resolves against the server's working directory — i.e.
+  // the OpenMAIC checkout itself — so a typo like "." or "courses" would
+  // commit course snapshots into the app's own repository.
+  if (!isAbsolute(repoPath)) {
+    throw new Error(`repoPath must be an absolute path (got ${JSON.stringify(repoPath)})`);
+  }
+  if (resolve(repoPath) === resolve(process.cwd())) {
+    throw new Error('repoPath must not be the OpenMAIC application directory');
   }
   if (await getCourseBinding(persistenceDir, stageId)) {
     throw new CourseRepositoryAlreadyBoundError(stageId);
@@ -359,11 +368,21 @@ export class CourseGitCommitScheduler {
       // distinct repos stay independent.
       const byRepo = await this.partitionByRepo(jobs);
       await Promise.all(
-        [...byRepo.values()].map((jobs) => this.commitSequentially(jobs)),
+        [...byRepo.entries()].map(([repoPath, repoJobs]) =>
+          this.commitSequentially(repoPath, repoJobs),
+        ),
       );
     });
-    this.drain = run;
-    await run;
+    // The drain chain must never hold a rejected promise: every later flush
+    // chains on it, so one failed run (an unreadable bindings file, say)
+    // would otherwise silently skip every commit until the process restarts.
+    this.drain = run.catch((error: unknown) => {
+      log.warn(
+        'course git sync flush failed; pending commits will retry on the next write',
+        error instanceof Error ? error.message : error,
+      );
+    });
+    await this.drain;
   }
 
   private async partitionByRepo(
@@ -380,9 +399,12 @@ export class CourseGitCommitScheduler {
     return byRepo;
   }
 
-  /** One commit at a time within a repo; each job fails soft (log, drop). */
-  private async commitSequentially(jobs: readonly CommitJob[]): Promise<void> {
-    const repoPath = (await getCourseBinding(this.persistenceDir, jobs[0].stageId))!.repoPath;
+  /**
+   * One commit at a time within a repo; each job fails soft (log, drop). The
+   * repo path comes from the partition step — re-reading the binding here
+   * raced an unbind between the two reads into a null dereference.
+   */
+  private async commitSequentially(repoPath: string, jobs: readonly CommitJob[]): Promise<void> {
     for (const job of jobs) {
       try {
         // Cross-process lock: another server instance may hold the repo
@@ -404,6 +426,11 @@ export class CourseGitCommitScheduler {
     const target = join(repoPath, `${stageFile}.json`);
     if (job.kind === 'delete') {
       await rm(target, { force: true });
+      // The course's media payload goes with it — a removal commit that
+      // leaves assets/<stage>/ behind strands orphaned LFS objects forever.
+      if (this.includeMedia) {
+        await rm(join(repoPath, stageAssetDir(job.stageId)), { recursive: true, force: true });
+      }
     } else {
       const document = await job.snapshot();
       if (document === null || document === undefined) return; // deleted mid-window
@@ -440,11 +467,11 @@ export class CourseGitCommitScheduler {
       // cannot pull an untracked sibling directory in. With `assets/**`
       // tracked as git-lfs, this stages POINTERS — the bytes land in the LFS
       // store, never as zlib blobs.
-      await git(repoPath, ['add', '--all', join('assets', stageFile)]).catch(() => undefined);
+      await git(repoPath, ['add', '--all', stageAssetDir(job.stageId)]).catch(() => undefined);
     }
     const statusPaths = [
       `${stageFile}.json`,
-      ...(this.includeMedia ? [join('assets', stageFile)] : []),
+      ...(this.includeMedia ? [stageAssetDir(job.stageId)] : []),
       ...(lfsReady ? ['.gitattributes'] : []),
     ];
     const status = await git(repoPath, ['status', '--porcelain', ...statusPaths]);

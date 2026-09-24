@@ -69,6 +69,17 @@ describe('course git bindings', () => {
     ).rejects.toThrow(/not a git repository/);
   });
 
+  it('refuses a relative repository path (it would resolve into the app checkout)', async () => {
+    const persistenceDir = makeTempDir('relative');
+    await expect(
+      bindCourseRepository({ persistenceDir, stageId: 'stageA', repoPath: 'courses', init: true }),
+    ).rejects.toThrow(/absolute path/);
+    await expect(
+      bindCourseRepository({ persistenceDir, stageId: 'stageA', repoPath: '.', init: true }),
+    ).rejects.toThrow(/absolute path/);
+    expect(await listCourseBindings(persistenceDir)).toHaveLength(0);
+  });
+
   it('refuses two stageIds sanitizing to the same snapshot file in one repo', async () => {
     const persistenceDir = makeTempDir('collide');
     const repoPath = makeTempDir('repo');
@@ -182,6 +193,29 @@ describe('CourseGitCommitScheduler', () => {
     await expect(scheduler.flushForTesting()).resolves.toBeUndefined();
   });
 
+  it('a failed flush does not stop later flushes from committing', async () => {
+    const persistenceDir = makeTempDir('poison');
+    const repoPath = makeTempDir('poison-repo');
+    await bindCourseRepository({ persistenceDir, stageId: 'stageA', repoPath, init: true });
+    const bindingsFile = join(persistenceDir, 'course-git', 'bindings.json');
+    const validBindings = readFileSync(bindingsFile, 'utf8');
+    const scheduler = new CourseGitCommitScheduler(persistenceDir, { debounceMs: 1 });
+
+    // An unreadable bindings file fails the whole flush (partition step)...
+    writeFileSync(bindingsFile, '{ not json', 'utf8');
+    scheduler.schedule('stageA', 'while broken', async () => DOC_A);
+    await expect(scheduler.flushForTesting()).resolves.toBeUndefined();
+
+    // ...but once it is readable again, the next write still commits.
+    writeFileSync(bindingsFile, validBindings, 'utf8');
+    scheduler.schedule('stageA', 'after repair', async () => DOC_A);
+    await scheduler.flushForTesting();
+    const logText = execFileSync('git', ['-C', repoPath, 'log', '--oneline'], {
+      encoding: 'utf8',
+    });
+    expect(logText).toContain('openmaic(stageA): after repair');
+  });
+
   it('commits a removal for scheduleDelete (deleted course vanishes from the repo)', async () => {
     const persistenceDir = makeTempDir('delete');
     const repoPath = makeTempDir('delete-repo');
@@ -222,5 +256,7 @@ describe('CourseGitCommitScheduler', () => {
     }).trim();
     expect(logText).toContain('openmaic(stageA): stage A write');
     expect(logText).toContain('openmaic(stageB): stage B write');
-  });
+    // Real git processes: generous timeout so a loaded full-suite run does
+    // not flake this on the default 5s.
+  }, 30_000);
 });

@@ -85,11 +85,13 @@ export async function register(): Promise<void> {
   }
 
   // Inbound course-git sync (auto-load + update checks). Fully env/opt-in:
-  // COURSE_GIT_SYNC_ON_BOOT enables the startup+periodic scan, and only
-  // bindings flagged autoLoad may auto-IMPORT new courses; 'update' states
-  // always wait for an explicit apply via POST /api/course-git/sync unless
-  // COURSE_GIT_SYNC_AUTO_APPLY explicitly opts in. Fire-and-forget: the boot
-  // scan never delays readiness and never throws into register().
+  // COURSE_GIT_SYNC_ON_BOOT enables the startup+periodic scan;
+  // COURSE_GIT_SYNC_AUTO_APPLY additionally lets the boot scan auto-IMPORT
+  // new courses, and only from bindings flagged autoLoad. 'update' states
+  // (a repo snapshot differing from an existing course) are never applied
+  // here — they always wait for an explicit POST /api/course-git/sync, since
+  // applying overwrites the persisted course. Fire-and-forget: the boot scan
+  // never delays readiness and never throws into register().
   try {
     const syncOnBoot = ['1', 'true'].includes(
       (process.env.COURSE_GIT_SYNC_ON_BOOT ?? '').trim().toLowerCase(),
