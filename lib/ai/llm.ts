@@ -8,9 +8,6 @@ import { generateText, streamText } from 'ai';
 import type { GenerateTextResult, JSONValue, LanguageModel, StreamTextResult } from 'ai';
 import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
 import { thinkingContext } from './thinking-context';
 import { getModelMetadataKey } from './model-metadata';
 import { getCanonicalModelId } from './model-aliases';
@@ -352,6 +349,35 @@ async function getFallbackModel(): Promise<GenerateTextParams['model'] | undefin
   }
 }
 
+/** Pause before retrying a rate-limited call (free tiers meter per minute). */
+const RATE_LIMIT_PAUSE_MS = 20_000;
+
+function isRateLimitError(error: unknown): boolean {
+  const record = (error ?? {}) as { statusCode?: unknown; message?: unknown };
+  if (record.statusCode === 429) return true;
+  return (
+    typeof record.message === 'string' &&
+    (/\b429\b/.test(record.message) || /too many requests/i.test(record.message))
+  );
+}
+
+/** Sleep that ends early (rejecting like the SDK would) when the call is aborted. */
+function sleepUnlessAborted(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  const abortError = () => signal?.reason ?? new DOMException('Aborted', 'AbortError');
+  if (signal?.aborted) return Promise.reject(abortError());
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortError());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 function isProviderFailure(error: unknown): boolean {
   const name = error instanceof Error ? error.name : undefined;
   if (name === 'AbortError') return false;
@@ -359,7 +385,11 @@ function isProviderFailure(error: unknown): boolean {
   return (
     /insufficient balance|quota|payment required|endpoint is unavailable|model is unavailable|overloaded|rate limit|timeout|timed out|fetch failed/i.test(
       message,
-    ) || (typeof error === 'object' && error !== null && (error as { statusCode?: number }).statusCode !== undefined && (error as { statusCode?: number }).statusCode! >= 500)
+    ) ||
+    (typeof error === 'object' &&
+      error !== null &&
+      (error as { statusCode?: number }).statusCode !== undefined &&
+      (error as { statusCode?: number }).statusCode! >= 500)
   );
 }
 
@@ -381,12 +411,10 @@ export async function callLLM<T extends GenerateTextParams>(
   const maxAttempts = (retryOptions?.retries ?? 0) + 1;
   const validate = retryOptions?.validate ?? (maxAttempts > 1 ? DEFAULT_VALIDATE : undefined);
 
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let lastResult: GenerateTextResult<any, any> | undefined;
   let lastError: unknown;
   // The fallback swap happens once per call: primary → fallback, not back.
-   
   let fallbackTried = false;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -425,22 +453,14 @@ export async function callLLM<T extends GenerateTextParams>(
       return result;
     } catch (error: unknown) {
       lastError = error;
-      const err = error as Record<string, unknown>;
+      const rateLimited = isRateLimitError(error);
 
-      // 1. RATE LIMIT PAUSING
-      if (err?.statusCode === 429 || (typeof err?.message === 'string' && (err.message.includes('429') || err.message.includes('Too Many Requests')))) {
-        log.warn(`[${source}] Rate limit hit. Pausing 20s...`);
-        await sleep(20000);
-        continue;
-      }
-
-      // Provider failure with a fallback configured: swap the model once and
-      // retry the same call. The attempt budget resets so the fallback gets a
-      // full set of attempts (it is a different backend, not a transient blip
-      // on the same one).
-      if (!fallbackTried && isProviderFailure(error)) {
+      // Provider failure (rate limits included — a different backend is not
+      // throttled by this one's quota) with a fallback configured: swap the
+      // model once and replay this attempt on it, without spending one of
+      // the call's retry attempts.
+      if (!fallbackTried && (rateLimited || isProviderFailure(error))) {
         const fallback = await getFallbackModel();
-         
         const currentModel = (params as { model?: unknown }).model;
         if (fallback && fallback !== currentModel) {
           fallbackTried = true;
@@ -451,6 +471,21 @@ export async function callLLM<T extends GenerateTextParams>(
           attempt--;
           continue;
         }
+      }
+
+      // Rate limited with attempts left: pause before the retry so a
+      // per-minute quota can refill. With no attempts left the error
+      // surfaces immediately — the caller's own retry policy owns it, and a
+      // pause before throwing would only delay that.
+      if (rateLimited && attempt < maxAttempts) {
+        log.warn(
+          `[${source}] Rate limit hit (attempt ${attempt}/${maxAttempts}); pausing ${RATE_LIMIT_PAUSE_MS / 1000}s before retrying`,
+        );
+        await sleepUnlessAborted(
+          RATE_LIMIT_PAUSE_MS,
+          (params as { abortSignal?: AbortSignal }).abortSignal,
+        );
+        continue;
       }
 
       if (attempt < maxAttempts) {
@@ -502,5 +537,3 @@ export function streamLLM<T extends StreamTextParams>(
 
   return result;
 }
-
-
