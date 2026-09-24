@@ -5,6 +5,7 @@ const listStagesMock = vi.hoisted(() => vi.fn());
 const deleteStageDataMock = vi.hoisted(() => vi.fn());
 const kvGetMock = vi.hoisted(() => vi.fn());
 const kvSetMock = vi.hoisted(() => vi.fn());
+const mutateDocumentMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/import/use-import-classroom', () => ({
   importClassroomZip: importClassroomZipMock,
@@ -15,6 +16,7 @@ vi.mock('@/lib/utils/stage-storage', () => ({
 }));
 vi.mock('@/lib/document-store', () => ({
   accessDocument: vi.fn(),
+  mutateDocument: mutateDocumentMock,
 }));
 vi.mock('@/lib/export/build-classroom-zip', () => ({
   addStageContentToZip: vi.fn(),
@@ -31,6 +33,7 @@ vi.mock('@openmaic/storage', () => ({
 }));
 
 import {
+  COURSE_STATE_FILE,
   FULL_BACKUP_FORMAT,
   FULL_BACKUP_VERSION,
   restoreFullBackup,
@@ -47,6 +50,8 @@ interface BackupCourseSpec {
 async function buildBackupZip(options: {
   courses?: BackupCourseSpec[];
   settings?: { state: unknown; version?: number };
+  /** Per-course-path `openmaic-course-state.json` payloads. */
+  courseState?: Record<string, unknown>;
 }): Promise<Uint8Array> {
   const JSZip = (await import('jszip')).default;
   const zip = new JSZip();
@@ -66,6 +71,8 @@ async function buildBackupZip(options: {
     // The restore only repacks the subtree and hands it to the import
     // pipeline (mocked here); the payload itself is opaque.
     zip.file(`${course.path}/manifest.json`, JSON.stringify({ stage: { name: course.name } }));
+    const state = options.courseState?.[course.path];
+    if (state) zip.file(`${course.path}/${COURSE_STATE_FILE}`, JSON.stringify(state));
   }
   if (options.settings) {
     zip.file('settings.json', JSON.stringify(options.settings));
@@ -85,6 +92,63 @@ describe('full backup restore policies', () => {
     kvGetMock.mockReset();
     kvGetMock.mockResolvedValue(undefined);
     kvSetMock.mockReset();
+    mutateDocumentMock.mockReset();
+  });
+
+  it('re-attaches the backed-up outline record and rebinds scenes by order', async () => {
+    const outline = {
+      outlines: [{ id: 'o1', order: 1 }],
+      blueprint: { lessons: [] },
+      lessonGroups: [{ lessonId: 'lesson_1', jobs: [{ outlineId: 'o1', sceneId: 'old-scene-1' }] }],
+      exams: { midterm: { kind: 'midterm', mcQuestions: [] } },
+      examAttempts: { midterm: [{ id: 'a1' }] },
+      generationComplete: true,
+    };
+    const blob = await buildBackupZip({
+      courses: [{ path: 'courses/001-intro', name: 'Intro Course', sourceId: 'stage-src' }],
+      courseState: {
+        'courses/001-intro': {
+          outline,
+          scenes: [{ order: 1, id: 'old-scene-1', outlineId: 'o1' }],
+        },
+      },
+    });
+    const saveDocument = vi.fn(async () => undefined);
+    mutateDocumentMock.mockImplementation(async (_stageId, work) =>
+      work(
+        {
+          stage: { id: 'stage-new', name: 'Intro Course' },
+          scenes: [{ id: 'new-scene-1', stageId: 'stage-new', order: 1 }],
+        },
+        { saveDocument },
+      ),
+    );
+
+    const result = await restoreFullBackup(blob, { mode: 'add' });
+
+    expect(result).toMatchObject({ restored: 1, failed: 0 });
+    expect(mutateDocumentMock).toHaveBeenCalledWith('stage-new', expect.any(Function));
+    expect(saveDocument).toHaveBeenCalledOnce();
+    const [saved, options] = saveDocument.mock.calls[0] as unknown as [
+      { scenes: Array<{ id: string; outlineId?: string }>; outline: typeof outline },
+      { allowOlderOverwrite: boolean },
+    ];
+    expect(options).toEqual({ allowOlderOverwrite: true });
+    expect(saved.scenes).toEqual([
+      { id: 'new-scene-1', stageId: 'stage-new', order: 1, outlineId: 'o1' },
+    ]);
+    expect(saved.outline.exams).toEqual(outline.exams);
+    expect(saved.outline.examAttempts).toEqual(outline.examAttempts);
+    expect(saved.outline.lessonGroups[0].jobs[0].sceneId).toBe('new-scene-1');
+  });
+
+  it('restores a course whose backup predates the course-state sidecar', async () => {
+    const blob = await buildBackupZip({
+      courses: [{ path: 'courses/001-intro', name: 'Intro Course', sourceId: 'stage-src' }],
+    });
+    const result = await restoreFullBackup(blob, { mode: 'add' });
+    expect(result).toMatchObject({ restored: 1, failed: 0 });
+    expect(mutateDocumentMock).not.toHaveBeenCalled();
   });
 
   it('skips an existing course matched by source id without importing', async () => {
