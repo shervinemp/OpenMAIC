@@ -18,7 +18,7 @@ import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { measureAudioDuration } from '@/lib/audio/audio-duration';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
-import { loadImageMapping } from '@/lib/utils/image-storage';
+import { loadResumeImageMapping } from '@/lib/utils/image-storage';
 import { resolveAgentVoiceOptions, pickNarratorAgent } from '@/lib/audio/agent-voice';
 import {
   getEnabledProvidersWithVoices,
@@ -1787,11 +1787,8 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               description: state.stage.description,
               style: state.stage.style,
             },
-            imageMapping: await loadImageMapping(
-              (restored.pdfImages || [])
-                .map((img) => (img as { storageId?: string }).storageId)
-                .filter((id): id is string => Boolean(id)),
-            ),
+            // Asset ids and IndexedDB copies merged, as the resume paths do.
+            imageMapping: await loadResumeImageMapping(restored.pdfImages),
           };
           params = rebuilt;
           lastParamsRef.current = params;

@@ -31,7 +31,7 @@ import { ThemeProvider } from '@/lib/hooks/use-theme';
 import { useStageStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/store/settings';
 import { claimStageSceneLoadToken, isCurrentStageSceneLoadToken } from '@/lib/store/stage';
-import { loadImageMapping } from '@/lib/utils/image-storage';
+import { loadResumeImageMapping } from '@/lib/utils/image-storage';
 import {
   clearGenerationSessionForStage,
   loadGenerationParams,
@@ -371,25 +371,8 @@ export function ClassroomSurface({
       // close, browser restart).
       void (async () => {
         const params = (await loadGenerationParams(classroomId)) ?? {};
-
-        // Reconstruct imageMapping for the resumed generation. The mapping may
-        // MIX allocated asset ids and IndexedDB data URLs — a source whose
-        // cache write failed materialized its own images — so the resume
-        // mapping merges both, instead of choosing one transport for the whole
-        // set and silently dropping the other half.
-        const pdfImages = (params.pdfImages || []) as unknown as Array<
-          { id: string; assetId?: string; storageId?: string } & Record<string, unknown>
-        >;
-        const imageMapping: Record<string, string> = {};
-        for (const img of pdfImages) {
-          if (img.assetId) imageMapping[img.id] = img.assetId;
-        }
-        const storageIds = pdfImages
-          .filter((img) => !img.assetId && img.storageId)
-          .map((img) => img.storageId as string);
-        if (storageIds.length > 0) {
-          Object.assign(imageMapping, await loadImageMapping(storageIds));
-        }
+        // Asset ids and IndexedDB copies merged (see loadResumeImageMapping).
+        const imageMapping = await loadResumeImageMapping(params.pdfImages);
         generateRemaining({
           pdfImages: params.pdfImages,
           imageMapping,
@@ -498,10 +481,9 @@ export function ClassroomSurface({
     const stage = useStageStore.getState().stage;
     if (!stage) return;
     const params = (await loadGenerationParams(classroomId)) ?? {};
-    const storageIds = (params.pdfImages || [])
-      .map((img) => img.storageId)
-      .filter((id): id is string => Boolean(id));
-    const imageMapping = await loadImageMapping(storageIds);
+    // Same merge as the mount-time resume: dropping the asset-id half here
+    // lost every server-backed vision image on an in-page resume.
+    const imageMapping = await loadResumeImageMapping(params.pdfImages);
     generateRemaining({
       pdfImages: params.pdfImages,
       imageMapping,
@@ -599,6 +581,7 @@ export function ClassroomSurface({
     };
     return () => {
       delete runtime.__openmaicMediaBackfill;
+      delete runtime.__openmaicStampSceneHashes;
       delete runtime.__openmaicVerifyCourse;
     };
   }, []);
