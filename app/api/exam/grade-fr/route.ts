@@ -38,8 +38,16 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as GradeFrRequest;
     const { questionId, prompt, userAnswer, rubric, sampleAnswer, maxPoints, commentPrompt, language, withCriteria } =
       body;
-    promptSnippet = prompt?.substring(0, 60);
-    if (!prompt || !userAnswer?.trim() || typeof userAnswer !== 'string') {
+    promptSnippet = typeof prompt === 'string' ? prompt.substring(0, 60) : undefined;
+    // Per-criterion verdicts are on unless the caller opts out explicitly
+    // (the documented default) — the prompt and the parser must agree.
+    const includeCriteria = withCriteria !== false;
+    if (
+      typeof prompt !== 'string' ||
+      !prompt ||
+      typeof userAnswer !== 'string' ||
+      !userAnswer.trim()
+    ) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'prompt and userAnswer are required');
     }
     if (!Array.isArray(rubric) || rubric.length === 0) {
@@ -67,7 +75,7 @@ export async function POST(req: NextRequest) {
 Reply ONLY with JSON:
 {
   "score": <integer from 0 to ${maxPoints}>,
-  "comment": "<2-4 sentences of feedback: what was strong, what was missing, how to reach the standard>"${withCriteria ? `,\n  "criteria": [{"id":"<rubric id>","met":<true|false|"partial">,"comment":"<one sentence>"}]` : ''}
+  "comment": "<2-4 sentences of feedback: what was strong, what was missing, how to reach the standard>"${includeCriteria ? `,\n  "criteria": [{"id":"<rubric id>","met":<true|false|"partial">,"comment":"<one sentence>"}]` : ''}
 }`;
 
     const userPrompt = `RUBRIC:
@@ -95,7 +103,7 @@ ${userAnswer}`;
       if (!jsonMatch) throw new Error('No JSON found');
       const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
       const criteria =
-        withCriteria !== false && Array.isArray(parsed.criteria)
+        includeCriteria && Array.isArray(parsed.criteria)
           ? (parsed.criteria as Array<Record<string, unknown>>)
               .map((c) => ({
                 id: String(c.id ?? ''),
