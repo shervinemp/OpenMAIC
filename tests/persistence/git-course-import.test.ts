@@ -86,6 +86,16 @@ describe('inbound course git sync', () => {
     });
   });
 
+  it('scans a repository shared by several bound courses once', async () => {
+    writeFileSync(join(repoPath, 'importStage.json'), JSON.stringify(makeDoc('importStage')), 'utf8');
+    await bindRepo();
+    await bindCourseRepository({ persistenceDir, stageId: 'secondBound', repoPath });
+
+    const snapshots = await listRepoCourseSnapshots(persistenceDir);
+    expect(snapshots.map((snapshot) => snapshot.stageId)).toEqual(['importStage']);
+    expect(await scanCourseUpdates(persistenceDir)).toHaveLength(1);
+  });
+
   it('reports new/equal/update states against persistence', async () => {
     writeFileSync(join(repoPath, 'importStage.json'), JSON.stringify(makeDoc('importStage')), 'utf8');
     await bindRepo({ autoLoad: true });

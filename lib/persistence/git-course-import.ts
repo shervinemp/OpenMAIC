@@ -81,7 +81,9 @@ async function readRepoDocument(
   } catch {
     return null;
   }
-}/** Read the persisted document file for a stage; null when missing/broken. */
+}
+
+/** Read the persisted document file for a stage; null when missing/broken. */
 async function readPersistedDocument(
   persistenceDir: string,
   stageId: string,
@@ -143,22 +145,27 @@ export async function listRepoCourseSnapshots(
   persistenceDir: string,
 ): Promise<RepoCourseSnapshot[]> {
   const snapshots: RepoCourseSnapshot[] = [];
-  for (const binding of await listCourseBindings(persistenceDir)) {
+  // Several courses may share one repository: scan each repo ONCE, or every
+  // snapshot in it would be listed (and applied) once per binding.
+  const repoPaths = new Set(
+    (await listCourseBindings(persistenceDir)).map((binding) => binding.repoPath),
+  );
+  for (const repoPath of repoPaths) {
     let names: string[];
     try {
-      names = await readdir(binding.repoPath);
+      names = await readdir(repoPath);
     } catch (error) {
-      log.warn(`Repo path ${JSON.stringify(binding.repoPath)} is unreadable:`, error);
+      log.warn(`Repo path ${JSON.stringify(repoPath)} is unreadable:`, error);
       continue;
     }
     for (const name of names) {
       if (!name.endsWith('.json') || name.startsWith('.')) continue;
-      const filePath = join(binding.repoPath, name);
+      const filePath = join(repoPath, name);
       const loaded = await readRepoDocument(filePath);
       if (!loaded) continue;
       const stage = (loaded.document as RepoDocumentShape).stage!;
       snapshots.push({
-        repoPath: binding.repoPath,
+        repoPath,
         stageFile: name.slice(0, -'.json'.length),
         stageId: stage.id!,
         title: stage.title ?? stage.name ?? stage.id!,
@@ -225,12 +232,15 @@ export async function pullBoundRepos(persistenceDir: string): Promise<void> {
   if (!['1', 'true'].includes((process.env.COURSE_GIT_SYNC_ALLOW_REMOTE_FETCH ?? '').trim().toLowerCase())) {
     return;
   }
-  for (const binding of await listCourseBindings(persistenceDir)) {
+  const repoPaths = new Set(
+    (await listCourseBindings(persistenceDir)).map((binding) => binding.repoPath),
+  );
+  for (const repoPath of repoPaths) {
     try {
-      await git(binding.repoPath, ['pull', '--ff-only']);
+      await git(repoPath, ['pull', '--ff-only']);
     } catch (error) {
       log.warn(
-        `pull for ${JSON.stringify(binding.repoPath)} failed; using last fetched contents:`,
+        `pull for ${JSON.stringify(repoPath)} failed; using last fetched contents:`,
         error instanceof Error ? error.message : error,
       );
     }
