@@ -55,6 +55,9 @@ const nextConfig: NextConfig = {
     // egress cannot resolve their SDK in the shipped deployment.
     '@aws-sdk/client-s3',
     '@aws-sdk/s3-request-presigner',
+    // Native canvas for server-side PDF page rendering (local vision OCR):
+    // a .node addon must be required at runtime, never bundled.
+    '@napi-rs/canvas',
   ],
   experimental: {
     proxyClientMaxBodySize: '200mb',
