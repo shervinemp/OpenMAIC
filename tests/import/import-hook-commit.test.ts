@@ -73,7 +73,7 @@ async function classroomZipFile(): Promise<File> {
       mediaIndex: {},
     }),
   );
-  const bytes = await zip.generateAsync({ type: 'uint8array' });
+  const bytes = await zip.generateAsync({ type: 'arraybuffer' });
   return new File([bytes], 'course.maic.zip', { type: 'application/zip' });
 }
 
