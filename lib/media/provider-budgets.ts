@@ -14,8 +14,10 @@
  *                 first so a single heavy item can not head-of-line-block
  *                 the cheap backlog behind a 1800s queue-wait kill
  *
- * Environment overrides (per class): `COURSE_MEDIA_REPAIR_REQUEUE_LIMIT`
- * (global), `COURSE_MEDIA_IMAGE_REQUEUE_LIMIT`, `COURSE_MEDIA_VIDEO_REQUEUE_LIMIT`.
+ * Environment overrides: `NEXT_PUBLIC_COURSE_MEDIA_IMAGE_REQUEUE_LIMIT`,
+ * `NEXT_PUBLIC_COURSE_MEDIA_VIDEO_REQUEUE_LIMIT` (build-time — the
+ * orchestrator runs in the browser, where only NEXT_PUBLIC_* variables are
+ * inlined; the unprefixed names still apply in server/test contexts).
  * Values are static table defaults — a configurable knob without a config
  * system, read once per pass.
  */
@@ -38,20 +40,28 @@ function positiveInt(raw: string | undefined, fallback: number): number {
 }
 
 export function mediaProviderBudgets(): MediaProviderBudgets {
-  const globalLimitRaw = process.env.COURSE_MEDIA_REPAIR_REQUEUE_LIMIT;
+  // Literal process.env.NEXT_PUBLIC_* references: Next inlines only these.
+  const imageLimitRaw =
+    process.env.NEXT_PUBLIC_COURSE_MEDIA_IMAGE_REQUEUE_LIMIT ??
+    process.env.COURSE_MEDIA_IMAGE_REQUEUE_LIMIT;
+  const videoLimitRaw =
+    process.env.NEXT_PUBLIC_COURSE_MEDIA_VIDEO_REQUEUE_LIMIT ??
+    process.env.COURSE_MEDIA_VIDEO_REQUEUE_LIMIT;
   return {
     image: {
-      requeueCap: positiveInt(process.env.COURSE_MEDIA_IMAGE_REQUEUE_LIMIT, 40),
+      requeueCap: positiveInt(imageLimitRaw, 40),
       costWeight: 1,
       concurrency: 2,
     },
     video: {
-      requeueCap: positiveInt(process.env.COURSE_MEDIA_VIDEO_REQUEUE_LIMIT, 8),
+      requeueCap: positiveInt(videoLimitRaw, 8),
       costWeight: 20,
       concurrency: 1,
     },
     tts: {
-      requeueCap: positiveInt(globalLimitRaw, 48),
+      // Narration repair is bounded by drainPendingSceneTTS passes, not by
+      // this table; the value documents the provider ceiling only.
+      requeueCap: 48,
       costWeight: 1,
       concurrency: 4,
     },

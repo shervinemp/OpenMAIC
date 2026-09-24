@@ -95,3 +95,7 @@ e2e/__screenshots-619/
 
 # Local server persistence runtime data (lessons, media, runtime)
 .data/
+
+# Generated reports (scripts/audit-course-placement.mjs output; UI critique tool)
+scripts/audit-report.json
+.impeccable/
