@@ -23,7 +23,16 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/store/settings', () => ({ useSettingsStore: { getState: mocks.settings } }));
-vi.mock('@/lib/store/stage', () => ({ useStageStore: { getState: mocks.stageState } }));
+vi.mock('@/lib/store/stage', () => ({
+  // The pass records per-outline media phases; those actions are inert here.
+  useStageStore: {
+    getState: () => ({
+      recordScenePhase: () => undefined,
+      retryFailedOutline: () => undefined,
+      ...mocks.stageState(),
+    }),
+  },
+}));
 vi.mock('@/lib/utils/database', () => ({
   mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
   db: { mediaFiles: { put: mocks.mediaPut, delete: mocks.mediaDelete } },
@@ -38,6 +47,7 @@ vi.mock('@/lib/persistence/media-persistence', () => ({
 
 import {
   generateMediaForOutlines,
+  mediaRetryPolicy,
   resetMediaPassesForTests,
   retryMediaTask,
 } from '@/lib/media/media-orchestrator';
@@ -64,6 +74,9 @@ describe('browser-only media orchestration is untouched', () => {
   let prompts: string[];
 
   beforeEach(() => {
+    // These specs pin single-attempt semantics (Retry interplay, pass
+    // handoff); in-pass provider recovery is covered in media-orchestrator.test.ts.
+    mediaRetryPolicy.limit = 1;
     resetMediaPassesForTests();
     resetProxyMediaFailureCache();
     mocks.mediaPut.mockReset().mockResolvedValue(undefined);

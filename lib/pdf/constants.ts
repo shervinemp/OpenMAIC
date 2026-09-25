@@ -43,6 +43,13 @@ export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
     icon: '/logos/aliyun.svg',
     features: ['text', 'images', 'tables', 'formulas', 'layout-analysis', 'ocr'],
   },
+
+  local_vision: {
+    id: 'local_vision',
+    name: 'Local Vision (Qwen2-VL/Llama-3.2-Vision)',
+    requiresApiKey: false,
+    features: ['text', 'images', 'ocr', 'layout-analysis'],
+  },
 };
 
 /**

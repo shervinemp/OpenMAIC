@@ -14,17 +14,23 @@ async function boundaryErrors(code: string): Promise<string[]> {
 }
 
 describe('Hyperframes emitter lint boundary', () => {
-  it('allows only in-module relatives and the shared pure Quiz math renderer', async () => {
-    const errors = await boundaryErrors(`
-      import type { VideoTimeline } from '../ir';
-      import { renderQuizMathText } from '../../quiz/math-text';
-      import { escapeHtml } from './format';
-      export type Timeline = VideoTimeline;
-      export const rendered = renderQuizMathText(escapeHtml('x'));
-    `);
+  // Programmatic ESLint runs spawn real linting; 5s is too tight on a
+  // loaded machine (flake-prone under full parallel suites).
+  it(
+    'allows only in-module relatives and the shared pure Quiz math renderer',
+    async () => {
+      const errors = await boundaryErrors(`
+        import type { VideoTimeline } from '../ir';
+        import { renderQuizMathText } from '../../quiz/math-text';
+        import { escapeHtml } from './format';
+        export type Timeline = VideoTimeline;
+        export const rendered = renderQuizMathText(escapeHtml('x'));
+      `);
 
-    expect(errors).toEqual([]);
-  });
+      expect(errors).toEqual([]);
+    },
+    30_000,
+  );
 
   it.each([
     ['a host-app alias', "import value from '@/lib/store'; export default value;"],
@@ -37,7 +43,11 @@ describe('Hyperframes emitter lint boundary', () => {
     ['React', "import React from 'react'; export default React;"],
     ['a dynamic import', "export async function load() { return import('./format'); }"],
     ['require', "const format = require('./format'); export default format;"],
-  ])('rejects %s', async (_label, code) => {
-    expect(await boundaryErrors(code)).toContain(BOUNDARY_RULE);
-  });
+  ])(
+    'rejects %s',
+    async (_label, code) => {
+      expect(await boundaryErrors(code)).toContain(BOUNDARY_RULE);
+    },
+    30_000,
+  );
 });

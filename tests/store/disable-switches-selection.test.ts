@@ -77,6 +77,42 @@ describe('disabling the active provider switches selection away', () => {
     expect(useSettingsStore.getState().videoGenerationEnabled).toBe(false);
   });
 
+  it('video: an unconfigured ComfyUI provider is never chosen as the fallback', () => {
+    useSettingsStore.setState((state) => ({
+      videoProviderId: 'kling',
+      videoGenerationEnabled: true,
+      videoProvidersConfig: {
+        ...state.videoProvidersConfig,
+        kling: { apiKey: 'k-test', baseUrl: '', enabled: true },
+        'comfyui-video': { apiKey: '', baseUrl: '', enabled: true },
+      },
+    }));
+
+    const s = useSettingsStore.getState();
+    s.setVideoProviderConfig('kling', { enabled: false });
+    // Every keyed provider is empty and ComfyUI has no base URL: fall back to
+    // the registry default rather than blind-selecting a keyless local server.
+    expect(useSettingsStore.getState().videoProviderId).toBe('seedance');
+  });
+
+  it('video: a configured ComfyUI provider is a valid fallback target', () => {
+    useSettingsStore.setState((state) => ({
+      videoProviderId: 'kling',
+      videoGenerationEnabled: true,
+      videoProvidersConfig: {
+        ...state.videoProvidersConfig,
+        kling: { apiKey: 'k-test', baseUrl: '', enabled: true },
+        'comfyui-video': { apiKey: '', baseUrl: 'http://localhost:8188', enabled: true },
+      },
+    }));
+
+    const s = useSettingsStore.getState();
+    s.setVideoProviderConfig('kling', { enabled: false });
+    // Keyed providers have no keys; ComfyUI is the only actually-configured
+    // target, so it is selected even though it is keyless.
+    expect(useSettingsStore.getState().videoProviderId).toBe('comfyui-video');
+  });
+
   it('tts: disabling the selected provider falls back to browser TTS', () => {
     const s = useSettingsStore.getState();
     s.setTTSProvider('openai-tts');
@@ -100,5 +136,65 @@ describe('disabling the active provider switches selection away', () => {
     s.setImageProvider('openai-image');
     s.setImageProviderConfig('openai-image', { apiKey: 'sk-x', enabled: true });
     expect(useSettingsStore.getState().imageProviderId).toBe('openai-image');
+  });
+
+  it('enabling video generation does not throw on an undefined config entry', () => {
+    // Regression: videoProvidersConfig entries added after a user's persisted
+    // state was saved (e.g. comfyui-video) used to be filled with `undefined`,
+    // and Object.values(cfg).some((c) => c.isServerConfigured ...) threw.
+    useSettingsStore.setState({
+      videoProviderId: 'seedance',
+      videoGenerationEnabled: false,
+      videoProvidersConfig: {
+        seedance: { apiKey: '', baseUrl: '', enabled: false, isServerConfigured: false },
+        'comfyui-video': undefined as never,
+      } as never,
+    });
+    expect(() =>
+      useSettingsStore.getState().setVideoGenerationEnabled(true),
+    ).not.toThrow();
+    // No usable provider → the toggle stays off.
+    expect(useSettingsStore.getState().videoGenerationEnabled).toBe(false);
+  });
+
+  it('enabling generation works with a keyless provider that has a base URL', () => {
+    // Keyless local providers (ComfyUI) count as usable once baseUrl is set.
+    useSettingsStore.setState({
+      videoProviderId: 'comfyui-video',
+      videoGenerationEnabled: false,
+      videoProvidersConfig: {
+        'comfyui-video': { apiKey: '', baseUrl: 'http://localhost:8188', enabled: true },
+      } as never,
+    });
+    useSettingsStore.getState().setVideoGenerationEnabled(true);
+    expect(useSettingsStore.getState().videoGenerationEnabled).toBe(true);
+  });
+
+  it('selecting a keyless provider seeds its default base URL', () => {
+    useSettingsStore.setState((state) => ({
+      imageProvidersConfig: {
+        ...state.imageProvidersConfig,
+        'comfyui-image': { apiKey: '', baseUrl: '', enabled: false },
+      },
+      videoProvidersConfig: {
+        ...state.videoProvidersConfig,
+        'comfyui-video': { apiKey: '', baseUrl: '', enabled: false },
+      },
+    }));
+    const s = useSettingsStore.getState();
+    s.setImageProvider('comfyui-image');
+    s.setVideoProvider('comfyui-video');
+    expect(useSettingsStore.getState().imageProvidersConfig['comfyui-image'].baseUrl).toBe(
+      'http://localhost:8188',
+    );
+    expect(useSettingsStore.getState().videoProvidersConfig['comfyui-video'].baseUrl).toBe(
+      'http://localhost:8188',
+    );
+  });
+
+  it('selecting a keyed provider does not seed a base URL', () => {
+    const s = useSettingsStore.getState();
+    s.setImageProvider('openai-image');
+    expect(useSettingsStore.getState().imageProvidersConfig['openai-image'].baseUrl).toBe('');
   });
 });

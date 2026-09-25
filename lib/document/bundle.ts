@@ -1,11 +1,9 @@
-import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import type { PdfImage, SessionDocumentSource } from '@/lib/types/generation';
 
 export const MAX_DOCUMENT_BUNDLE_FILES = 5;
 export const MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES = 150 * 1024 * 1024;
 
-const BASE_BUDGET_PER_DOCUMENT = 1500;
-const RESERVED_BUDGET_RATIO = 0.4;
 const SECTION_SEPARATOR = '\n\n---\n\n';
 
 export interface ParsedDocumentImage extends Omit<PdfImage, 'storageId' | 'visionPriority'> {
@@ -23,6 +21,13 @@ export interface ParsedDocumentPart {
 export interface DocumentBundleResult {
   text: string;
   images: Array<ParsedDocumentImage & { visionPriority: number }>;
+  /**
+   * Legacy field: the pre-digest era truncated the merged text to this many
+   * chars. The bundle now carries the FULL text (no cut — see
+   * lib/generation/document-digest.ts); this equals totalRawTextLength and
+   * exists only so old callers compile while they migrate to the handle +
+   * digest flow.
+   */
   textContentBudget: number;
   totalRawTextLength: number;
   totalImageCount: number;
@@ -44,19 +49,6 @@ function replaceImageIds(text: string, idMap: ReadonlyMap<string, string>): stri
   return nextText;
 }
 
-function truncateTextAtBoundary(text: string, maxChars: number): string {
-  if (maxChars <= 0) return '';
-  if (text.length <= maxChars) return text;
-
-  const sliced = Array.from(text).slice(0, maxChars).join('');
-  let cut = sliced.length;
-  while (cut > 0 && /[\p{L}\p{N}_-]/u.test(sliced[cut - 1])) {
-    cut -= 1;
-  }
-
-  return cut > 0 ? sliced.slice(0, cut) : sliced;
-}
-
 function buildSectionHeader(part: ParsedDocumentPart, index: number): string {
   const lines = [
     `## Source Document ${index + 1}: ${part.source.name}`,
@@ -67,45 +59,6 @@ function buildSectionHeader(part: ParsedDocumentPart, index: number): string {
   ].filter((line): line is string => typeof line === 'string');
 
   return `${lines.join('\n')}\n`;
-}
-
-export function allocateDocumentTextBudgets(lengths: number[], maxChars: number): number[] {
-  if (lengths.length === 0 || maxChars <= 0) return lengths.map(() => 0);
-
-  const reserved = Math.min(
-    lengths.length * BASE_BUDGET_PER_DOCUMENT,
-    Math.floor(maxChars * RESERVED_BUDGET_RATIO),
-  );
-  const basePerDocument = Math.floor(reserved / lengths.length);
-  const budgets = lengths.map((length) => Math.min(length, basePerDocument));
-  let remainingBudget = maxChars - budgets.reduce((sum, value) => sum + value, 0);
-
-  const unmet = lengths
-    .map((length, index) => ({ index, remaining: Math.max(0, length - budgets[index]) }))
-    .filter((entry) => entry.remaining > 0);
-
-  while (remainingBudget > 0 && unmet.length > 0) {
-    const totalRemaining = unmet.reduce((sum, entry) => sum + entry.remaining, 0);
-    if (totalRemaining === 0) break;
-
-    let distributed = 0;
-    for (const entry of unmet) {
-      if (remainingBudget === 0) break;
-      const share = Math.floor((remainingBudget * entry.remaining) / totalRemaining);
-      const allocation = Math.min(entry.remaining, share > 0 ? share : 1, remainingBudget);
-      budgets[entry.index] += allocation;
-      entry.remaining -= allocation;
-      remainingBudget -= allocation;
-      distributed += allocation;
-    }
-
-    if (distributed === 0) break;
-    for (let i = unmet.length - 1; i >= 0; i -= 1) {
-      if (unmet[i].remaining === 0) unmet.splice(i, 1);
-    }
-  }
-
-  return budgets;
 }
 
 function compareImagesForVision(a: ParsedDocumentImage, b: ParsedDocumentImage): number {
@@ -180,9 +133,8 @@ export function sortDocumentImagesForVision<
 
 export function buildDocumentBundle(
   parts: ParsedDocumentPart[],
-  options?: { maxChars?: number; maxVisionImages?: number },
+  options?: { maxVisionImages?: number },
 ): DocumentBundleResult {
-  const maxChars = options?.maxChars ?? MAX_PDF_CONTENT_CHARS;
   const maxVisionImages = options?.maxVisionImages ?? MAX_VISION_IMAGES;
   const orderedParts = [...parts].sort((a, b) => a.source.order - b.source.order);
 
@@ -209,28 +161,19 @@ export function buildDocumentBundle(
   });
 
   const headers = stableParts.map(buildSectionHeader);
-  const framingChars =
-    headers.reduce((sum, header) => sum + header.length, 0) +
-    Math.max(0, stableParts.length - 1) * SECTION_SEPARATOR.length;
-  const textContentBudget = Math.max(0, maxChars - framingChars);
-  const textBudgets = allocateDocumentTextBudgets(
-    stableParts.map((part) => part.text.length),
-    textContentBudget,
-  );
 
   const flattenedImages = stableParts.flatMap((part) => part.images);
   const finalIdMap = new Map<string, string>();
   flattenedImages.forEach((image, index) => finalIdMap.set(image.id, `img_${index + 1}`));
 
+  // No truncation (Phase 2 §16): the FULL merged text rides in the bundle so
+  // the server-side indexing step (sha256 → digest + chunks + captions) sees
+  // the whole document. The outline prompt consumes the digest, never this.
   const text = stableParts
-    .map((part, index) => {
-      const boundedText = replaceImageIds(
-        truncateTextAtBoundary(part.text, textBudgets[index]),
-        finalIdMap,
-      );
-      return `${headers[index]}${boundedText}`;
-    })
+    .map((part, index) => `${headers[index]}${replaceImageIds(part.text, finalIdMap)}`)
     .join(SECTION_SEPARATOR);
+
+  const totalRawTextLength = stableParts.reduce((sum, part) => sum + part.rawTextLength, 0);
 
   const images = flattenedImages.map((image) => ({
     ...image,
@@ -248,8 +191,8 @@ export function buildDocumentBundle(
       ...image,
       visionPriority: visionPriority.get(image.id) ?? 0,
     })),
-    textContentBudget,
-    totalRawTextLength: stableParts.reduce((sum, part) => sum + part.rawTextLength, 0),
+    textContentBudget: totalRawTextLength,
+    totalRawTextLength,
     totalImageCount: images.length,
     visionImageCount: selectedVisionIds.length,
   };

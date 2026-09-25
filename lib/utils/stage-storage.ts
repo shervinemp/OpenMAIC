@@ -8,7 +8,7 @@
 import { Stage, Scene } from '../types/stage';
 import { ChatSession } from '../types/chat';
 import { db } from './database';
-import type { FolderRecord } from './database';
+import type { FolderRecord, GenerationSessionRecord } from './database';
 import { nanoid } from 'nanoid';
 import { validateFolderName, FOLDER_COUNT_LIMIT, FolderNameError } from './folder-name-validation';
 export { FolderNameError } from './folder-name-validation';
@@ -41,6 +41,7 @@ import {
 } from './chat-storage-lock';
 import { DocumentVersionError, type DocumentSummary } from '@openmaic/storage';
 import { isBrowserPersistenceEnabled } from '@/lib/persistence/bootstrap';
+import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import {
   MISSING_ASSET_LEASE,
@@ -450,6 +451,67 @@ export async function saveStageDataIncremental(
 }
 
 /**
+ * Device-local outline recovery for decks whose plans never reached the
+ * document envelope. The document carries the outline only when an
+ * outline-carrying flush landed; decks saved by builds whose outline flush
+ * never did (or whose flushes failed) leave the plans only in the legacy
+ * Dexie tables — `stageOutlines` (resume-on-refresh outlines) and
+ * `generationSessions` (in-flight generation checkpoints, flat
+ * `sceneOutlines`). Without this fallback such plans are invisible after a
+ * reload: no lesson nav, no resume — while the materialized scenes still
+ * synced to the document.
+ *
+ * Recovery is read-only at load time. The adopted outline rides the store's
+ * snapshot on the next flush (the flush snapshot carries `outline` into
+ * `documentSnapshot`), which also heals the server copy for server-backed
+ * persistence. The resume pipeline itself is order-based
+ * (`generateRemaining` matches outlines to scenes by `order`), so a
+ * recovered flat plan resumes exactly where the deck stopped without
+ * re-running materialized scenes.
+ *
+ * The legacy stores never carried the blueprint's unit/lesson structure,
+ * so a recovered outline restores the deck and its resume cursor but not
+ * the multi-unit nav grouping.
+ */
+async function readLegacyStageOutline(
+  stageId: string,
+): Promise<AppDocumentOutline | undefined> {
+  try {
+    if (!db.isOpen()) await db.open();
+    const outlineRecord = await db.stageOutlines.get(stageId);
+    if (outlineRecord && Array.isArray(outlineRecord.outlines) && outlineRecord.outlines.length > 0) {
+      return {
+        outlines: outlineRecord.outlines,
+        generationComplete: outlineRecord.generationComplete,
+        createdAt: outlineRecord.createdAt,
+        updatedAt: outlineRecord.updatedAt,
+      };
+    }
+    const sessionRecords = await db.generationSessions
+      .where('session.stageId')
+      .equals(stageId)
+      .toArray();
+    const latest = sessionRecords.reduce<GenerationSessionRecord | undefined>((best, record) => {
+      const outlines = record.session?.sceneOutlines;
+      if (!Array.isArray(outlines) || outlines.length === 0) return best;
+      if (!best || (record.updatedAt ?? 0) > (best.updatedAt ?? 0)) return record;
+      return best;
+    }, undefined);
+    if (latest) {
+      return {
+        outlines: latest.session.sceneOutlines ?? [],
+        createdAt: latest.createdAt,
+        updatedAt: latest.updatedAt,
+      };
+    }
+    return undefined;
+  } catch (error) {
+    log.warn(`Legacy outline recovery failed for stage ${stageId}:`, error);
+    return undefined;
+  }
+}
+
+/**
  * Load stage data from IndexedDB
  */
 export async function loadStageData(stageId: string): Promise<StageStoreData | null> {
@@ -460,6 +522,17 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
       log.info(`Stage not found: ${stageId}`);
       return null;
     }
+    const persistedOutline = document.outline as AppDocumentOutline | undefined;
+    const outline =
+      persistedOutline ??
+      (await readLegacyStageOutline(stageId).then((recovered) => {
+        if (recovered) {
+          log.info(
+            `Recovered legacy outline for stage ${stageId}: ${recovered.outlines.length} outlines`,
+          );
+        }
+        return recovered;
+      }));
     const currentScene = await loadCurrentScene(stageId);
 
     // Chat runtime data lives in a separate IndexedDB database. Keep the
@@ -494,7 +567,7 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
       currentSceneId,
       chats,
       chatSnapshot,
-      outline: document.outline as AppDocumentOutline | undefined,
+      outline,
     };
   } catch (error) {
     log.error('Failed to load stage:', error);
@@ -789,8 +862,16 @@ export async function listStages(): Promise<StageListItem[]> {
     if (isBrowserPersistenceEnabled()) {
       // Server persistence is on: the generic document listing answers 403 by
       // design, so the home/workspace library lists through the owner-scoped
-      // workbench surface instead.
-      return await listOwnerStagesFromServer();
+      // workbench surface — but only when that surface can actually exist.
+      // The owner listing is gated on the agent runtime + DATABASE_URL; with
+      // the lighter file-backend browser persistence (no Postgres) the owner
+      // routes answer a plain 404 by design, in which case the same
+      // capability-token document store that serves reads by id is also
+      // usable for the listing (the same seam bootstrap configured).
+      if (isAgentRuntimeConfigured()) {
+        return await listOwnerStagesFromServer();
+      }
+      log.info('Agent runtime not configured; listing stages through the document store');
     }
     const summaries = await getDocumentStore().listDocuments();
     const ids = new Set(summaries.map((summary) => summary.id));
@@ -1193,7 +1274,13 @@ async function listOwnerFoldersFromServer(): Promise<FolderRecord[]> {
  */
 export async function listFolders(): Promise<FolderRecord[]> {
   if (isBrowserPersistenceEnabled()) {
-    return await listOwnerFoldersFromServer();
+    // Folder memberships rest in this browser's Dexie database; the owner
+    // route only aggregates them. Without the agent runtime that route 404s
+    // by design — read the device-local records directly, same source of
+    // truth they aggregate.
+    if (isAgentRuntimeConfigured()) {
+      return await listOwnerFoldersFromServer();
+    }
   }
   const folders = await db.folders.toArray();
   return folders.sort((a, b) => a.order - b.order);

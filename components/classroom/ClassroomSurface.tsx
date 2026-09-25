@@ -32,12 +32,15 @@ import { useStageStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/store/settings';
 import { claimStageSceneLoadToken, isCurrentStageSceneLoadToken } from '@/lib/store/stage';
 import { loadImageMapping } from '@/lib/utils/image-storage';
+import {
+  clearGenerationSessionForStage,
+  loadGenerationParams,
+} from '@/lib/utils/generation-session-store';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
 import { useNarrationAdoption } from '@/lib/audio/use-narration-adoption';
 import { createLogger } from '@/lib/logger';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
-import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { FileQuestion, Loader2 } from 'lucide-react';
 import Link from 'next/link';
@@ -339,26 +342,54 @@ export function ClassroomSurface({
     // Check if there are pending outlines. A finished deck is frozen for
     // editing: deleting a slide leaves its outline orphaned, but that must not
     // be treated as an interrupted generation and regenerated. Only resume
-    // when generation has not completed.
+    // when generation has not completed. Skipped outlines are finalized
+    // without a scene and are neither resumed nor counted.
+    //
+    // Queue semantics ("same train", reload-safe + lossless): the resume
+    // queue is DERIVED from the persisted invariant — outline without a
+    // scene — not from session memory. Previously-failed outlines re-enter
+    // the same train automatically when NEXT_PUBLIC_AUTO_RETRY_FAILED_GENERATION
+    // is on; otherwise they stay parked behind retry cards so the user decides
+    // whether a provider-side failure is worth re-burning tokens.
     const completedOrders = new Set(scenes.map((s) => s.order));
-    const hasPending = !generationComplete && outlines.some((o) => !completedOrders.has(o.order));
+    const autoRetryFailed = ['1', 'true'].includes(
+      (process.env.NEXT_PUBLIC_AUTO_RETRY_FAILED_GENERATION ?? '0').trim().toLowerCase(),
+    );
+    const failedIds = new Set(state.failedOutlines.map((o) => o.id));
+    const skipIds = new Set(state.skippedOutlineIds);
+    const outlineIsPending = (id: string, order: number): boolean =>
+      !completedOrders.has(order) && !skipIds.has(id) && !(failedIds.has(id) && !autoRetryFailed);
+    const hasPending =
+      !generationComplete && outlines.some((o) => outlineIsPending(o.id, o.order));
 
     if (hasPending && stage) {
       generationStartedRef.current = true;
 
-      // Load generation params from sessionStorage (stored by generation-preview before navigating)
-      const genParamsStr = sessionStorage.getItem('generationParams');
-      const params = genParamsStr ? JSON.parse(genParamsStr) : {};
+      // Params persisted by generation-preview on the session record
+      // (IndexedDB — see generation-session-store), looked up by the course
+      // id so the resume works even without the sessionStorage envelope (tab
+      // close, browser restart).
+      void (async () => {
+        const params = (await loadGenerationParams(classroomId)) ?? {};
 
-      // Reconstruct imageMapping for the resumed generation. The mapping may
-      // MIX allocated asset ids and IndexedDB data URLs — a source whose cache
-      // write failed materialized its own images — so the resume mapping merges
-      // both, instead of choosing one transport for the whole set and silently
-      // dropping the other half.
-      const pdfImages = (params.pdfImages || []) as Array<
-        { id: string; assetId?: string; storageId?: string } & Record<string, unknown>
-      >;
-      const finishResume = (imageMapping: Record<string, string>) =>
+        // Reconstruct imageMapping for the resumed generation. The mapping may
+        // MIX allocated asset ids and IndexedDB data URLs — a source whose
+        // cache write failed materialized its own images — so the resume
+        // mapping merges both, instead of choosing one transport for the whole
+        // set and silently dropping the other half.
+        const pdfImages = (params.pdfImages || []) as unknown as Array<
+          { id: string; assetId?: string; storageId?: string } & Record<string, unknown>
+        >;
+        const imageMapping: Record<string, string> = {};
+        for (const img of pdfImages) {
+          if (img.assetId) imageMapping[img.id] = img.assetId;
+        }
+        const storageIds = pdfImages
+          .filter((img) => !img.assetId && img.storageId)
+          .map((img) => img.storageId as string);
+        if (storageIds.length > 0) {
+          Object.assign(imageMapping, await loadImageMapping(storageIds));
+        }
         generateRemaining({
           pdfImages: params.pdfImages,
           imageMapping,
@@ -372,24 +403,12 @@ export function ClassroomSurface({
           languageDirective: params.languageDirective || stage.languageDirective,
           taskEngineMode: stage.taskEngineMode,
         });
-
-      const imageMapping: Record<string, string> = {};
-      for (const img of pdfImages) {
-        if (img.assetId) imageMapping[img.id] = img.assetId;
-      }
-      const storageIds = pdfImages
-        .filter((img) => !img.assetId && img.storageId)
-        .map((img) => img.storageId as string);
-      void (async () => {
-        if (storageIds.length > 0) {
-          Object.assign(imageMapping, await loadImageMapping(storageIds));
-        }
-        finishResume(imageMapping);
+        // The params record is deliberately kept: a resumed batch can still
+        // pause again (provider failure, tab close) and a later resume needs
+        // the same media mapping. The TTL sweep reclaims stale records once
+        // the stage settles; clearing here would break the second resume.
       })();
     } else if (outlines.length > 0 && stage) {
-      // All scenes are generated, but some media may not have finished.
-      // Resume media generation for any tasks not yet in IndexedDB.
-      // generateMediaForOutlines skips already-completed tasks automatically.
       generationStartedRef.current = true;
       // The deck reached the classroom already fully materialized (e.g. a
       // single-slide course, or a deck whose last slide finished in
@@ -398,16 +417,192 @@ export function ClassroomSurface({
       // an interrupted generation. No-op if already complete or not all
       // outlines have scenes.
       useStageStore.getState().markGenerationCompleteIfDone();
-      // Resume media only for outlines that still have a scene. On a finished
-      // deck the user may have deleted a slide, leaving an orphaned outline;
-      // generating its media would waste API calls on a slide that is gone.
-      const materializedOrders = new Set(scenes.map((s) => s.order));
-      const materializedOutlines = outlines.filter((o) => materializedOrders.has(o.order));
-      generateMediaForOutlines(materializedOutlines, stage.id).catch((err) => {
-        log.warn('[Classroom] Media generation resume error:', err);
-      });
+      // Nothing needs the generation session anymore — drop any record a
+      // handoff left behind (single-slide course, refresh-after-completion).
+      void clearGenerationSessionForStage(classroomId);
+      // Media recovery (same-train semantics): a fully materialized deck
+      // whose narration or image/video/poster bytes decayed gets an automatic
+      // class-agnostic repair run per mount — detection is player-equivalent
+      // ("does the ref resolve right now") and repair dispatches per class:
+      // TTS drain for narration, the orchestrator's byte-aware requeue
+      // (generateMediaForOutlines) for image/video. Byte truth hydrates phase
+      // rows on the SAME failed queue first (red cards on the first render),
+      // then the drain/orchestrator consumes entries per class.
+      const storeState = useStageStore.getState();
+      const storeScenes = storeState.scenes;
+      // Stale-failure reconciliation input: persisted failed phase rows keyed
+      // by scene id (lessonGroups jobs are outline-keyed). The repair audit
+      // lifts these the moment byte truth disproves them.
+      const failedPhasesBySceneId = new Map<string, Set<'tts' | 'media'>>();
+      {
+        const jobByOutlineId = new Map(
+          storeState.lessonGroups.flatMap((group) =>
+            (group.jobs ?? []).map((job) => [job.outlineId, job] as const),
+          ),
+        );
+        for (const scene of storeScenes) {
+          const job = scene.outlineId ? jobByOutlineId.get(scene.outlineId) : undefined;
+          const phases = new Set<'tts' | 'media'>();
+          if (job?.phases?.tts?.status === 'failed') phases.add('tts');
+          if (job?.phases?.media?.status === 'failed') phases.add('media');
+          if (phases.size > 0) failedPhasesBySceneId.set(scene.id, phases);
+        }
+      }
+      void (async () => {
+        const { repairCourseMedia } = await import('@/lib/media/repair-course-media');
+        await repairCourseMedia([...storeScenes], {
+          language: storeState.blueprint?.languageDirective,
+          outlines,
+          stageId: stage.id,
+          persistedFailedPhases: failedPhasesBySceneId,
+          onScenePhaseFailure: (sceneId, phase) => {
+            const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
+            if (!scene?.outlineId) return;
+            useStageStore.getState().recordScenePhase(scene.outlineId, phase, {
+              status: 'failed',
+              error: phase === 'tts' ? 'Narration bytes missing' : 'Generated media bytes missing',
+            });
+            const outline = outlines.find((o) => o.id === scene.outlineId);
+            if (outline) useStageStore.getState().addFailedOutline(outline);
+          },
+          // The failure hook's symmetry: when the repair dispatch restores
+          // every ref a scene needs, the recorded failure must lift.
+          onScenePhaseResolved: (sceneId, phase) => {
+            const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
+            if (!scene?.outlineId) return;
+            useStageStore.getState().recordScenePhase(scene.outlineId, phase, { status: 'done' });
+          },
+        });
+      })().catch((err) => log.warn('[Classroom] Media repair resume error:', err));
+      // Layout truth rides the SAME on-load pipeline: one deterministic,
+      // tokenless sweep per course per session clamps + move-restacks and
+      // keeps the persisted debt ledger honest (write-offs included).
+      void (async () => {
+        const { repairCourseLayout } = await import('@/lib/maintenance/repair-course-layout');
+        await repairCourseLayout(stage.id, [...storeScenes]);
+        // Split-terminal parts (and any other materially-present scene) get
+        // their content fingerprint in the same session.
+        const { stampCourseSceneHashes } = await import('@/lib/maintenance/stamp-scene-hashes');
+        await stampCourseSceneHashes(stage.id);
+      })();
     }
-  }, [loading, error, mayGenerate, generateRemaining]);
+    // classroomId: the params lookup and session cleanup are keyed by it. A
+    // change re-runs this effect, but `generationStartedRef` still guards the
+    // one-shot resume.
+  }, [loading, error, mayGenerate, generateRemaining, classroomId]);
+
+  // In-page resume after a provider-failure pause (quota exhaustion, flaky
+  // free tier): re-kick the batch with the same handoff params the first
+  // auto-resume used. The session record is kept around for exactly this.
+  const handleResumeGeneration = useCallback(async () => {
+    const stage = useStageStore.getState().stage;
+    if (!stage) return;
+    const params = (await loadGenerationParams(classroomId)) ?? {};
+    const storageIds = (params.pdfImages || [])
+      .map((img) => img.storageId)
+      .filter((id): id is string => Boolean(id));
+    const imageMapping = await loadImageMapping(storageIds);
+    generateRemaining({
+      pdfImages: params.pdfImages,
+      imageMapping,
+      stageInfo: {
+        name: stage.name || '',
+        description: stage.description,
+        style: stage.style,
+      },
+      agents: params.agents,
+      userProfile: params.userProfile,
+      languageDirective: params.languageDirective || stage.languageDirective,
+      taskEngineMode: stage.taskEngineMode,
+    });
+  }, [classroomId, generateRemaining]);
+
+  // Dev/self-host recovery affordances (console-invocable). The media backfill
+  // uploads browser-owned narration/media bytes into the server asset store so
+  // the course-git repo snapshot can carry them; needs an open course + dev
+  // persistence token. Deliberately NOT a product UI surface: it is an
+  // operator tool and must not be reachable on hosted production.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    const runtime = window as typeof window & {
+      __openmaicMediaBackfill?: (stageId: string) => Promise<unknown>;
+      __openmaicStampSceneHashes?: () => Promise<unknown>;
+      __openmaicVerifyCourse?: (options?: { repair?: boolean }) => Promise<unknown>;
+    };
+    runtime.__openmaicMediaBackfill = async () => {
+      const { useStageStore } = await import('@/lib/store');
+      const state = useStageStore.getState();
+      const snapshot = state.stage ? { stage: state.stage, scenes: state.scenes, outline: state.blueprint } : null;
+      if (!snapshot) throw new Error('no persisted document; open the course first');
+      const { backfillCourseMedia } = await import('@/lib/media/backfill-course-media');
+      return backfillCourseMedia(snapshot);
+    };
+    // Hash-stamp backfill: legacy scenes generated before the actions-source
+    // fingerprint existed carry no actionsSourceHash, so every repair on them
+    // re-pays the full content/actions LLM passes even for a voice-only gap.
+    // This computes their fingerprint from the CURRENT persisted content under
+    // the restored generation params and stamps them — the amortizes one full
+    // pass per legacy scene permanently. Idempotent: stamped scenes are skipped.
+    runtime.__openmaicStampSceneHashes = async () => {
+      const { useStageStore } = await import('@/lib/store');
+      const state = useStageStore.getState();
+      if (!state.stage) throw new Error('no persisted document; open the course first');
+      const { loadGenerationParams } = await import('@/lib/utils/generation-session-store');
+      const restored = await loadGenerationParams(state.stage.id);
+      const {
+        agents,
+        userProfile,
+        languageDirective = state.stage.languageDirective,
+      } = restored ?? {};
+      const { computeActionsSourceHash } = await import('@/lib/utils/content-hash');
+      let stamped = 0;
+      const scenes = state.scenes.map((scene) => {
+        if (scene.actionsSourceHash !== undefined) return scene;
+        stamped += 1;
+        return {
+          ...scene,
+          actionsSourceHash: computeActionsSourceHash({
+            content: scene.content,
+            agents,
+            userProfile,
+            languageDirective,
+          }),
+        };
+      });
+      if (stamped === 0) return { stamped: 0 };
+      // Persisting goes through the store's own save pipeline (debounced
+      // stage-storage flush → server PUT → git scheduler) — no manual write,
+      // the same app-flow path any scene mutation takes.
+      state.setScenes(stamped === state.scenes.length ? [...scenes] : scenes);
+      return { stamped, total: state.scenes.length };
+    };
+    // Placement sweep: the deterministic layout probe over every slide scene of
+    // the open course (overflow + text occlusion, geometry only — no LLM).
+    // With `repair: true` it additionally pulls each hanging/capped element
+    // back inside the canvas bounds, then lets the store's save pipeline flush
+    // the same path any scene mutation uses.
+    runtime.__openmaicVerifyCourse = async (options) => {
+      const { useStageStore } = await import('@/lib/store');
+      const { sweepCoursePlacement } = await import('@/lib/slides/placement-sweep');
+      const state = useStageStore.getState();
+      if (!state.stage) throw new Error('no persisted document; open the course first');
+      const result = sweepCoursePlacement(state.scenes as never, options);
+      if (options?.repair && result.elementsClamped > 0) {
+        state.setScenes(result.scenes as never);
+      }
+      return {
+        scenesChecked: result.scenesChecked,
+        scenesFlagged: result.scenesFlagged,
+        elementsClamped: result.elementsClamped,
+        summary: result.summary,
+      };
+    };
+    return () => {
+      delete runtime.__openmaicMediaBackfill;
+      delete runtime.__openmaicVerifyCourse;
+    };
+  }, []);
+
 
   const view = resolveClassroomSurfaceView({
     variant,
@@ -493,6 +688,7 @@ export function ClassroomSurface({
             <Stage
               classroomId={classroomId}
               onRetryOutline={mayGenerate ? retrySingleOutline : undefined}
+              onResumeGeneration={mayGenerate ? handleResumeGeneration : undefined}
             />
           )}
         </div>

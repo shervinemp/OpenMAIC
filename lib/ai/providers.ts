@@ -964,6 +964,30 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/deepseek.svg',
     models: [
+      // V4.1-Flash (released 2026-09-10, `deepseek-flash`). Replaces the
+      // retired V4-Flash / V4-Flash-Vision-Exp ids - DeepSeek's endpoint
+      // temporarily re-routes those legacy names to this model, but the
+      // canonical name is what new configurations should use. Native
+      // multimodal: image input lands directly on this id, no second
+      // "vision" catalog entry needed.
+      {
+        id: 'deepseek-flash',
+        name: 'DeepSeek V4.1 Flash',
+        contextWindow: 1048576,
+        outputWindow: 393216,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      // Retired 2026-09-10: served by V4.1-Flash (deepseek-flash) at Flash
+      // rates until DeepSeek fully drops the alias.
       {
         id: 'deepseek-v4-pro',
         name: 'DeepSeek V4 Pro',
@@ -980,6 +1004,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           },
         },
       },
+      // Retired 2026-09-10: temporarily routed to V4.1-Flash
+      // (deepseek-flash) at Flash rates by DeepSeek's endpoint.
       {
         id: 'deepseek-v4-flash',
         name: 'DeepSeek V4 Flash',
@@ -996,6 +1022,9 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           },
         },
       },
+      // Retired 2026-09-10: temporarily routed to V4.1-Flash
+      // (deepseek-flash, native multimodal) - kept so existing configs with
+      // this id keep resolving and the vLLM gateway toggle still applies.
       {
         id: 'deepseek-v4-flash-vision-exp',
         name: 'DeepSeek V4 Flash Vision (Exp)',
@@ -1931,6 +1960,53 @@ function getCompatThinkingBodyParams(
   }
 }
 
+/**
+ * Prompt caching: tag the system prompt with an Anthropic cache block so the
+ * largely-static prefix is billed at cache-read cost on subsequent calls
+ * instead of full uncached input. System prompts here are rebuilt per request
+ * from stable content (course outline, tool schemas), so the prefix matches
+ * across turns. Opt out with LLM_PROMPT_CACHING_DISABLED=true.
+ */
+export function injectAnthropicSystemCacheControl(body: unknown): unknown {
+  const parsed = body as {
+    system?: string | Array<{ type: string; text?: string; cache_control?: unknown }>;
+  } | null;
+  if (!parsed || typeof parsed !== 'object') return body;
+  let mutated = false;
+  if (typeof parsed.system === 'string' && parsed.system.length > 0) {
+    parsed.system = [{ type: 'text', text: parsed.system, cache_control: { type: 'ephemeral' } }];
+    mutated = true;
+  } else if (Array.isArray(parsed.system) && parsed.system.length > 0) {
+    const last = parsed.system[parsed.system.length - 1];
+    if (last?.type === 'text' && !last.cache_control) {
+      last.cache_control = { type: 'ephemeral' };
+      mutated = true;
+    }
+  }
+  if (!mutated) return body;
+  const cloned = { ...(parsed as Record<string, unknown>), system: parsed.system };
+  return cloned;
+}
+
+export function wrapAnthropicCacheFetch(transportFetch: typeof fetch): typeof fetch {
+  return async (fetchInput, fetchInit) => {
+    let init = fetchInit;
+    if (
+      process.env.LLM_PROMPT_CACHING_DISABLED !== 'true' &&
+      init?.body &&
+      typeof init.body === 'string'
+    ) {
+      try {
+        const mutated = injectAnthropicSystemCacheControl(JSON.parse(init.body));
+        if (mutated !== undefined) init = { ...init, body: JSON.stringify(mutated) };
+      } catch {
+        /* leave body as-is */
+      }
+    }
+    return transportFetch(fetchInput, init);
+  };
+}
+
 function normalizeMiniMaxAnthropicBaseUrl(
   providerId: ProviderId,
   baseUrl?: string,
@@ -2356,6 +2432,9 @@ export function getModel(config: ModelConfig): ModelWithInfo {
     } as RequestInit);
   };
 
+  const maybeCacheControlledFetch: typeof fetch =
+    config.providerId === 'anthropic' ? wrapAnthropicCacheFetch(transportFetch) : transportFetch;
+
   let model: LanguageModel;
 
   switch (providerType) {
@@ -2559,7 +2638,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           return transportFetch(url, init);
         }) as typeof globalThis.fetch;
       } else {
-        anthropicOptions.fetch = transportFetch;
+        anthropicOptions.fetch = maybeCacheControlledFetch as typeof globalThis.fetch;
       }
 
       const anthropic = createAnthropic(anthropicOptions);

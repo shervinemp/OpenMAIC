@@ -34,13 +34,22 @@ import { createLogger } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
 import { InputGroup, InputGroupInput, InputGroupButton } from '@/components/ui/input-group';
 import { Textarea as UITextarea } from '@/components/ui/textarea';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { SettingsDialog } from '@/components/settings';
 import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
+import { RestoreBackupButton } from '@/components/backup/restore-backup-button';
+import { BACKUP_UI_ENABLED } from '@/lib/backup/config';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
+import { saveGenerationSession, hasGenerationSessionEnvelope } from '@/lib/utils/generation-session-store';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import {
   courseMaterialFingerprint,
@@ -54,6 +63,10 @@ import type {
 import { useSettingsStore } from '@/lib/store/settings';
 import { hasUsableLLMProvider } from '@/lib/store/settings-validation';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
+import {
+  COURSE_SIZE_PRESETS,
+  type CourseSizePreset,
+} from '@/lib/constants/generation';
 import {
   StageListItem,
   listStages,
@@ -87,6 +100,11 @@ import {
   isPptxImportEnabled,
   shouldShowVocationalTestUi,
 } from '@/lib/config/feature-flags';
+import { adoptCheckpointSessionId } from '@/lib/generation/outline-checkpoint';
+import {
+  ReadinessGateDialog,
+  useGenerationReadiness,
+} from '@/components/generation/readiness-gate';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
 import { ProBadge } from '@/components/workbench/ProBadge';
@@ -100,6 +118,7 @@ const log = createLogger('Home');
 
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
+const SIZE_PRESET_STORAGE_KEY = 'courseSizePreset';
 
 // PPTX import is still scaffolding: `useImportPptx` has no `onImported` consumer
 // yet, so the flow only logs the parsed slides. Hide the entry point behind a
@@ -114,6 +133,7 @@ interface FormState {
   requirement: string;
   interactiveMode: boolean;
   vocationalTestMode: boolean;
+  sizePreset: CourseSizePreset;
 }
 
 const initialFormState: FormState = {
@@ -121,6 +141,7 @@ const initialFormState: FormState = {
   requirement: '',
   interactiveMode: false,
   vocationalTestMode: false,
+  sizePreset: 'compact',
 };
 
 function HomePage() {
@@ -195,8 +216,14 @@ function HomePage() {
     }
     try {
       const savedInteractiveMode = localStorage.getItem(INTERACTIVE_MODE_STORAGE_KEY);
-      if (savedInteractiveMode === 'true') {
-        setForm((prev) => ({ ...prev, interactiveMode: true }));
+      const savedSizePreset = localStorage.getItem(SIZE_PRESET_STORAGE_KEY);
+      const updates: Partial<FormState> = {};
+      if (savedInteractiveMode === 'true') updates.interactiveMode = true;
+      if (savedSizePreset && savedSizePreset in COURSE_SIZE_PRESETS) {
+        updates.sizePreset = savedSizePreset as CourseSizePreset;
+      }
+      if (Object.keys(updates).length > 0) {
+        setForm((prev) => ({ ...prev, ...updates }));
       }
     } catch {
       /* localStorage unavailable */
@@ -224,6 +251,9 @@ function HomePage() {
   // set that cannot change under it.
   const [preparingGenerate, setPreparingGenerate] = useState(false);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
+  // True when a parked generation session exists (user backed out during the
+  // outline phase) — renders the "resume generation" prompt in the list.
+  const [pendingGeneration, setPendingGeneration] = useState(false);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -332,6 +362,15 @@ function HomePage() {
     // (gen_img_1, etc.) collide with other courses' placeholders.
     useMediaGenerationStore.getState().revokeObjectUrls();
     useMediaGenerationStore.setState({ tasks: {} });
+
+    // A parked generation session (pointer envelope in sessionStorage) means
+    // the user backed out mid-outline (before the course was persisted).
+    // Surface a resume prompt and make sure the recent list is expanded so it
+    // is visible.
+    if (hasGenerationSessionEnvelope()) {
+      setPendingGeneration(true);
+      persistRecentOpen(true);
+    }
 
     // Read sessionStorage on the client only (avoids SSR hydration mismatch).
     // Both reads resolve before flipping `hydrated`, so the hero layout does
@@ -504,6 +543,7 @@ function HomePage() {
     try {
       if (field === 'interactiveMode')
         localStorage.setItem(INTERACTIVE_MODE_STORAGE_KEY, String(value));
+      if (field === 'sizePreset') localStorage.setItem(SIZE_PRESET_STORAGE_KEY, String(value));
       if (field === 'requirement') updateRequirementCache(value as string);
     } catch {
       /* ignore */
@@ -558,7 +598,9 @@ function HomePage() {
     }));
   };
 
-  const handleGenerate = async () => {
+const { probe: probeReadiness, checking: readinessChecking, issues: readinessIssues, dismiss: dismissReadiness } = useGenerationReadiness();
+
+  const runGeneration = async () => {
     // No model/provider guard here: generation is gated by `canGenerate`
     // (requires a usable provider), and under the #580 invariant a usable
     // provider always has a concrete model. State A (no usable provider)
@@ -645,9 +687,21 @@ function HomePage() {
         }
       }
 
+      // Retry adoption: if a previous multi-unit run for the SAME requirement
+      // died mid-course, its outline checkpoint (device KV, keyed by the old
+      // session id) still holds every completed unit. Reusing that sessionId
+      // lets the generation preview's resume path engage - without this, a
+      // resubmit after "Generation failed" orphaned the checkpoint and
+      // silently restarted the whole course.
+      const adoptedSessionId = await adoptCheckpointSessionId(
+        requirements.requirement,
+        (checkpoint) => checkpoint.sessionId,
+      );
+
       const sessionState = {
-        sessionId: nanoid(),
+        sessionId: adoptedSessionId ?? nanoid(),
         requirements,
+        sizePreset: form.sizePreset,
         pdfText: '',
         pdfImages: [],
         imageStorageIds: [],
@@ -661,7 +715,11 @@ function HomePage() {
         sceneOutlines: null,
         currentStep: 'generating' as const,
       };
-      sessionStorage.setItem('generationSession', JSON.stringify(sessionState));
+      // Awaited: /generation-preview hydrates from this record on mount, so it
+      // must be durable before navigation. The full session lives in IndexedDB
+      // (sessionStorage only carries the pointer envelope — the quota-safe
+      // medium for the large document payloads that follow).
+      await saveGenerationSession(sessionState);
 
       router.push('/generation-preview');
     } catch (err) {
@@ -672,6 +730,28 @@ function HomePage() {
       // this is normally a no-op on the way out).
       setPreparingGenerate(false);
     }
+  };
+
+  const handleGenerate = async () => {
+    // No model/provider guard here: generation is gated by `canGenerate`
+    // (requires a usable provider), and under the #580 invariant a usable
+    // provider always has a concrete model. State A (no usable provider)
+    // surfaces through the toolbar's single Configure-Provider affordance.
+    if (!form.requirement.trim()) {
+      setError(t('upload.requirementRequired'));
+      return;
+    }
+
+    setError(null);
+
+    // Pre-flight: probe the enabled modalities (LLM provider, ComfyUI server +
+    // workflow selection, TTS server) so a dead media stack surfaces BEFORE
+    // the run burns LLM tokens, not after. Advisory - blockers render the
+    // gate dialog and "Generate anyway" calls back into runGeneration().
+    const blockers = await probeReadiness();
+    if (blockers) return;
+
+    await runGeneration();
   };
 
   const formatDate = (timestamp: number) => {
@@ -803,6 +883,17 @@ function HomePage() {
         }}
         initialSection={settingsSection}
       />
+      <ReadinessGateDialog
+        issues={readinessIssues}
+        onProceed={() => {
+          dismissReadiness();
+          void runGeneration();
+        }}
+        onReview={() => {
+          dismissReadiness();
+          setSettingsOpen(true);
+        }}
+      />
 
       {/* ═══ Background Decor ═══ */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -888,9 +979,11 @@ function HomePage() {
               rows={4}
             />
 
-            {/* Toolbar row */}
-            <div className="px-3 pb-3 flex items-end gap-2">
-              <div className="flex-1 min-w-0">
+            {/* Toolbar row — the toolbar keeps a minimum width so its pills never
+                collapse into a vertical stack; the fixed controls wrap to their
+                own right-aligned line first when the viewport tightens. */}
+            <div className="px-3 pb-3 flex flex-wrap items-end gap-2">
+              <div className="flex-1 min-w-[260px]">
                 <GenerationToolbar
                   courseMaterials={form.courseMaterials}
                   onCourseMaterialsAdd={addCourseMaterials}
@@ -903,6 +996,47 @@ function HomePage() {
                   }}
                 />
               </div>
+
+              <div className="flex flex-wrap items-center justify-end gap-2 ml-auto max-w-full">
+              {/* Course size preset (Phase 2 §15.3) */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className={cn(
+                          'shrink-0 h-8 px-2.5 rounded-lg flex items-center gap-1 text-xs font-medium border transition-colors',
+                          form.sizePreset !== 'compact'
+                            ? 'border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300'
+                            : 'border-border/60 text-muted-foreground hover:bg-muted/60',
+                        )}
+                      >
+                        {t(`generation.sizePreset.${form.sizePreset}`)}
+                        <ChevronDown className="size-3" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-44">
+                      {(Object.keys(COURSE_SIZE_PRESETS) as CourseSizePreset[]).map((preset) => (
+                        <DropdownMenuItem
+                          key={preset}
+                          onSelect={() => updateForm('sizePreset', preset)}
+                          className="flex items-center justify-between"
+                        >
+                          <span>{t(`generation.sizePreset.${preset}`)}</span>
+                          {form.sizePreset === preset && <Check className="size-3.5" />}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {t('generation.sizePresetHint', {
+                    scenes: COURSE_SIZE_PRESETS[form.sizePreset].maxScenes,
+                    minutes: COURSE_SIZE_PRESETS[form.sizePreset].durationMinutes,
+                  })}
+                </TooltipContent>
+              </Tooltip>
 
               {/* Interactive mode toggle */}
               <Tooltip>
@@ -933,10 +1067,10 @@ function HomePage() {
               {/* Send button */}
               <button
                 onClick={handleGenerate}
-                disabled={!canGenerate || preparingGenerate}
+                disabled={!canGenerate || preparingGenerate || readinessChecking}
                 className={cn(
                   'shrink-0 h-8 rounded-lg flex items-center justify-center gap-1.5 transition-all px-3',
-                  canGenerate && !preparingGenerate
+                  canGenerate && !preparingGenerate && !readinessChecking
                     ? 'bg-primary text-primary-foreground hover:opacity-90 shadow-sm cursor-pointer'
                     : 'bg-muted text-muted-foreground/40 cursor-not-allowed',
                 )}
@@ -950,6 +1084,7 @@ function HomePage() {
                   <ArrowUp className="size-3.5" />
                 )}
               </button>
+              </div>
             </div>
           </div>
         </motion.div>
@@ -1155,6 +1290,7 @@ function HomePage() {
                   {t('import.classroom')}
                 </span>
               </button>
+              {BACKUP_UI_ENABLED && <RestoreBackupButton variant="pill" />}
               {PPTX_IMPORT_ENABLED && (
                 <button
                   onClick={triggerPptxFileSelect}
@@ -1196,6 +1332,31 @@ function HomePage() {
                 transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
                 className="w-full overflow-hidden"
               >
+                {/* Paused-outline generation prompt: the session was kept when
+                    the user backed out before the course was persisted. */}
+                {pendingGeneration && (
+                  <motion.button
+                    type="button"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    onClick={() => {
+                      setPendingGeneration(false);
+                      router.push('/generation-preview');
+                    }}
+                    className="mt-6 w-full flex items-center gap-3 rounded-xl border border-violet-200/60 bg-violet-50/60 px-4 py-3 text-left transition-colors hover:bg-violet-50 dark:border-violet-800/60 dark:bg-violet-950/20 dark:hover:bg-violet-950/30 cursor-pointer"
+                  >
+                    <Loader2 className="size-4 shrink-0 animate-spin text-violet-600 dark:text-violet-400" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-medium">
+                        {t('generation.pendingGenerationTitle')}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                        {t('generation.pendingGenerationDesc')}
+                      </span>
+                    </span>
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                  </motion.button>
+                )}
                 {folders.length === 0 && classrooms.length === 0 ? (
                   <div className="pt-8 pb-2 text-center text-[13px] text-muted-foreground/60">
                     {t('classroom.emptyLibraryHint')}
@@ -1426,7 +1587,7 @@ function GreetingBar() {
   };
 
   return (
-    <div ref={containerRef} className="relative pl-4 pr-2 pt-3.5 pb-1 w-auto">
+    <div ref={containerRef} className="relative min-w-0 shrink pl-4 pr-2 pt-3.5 pb-1 w-auto">
       <input
         ref={avatarInputRef}
         type="file"
@@ -1438,7 +1599,7 @@ function GreetingBar() {
       {/* ── Collapsed pill (always in flow) ── */}
       {!open && (
         <div
-          className="flex items-center gap-2.5 cursor-pointer transition-all duration-200 group rounded-full px-2.5 py-1.5 border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 active:scale-[0.97]"
+          className="flex min-w-0 max-w-full items-center gap-2.5 cursor-pointer transition-all duration-200 group rounded-full px-2.5 py-1.5 border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 active:scale-[0.97]"
           onClick={() => setOpen(true)}
         >
           <div className="shrink-0 relative">
@@ -1452,8 +1613,8 @@ function GreetingBar() {
           <div className="flex-1 min-w-0">
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="leading-none select-none flex items-center gap-1">
-                  <span className="text-[13px] font-semibold text-foreground/85 group-hover:text-foreground transition-colors">
+                <span className="leading-none select-none flex items-center gap-1 min-w-0">
+                  <span className="text-[13px] font-semibold text-foreground/85 group-hover:text-foreground transition-colors truncate">
                     {t('home.greetingWithName', { name: displayName })}
                   </span>
                   <ChevronDown className="size-3 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors shrink-0" />
@@ -1885,3 +2046,5 @@ function ClassroomCard({
 export default function Page() {
   return <HomePage />;
 }
+
+

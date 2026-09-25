@@ -160,13 +160,16 @@ export function GenerationToolbar({
   };
 
   // ─── Pill button helper ─────────────────────────────
+  // `shrink-0`: pills never compress (compressed nowrap text spills into
+  // the next pill — the "pushed onto each other" overlap). Wrapping is the
+  // only reflow mechanism, handled by the wrap-friendly parent.
   const pillCls =
-    'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border';
+    'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border';
   const pillMuted = `${pillCls} border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60`;
   const pillActive = `${pillCls} border-violet-200/60 dark:border-violet-700/50 bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300`;
 
   return (
-    <div className="flex items-center gap-1 flex-wrap">
+    <div className="flex min-w-0 items-center gap-1 flex-wrap">
       {/* ── Model selection: pill (picker popover) or Set-up CTA (#580) ── */}
       {llmPickerGroups.length > 0 ? (
         <ModelPicker

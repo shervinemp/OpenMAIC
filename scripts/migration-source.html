@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OpenMAIC data export (origin: localhost:3000)</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; line-height: 1.5; }
+  button { font-size: 16px; padding: 10px 18px; border-radius: 8px; border: 1px solid #888; cursor: pointer; }
+  #status { white-space: pre-wrap; margin-top: 16px; font-family: monospace; font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>OpenMAIC data export</h1>
+<p>This page runs at <code>http://localhost:3000</code> and reads <b>this origin's</b> browser
+storage (IndexedDB + localStorage) — the browser origin where your previous OpenMAIC
+sessions stored data. It packs everything into one JSON file you can import into
+OpenMAIC running on another port (e.g. <code>http://localhost:3001/migrate</code>).</p>
+<p>Nothing leaves this machine and nothing is uploaded anywhere: the file downloads to your disk.</p>
+<button id="export">Export JSON backup</button>
+<pre id="status">Not started.</pre>
+
+<script>
+const statusEl = document.getElementById('status');
+function status(msg) { statusEl.textContent += msg + '\n'; }
+
+function promisifyRequest(req) {
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/** Read an object store including its keys (keys are lost by getAll). */
+function readStoreWithKeys(db, storeName) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readonly');
+    const store = tx.objectStore(storeName);
+    const rows = [];
+    const request = store.openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (cursor) {
+        rows.push([cursor.key, cursor.value]);
+        cursor.continue();
+      } else {
+        resolve(rows);
+      }
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/** ArrayBuffer (IndexedDB blob storage) → base64, chunked to avoid stack limits. */
+function bufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
+async function dumpDatabase(dbName, describeStore) {
+  const result = {};
+  const openRequest = indexedDB.open(dbName);
+  try {
+    const db = await promisifyRequest(openRequest);
+    for (const storeName of Array.from(db.objectStoreNames)) {
+      const rows = await readStoreWithKeys(db, storeName);
+      const plain = rows.map(([key, value]) => [
+        key,
+        describeStore(storeName, value),
+      ]);
+      result[storeName] = plain;
+    }
+    db.close();
+    return result;
+  } catch (error) {
+    status(`Database "${dbName}" unavailable (${error.message}) — skipping.`);
+    return null;
+  }
+}
+
+function serializeValue(storeName, value) {
+  if (value instanceof ArrayBuffer) return { $bin: bufferToBase64(value) };
+  if (ArrayBuffer.isView(value)) return { $bin: bufferToBase64(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength)) };
+  if (value instanceof Blob) {
+    throw new Error(`Blob value in "${storeName}" — not expected; export aborted`);
+  }
+  return value;
+}
+
+async function run() {
+  statusEl.textContent = '';
+  status(`Exporting from origin: ${location.origin}`);
+
+  // 1. Documents (stages / scenes / outlines) ----------------------------------
+  const docsDb = await dumpDatabase('maic-documents', serializeValue);
+  let documents = [];
+  if (docsDb) {
+    const stages = (docsDb.stages ?? []).map(([, v]) => v);
+    const scenesByStage = new Map();
+    for (const [, scene] of docsDb.scenes ?? []) {
+      const stageId = scene && typeof scene === 'object' ? scene.stageId : undefined;
+      if (typeof stageId !== 'string') continue;
+      if (!scenesByStage.has(stageId)) scenesByStage.set(stageId, []);
+      scenesByStage.get(stageId).push(scene);
+    }
+    const outlinesByStage = new Map((docsDb.outlines ?? []).map(([, v]) => [v.stageId, v]));
+    for (const stage of stages) {
+      const id = stage && typeof stage === 'object' ? stage.id : undefined;
+      if (typeof id !== 'string') continue;
+      const outline = outlinesByStage.get(id);
+      documents.push({
+        stage,
+        scenes: scenesByStage.get(id) ?? [],
+        ...(outline ? { outline } : {}),
+      });
+    }
+    status(`Documents found: ${documents.length}`);
+  } else {
+    status('No "maic-documents" database on this origin — nothing to export there.');
+  }
+
+  // 2. Asset pool (media bytes) ------------------------------------------------
+  const assetsDb = await dumpDatabase('maic-asset-pool', serializeValue);
+  status('Asset pool dumped.');
+
+  // 3. localStorage -------------------------------------------------------------
+  const local = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    local[key] = localStorage.getItem(key);
+  }
+  status(`localStorage keys: ${Object.keys(local).length}`);
+
+  const payload = {
+    app: 'openmaic',
+    kind: 'origin-migration',
+    origin: location.origin,
+    exportedAt: new Date().toISOString(),
+    documents,
+    assetPool: assetsDb,
+    localStorage: local,
+  };
+
+  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'openmaic-migration.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  status(`Done — downloaded openmaic-migration.json (${(blob.size / 1024).toFixed(0)} KB).`);
+  status('Next: open OpenMAIC on its new port and visit /migrate to import this file.');
+}
+
+document.getElementById('export').addEventListener('click', () => {
+  run().catch((error) => status(`ERROR: ${error.message}`));
+});
+</script>
+</body>
+</html>

@@ -92,6 +92,41 @@ The workflow JSON must be in **ComfyUI API format** (not the default save format
 
 ---
 
+## Image-to-video (I2V) workflows
+
+The **ComfyUI Video** provider also runs image-to-video workflows (e.g. Wan 2.2
+I2V, CogVideoX I2V, HunyuanVideo I2V, LTX). There is no separate provider or
+setting — I2V is triggered by two things working together:
+
+1. The workflow includes a **`Load Image`** node (any `ComfyUI LoadImage` node;
+   the title `Load Image` is preferred, but the adapter also finds it by
+   `class_type` when untitled).
+2. The caller passes an **input image** (base64 data URL or http(s) URL) to the
+   video generation request.
+
+### What happens at generation time
+
+- The adapter uploads the source image to ComfyUI via `POST /upload/image`.
+- The `Load Image` node's `image` input is set to the uploaded filename.
+- The prompt, seed, and dimensions are patched exactly as for text-to-video.
+
+### Fail-fast behaviour
+
+- **Load Image node + no input image** → generation fails immediately with a
+  clear error, so a stray I2V workflow can never run with a placeholder image.
+- **Input image + no Load Image node** → the image is ignored (with a log
+  warning) and the workflow runs as plain text-to-video.
+
+### Constraints
+
+- Input images must be **base64 data URLs** (`data:image/png;base64,...`) or
+  **http(s) URLs**, and are capped at 20&nbsp;MB decoded.
+- In production, remote (http) input image URLs are subject to the same SSRF
+  guard as provider base URLs — `localhost`/private targets are refused unless
+  `ALLOW_LOCAL_NETWORKS=true`.
+
+---
+
 ## Settings in OpenMAIC
 
 1. Go to **Settings → Image Generation**

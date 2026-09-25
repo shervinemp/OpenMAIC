@@ -1,10 +1,12 @@
 import {
   isActionType,
+  sanitizeSlidePlacement,
   validateAction,
   validateScene,
   validateStage,
   type ValidationIssue,
 } from '@openmaic/dsl';
+import type { PPTElement } from '@openmaic/dsl';
 import type { SceneValidator, StageValidator } from '@openmaic/storage';
 import { hasPBLProjectV2Containers } from '@/lib/pbl/v2/types';
 import { isEmptyLegacyPBLConfig, type PBLProjectConfig } from '@/lib/pbl/legacy/read';
@@ -29,7 +31,26 @@ export const validateAppScene: SceneValidator = (scene) => {
   if (!value) {
     return { valid: false, errors: [{ path: '/', message: 'scene must be an object' }] };
   }
-  if (value.type === 'slide' || value.type === 'quiz') return validateScene(scene);
+  if (value.type === 'slide' || value.type === 'quiz') {
+    if (value.type === 'slide') {
+      const content = objectValue(value.content);
+      const canvas = content ? objectValue(content.canvas) : null;
+      const elements = canvas?.elements;
+      if (canvas && Array.isArray(elements)) {
+        const { changes } = sanitizeSlidePlacement(canvas as {
+          viewportSize: number;
+          viewportRatio: number;
+          elements: PPTElement[];
+        });
+        if (changes.length > 0) {
+          console.warn(
+            `[placement-clamp] scene ${String(value.id ?? '?')}: clamped ${changes.length} out-of-bounds element(s)`,
+          );
+        }
+      }
+    }
+    return validateScene(scene);
+  }
 
   const errors: ValidationIssue[] = [];
   requiredString(value, 'id', errors);

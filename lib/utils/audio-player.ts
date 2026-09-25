@@ -16,6 +16,12 @@ const log = createLogger('AudioPlayer');
  * endpoint must not pin a playback line indefinitely. */
 const LEGACY_URL_FETCH_TIMEOUT_MS = 15_000;
 
+/** One warning per distinct missing ref, then silence: a TTS-disabled deck
+ * legitimately skips every line, and the point is a breadcrumb, not a log
+ * storm. */
+const warnedMissingAudioIds = new Set<string>();
+const MISSING_AUDIO_WARN_LIMIT = 5;
+
 /** Bytes an audio id currently resolves to, pool first. Loaded lazily to keep
  * this module importable without the media graph. */
 async function resolveBytes(audioId: string): Promise<Blob | null> {
@@ -48,6 +54,10 @@ export class AudioPlayer {
   private volume: number = 1;
   private playbackRate: number = 1;
   private requestToken: number = 0;
+  /** Sticky: once destroyed, the player refuses new plays (a destroyed player
+   * must never be resurrected by an in-flight async play call — that is how
+   * narration audio outlives a classroom navigation). */
+  private destroyed: boolean = false;
   /** The object URL backing the current audio element, if any. */
   private blobUrl: string | null = null;
   /**
@@ -136,6 +146,15 @@ export class AudioPlayer {
    * @returns true if audio started playing, false if no audio (TTS disabled or not generated)
    */
   public async play(audioId: string, legacyUrl?: string): Promise<boolean> {
+    if (this.destroyed) {
+      // Should be unreachable since owners replace torn-down players (see
+      // isDestroyed), but a sticky no-op here is exactly how narration went
+      // missing with zero traces: keep it loud instead of silent.
+      log.warn(
+        `play() called on a destroyed player; narration for ${audioId || '(no id)'} is being skipped`,
+      );
+      return false;
+    }
     const requestToken = ++this.requestToken;
     // A new play supersedes any in-flight legacy fetch of the previous one.
     this.abortLegacyFetch();
@@ -172,7 +191,20 @@ export class AudioPlayer {
       }
 
       if (!blob && !directUrl) {
-        // Pre-generated audio does not exist (generation failed), skip silently
+        // Pre-generated audio does not exist (generation failed, or a
+        // TTS-disabled deck): the engine decides between browser TTS and the
+        // reading timer. The fallback itself is by design, but a completely
+        // quiet skip made a missing-narration report indistinguishable from
+        // playback; leave a breadcrumb for the first few distinct refs so the
+        // next investigation starts from evidence.
+        if (
+          audioId &&
+          !warnedMissingAudioIds.has(audioId) &&
+          warnedMissingAudioIds.size < MISSING_AUDIO_WARN_LIMIT
+        ) {
+          warnedMissingAudioIds.add(audioId);
+          log.warn(`No pre-generated narration bytes for ${audioId}; falling back to TTS/reading beat`);
+        }
         return false;
       }
 
@@ -333,8 +365,20 @@ export class AudioPlayer {
    * Destroy the player
    */
   public destroy(): void {
+    this.destroyed = true;
     this.stop();
     this.onEndedCallback = null;
+  }
+
+  /**
+   * Whether this player has been torn down. `play()` refuses forever after
+   * `destroy()`; owners that share an instance across a dev-mode StrictMode
+   * remount (the unmount-only cleanup destroys it, then the replayed setup
+   * keeps using the same ref) must replace it before it silently eats every
+   * narration line.
+   */
+  public isDestroyed(): boolean {
+    return this.destroyed;
   }
 }
 

@@ -2,7 +2,8 @@ import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-import { middleware } from '@/middleware';
+// The fork names the Next 16 request hook `proxy` (proxy.ts); same gate.
+import { proxy as middleware } from '@/proxy';
 import { resolveRequestOwnerId } from '@/lib/server/agent-runtime/owner';
 import { resolveSharedOwnerId } from '@/lib/server/agent-runtime/shared-owner';
 

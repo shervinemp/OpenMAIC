@@ -7,6 +7,8 @@
 
 import type { ActionType } from './action';
 import type { MediaGenerationRequest } from '@/lib/media/types';
+import type { CourseSizePreset, CourseDepthLevel } from '@/lib/constants/generation';
+import type { DocumentDigest } from '@/lib/generation/document-digest';
 
 // ==================== PDF Image Types ====================
 
@@ -107,6 +109,78 @@ export interface UserRequirements {
   taskEngineMode?: boolean; // Enable vocational task-engine generation path
 }
 
+/**
+ * Params handed from the generation-preview flow to the classroom resume path
+ * (persisted on the generation session record; see generation-session-store).
+ */
+export interface GenerationSessionParams {
+  pdfImages?: PdfImage[];
+  agents?: Array<{ id: string; name: string; role: string; persona?: string }>;
+  userProfile?: string;
+  languageDirective?: string;
+}
+
+/**
+ * Full state of one in-flight course generation.
+ *
+ * Persisted in IndexedDB (`generationSessions`, keyed by `sessionId`) because
+ * the extracted document text, image data and coverage digest routinely
+ * exceed the ~5 MB `sessionStorage` quota. `sessionStorage` only carries a
+ * tiny pointer envelope ({ sessionId, stageId? }) across page navigations.
+ */
+export interface GenerationSessionState {
+  sessionId: string;
+  requirements: UserRequirements;
+  /** Course size preset selected on the home form (Phase 2 §15.3). */
+  sizePreset?: CourseSizePreset;
+  pdfText: string;
+  documentSources?: SessionDocumentSource[];
+  pdfImages?: PdfImage[];
+  imageStorageIds?: string[];
+  imageMapping?: ImageMapping;
+  sceneOutlines?: SceneOutline[] | null;
+  currentStep: 'generating' | 'complete';
+  previewPhase?: 'preparing' | 'outline-ready' | 'review' | 'generating-content';
+  /** Server-side document index handle (Phase 2 §16). */
+  pdfHandle?: string;
+  /** Coverage digest returned by the indexing step. */
+  pdfDigest?: DocumentDigest;
+  /** Indexing summary for UI display. */
+  documentIndex?: {
+    tier: string;
+    chunkCount: number;
+    totalImageCount: number;
+    captionedCount: number;
+  };
+  /** Stage id once the course is persisted (content phase) — lets a
+   *  re-entered session resume on the classroom page instead of
+   *  duplicating the stage. */
+  stageId?: string;
+  // PDF deferred parsing fields
+  pdfStorageKey?: string;
+  pdfFileName?: string;
+  documentMimeType?: string;
+  pdfProviderId?: string;
+  pdfProviderConfig?: {
+    apiKey?: string;
+    baseUrl?: string;
+    accessKeyId?: string;
+    accessKeySecret?: string;
+  };
+  // Web search context
+  researchContext?: string;
+  researchSources?: Array<{ title: string; url: string }>;
+  // Language directive inferred from outline generation
+  languageDirective?: string;
+  // Concise course title inferred from outline generation (used as the stage name)
+  courseTitle?: string;
+  // Server-effective vocational mode from the outline generation done event.
+  taskEngineMode?: boolean;
+  // Params the classroom resume path needs (agents, media context) after the
+  // stage handoff; written just before navigation to /classroom/[id].
+  generationParams?: GenerationSessionParams;
+}
+
 // ==================== Stage 1 Output: Scene Outlines (Simplified) ====================
 
 /**
@@ -150,7 +224,19 @@ export interface WidgetOutline {
  */
 export interface SceneOutline {
   id: string;
-  type: 'slide' | 'quiz' | 'interactive' | 'pbl';
+  type:
+    | 'slide'
+    | 'quiz'
+    | 'interactive'
+    | 'pbl'
+    | 'exercise'
+    | 'derivation'
+    | 'glossary'
+    | 'reading'
+    | 'comparison'
+    | 'dataReading'
+    | 'tradeoffs'
+    | 'freeResponse';
   title: string;
   description: string; // 1-2 sentences describing the purpose
   keyPoints: string[]; // 3-5 core key points
@@ -158,6 +244,20 @@ export interface SceneOutline {
   estimatedDuration?: number; // seconds
   order: number;
   languageNote?: string; // LLM-inferred language note for this scene
+  /** Lesson membership (assigned during blueprint canonicalization; playback
+      order remains the global `order`). */
+  lessonId?: string;
+  /**
+   * Per-scene retrieval context rendered at the outline stage (Pillar 3b):
+   * top-k source chunks with `[source p.N]` citation markers. Injected into
+   * the content prompt and used as the citation ground-truth.
+   */
+  retrievalContext?: string;
+  /**
+   * Content depth level (Phase 2 §15.4), stamped at the outline stage from
+   * the blueprint's derived level. The content stage enforces its floor.
+   */
+  depthLevel?: CourseDepthLevel;
   // Suggested image IDs (from PDF-extracted images)
   suggestedImageIds?: string[]; // e.g., ["img_1", "img_3"]
   // AI-generated media requests (when PDF images are insufficient)
@@ -194,6 +294,90 @@ export interface SceneOutline {
   widgetOutline?: WidgetOutline;
 }
 
+// ==================== Course Blueprint (curriculum contract) ====================
+
+/**
+ * Course flavor inferred from the requirement text. Feeds the type mix and
+ * quiz cadence in the outline prompt contract.
+ */
+export type CourseType = 'explainer' | 'hands-on' | 'exam-prep';
+
+/**
+ * One lesson (section) of the course. Scene counts are derived from the
+ * resolved course duration and validated — see lib/generation/blueprint.ts.
+ */
+export interface LessonBlueprint {
+  /** Lesson/section title (teaching language). */
+  title: string;
+  /** 1-2 learning objectives for THIS lesson. */
+  objectives: string[];
+  /** DERIVED — informational: even split of the course duration. */
+  durationMinutes: number;
+  /** DERIVED — greedy even split of the course-wide total, clamped. */
+  sceneTarget: number;
+  /** The lesson's deck. Length validated against sceneTarget. */
+  outlines: SceneOutline[];
+}
+
+/**
+ * One unit (chapter) of a university-scale course (Phase 2 §15.1). A unit
+ * groups N lessons; single-unit courses (today's shape) remain valid when
+ * `units` is absent on the blueprint.
+ */
+export interface UnitBlueprint {
+  /** Unit/chapter title (teaching language). */
+  title: string;
+  /** 1-2 unit-level objectives. */
+  objectives: string[];
+  /** DERIVED — even split of the course duration across units. */
+  durationMinutes: number;
+  /** DERIVED — scene total for the unit (sums across units = course total). */
+  sceneTarget: number;
+  /** Lessons belonging to this unit, in order. */
+  lessons: LessonBlueprint[];
+}
+
+/**
+ * The curriculum as a validated contract (Pillar 1). Produced by the
+ * outline stage; consumed by the job model and the UI.
+ */
+export interface CourseBlueprint {
+  /** Display name for the course (≤ 30 chars, teaching language). */
+  title: string;
+  /** 2-5 sentence language directive (existing semantics). */
+  languageDirective: string;
+  /** RESOLVED course duration — never a model guess. */
+  durationMinutes: number;
+  /** Inferred audience; free text. */
+  audience: string;
+  /** 2-5 course-level learning objectives. */
+  objectives: string[];
+  /** DERIVED — course flavor from requirement keywords. */
+  courseType: CourseType;
+  /** DERIVED — lesson split: ceil(duration / LESSON_MINUTES), clamped. */
+  lessonCount: number;
+  /** DERIVED — quiz placement cadence (every N scenes, course-wide). */
+  quizPlacement: number;
+  /**
+   * The size preset the contract was derived under (Phase 2 §15.3).
+   * Optional for backward compatibility; treated as 'compact' when absent.
+   */
+  sizePreset?: CourseSizePreset;
+  /**
+   * Content depth level (Phase 2 §15.4), derived from the size preset at
+   * outline stage. Optional for backward compatibility; treated as 'intro'.
+   */
+  depthLevel?: CourseDepthLevel;
+  /** The course, split into lessons (each validated against its target). */
+  lessons: LessonBlueprint[];
+  /**
+   * Unit (chapter) level for university-scale courses (Phase 2 §15.1).
+   * Absent = single-unit course; `units[].lessons` always equals the flat
+   * `lessons` projection in order.
+   */
+  units?: UnitBlueprint[];
+}
+
 // ==================== Stage 3 Output: Generated Content ====================
 
 import type { PPTElement, SlideBackground } from '@openmaic/dsl';
@@ -215,17 +399,182 @@ export interface GeneratedQuizContent {
   questions: QuizQuestion[];
 }
 
+// ==================== Specialized Scene Content (Phase 2 §15.4b) ====================
+//
+// Exercise / derivation / glossary / reading outlines generate STRUCTURED
+// content first (strong depth validation), which the content generator then
+// renders into slide elements. The resulting scene is a slide — the DSL
+// scene-type set stays closed — but the depth contract for these kinds is
+// enforced on the structured payload.
+
+/**
+ * One worked problem on an exercise scene: a single problem per scene with
+ * its full worked solution and (at university depth) a pedagogical analysis.
+ */
+export interface ExerciseProblem {
+  id: string;
+  statement: string;
+  /** Optional leading hint shown before the worked solution. */
+  hint?: string;
+  /** Full worked solution — required. */
+  solution: string;
+  /** Why the method works / common pitfalls — required at university depth. */
+  analysis?: string;
+}
+
+export interface GeneratedExerciseContent {
+  problems: ExerciseProblem[];
+}
+
+/**
+ * One derivation/proof step. `latex` is the rendered formula; `explanation`
+ * is the prose that motivates the step. `claim` is the optional goal being
+ * established.
+ */
+export interface DerivationStep {
+  id: string;
+  claim?: string;
+  latex: string;
+  explanation: string;
+}
+
+export interface GeneratedDerivationContent {
+  steps: DerivationStep[];
+}
+
+export interface GlossaryTerm {
+  term: string;
+  definition: string;
+}
+
+export interface GeneratedGlossaryContent {
+  terms: GlossaryTerm[];
+}
+
+export interface ReadingItem {
+  title: string;
+  /** Book / paper / site name. */
+  source?: string;
+  /** What the learner gains from this item. */
+  whyRead: string;
+  /** Optional `[source N]` citation back to the retrieved material. */
+  citation?: string;
+}
+
+export interface GeneratedReadingContent {
+  items: ReadingItem[];
+}
+
+// ==================== Analytic scene kinds (Phase 2 §15.9) ====================
+
+/**
+ * One dimension row of a compare-and-contrast table. `cells[i]` is what the
+ * row says about `subjects[i]` — a complete sentence per cell, not a label.
+ */
+export interface ComparisonRow {
+  id: string;
+  /** The property being compared across subjects (e.g. "Time complexity"). */
+  dimension: string;
+  /** One cell per subject, same order as the content's `subjects`. */
+  cells: string[];
+}
+
+export interface GeneratedComparisonContent {
+  /** The 2-3 concepts being compared, column order for every row. */
+  subjects: string[];
+  rows: ComparisonRow[];
+  /** Optional synthesis: when is each subject the right choice. */
+  takeaways?: string[];
+}
+
+/** Verdict on one claim made about a chart/dataset. */
+export interface DataClaim {
+  id: string;
+  statement: string;
+  verdict: 'supported' | 'refuted' | 'insufficient';
+  /** Why the data supports/refutes the claim (cite concrete values). */
+  explanation: string;
+}
+
+export interface DataSeriesPoint {
+  x: number;
+  y: number;
+}
+
+export interface DataSeries {
+  name: string;
+  points: DataSeriesPoint[];
+}
+
+export interface GeneratedDataReadingContent {
+  chartTitle: string;
+  chartType: 'bar' | 'line' | 'scatter';
+  xAxisLabel: string;
+  yAxisLabel: string;
+  /** Unit / scale note rendered under the chart description (optional). */
+  unitNote?: string;
+  series: DataSeries[];
+  /** At least two claims with verdicts grounded in the plotted values. */
+  claims: DataClaim[];
+}
+
+/** One option in a trade-off decision scene. */
+export interface TradeoffOption {
+  id: string;
+  name: string;
+  pros: string[];
+  cons: string[];
+  /** When this option is the right call (optional). */
+  bestFor?: string;
+}
+
+export interface RubricCriterion {
+  id: string;
+  /** What this aspect of a strong answer does (complete sentence). */
+  criterion: string;
+  /** How central the criterion is to a strong answer. */
+  weight: 'essential' | 'important' | 'bonus';
+  /** The concrete indicator a grader looks for on this criterion. */
+  lookFor: string;
+}
+
+export interface GeneratedFreeResponseContent {
+  /** The full writing prompt — a complete task, not a topic label. */
+  prompt: string;
+  /** 2-4 pointers that frame the task without giving the answer away. */
+  guidance?: string[];
+  rubric: RubricCriterion[];
+  /** A strong model answer, rendered after the rubric. */
+  sampleAnswer: string;
+}
+
+export interface GeneratedTradeoffsContent {
+  /** The decision context: situation + hard constraints (complete sentences). */
+  context: string;
+  constraints: string[];
+  options: TradeoffOption[];
+  recommendation: {
+    /** Name of the chosen option (must match an option's name). */
+    choice: string;
+    /** Why it wins under the stated constraints — not a generic platitude. */
+    justification: string;
+  };
+}
+
 // ==================== PBL Generation Types ====================
 
+import type { PBLProjectConfig } from '@/lib/pbl/types';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 
 /**
  * AI-generated PBL content.
  *
- * PBL generation produces only the v2 project payload.
+ * PBL v2 generation returns a legacy-compatible `projectConfig` plus the full
+ * v2 payload so existing storage/rendering paths can migrate incrementally.
  */
 export interface GeneratedPBLContent {
-  projectV2: PBLProjectV2;
+  projectConfig: PBLProjectConfig;
+  projectV2?: PBLProjectV2;
 }
 
 // ==================== Interactive Generation Types ====================
@@ -276,3 +625,4 @@ export interface SuggestedAction {
   description: string;
   timing?: 'start' | 'middle' | 'end' | 'after-content';
 }
+

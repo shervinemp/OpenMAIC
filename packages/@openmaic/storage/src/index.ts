@@ -96,6 +96,7 @@ export type {
   DocumentSummary,
   DocumentFolder,
   DocumentFolderStore,
+  SaveDocumentOptions,
   SceneLike,
   SceneValidator,
   StageValidator,
@@ -105,8 +106,11 @@ export type {
 } from './document/types.js';
 export {
   DocumentFolderLimitError,
+  DocumentLostUpdateError,
   DocumentNotFoundError,
   DocumentVersionError,
+  isStaleOverwrite,
+  STALE_WRITE_TOLERANCE_MS,
 } from './document/types.js';
 export { BrowserDocumentStore, type BrowserDocumentStoreOptions } from './document/browser.js';
 export {

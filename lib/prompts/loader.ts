@@ -11,12 +11,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { PromptId, LoadedPrompt, SnippetId } from './types';
-import { createLogger } from '@/lib/logger';
-import {
-  loadSnippet as loadGenerationSnippet,
-  type SnippetId as GenerationSnippetId,
-} from '@openmaic/generation';
-const log = createLogger('PromptLoader');
+import { loadPrompt as loadGenerationPrompt } from '@openmaic/generation';
 
 /**
  * Get the prompts directory path
@@ -35,9 +30,9 @@ export function loadSnippet(snippetId: SnippetId): string {
   try {
     return fs.readFileSync(snippetPath, 'utf-8').trim();
   } catch {
-    // App-only templates can reuse package-owned generation snippets without
-    // retaining a second on-disk copy.
-    return loadGenerationSnippet(snippetId as GenerationSnippetId);
+    // Fail loud rather than silently shipping `{{snippet:foo}}` to the LLM.
+    // A missing snippet is always a config/typo bug — surface at load time.
+    throw new Error(`Snippet not found: ${snippetId}`);
   }
 }
 
@@ -72,7 +67,12 @@ export function processConditionalBlocks(
 }
 
 /**
- * Load a prompt by ID
+ * Load a prompt by ID.
+ *
+ * App-only templates live here; generation-owned templates live in
+ * @openmaic/generation (the package boundary). A local miss therefore falls
+ * back to the package's loader, mirroring the snippet fallback below - a
+ * missing app-owned copy can never shadow a package-owned template.
  */
 export function loadPrompt(promptId: PromptId): LoadedPrompt | null {
   const promptDir = path.join(getPromptsDir(), 'templates', promptId);
@@ -98,9 +98,12 @@ export function loadPrompt(promptId: PromptId): LoadedPrompt | null {
       systemPrompt,
       userPromptTemplate,
     };
-  } catch (error) {
-    log.error(`Failed to load prompt ${promptId}:`, error);
-    return null;
+  } catch {
+    // Not an app-owned template: resolve through the generation package
+    // (single canonical copy for every generation-owned prompt). The app's
+    // PromptId union is a superset of the package's - app-only ids resolve
+    // to null here, which the callers already treat as "template missing".
+    return loadGenerationPrompt(promptId as Parameters<typeof loadGenerationPrompt>[0]);
   }
 }
 
@@ -121,13 +124,6 @@ export function interpolateVariables(template: string, variables: Record<string,
   });
 }
 
-function applyPromptVariableDefaults(
-  _promptId: PromptId,
-  variables: Record<string, unknown>,
-): Record<string, unknown> {
-  return variables;
-}
-
 /**
  * Build a complete prompt with variables.
  *
@@ -142,16 +138,15 @@ export function buildPrompt(
 ): { system: string; user: string } | null {
   const prompt = loadPrompt(promptId);
   if (!prompt) return null;
-  const resolvedVariables = applyPromptVariableDefaults(promptId, variables);
 
   return {
     system: interpolateVariables(
-      processConditionalBlocks(prompt.systemPrompt, resolvedVariables),
-      resolvedVariables,
+      processConditionalBlocks(prompt.systemPrompt, variables),
+      variables,
     ),
     user: interpolateVariables(
-      processConditionalBlocks(prompt.userPromptTemplate, resolvedVariables),
-      resolvedVariables,
+      processConditionalBlocks(prompt.userPromptTemplate, variables),
+      variables,
     ),
   };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { buildPrompt, PROMPT_IDS, processConditionalBlocks } from '@openmaic/generation';
 import { buildPrompt as buildAppPrompt, PROMPT_IDS as APP_PROMPT_IDS } from '@/lib/prompts';
+import { deriveCourseContract, renderCourseContract } from '@/lib/generation/blueprint';
 
 function buildOutlinePrompt(
   flags: {
@@ -20,6 +21,7 @@ function buildOutlinePrompt(
           buildAppPrompt(APP_PROMPT_IDS.INTERACTIVE_OUTLINES, variables)
       : (variables: Record<string, unknown>) =>
           buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, variables);
+  const contract = deriveCourseContract(20);
   return builder({
     requirement: 'Teach water cycle basics',
     pdfContent: 'None',
@@ -31,6 +33,8 @@ function buildOutlinePrompt(
     imageEnabled,
     videoEnabled,
     mediaEnabled: imageEnabled || videoEnabled,
+    courseContract: renderCourseContract(contract, 'explainer'),
+    resolvedDurationMinutes: contract.durationMinutes,
   });
 }
 

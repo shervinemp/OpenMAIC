@@ -11,13 +11,22 @@ import {
 } from '@/lib/types/stage';
 import { createSelectors } from '@/lib/utils/create-selectors';
 import type { ChatSession } from '@/lib/types/chat';
-import type { SceneOutline } from '@/lib/types/generation';
+import type { CourseBlueprint, SceneOutline } from '@/lib/types/generation';
+import type { SceneDepthSummary } from '@/lib/generation/content-depth';
+import { buildLessonGroupsFromBlueprint } from '@/lib/document-store/canonicalize';
+import type {
+  LessonJobGroup,
+  OutlinePhaseName,
+  OutlinePhaseState,
+} from '@/lib/document-store/persistence-types';
 import { createLogger } from '@/lib/logger';
+import type { ExamAttempt, ExamKind, ExamSpec } from '@/lib/types/exam';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import type { StageManifest } from '@/lib/workbench/stage-freshness';
 import { applyGeneratedAgentsToRegistry } from '@/lib/orchestration/registry/store';
 import { migrateScene } from '@/lib/edit/slide-schema';
+import { stripDeadActionAnchors } from '@/lib/maintenance/content-audit';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
 import type { ChatStorageSnapshot } from '@/lib/utils/chat-storage';
@@ -34,6 +43,39 @@ import {
 } from '@/lib/utils/deleted-stages';
 
 const log = createLogger('StageStore');
+
+/**
+ * Defensive hydration for the persisted exams snapshot. Legacy documents have
+ * no exams block; hostile or hand-edited documents must not poison the store,
+ * so every shaped field is re-validated and unknown kinds drop on the floor.
+ */
+function sanitizePersistedExams(
+  record: unknown,
+  logger: ReturnType<typeof createLogger>,
+): { exams: Partial<Record<ExamKind, ExamSpec>>; attempts: Partial<Record<ExamKind, ExamAttempt[]>> } {
+  type Persisted = { exams?: unknown; examAttempts?: unknown };
+  const src = (record ?? {}) as Persisted;
+  const result: Partial<Record<ExamKind, ExamSpec>> = {};
+  const attemptsResult: Partial<Record<ExamKind, ExamAttempt[]>> = {};
+  const isValidKind = (k: unknown): k is ExamKind => k === 'midterm' || k === 'final';
+  if (src.exams && typeof src.exams === 'object') {
+    for (const [kind, spec] of Object.entries(src.exams as Record<string, unknown>)) {
+      if (isValidKind(kind) && spec && typeof spec === 'object' && Array.isArray((spec as ExamSpec).mcQuestions)) {
+        result[kind] = spec as ExamSpec;
+      } else if (spec) {
+        logger.warn('Discarding malformed persisted exam spec:', kind);
+      }
+    }
+  }
+  if (src.examAttempts && typeof src.examAttempts === 'object') {
+    for (const [kind, list] of Object.entries(src.examAttempts as Record<string, unknown>)) {
+      if (isValidKind(kind) && Array.isArray(list) && list.length) {
+        attemptsResult[kind] = (list as ExamAttempt[]).slice(-2);
+      }
+    }
+  }
+  return { exams: result, attempts: attemptsResult };
+}
 
 /** Virtual scene ID used when the user navigates to a page still being generated */
 export const PENDING_SCENE_ID = '__pending__';
@@ -216,11 +258,19 @@ function clearedStageState(state: Pick<StageState, 'generationEpoch'>) {
     chats: [],
     chatSnapshot: { sessions: [], restoreMarker: null },
     outlines: [],
+    blueprint: undefined,
+    lessonGroups: [],
     generationComplete: false,
+    exams: {},
+    examAttempts: {},
     generationEpoch: state.generationEpoch + 1,
     generationStatus: 'idle' as const,
     currentGeneratingOrder: -1,
+    generationPhase: 'idle' as const,
+    sceneDepth: {},
     failedOutlines: [],
+    skippedOutlineIds: [],
+    repairActive: null,
     generatingOutlines: [],
   };
 }
@@ -302,6 +352,18 @@ interface StageState {
   // Persisted outlines for resume-on-refresh
   outlines: SceneOutline[];
 
+  // Persisted (with outlines): the validated curriculum contract (Pillar 1)
+  // produced by the outline stage. Single source for lesson grouping and
+  // job-model projections.
+  blueprint: CourseBlueprint | undefined;
+
+  // Persisted (with outlines): per-outline per-phase job state (Pillar 2).
+  // Built from the blueprint at outline-stage landing, mutated live at phase
+  // boundaries by `recordScenePhase` (content/actions/tts in the generator
+  // loop, media in the orchestrator), and recovered on load with stale
+  // `running` phases demoted to `pending`.
+  lessonGroups: LessonJobGroup[];
+
   // Persisted (with outlines): true once generation finished for this stage.
   // Gates resume-on-mount so an edited finished deck is not regenerated.
   generationComplete: boolean;
@@ -329,6 +391,11 @@ interface StageState {
   generationEpoch: number;
   generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error';
   currentGeneratingOrder: number;
+  /** Current phase of the generating scene (per-phase chips, Pillar 2 §4.2). */
+  generationPhase: 'idle' | 'content' | 'actions' | 'tts' | 'media';
+  /** Depth summaries by scene order (reworked-for-depth affordance, Pillar 3).
+      Session-level, recorded as content lands. */
+  sceneDepth: Record<string, SceneDepthSummary>;
   failedOutlines: SceneOutline[];
 
   // Workbench canvas-freshness projections (Mono #1960 Part 2 port).
@@ -355,9 +422,26 @@ interface StageState {
   setStageAgents: (configs: GeneratedAgentConfig[]) => void;
   setGeneratingOutlines: (outlines: SceneOutline[]) => void;
   setOutlines: (outlines: SceneOutline[]) => void;
+  setBlueprint: (blueprint: CourseBlueprint | undefined) => void;
+  /**
+   * Live phase transition (Pillar 2): record a phase outcome for an outline
+   * into the persisted lessonGroups. `status: 'running'` bumps attempts;
+   * every write stamps updatedAt and marks the outline record dirty.
+   */
+  recordScenePhase: (
+    outlineId: string,
+    phase: OutlinePhaseName,
+    patch: { status: OutlinePhaseState['status']; error?: string },
+  ) => void;
   setGenerationComplete: (complete: boolean) => void;
   /** Mark generation complete iff every outline has a scene and none failed. */
   markGenerationCompleteIfDone: () => void;
+
+  // Persisted (with outlines): semester exams + submitted attempts.
+  exams: Partial<Record<ExamKind, ExamSpec>>;
+  examAttempts: Partial<Record<ExamKind, ExamAttempt[]>>;
+  setExamSpec: (spec: ExamSpec) => void;
+  saveExamAttempt: (attempt: ExamAttempt) => void;
   /**
    * Apply the stage-meta sidecar's per-viewer facts. `readOnly` follows the
    * reference's classroom rule: a visitor who is not the owner gets a
@@ -366,10 +450,20 @@ interface StageState {
   setViewerAccess: (access: { isOwner: boolean }) => void;
   setGenerationStatus: (status: 'idle' | 'generating' | 'paused' | 'completed' | 'error') => void;
   setCurrentGeneratingOrder: (order: number) => void;
+  setGenerationPhase: (phase: 'idle' | 'content' | 'actions' | 'tts' | 'media') => void;
+  recordSceneDepth: (order: number, summary: SceneDepthSummary) => void;
   bumpGenerationEpoch: () => void;
   addFailedOutline: (outline: SceneOutline) => void;
   clearFailedOutlines: () => void;
   retryFailedOutline: (outlineId: string) => void;
+  /** Skip resolution (Pillar 2 §4.9): close a permanently failed outline so
+      the deck can complete without it. Session-level (not persisted). */
+  skippedOutlineIds: string[];
+  skipFailedOutline: (outlineId: string) => void;
+  /** Repair engine activity marker (narration drain / media requeue): on
+      while a repair pass is running, null when settled. Session-level. */
+  repairActive: 'narration' | 'media' | null;
+  setRepairActive: (active: 'narration' | 'media' | null) => void;
 
   // Getters
   getCurrentScene: () => Scene | null;
@@ -386,11 +480,13 @@ function isDeckComplete({
   outlines,
   scenes,
   failedOutlines,
-}: Pick<StageState, 'outlines' | 'scenes' | 'failedOutlines'>): boolean {
+  skippedOutlineIds = [],
+}: Pick<StageState, 'outlines' | 'scenes' | 'failedOutlines'> & { skippedOutlineIds?: string[] }): boolean {
+  const skipped = new Set(skippedOutlineIds);
   return (
     outlines.length > 0 &&
     failedOutlines.length === 0 &&
-    outlines.every((o) => scenes.some((s) => s.order === o.order))
+    outlines.every((o) => scenes.some((s) => s.order === o.order) || skipped.has(o.id))
   );
 }
 
@@ -402,13 +498,34 @@ type StagePersistenceSnapshot = Pick<
   | 'chats'
   | 'chatSnapshot'
   | 'outlines'
+  | 'blueprint'
+  | 'lessonGroups'
   | 'generationComplete'
 >;
 
 function persistenceSnapshot(state: StageState): StagePersistenceSnapshot {
-  const { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete } =
-    state;
-  return { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete };
+  const {
+    stage,
+    scenes,
+    currentSceneId,
+    chats,
+    chatSnapshot,
+    outlines,
+    blueprint,
+    lessonGroups,
+    generationComplete,
+  } = state;
+  return {
+    stage,
+    scenes,
+    currentSceneId,
+    chats,
+    chatSnapshot,
+    outlines,
+    blueprint,
+    lessonGroups,
+    generationComplete,
+  };
 }
 
 function delay(ms: number): Promise<void> {
@@ -442,6 +559,8 @@ async function persistDirtySnapshot(
       chatSnapshot: snapshot.chatSnapshot,
       outline: {
         outlines: snapshot.outlines,
+        blueprint: snapshot.blueprint,
+        lessonGroups: snapshot.lessonGroups,
         generationComplete: snapshot.generationComplete,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -477,16 +596,24 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   toolbarState: 'ai',
   generatingOutlines: [],
   outlines: [],
+  blueprint: undefined,
+  lessonGroups: [],
   generationComplete: false,
+  exams: {},
+  examAttempts: {},
   outlineProducer: null,
   isOwner: true,
   readOnly: false,
   generationEpoch: 0,
   generationStatus: 'idle' as const,
   currentGeneratingOrder: -1,
+  generationPhase: 'idle' as const,
+  sceneDepth: {},
   failedOutlines: [],
   serverManifestByStage: {},
   stageSyncRequest: 0,
+  skippedOutlineIds: [],
+  repairActive: null,
 
   // Actions
   setStage: (stage) => {
@@ -591,7 +718,27 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     // for them. Applying them here, ahead of the structure mark below, is what
     // keeps the placeholder out of the scene's very first save.
     reconcileSceneMediaAllocations(scene);
-    const scenes = [...get().scenes, migrateScene(scene)];
+    // A regenerated scene replaces its outline's previous attempt: several
+    // generation paths mint a fresh scene id for the same outlineId, so a raw
+    // append would strand the superseded scene outside the sidebar's lesson
+    // grouping (the "Other scenes" catch-all). Latest-writer keeps the slot.
+    const scenes = get().scenes.filter(
+      (existing) =>
+        !scene.outlineId || existing.outlineId !== scene.outlineId || existing.id === scene.id,
+    );
+    // Write-time guard (maintenance content-audit): an action anchored to an
+    // element the canvas does not carry (the generator materialized a
+    // spotlight against a renamed/split-away element) either throws in the
+    // runner or highlights air. Dropped at the commit gate — deterministic,
+    // zero FP — so downstream maintenance never has to repair identity, only
+    // judge semantics.
+    const droppedAnchors = stripDeadActionAnchors(scene as never);
+    if (droppedAnchors > 0) {
+      log.warn(
+        `Scene "${scene.title}" committed with ${droppedAnchors} dead action anchor(s) stripped (missing elementId)`,
+      );
+    }
+    scenes.push(migrateScene(scene));
     // Remove the matching outline from generatingOutlines (match by order)
     const generatingOutlines = get().generatingOutlines.filter((o) => o.order !== scene.order);
     // Auto-switch from pending page to the newly generated scene
@@ -635,8 +782,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       if (scene.id !== sceneId) return scene;
       const content = mergeSceneContentForUpdate(scene.content, updates.content) ?? scene.content;
       // Rebind `type` to the merged content's kind (a type-only patch can no
-      // longer desync the discriminant from the content).
-      return makeScene({ ...scene, ...updates }, content);
+      // longer desync the discriminant from the content). The revision clock
+      // advances with the edit: maintenance passes use it to know which
+      // scenes changed, and the server's stale-scene fence uses it to refuse
+      // out-of-date copies.
+      return makeScene({ ...scene, ...updates, updatedAt: Date.now() }, content);
     });
     set({ scenes });
     markPendingChanges(get().stage?.id, { kind: 'scene', sceneId });
@@ -774,6 +924,80 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     markPendingChanges(get().stage?.id, { kind: 'outline' });
   },
 
+  setBlueprint: (blueprint) => {
+    // Rebuild job groups from the new contract but preserve any live phase
+    // history keyed by (outlineId, phase) so a corrective re-stream of the
+    // blueprint does not wipe attempts/status of outlines already generated.
+    const previousGroups = get().lessonGroups;
+    const fresh = blueprint ? buildLessonGroupsFromBlueprint(blueprint) : [];
+    const merged = fresh.map((group) => ({
+      ...group,
+      jobs: group.jobs.map((job) => {
+        const previousJob = previousGroups
+          .flatMap((g) => g.jobs)
+          .find((j) => j.outlineId === job.outlineId);
+        if (!previousJob) return job;
+        const phases = { ...job.phases };
+        for (const name of Object.keys(phases) as OutlinePhaseName[]) {
+          const previousPhase = previousJob.phases[name];
+          if (
+            previousPhase &&
+            (previousPhase.attempts > 0 ||
+              previousPhase.status === 'done' ||
+              previousPhase.status === 'failed')
+          ) {
+            phases[name] = previousPhase;
+          }
+        }
+        return { ...job, phases };
+      }),
+    }));
+    set({ blueprint, lessonGroups: blueprint ? merged : [] });
+    markPendingChanges(get().stage?.id, { kind: 'outline' });
+  },
+
+  recordScenePhase: (outlineId, phase, patch) => {
+    const { blueprint, lessonGroups, stage } = get();
+    if (!blueprint || !stage) return;
+    const lessonIndex = blueprint.lessons.findIndex((lesson) =>
+      lesson.outlines.some((o) => o.id === outlineId),
+    );
+    if (lessonIndex < 0) return;
+    const lessonId = `lesson_${lessonIndex + 1}`;
+    const now = Date.now();
+    const groups = (
+      lessonGroups.length > 0 ? lessonGroups : buildLessonGroupsFromBlueprint(blueprint)
+    ).map((group) => {
+      if (group.lessonId !== lessonId) return group;
+      return {
+        ...group,
+        jobs: group.jobs.map((job) => {
+          if (job.outlineId !== outlineId) return job;
+          const previous = job.phases[phase];
+          // A job can lack the phase key entirely (legacy rows, split parts,
+          // scenes whose narration was materialized out-of-band). Treat a
+          // missing row as attempts: 0 instead of crashing the caller — a
+          // repair that resolved every ref must be able to record `done`.
+          const attempts = previous?.attempts ?? 0;
+          return {
+            ...job,
+            phases: {
+              ...job.phases,
+              [phase]: {
+                ...previous,
+                ...patch,
+                attempts: patch.status === 'running' ? attempts + 1 : attempts,
+                updatedAt: now,
+              },
+            },
+          };
+        }),
+      };
+    });
+    set({ lessonGroups: groups });
+    markPendingChanges(stage.id, { kind: 'outline' });
+  },
+
   setGenerationComplete: (generationComplete) => {
     set({ generationComplete });
     // Final scenes and the completion barrier commit in the same aggregate write.
@@ -781,9 +1005,25 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   markGenerationCompleteIfDone: () => {
-    const { outlines, scenes, failedOutlines, generationComplete } = get();
+    const { outlines, scenes, failedOutlines, skippedOutlineIds, generationComplete } = get();
     if (generationComplete) return;
-    if (isDeckComplete({ outlines, scenes, failedOutlines })) get().setGenerationComplete(true);
+    if (isDeckComplete({ outlines, scenes, failedOutlines, skippedOutlineIds })) {
+      get().setGenerationComplete(true);
+    }
+  },
+
+  setExamSpec: (spec) => {
+    set({ exams: { ...get().exams, [spec.kind]: spec } });
+    void get().saveToStorage();
+  },
+
+  saveExamAttempt: (attempt) => {
+    // Keep only the two most recent attempts per exam so a resubmitted attempt
+    // does not grow the document unboundedly.
+    const attempts = get().examAttempts[attempt.kind] ?? [];
+    const next = [...attempts.filter((a) => a.id !== attempt.id), attempt].slice(-2);
+    set({ examAttempts: { ...get().examAttempts, [attempt.kind]: next } });
+    void get().saveToStorage();
   },
 
   setViewerAccess: ({ isOwner }) => {
@@ -793,6 +1033,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   setGenerationStatus: (generationStatus) => set({ generationStatus }),
 
   setCurrentGeneratingOrder: (currentGeneratingOrder) => set({ currentGeneratingOrder }),
+
+  setGenerationPhase: (generationPhase) => set({ generationPhase }),
+  setRepairActive: (repairActive) => set({ repairActive }),
+
+  recordSceneDepth: (order, summary) =>
+    set({ sceneDepth: { ...get().sceneDepth, [String(order)]: summary } }),
 
   bumpGenerationEpoch: () => set((s) => ({ generationEpoch: s.generationEpoch + 1 })),
 
@@ -808,6 +1054,43 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     set({
       failedOutlines: get().failedOutlines.filter((o) => o.id !== outlineId),
     });
+  },
+
+  skipFailedOutline: (outlineId) => {
+    const { generatingOutlines, skippedOutlineIds } = get();
+    set({
+      failedOutlines: get().failedOutlines.filter((o) => o.id !== outlineId),
+      generatingOutlines: generatingOutlines.filter((o) => o.id !== outlineId),
+      skippedOutlineIds: [...skippedOutlineIds, outlineId],
+    });
+    // Persist the skip resolution onto the job state so the resolution
+    // survives reload (loadFromStorage re-derives skippedOutlineIds from
+    // `resolution === 'skip'`); without this the skip was session-level and
+    // a refresh silently regenerated the scene the user closed.
+    const { blueprint, lessonGroups, stage } = get();
+    if (blueprint && stage) {
+      const lessonIndex = blueprint.lessons.findIndex((lesson) =>
+        lesson.outlines.some((o) => o.id === outlineId),
+      );
+      if (lessonIndex >= 0) {
+        const lessonId = `lesson_${lessonIndex + 1}`;
+        const groups = (
+          lessonGroups.length > 0 ? lessonGroups : buildLessonGroupsFromBlueprint(blueprint)
+        ).map((group) =>
+          group.lessonId !== lessonId
+            ? group
+            : {
+                ...group,
+                jobs: group.jobs.map((job) =>
+                  job.outlineId !== outlineId ? job : { ...job, resolution: 'skip' as const },
+                ),
+              },
+        );
+        set({ lessonGroups: groups });
+        markPendingChanges(stage.id, { kind: 'outline' });
+      }
+    }
+    get().markGenerationCompleteIfDone();
   },
 
   // Getters
@@ -829,8 +1112,19 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   // durability (e.g. setGenerationComplete) can avoid recording state that
   // outruns the scene data.
   saveToStorage: async () => {
-    const { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete } =
-      get();
+    const {
+      stage,
+      scenes,
+      currentSceneId,
+      chats,
+      chatSnapshot,
+      outlines,
+      blueprint,
+      lessonGroups,
+      generationComplete,
+      exams,
+      examAttempts,
+    } = get();
     if (!stage?.id) {
       log.warn('Cannot save: stage.id is required');
       return false;
@@ -853,7 +1147,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           chatSnapshot,
           outline: {
             outlines,
+            blueprint,
+            lessonGroups,
             generationComplete,
+            exams,
+            examAttempts,
             createdAt: Date.now(),
             updatedAt: Date.now(),
           },
@@ -1008,6 +1306,31 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       const outlinesRecord = data?.outline;
       const outlines = outlinesRecord?.outlines || [];
       const persistedComplete = outlinesRecord?.generationComplete ?? false;
+      const persistedBlueprint = outlinesRecord?.blueprint;
+      const persistedExams = sanitizePersistedExams(outlinesRecord, log);
+
+      // Pillar 2 stale-running recovery: any phase persisted as `running` was
+      // interrupted by the reload — demote it to `pending` (attempts kept) so
+      // resume re-runs it instead of trusting a dead transition.
+      const recoveredLessonGroups = (
+        outlinesRecord?.lessonGroups ??
+        (persistedBlueprint ? buildLessonGroupsFromBlueprint(persistedBlueprint) : [])
+      ).map((group) => ({
+        ...group,
+        jobs: group.jobs.map((job) => ({
+          ...job,
+          phases: Object.fromEntries(
+            (Object.entries(job.phases) as [OutlinePhaseName, OutlinePhaseState][]).map(
+              ([name, phaseState]) => [
+                name,
+                phaseState.status === 'running'
+                  ? { ...phaseState, status: 'pending', updatedAt: Date.now() }
+                  : phaseState,
+              ],
+            ),
+          ) as Record<OutlinePhaseName, OutlinePhaseState>,
+        })),
+      }));
 
       if (data) {
         // Normalize legacy slide content (missing schemaVersion) at the load
@@ -1046,15 +1369,175 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         // outlines are still pending (see stage-mode edit gating), so an
         // interrupted deck cannot be edited into a false "all materialized".
         const inMemoryState = get();
-        const failedOutlines =
+        const inMemoryFailed =
           inMemoryState.stage?.id === stageId ? inMemoryState.failedOutlines : [];
+        // LOADING-TIME RECOVERY (invariant-based, deterministic on open):
+        // after persisted state lands, ANY outline that still lacks a scene —
+        // and is not a settled skip or an orphan — is unfinished generation
+        // work, regardless of WHY (crash, tab close, provider outage, job
+        // state debt). Mark it failed right here so the very first UI render
+        // shows the red regenerate box: the recovery check does not depend on
+        // a secondary effect, a lease race, or in-memory session state.
+        const materializedOrders = new Set(migrated.map((s) => s.order));
+        const missingOutlines = outlines.filter(
+          (o) => !materializedOrders.has(o.order),
+        );
+        // Orphan self-heal: an outline whose job FULLY committed its content
+        // AND actions (content done and not still in-flight/failed) with no
+        // scene was DELETED by the user after generation (or its outline prune
+        // lagged). It is not pending work — do not surface it as a generating
+        // placeholder or hold the deck at 'paused'. Checking actions too is the
+        // load-boundary fix for "half-finished lessons, empty queue": a run
+        // killed between the content commit and the scene landing leaves
+        // content=done with actions failed/running/pending, which is recoverable
+        // generation work, not a deletion. Determined on the recovered job
+        // state, so it also covers legacy documents that predate pruning.
+        const orphanOutlineIds = new Set(
+          recoveredLessonGroups
+            .flatMap((group) => group.jobs)
+            .filter(
+              (job) =>
+                job.phases.content?.status === 'done' &&
+                (job.phases.actions?.status ?? 'done') === 'done' &&
+                !migrated.some((scene) => scene.outlineId === job.outlineId),
+            )
+            .map((job) => job.outlineId),
+        );
+        // Reload-resume restore (Pillar 2): failed/skip resolutions live in the
+        // persisted job state, so a reload must NOT silently forget them.
+        // - failed outlines: re-hydrated so the retry cards survive a refresh;
+        // - skipped outlines: re-hydrated so a never-generated scene the user
+        //   explicitly closed is not silently regenerated on resume.
+        // The recovery invariant's missing set is FOLDED IN: any outline that
+        // still lacks a scene — from whatever failure (crash, tab close,
+        // provider outage, job-state debt) — is unfinished generation work and
+        // surfaces as a red regenerate box on the first render of the load.
+        // Settled savings (skips, orphans) keep their settled status.
+        const skipIdsFromJobs = new Set(
+          recoveredLessonGroups
+            .flatMap((group) => group.jobs)
+            .filter((job) => job.resolution === 'skip')
+            .map((job) => job.outlineId),
+        );
+        const failedOutlines = [
+          ...inMemoryFailed,
+          ...recoveredLessonGroups
+            .flatMap((group) => group.jobs)
+            .filter(
+              (job) => job.phases.content?.status === 'failed' && job.resolution !== 'skip',
+            )
+            .map((job) => outlines.find((o) => o.id === job.outlineId))
+            .filter((o): o is NonNullable<typeof o> => !!o),
+        ];
+        // Fill-decay rows (tts/media phases failed behind a LIVE scene) hydrate
+        // UNCONDITIONALLY: they are byte-truth repairs on a complete deck, not
+        // interrupted generation — the fill never gates completion and never
+        // freezes with it.
+        const fillFailedOutlines = recoveredLessonGroups
+          .flatMap((group) => group.jobs)
+          .filter(
+            (job) =>
+              job.resolution !== 'skip' &&
+              migrated.some((scene) => scene.outlineId === job.outlineId) &&
+              (job.phases.tts?.status === 'failed' || job.phases.media?.status === 'failed'),
+          )
+          .map((job) => outlines.find((o) => o.id === job.outlineId))
+          .filter((o): o is NonNullable<typeof o> => !!o);
+        // Dedupe by id (an outline can be in-memory failed AND persisted failed).
+        const seenFailed = new Set<string>();
+        const uniqueFailedOutlines = failedOutlines.filter((o) =>
+          seenFailed.has(o.id) ? false : (seenFailed.add(o.id), true),
+        );
+        const recoveryBasis = missingOutlines.filter(
+          (o) => !skipIdsFromJobs.has(o.id) && !orphanOutlineIds.has(o.id),
+        );
+        const skippedOutlineIds = [
+          ...new Set(
+            recoveredLessonGroups
+              .flatMap((group) => group.jobs)
+              .filter((job) => job.resolution === 'skip')
+              .map((job) => job.outlineId)
+              .filter((id) => !uniqueFailedOutlines.some((o) => o.id === id)),
+          ),
+        ];
+        // Settled-deck rule: every outline is either materialized, a settled
+        // orphan (fully generated, then its scene was deleted), or explicitly
+        // skipped. Failed outlines are NOT settled work — they must block
+        // completion.
+        const everyOutlineSettled =
+          uniqueFailedOutlines.length === 0 &&
+          outlines.length > 0 &&
+          outlines.every((o) => {
+            if (migrated.some((s) => s.order === o.order)) return true;
+            if (orphanOutlineIds.has(o.id)) return true;
+            return skippedOutlineIds.includes(o.id);
+          });
+        // Legacy-truth gate: a persisted complete flag is honored UNLESS the
+        // recovered job state actively contradicts it — an outline that is
+        // neither materialized, settled orphan, nor skipped whose job was
+        // still mid-pipeline (content committed, actions not done) was frozen
+        // by the OLD orphan heuristic's completion stamp. Those documents
+        // UNFREEZE on load and surface their retry cards instead of sitting
+        // half-finished forever (#reload-recovery). Documents with no
+        // informative job state (e.g. pre-lessonGroups deletes) keep trusting
+        // the flag — no evidence, no resurrection.
+        const contradictsPersistedComplete = !everyOutlineSettled && (
+          outlines.some((o) => {
+            if (migrated.some((s) => s.order === o.order)) return false;
+            if (orphanOutlineIds.has(o.id)) return false;
+            if (skippedOutlineIds.includes(o.id)) return false;
+            const job = recoveredLessonGroups
+              .flatMap((g) => g.jobs)
+              .find((j) => j.outlineId === o.id);
+            if (!job) return false;
+            return job.resolution !== 'skip';
+          })
+        );
         const generationComplete =
-          persistedComplete ||
+          (persistedComplete && !contradictsPersistedComplete) ||
           isDeckComplete({
             outlines,
             scenes: migrated,
-            failedOutlines,
-          });
+            failedOutlines: uniqueFailedOutlines,
+          }) ||
+          everyOutlineSettled;
+        const generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error' =
+          generationComplete
+            ? 'completed'
+            : (hasOpenJobsFlag() ? 'paused' : 'idle');
+
+        function hasOpenJobsFlag(): boolean {
+          return recoveryBasis.length > 0 || recoveredLessonGroups.some((group) =>
+            group.jobs.some(
+              (job) =>
+                ((job.phases.content?.status === 'pending' &&
+                  !orphanOutlineIds.has(job.outlineId)) ||
+                  ((job.phases.content?.status === 'failed' ||
+                    job.phases.actions?.status === 'failed') &&
+                    job.resolution !== 'skip')),
+            ),
+          );
+        }
+        // FOLD-IN GUARD (deleted-after-complete deck): the missing-outline
+        // invariant folds into failedOutlines ONLY when generation is not
+        // settled. A generationComplete deck (user deleted a slide after a
+        // finish, or complete-by-all-materialized) stays frozen for the
+        // CONTENT class — folding otherwise would resurrect deleted slides
+        // as regeneration work. Fill decay (tts/media rows) hydrates above,
+        // unconditionally — its red cards are byte repairs, not resurrection.
+        const finalFailedOutlines = [
+          ...(generationComplete
+            ? uniqueFailedOutlines
+            : [
+                ...uniqueFailedOutlines,
+                ...recoveryBasis.filter(
+                  (o) => !uniqueFailedOutlines.some((f) => f.id === o.id),
+                ),
+              ]),
+          ...fillFailedOutlines.filter(
+            (o) => !uniqueFailedOutlines.some((f) => f.id === o.id),
+          ),
+        ];
         set({
           stage: data.stage,
           scenes: migrated,
@@ -1062,14 +1545,24 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           chats: data.chats,
           chatSnapshot: data.chatSnapshot ?? { sessions: [], restoreMarker: undefined },
           outlines,
+          blueprint: persistedBlueprint,
+          lessonGroups: recoveredLessonGroups,
           generationComplete,
+          generationStatus,
+          failedOutlines: finalFailedOutlines,
+          skippedOutlineIds,
+          exams: persistedExams.exams,
+          examAttempts: persistedExams.attempts,
           // Compute generatingOutlines from persisted outlines minus completed
           // scenes. Once generation is complete the deck is frozen for editing,
           // so an orphaned outline (e.g. from a deleted slide) must NOT surface
           // as a pending placeholder or drive resume regeneration.
           generatingOutlines: generationComplete
             ? []
-            : outlines.filter((o) => !migrated.some((s) => s.order === o.order)),
+            : outlines.filter(
+                (o) =>
+                  !migrated.some((s) => s.order === o.order) && !orphanOutlineIds.has(o.id),
+              ),
           // `mode` is transient UI state, not persisted with the stage.
           // Reset to 'playback' on every load so SPA navigation between
           // classrooms doesn't carry Pro-mode state across — e.g. user

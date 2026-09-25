@@ -37,6 +37,18 @@ Infer the course language directive by applying the decision rules from the syst
 
 ---
 
+## Course Contract (NON-NEGOTIABLE)
+
+The course duration has been resolved to **{{resolvedDurationMinutes}} minutes**. The
+scene count and lesson split below are computed from it — they are not
+suggestions and you may not produce fewer scenes, more scenes, or a different
+lesson structure. The Distribution Target below only decides scene TYPES within
+those exact counts.
+
+{{courseContract}}
+
+---
+
 ## Distribution Target
 
 - **70% interactive scenes** (widgets: simulation, diagram, code, game)
@@ -115,4 +127,4 @@ Choose widgets based on the content:
 }
 ```
 
-**Final reminder**: your entire response must be a JSON **object** with exactly three top-level keys — `languageDirective` (string, inferred via the Language Inference rules in the system prompt), `courseTitle` (string, ≤30 chars, in the teaching language), and `outlines` (array of scene objects). Do not return a bare array. Do not wrap in prose or code fences.
+**Final reminder**: your entire response must be a JSON **object** with at least three top-level keys — `languageDirective` (string, inferred via the Language Inference rules in the system prompt), `courseTitle` (string, ≤30 chars, in the teaching language), and `outlines` (array of scene objects) — plus `lessons`, `audience`, and `objectives` where possible. Do not return a bare array. Do not wrap in prose or code fences. The Course Contract governs the number of scenes: produce exactly what it demands.

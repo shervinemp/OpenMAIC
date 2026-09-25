@@ -26,4 +26,5 @@ export const VIDEO_PROVIDER_NAMES: Record<VideoProviderId, string> = {
   'grok-video': 'providerGrokVideo',
   'openrouter-video': 'providerOpenRouterVideo',
   happyhorse: 'providerHappyHorse',
+  'comfyui-video': 'providerComfyUIVideo',
 };

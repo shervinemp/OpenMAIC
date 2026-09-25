@@ -124,6 +124,10 @@ describe('PG-mode home listing', () => {
   beforeEach(() => {
     discovery = null;
     vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
+    // Owner-scoped stage listing presupposes the agent runtime could answer:
+    // without it `listStages` correctly falls back to the local listing.
+    vi.stubEnv('OPENMAIC_AGENT_RUNTIME_ENABLED', 'true');
+    vi.stubEnv('DATABASE_URL', 'postgres://test');
     vi.stubGlobal('fetch', vi.fn());
     mocks.toastError.mockClear();
     mocks.folders.mockResolvedValue([]);

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  allocateDocumentTextBudgets,
   buildDocumentBundle,
   sortDocumentImagesForVision,
   type ParsedDocumentPart,
@@ -35,19 +34,20 @@ function part(order: number, overrides: Partial<ParsedDocumentPart> = {}): Parse
 }
 
 describe('document bundle', () => {
-  it('allocates a base text budget before proportional remainder', () => {
-    const budgets = allocateDocumentTextBudgets([100, 5000, 10000], 6000);
+  it('carries the FULL merged text without truncation (Phase 2 §16)', () => {
+    const longText = `Document ${'x'.repeat(60_000)} references image_1.`;
+    const bundle = buildDocumentBundle(
+      [part(1, { text: longText, rawTextLength: longText.length })],
+      { maxVisionImages: 4 },
+    );
 
-    expect(budgets).toHaveLength(3);
-    expect(budgets[0]).toBe(100);
-    expect(budgets[1]).toBeGreaterThan(1500);
-    expect(budgets[2]).toBeGreaterThan(budgets[1]);
-    expect(budgets.reduce((sum, value) => sum + value, 0)).toBe(6000);
+    expect(bundle.text).toContain('references img_1.');
+    expect(bundle.text.length).toBeGreaterThan(60_000);
+    expect(bundle.textContentBudget).toBe(bundle.totalRawTextLength);
   });
 
   it('merges documents in source order and rewrites image IDs globally', () => {
     const bundle = buildDocumentBundle([part(2), part(1)], {
-      maxChars: 2000,
       maxVisionImages: 4,
     });
 
@@ -110,7 +110,7 @@ describe('document bundle', () => {
           ],
         }),
       ],
-      { maxChars: 2000, maxVisionImages: 2 },
+      { maxVisionImages: 2 },
     );
 
     const priorities = new Map(
@@ -120,32 +120,6 @@ describe('document bundle', () => {
     expect(priorities.get('a1')).toBe(2);
     expect(priorities.get('b1')).toBe(1);
     expect(priorities.get('a2')).toBe(0);
-  });
-
-  it('does not truncate into a rewritten image ID', () => {
-    const images = Array.from({ length: 11 }, (_, index) => ({
-      id: `image_${index + 1}`,
-      src: `data:image/png;base64,${index + 1}`,
-      pageNumber: 1,
-    }));
-    const header =
-      '## Source Document 1: Source 1.pdf\n' +
-      '- Order: 1\n' +
-      '- MIME type: application/pdf\n' +
-      '- Pages: 2\n\n';
-
-    const bundle = buildDocumentBundle(
-      [
-        part(1, {
-          text: 'prefix image_11 suffix',
-          rawTextLength: 'prefix image_11 suffix'.length,
-          images,
-        }),
-      ],
-      { maxChars: header.length + 'prefix img_1'.length, maxVisionImages: 4 },
-    );
-
-    expect(bundle.text).not.toContain('prefix img_1');
   });
 
   it('sorts same-priority img_N IDs numerically', () => {

@@ -180,8 +180,11 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     expect(session).toContain('useMayGenerateForStage(classroomId)');
     // Reset on course switch, so a previous course's answer never carries over.
     expect(session).toContain("noteStageGenerationOwnership(classroomId, 'unresolved')");
-    // The resume effect re-runs when the answer lands.
-    expect(surface).toMatch(/\}, \[loading, error, mayGenerate, generateRemaining\]\);/);
+    // The resume effect re-runs when the answer lands. (The fork also keys it
+    // on classroomId, which its params lookup is keyed by.)
+    expect(surface).toMatch(
+      /\}, \[loading, error, mayGenerate, generateRemaining(, classroomId)?\]\);/,
+    );
     // An unresolved answer is asked again rather than accepted for the load.
     expect(session).toContain('retryWhileOwnershipUnresolved');
     // The outline-retry affordance is withheld, not merely refused.

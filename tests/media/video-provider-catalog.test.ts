@@ -11,6 +11,7 @@ const adapterMocks = vi.hoisted(() => {
     veo: { generate: vi.fn(), test: vi.fn(connectivity) },
     'minimax-video': { generate: vi.fn(), test: vi.fn(connectivity) },
     'grok-video': { generate: vi.fn(), test: vi.fn(connectivity) },
+    'comfyui-video': { generate: vi.fn(), test: vi.fn(connectivity) },
     happyhorse: { generate: vi.fn(), test: vi.fn(connectivity) },
     'openrouter-video': { generate: vi.fn(), test: vi.fn(connectivity) },
   };
@@ -35,6 +36,14 @@ vi.mock('@/lib/media/adapters/minimax-video-adapter', () => ({
 vi.mock('@/lib/media/adapters/grok-video-adapter', () => ({
   generateWithGrokVideo: adapterMocks['grok-video'].generate,
   testGrokVideoConnectivity: adapterMocks['grok-video'].test,
+}));
+vi.mock('@/lib/media/video-providers', async (importOriginal) => ({
+  ...(await importOriginal()),
+}));
+
+vi.mock('@/lib/media/adapters/comfyui-video-adapter', () => ({
+  generateWithComfyuiVideo: adapterMocks['comfyui-video'].generate,
+  testComfyuiVideoConnectivity: adapterMocks['comfyui-video'].test,
 }));
 vi.mock('@/lib/media/adapters/happyhorse-adapter', () => ({
   generateWithHappyHorse: adapterMocks.happyhorse.generate,

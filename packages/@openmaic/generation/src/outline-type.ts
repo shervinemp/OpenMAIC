@@ -1,6 +1,6 @@
 import type { SceneOutline, WidgetOutline } from './outline-types.js';
 
-type SceneType = SceneOutline['type'];
+export type SceneType = SceneOutline['type'];
 
 const DEFAULT_QUIZ_CONFIG = {
   questionCount: 3,
@@ -8,6 +8,28 @@ const DEFAULT_QUIZ_CONFIG = {
   questionTypes: ['single' as const],
 };
 const MAX_TARGET_SKILLS = 6;
+
+/**
+ * Outline kinds that render as slide scenes (Phase 2 15.4b / 15.9).
+ * derivation / glossary / reading and the analytic kinds
+ * (comparison / dataReading / tradeoffs) generate structured content which is
+ * rendered into slide elements - the resulting Scene is a standard `slide`,
+ * so everything downstream (rendering, playback, export) treats them as such.
+ */
+const SLIDE_LIKE_TYPES = new Set([
+  'slide',
+  'exercise',
+  'derivation',
+  'glossary',
+  'reading',
+  'comparison',
+  'dataReading',
+  'tradeoffs',
+]);
+
+export function isSlideLikeOutline(outline: SceneOutline): boolean {
+  return SLIDE_LIKE_TYPES.has(outline.type);
+}
 
 /** Return a new outline valid by construction for the selected scene type. */
 export function changeOutlineType(outline: SceneOutline, newType: SceneType): SceneOutline {

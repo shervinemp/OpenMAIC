@@ -577,6 +577,12 @@ export interface PBLPlannerV2Input {
      *  Inherited from the course generation context. */
     languageDirective: string;
   };
+  /** Host-app model handle (Phase 2 §15.1): when present, the planner
+   *  threads a vision-capable model through the scenario design calls so
+   *  source material can ground the scenario. Type is an opaque host
+   *  handle - the planner never inspects it.
+   */
+  languageModel?: unknown;
   /** Optional learner profile from `UserRequirements`. */
   user?: {
     nickname?: string;

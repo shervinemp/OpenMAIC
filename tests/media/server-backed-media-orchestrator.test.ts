@@ -32,7 +32,14 @@ vi.mock('@/lib/store/settings', () => ({
 }));
 
 vi.mock('@/lib/store/stage', () => ({
-  useStageStore: { getState: mocks.stageState },
+  // The pass records per-outline media phases; those actions are inert here.
+  useStageStore: {
+    getState: () => ({
+      recordScenePhase: () => undefined,
+      retryFailedOutline: () => undefined,
+      ...mocks.stageState(),
+    }),
+  },
 }));
 
 vi.mock('@/lib/utils/database', () => ({
@@ -90,6 +97,7 @@ vi.mock('@/lib/persistence/media-persistence', () => ({
 
 import {
   generateMediaForOutlines,
+  mediaRetryPolicy,
   resetMediaPassesForTests,
   retryMediaTask,
 } from '@/lib/media/media-orchestrator';
@@ -175,6 +183,9 @@ describe('server-backed classic media orchestrator', () => {
   let kv: ReturnType<typeof memoryKv>;
 
   beforeEach(() => {
+    // These specs pin single-attempt semantics (Retry interplay, pass
+    // handoff); in-pass provider recovery is covered in media-orchestrator.test.ts.
+    mediaRetryPolicy.limit = 1;
     kv = memoryKv();
     setAssetStorageFullStoreForTests(kv.store);
     resetMediaPassesForTests();

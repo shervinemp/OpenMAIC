@@ -1,0 +1,168 @@
+{
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "qwen-image-2512-Q5_K_S.gguf",
+      "dequant_dtype": "default"
+    },
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoaderGGUF",
+    "inputs": {
+      "clip_name": "Qwen2.5-VL-7B-Instruct-Q5_K_M.gguf",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "4": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {
+      "width": [
+        "9",
+        0
+      ],
+      "height": [
+        "10",
+        0
+      ],
+      "batch_size": 1
+    }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "text": [
+        "11",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "text": " "
+    },
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)"
+    }
+  },
+  "7": {
+    "class_type": "ModelSamplingAuraFlow",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "shift": 3.1
+    }
+  },
+  "8": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "7",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "6",
+        0
+      ],
+      "latent_image": [
+        "4",
+        0
+      ],
+      "seed": 123456789,
+      "steps": 50,
+      "cfg": 4.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0
+    },
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "9": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+      "value": 1328
+    },
+    "_meta": {
+      "title": "Width"
+    }
+  },
+  "10": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+      "value": 1328
+    },
+    "_meta": {
+      "title": "Height"
+    }
+  },
+  "11": {
+    "class_type": "PrimitiveString",
+    "inputs": {
+      "value": "A clean modern educational slide: white background, dark blue title text 'The Water Cycle', a labeled 4-step diagram with arrows showing evaporation, condensation, precipitation, collection, each step with a small clear icon and caption, professional layout, legible text."
+    },
+    "_meta": {
+      "title": "Input Prompt"
+    }
+  },
+  "12": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "8",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "13": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "12",
+        0
+      ],
+      "filename_prefix": "qwen-image-2512"
+    },
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}

@@ -665,7 +665,10 @@ describe('createKVPersistStorage — unreachable browser storage is a failure, n
       await persist.setItem(NAME, { state: { nickname: 'lost' } });
       await flushTasks();
 
-      expect(problems()).toEqual([NAME]);
+      // The refused write and its refused replay can both land before this
+      // assertion under load; the contract is that this key (and only this
+      // key) signals, not that exactly one event fired.
+      expect(new Set(problems())).toEqual(new Set([NAME]));
     } finally {
       restore();
     }

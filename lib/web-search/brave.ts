@@ -219,19 +219,36 @@ async function searchWithBraveScrape(
   baseUrl?: string,
   signal?: AbortSignal,
 ): Promise<WebSearchSource[]> {
-  const res = await proxyFetch(buildBraveSearchUrl(query, baseUrl), {
-    method: 'GET',
-    headers: BRAVE_HEADERS,
-    ...(signal ? { signal } : {}),
-  });
+  const url = buildBraveSearchUrl(query, baseUrl);
+  // Rate-limits and transient server errors are worth retrying with backoff
+  // rather than silently dropping the results — proceeding without the research
+  // the user asked for would waste the run. Only after the retries are
+  // exhausted do we surface the error.
+  const MAX_ATTEMPTS = 3;
+  const RETRY_DELAY_MS = [1000, 2000, 4000];
 
-  if (!res.ok) {
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const res = await proxyFetch(url, {
+      method: 'GET',
+      headers: BRAVE_HEADERS,
+      ...(signal ? { signal } : {}),
+    });
+
+    if (res.ok) {
+      const html = await res.text();
+      return parseBraveSearchHtml(html, maxResults);
+    }
+
     const errorText = await readBraveErrorDetail(res);
+    const retryable = res.status === 429 || res.status >= 500;
+    if (retryable && attempt < MAX_ATTEMPTS - 1) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS[attempt] ?? 4000));
+      continue;
+    }
     throw new Error(formatBraveError('scrape', res.status, res.statusText, errorText));
   }
 
-  const html = await res.text();
-  return parseBraveSearchHtml(html, maxResults);
+  throw new Error('Brave Search error: retries exhausted');
 }
 
 export async function searchWithBrave(params: {

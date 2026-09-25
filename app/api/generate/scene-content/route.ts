@@ -13,14 +13,15 @@ import {
   generateSceneContent,
   buildVisionUserContent,
   partitionImagesForVision,
+  type AgentInfo,
 } from '@openmaic/generation';
-import type { AgentInfo } from '@openmaic/generation';
 import type {
   SceneOutline,
   PdfImage,
   ImageMapping,
   UserRequirements,
-} from '@/lib/types/generation';
+  } from '@/lib/types/generation';
+import type { ThinkingConfig } from '@/lib/types/provider';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
@@ -32,11 +33,57 @@ import {
   resolveVisionImagesForPrompt,
   type VisionPromptImage,
 } from '@/lib/persistence/resolve-vision-images';
-import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
+import { takeSceneDepthReport, takeSceneDepthSummary } from '@/lib/generation/content-depth';
+import { buildUnitContext } from '@/lib/generation/unit-context';
+import {
+  describeSceneFailure,
+  recordSceneFailure,
+  takeSceneFailure,
+} from '@/lib/server/scene-failure-ledger';
 
 const log = createLogger('Scene Content API');
 
 export const maxDuration = 300;
+
+/**
+ * Hard ceiling on OUTPUT tokens for one scene-content call. Valid scene JSON is
+ * small (a successful generation in the wild lands in ~3.5–11.5k output tokens
+ * regardless of kind); a run far past this is a reasoning loop burning budget
+ * without finishing — clipping clobbers no real output and turns a minutes-long
+ * 500 into a fast, retryable failure. `budgetTokens` remains the SOFT lever
+ * (OPENMAIC_THINKING_PRESET / MODEL_ROUTES); this cap only bounds the worst
+ * pathological case while keeping a ~2x margin over any observed success.
+ *
+ * Providers count reasoning inside the output budget, so a thinking-enabled
+ * judgment stage (interactive/derivation/exercise/freeResponse) would otherwise
+ * crowd its own JSON payload out of the same 16k envelope. When the resolved
+ * ThinkingConfig carries an EXPLICIT reasoning budget, that budget is added as
+ * headroom above the base cap — the tripwire still catches unbounded reasoning
+ * loops, but anticipated reasoning can never starve the payload. Mindful of the
+ * same failure anatomy, an `enabled` config with NO explicit budget keeps the
+ * base cap: unbounded provider-default reasoning is exactly the pathological
+ * case this cap exists to fail fast on.
+ */
+const SCENE_CONTENT_OUTPUT_CAP = 16_000;
+
+/** Explicit reasoning budget to shield from the output cap, if any. */
+function sceneReasoningHeadroom(thinking: ThinkingConfig | undefined): number {
+  if (!thinking || thinking.enabled === false) return 0;
+  const budget = thinking.budgetTokens;
+  return typeof budget === 'number' && Number.isFinite(budget) && budget > 0 ? budget : 0;
+}
+
+/** Never exceed the model's real output window; use the cap when it is smaller. */
+function clampSceneContentOutputBudget(
+  outputWindow: number | undefined,
+  thinking?: ThinkingConfig,
+): number | undefined {
+  const headroom = sceneReasoningHeadroom(thinking);
+  if (typeof outputWindow !== 'number' || !Number.isFinite(outputWindow) || outputWindow <= 0) {
+    return SCENE_CONTENT_OUTPUT_CAP + headroom;
+  }
+  return Math.min(outputWindow, SCENE_CONTENT_OUTPUT_CAP + headroom);
+}
 
 /**
  * Aggregate budget for the WHOLE resolve-with-refill phase, reused from the
@@ -117,6 +164,56 @@ export async function POST(req: NextRequest) {
     outlineTitle = rawOutline?.title;
     resolvedModelString = modelString;
 
+    // One precomputed output budget for every scene-content call below: the
+    // 16k tripwire plus any explicit reasoning headroom (see the cap comment).
+    const sceneOutputBudget = clampSceneContentOutputBudget(
+      modelInfo?.outputWindow,
+      thinkingConfig,
+    );
+
+    // ── Reasoning-collapse handling (Options A + C) ──
+    // deepseek-style reasoners do not honor `budgetTokens`: when a judgment
+    // stage's scratchpad overshoots, the whole output allowance can be consumed
+    // by reasoning with zero answer left (`output 24000 (reasoning 24000)` in
+    // the wild) — the downstream JSON parse then fails after a ~2min burn that
+    // NO client retry can rescue, because every retry re-derives reasoning.
+    // (a) Option C, prompt-side: a small convergence nudge appended to the
+    // system prompt only when thinking is active; soft, but measurably nudges
+    // scratchpad loops to converge earlier.
+    // (b) Option A, call-side: when a thinking call comes back with (near-)
+    // empty completions while thinking was enabled, IMMEDIATELY re-issue the
+    // same call with thinking hard-disabled at the base cap. Deepseek cannot
+    // be budgeted, so `enabled:false` is the only reliable lever; input tokens
+    // are mostly cache-read hits (observed ~8–10k cached), so the salvage
+    // retry is cheap. A non-thinking failure stays untouched — it is some
+    // other validation/depth problem, not one thinking can be blamed for.
+    const thinkingIsEnabled = !!thinkingConfig && thinkingConfig.enabled !== false;
+    const REASONING_COLLAPSE_TRIGGER_CHARS = 40;
+    const CONVERGENCE_NUDGE =
+      ' Reasoning-budget note: your scratchpad shares a finite output budget with the final JSON. ' +
+      'Keep reasoning brief, converge quickly, and ALWAYS finish with the complete JSON answer.';
+
+    /** A result so short it carries no usable scene JSON. */
+    function isReasoningCollapse(text: string | undefined): boolean {
+      return (text ?? '').trim().length < REASONING_COLLAPSE_TRIGGER_CHARS;
+    }
+
+    const callWithoutThinking = async (
+      buildParams: (maxTokens?: number) => Parameters<typeof callLLM>[0],
+    ): Promise<string> => {
+      const disabledThinking = { ...thinkingConfig, enabled: false } as ThinkingConfig;
+      log.warn(
+        `Reasoning-collapse detected (near-empty payload with thinking on) for "${outlineTitle ?? 'unknown'}"; one salvage retry with thinking disabled at the base cap.`,
+      );
+      const result = await callLLM(
+        buildParams(clampSceneContentOutputBudget(modelInfo?.outputWindow, disabledThinking)),
+        'scene-content',
+        undefined,
+        disabledThinking,
+      );
+      return result.text;
+    };
+
     // Detect vision capability
     const hasVision = !!modelInfo?.capabilities?.vision;
 
@@ -134,44 +231,55 @@ export async function POST(req: NextRequest) {
       userPrompt: string,
       images?: Array<{ id: string; src: string }>,
     ): Promise<string> => {
+      const effectiveSystem = thinkingIsEnabled ? systemPrompt + CONVERGENCE_NUDGE : systemPrompt;
+
+      let result: string;
       if (images?.length && hasVision) {
         // Server-backed transport: `imageMapping` values are allocated asset
         // ids, so the image srcs reach here as ids. Resolve them to the same
         // bytes the base64 path would send BEFORE prompt assembly, keeping the
         // vision prompt byte-identical in both modes (RFC #1153 part 2 B).
         const resolvedImages = await resolveVisionImagesForPrompt(images, req.headers);
-        const result = await callLLM(
-          {
-            model: languageModel,
-            system: systemPrompt,
-            messages: [
-              {
-                role: 'user' as const,
-                content: buildVisionUserContent(userPrompt, resolvedImages),
-              },
-            ],
-            maxOutputTokens: modelInfo?.outputWindow,
-            maxRetries: 0,
-          },
+        const callParams = (maxTokens: number | undefined) => ({
+          model: languageModel,
+          system: effectiveSystem,
+          messages: [
+            {
+              role: 'user' as const,
+              content: buildVisionUserContent(userPrompt, resolvedImages),
+            },
+          ],
+          maxOutputTokens: maxTokens ?? sceneOutputBudget,
+          maxRetries: 0,
+        } as Parameters<typeof callLLM>[0]);
+        const first = await callLLM(
+          callParams(sceneOutputBudget),
           'scene-content',
           undefined,
           thinkingConfig,
         );
-        return result.text;
-      }
-      const result = await callLLM(
-        {
+        result = isReasoningCollapse(first.text) && thinkingIsEnabled
+          ? await callWithoutThinking((maxTokens) => callParams(maxTokens as number))
+          : first.text;
+      } else {
+        const callParams = (maxTokens: number | undefined) => ({
           model: languageModel,
-          system: systemPrompt,
+          system: effectiveSystem,
           prompt: userPrompt,
-          maxOutputTokens: modelInfo?.outputWindow,
+          maxOutputTokens: maxTokens ?? sceneOutputBudget,
           maxRetries: 0,
-        },
-        'scene-content',
-        undefined,
-        thinkingConfig,
-      );
-      return result.text;
+        } as Parameters<typeof callLLM>[0]);
+        const first = await callLLM(
+          callParams(sceneOutputBudget),
+          'scene-content',
+          undefined,
+          thinkingConfig,
+        );
+        result = isReasoningCollapse(first.text) && thinkingIsEnabled
+          ? await callWithoutThinking(callParams)
+          : first.text;
+      }
+      return result;
     };
 
     // ── Apply fallbacks ──
@@ -324,35 +432,75 @@ export async function POST(req: NextRequest) {
     const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
       imageMapping: visionImageMapping,
+      languageModel: effectiveOutline.type === 'pbl' ? languageModel : undefined,
       visionEnabled: hasVision,
       generatedMediaMapping,
       resolvedVisionImages,
       agents,
       languageDirective,
+      thinkingConfig,
       targetLanguage: userLocale || undefined,
       userRequirements: requirements,
       allowProceduralSkill: vocationalActive,
-      ...(effectiveOutline.type === 'pbl'
-        ? {
-            pblLoopFallback: (input) =>
-              generatePBLV2Project(input, languageModel, callLLM, { logger: log }, thinkingConfig),
-          }
-        : {}),
+      retrievalContext: effectiveOutline.retrievalContext,
+      // Phase 2 §15.5: prerequisite coherence — thread what the unit has
+      // already taught so this scene builds on it instead of repeating it.
+      unitContext: buildUnitContext(effectiveOutline, allOutlines),
+      onFailure: (failure) => {
+        recordSceneFailure({
+          ...failure,
+          outlineId: effectiveOutline.id,
+          outlineTitle: effectiveOutline.title,
+          sceneType: effectiveOutline.type,
+          model: modelString,
+          at: Date.now(),
+        });
+      },
     });
 
     if (!content) {
       log.error(`Failed to generate content for: "${effectiveOutline.title}"`);
 
+      // Failure ledger: surface the concrete cause (failure code raised by the
+      // scene type + depth findings from corrective-loop exhaustion) instead
+      // of a black box, on both the log line and the client's retry card.
+      const failureRecord = takeSceneFailure(effectiveOutline.id);
+      const depthReport = takeSceneDepthReport(effectiveOutline.id);
+      if (failureRecord) {
+        failureRecord.findings ??= depthReport?.findings;
+      }
+      const failureDetail = describeSceneFailure(failureRecord);
+      const depthDetail = depthReport
+        ? ` — depth contract: ${depthReport.findings.join('; ')}`
+        : '';
+      const detail = failureDetail ?? (depthDetail ? `depth contract rejected${depthDetail}` : '');
+
+      log.error(
+        `Failed to generate content for: "${effectiveOutline.title}" — reason: ${
+          detail || 'none recorded (no onFailure raise, no depth report; pipeline returned null silently)'
+        } [model=${modelString ?? 'unknown'}, sceneType=${effectiveOutline.type}]`,
+      );
+
       return apiError(
         'GENERATION_FAILED',
         500,
-        `Failed to generate content: ${effectiveOutline.title}`,
+        `Failed to generate content: ${effectiveOutline.title}${
+          detail ? ` (${detail}${depthReport ? '' : depthDetail})` : ''
+        }`,
       );
     }
 
     log.info(`Content generated successfully: "${effectiveOutline.title}"`);
 
-    return apiSuccess({ content, effectiveOutline });
+    // Depth affordance: tell the client when the accepted content needed
+    // corrective re-prompting (or record a first-try pass for completeness).
+    const depthSummary =
+      takeSceneDepthSummary(effectiveOutline.id) ??
+      (content
+        ? { reworked: false, attempts: 1, findings: [] }
+        : undefined);
+
+    return apiSuccess({ content, effectiveOutline, depth: depthSummary });
   } catch (error) {
     log.error(
       `Scene content generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,

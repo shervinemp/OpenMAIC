@@ -2,7 +2,8 @@ import { createHmac } from 'crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { NextRequest } from 'next/server';
 
-import { middleware } from '@/middleware';
+// The fork names the Next 16 request hook `proxy` (proxy.ts); same gate.
+import { proxy as middleware } from '@/proxy';
 import { ACCESS_TOKEN_MAX_AGE_MS } from '@/lib/server/access-token-shared';
 
 const CODE = 'demo-code-that-is-long-enough';

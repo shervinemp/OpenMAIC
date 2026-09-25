@@ -16,7 +16,7 @@ import type {
   SceneValidator,
   StageValidator,
 } from '../document/types.js';
-import { DocumentNotFoundError, DocumentVersionError } from '../document/types.js';
+import { DocumentLostUpdateError, DocumentNotFoundError, DocumentVersionError } from '../document/types.js';
 import { assertMaxBodyBytes, DEFAULT_MAX_BODY_BYTES, readJsonObject } from './read-json.js';
 
 export interface DocumentHttpPrincipal {
@@ -240,6 +240,13 @@ function classifyStoreError(error: unknown): never {
   if (error instanceof DocumentNotFoundError) {
     throw new DocumentHttpError(404, 'DOCUMENT_NOT_FOUND', error.message);
   }
+  if (error instanceof DocumentLostUpdateError) {
+    throw new DocumentHttpError(409, 'STALE_WRITE', error.message, {
+      stageId: error.stageId,
+      storedUpdatedAt: error.storedUpdatedAt,
+      incomingUpdatedAt: error.incomingUpdatedAt,
+    });
+  }
   if (error instanceof DocumentVersionError) {
     const details = { stageId: error.stageId, storedVersion: error.storedVersion };
     if (error.kind === 'future') throw futureVersion(error.message, details);
@@ -248,6 +255,9 @@ function classifyStoreError(error: unknown): never {
 
   // Fallback for third-party DocumentStore implementations that throw plain Errors.
   const message = error instanceof Error ? error.message : String(error);
+  if (/stored copy is newer .* than the incoming save/.test(message)) {
+    throw new DocumentHttpError(409, 'STALE_WRITE', message);
+  }
   if (/missing document/.test(message)) {
     const match = /missing document ("(?:[^"\\]|\\.)*")/.exec(message);
     let stageId = 'unknown';
@@ -348,8 +358,15 @@ async function route<TScene extends SceneLike, TStage extends Stage>(
       sceneValidator,
       stageValidator,
     );
+    // A deliberate wholesale restore (backup import, origin migration) opts
+    // out of the stale-write fence with `?allow-older-overwrite=1`; routine
+    // saves never send it and stay lost-update-fenced.
+    const allowOlderOverwrite =
+      new URL(req.url ?? '/', 'http://documents.invalid').searchParams.get(
+        'allow-older-overwrite',
+      ) === '1';
     try {
-      await store.saveDocument(document);
+      await store.saveDocument(document, { allowOlderOverwrite });
     } catch (error) {
       classifyStoreError(error);
     }

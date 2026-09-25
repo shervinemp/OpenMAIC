@@ -17,6 +17,10 @@ import {
   testMiniMaxVideoConnectivity,
 } from './adapters/minimax-video-adapter';
 import { generateWithGrokVideo, testGrokVideoConnectivity } from './adapters/grok-video-adapter';
+import {
+  generateWithComfyuiVideo,
+  testComfyuiVideoConnectivity,
+} from './adapters/comfyui-video-adapter';
 import { generateWithHappyHorse, testHappyHorseConnectivity } from './adapters/happyhorse-adapter';
 import {
   generateWithOpenRouterVideo,
@@ -142,6 +146,19 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     supportedResolutions: ['480p', '720p', '1080p'],
     maxDuration: 10,
   },
+  'comfyui-video': {
+    id: 'comfyui-video',
+    name: 'ComfyUI (Local)',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://localhost:8188',
+    // Models are the `comfyui-*.json` workflow files discovered in public/ —
+    // the same list /api/comfyui-workflows serves to the Settings UI.
+    models: [],
+    supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16', '3:4', '21:9'],
+    supportedDurations: [5, 8, 10, 15],
+    supportedResolutions: ['480p', '720p'],
+    maxDuration: 15,
+  },
 };
 
 export async function testVideoConnectivity(
@@ -162,6 +179,8 @@ export async function testVideoConnectivity(
       return testHappyHorseConnectivity(config);
     case 'openrouter-video':
       return testOpenRouterVideoConnectivity(config);
+    case 'comfyui-video':
+      return testComfyuiVideoConnectivity(config);
     default:
       return {
         success: false,
@@ -231,6 +250,8 @@ export async function generateVideo(
       return generateWithHappyHorse(config, options);
     case 'openrouter-video':
       return generateWithOpenRouterVideo(config, options);
+    case 'comfyui-video':
+      return generateWithComfyuiVideo(config, options);
     default:
       throw new Error(`Unsupported video provider: ${config.providerId}`);
   }

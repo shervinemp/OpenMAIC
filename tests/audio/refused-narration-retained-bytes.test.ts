@@ -266,7 +266,7 @@ describe('narration refused for want of room', () => {
     mockFetch.mockResolvedValue(ttsResponse());
 
     const scene = sceneWithOneLine();
-    await expect(generateTTSForScene(scene)).resolves.toEqual({ success: true, failedCount: 0 });
+    await expect(generateTTSForScene(scene)).resolves.toMatchObject({ success: true, failedCount: 0 });
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
@@ -301,7 +301,10 @@ describe('narration refused for want of room', () => {
 
   // A clip the pool did take is an allocation this scene minted and nothing
   // else holds, so the rollback still reclaims its local copy.
-  it('still rolls back a clip the pool accepted when a sibling fails', async () => {
+  // Per-clip containment (fork): a clip the pool accepted is valid, playable
+  // audio whose id reaches the document with the scene — a sibling failing is
+  // not a reason to re-synthesize it. Only the failed line stays unvoiced.
+  it('keeps a clip the pool accepted when a sibling fails', async () => {
     modelAudioTable();
     mocks.poolPut.mockResolvedValue('ast_narration_allocated');
     mockFetch.mockResolvedValueOnce(ttsResponse()).mockResolvedValueOnce({
@@ -317,8 +320,9 @@ describe('narration refused for want of room', () => {
       failedCount: 1,
     });
 
-    expect(mocks.audioDelete).toHaveBeenCalledWith('ast_narration_allocated');
-    expect(audioIdOf(scene, 0)).toBeUndefined();
+    expect(mocks.audioDelete).not.toHaveBeenCalledWith('ast_narration_allocated');
+    expect(audioIdOf(scene, 0)).toBe('ast_narration_allocated');
+    expect(audioIdOf(scene, 1)).toBeUndefined();
   });
 
   // `refused-retained` is a statement about what is on disk. If the local table
@@ -360,7 +364,7 @@ describe('narration refused for want of room', () => {
     mockFetch.mockResolvedValueOnce(ttsResponse());
 
     const scene = sceneWithOneLine();
-    await expect(generateTTSForScene(scene)).resolves.toEqual({ success: true, failedCount: 0 });
+    await expect(generateTTSForScene(scene)).resolves.toMatchObject({ success: true, failedCount: 0 });
 
     expect(mocks.poolPut).not.toHaveBeenCalled();
     expect(audioIdOf(scene)).toBe(derivedRef);

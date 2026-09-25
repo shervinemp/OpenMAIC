@@ -228,6 +228,7 @@ const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
   'grok-video': '/logos/grok.svg',
   'openrouter-video': '/logos/openrouter.svg',
   happyhorse: '/logos/qwen.svg',
+  'comfyui-video': '/logos/comfyui.svg',
 };
 
 /** 「模型服务」分区内的服务 tab：沿用旧一级分区的值与面板组件。 */

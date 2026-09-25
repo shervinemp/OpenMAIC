@@ -1,0 +1,671 @@
+import {
+  sanitizeSlidePlacement,
+  validateSlidePlacement,
+  type PlacementFinding,
+} from '@openmaic/dsl';
+import { estimateTextRowHeight } from '@/lib/maintenance/split-plan';
+
+export interface RelayoutMove {
+  elementId: string;
+  fromTop: number;
+  toTop: number;
+}
+
+export interface RelayoutPlan {
+  sceneId: string;
+  sceneTitle: string;
+  moved: RelayoutMove[];
+  keptPinned: Array<{ id: string; reason: string }>;
+  overflowRows: string[];
+  fitsWithoutMerge: boolean;
+  findingsBefore: Array<{ kind: string; severity: string; message: string }>;
+  findingsAfter: Array<{ kind: string; severity: string; message: string }>;
+}
+
+type RectElement = {
+  id: string;
+  type: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  imageType?: string;
+  textType?: string;
+  text?: unknown;
+  opacity?: number;
+};
+
+const PIN_GAP = 10;
+const EDGE_MARGIN = 16;
+const DEFAULT_FONT_PX = 14;
+const LINE_HEIGHT_FACTOR = 1.5;
+const PARAGRAPH_PAD = 12;
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function effectiveRowHeight(element: RectElement): number {
+    const declared = Number.isFinite(element.height) ? element.height : 0;
+  if (element.type === 'text' && typeof (element as { content?: string }).content === 'string') {
+    const content = (element as { content?: string }).content as string;
+    const fontSizeMatch = /(?:font-size\s*:\s*)?(\d+(?:\.\d+)?)px/.exec(content);
+    const fontSize = fontSizeMatch ? parseFloat(fontSizeMatch[1]) : DEFAULT_FONT_PX;
+    const plain = stripHtml(content);
+    const explicitLines = (content.match(/<br\s*\/?>/gi) ?? []).length;
+    const charsPerLine = Math.max(8, Math.floor((element.width - 12) / (fontSize * 0.52)));
+    const wrappedLines = Math.ceil(plain.length / charsPerLine) || 1;
+    const lines = Math.max(explicitLines + 1, wrappedLines);
+    const estimated = Math.ceil(lines * fontSize * LINE_HEIGHT_FACTOR + PARAGRAPH_PAD);
+    // Packing uses the WORSE of estimate/declared: an estimate lower than the
+    // real box under-shifts rows so the same occlusion error survives every
+    // pass (observed on the splitter's authored Answer/Sources rows). The
+    // declared height is the renderer's truth; the estimate is only a floor
+    // for rows whose declaration never got corrected.
+    return Math.max(estimated, declared);
+  }
+  return declared;
+}
+
+function isPinned(element: RectElement, canvasArea: number): boolean {
+  if (element.type === 'line') return true;
+  if (element.type === 'image' && element.imageType === 'background') return true;
+  if (element.width * element.height >= 0.9 * canvasArea) return true;
+  if (element.type === 'shape' && element.text === undefined) return true;
+  if (typeof element.opacity === 'number' && element.opacity < 0.25) return true;
+  return false;
+}
+
+function pinReason(element: RectElement, canvasArea: number): string {
+  if (element.type === 'line') return 'line';
+  if (element.type === 'image' && element.imageType === 'background') return 'background image';
+  if (element.width * element.height >= 0.9 * canvasArea) return 'full-bleed';
+  if (element.type === 'shape') return 'decorative shape';
+  return 'low-opacity overlay';
+}
+
+export function computeRelayoutPlan(scene: {
+  id: string;
+  title?: string;
+  type?: string;
+  content?: unknown;
+}): RelayoutPlan | null {
+  if ((scene as { type?: string }).type !== 'slide') return null;
+  const canvas = (scene.content as { canvas?: { viewportSize?: number; viewportRatio?: number; elements?: RectElement[] } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return null;
+  const viewportSize = typeof canvas.viewportSize === 'number' ? canvas.viewportSize : 1000;
+  const viewportRatio = typeof canvas.viewportRatio === 'number' ? canvas.viewportRatio : 0.5625;
+  const canvasHeight = Math.round(viewportSize * viewportRatio);
+  const canvasArea = viewportSize * canvasHeight;
+
+  const findingsBefore = findFindings(
+    validateSlidePlacement({ viewportSize, viewportRatio, elements: canvas.elements as never }),
+  );
+  if (findingsBefore.length === 0) return null;
+
+  const working: Array<{ element: RectElement; index: number }> = canvas.elements.map(
+    (element, index) => ({ element: { ...element }, index }),
+  );
+  for (const entry of working) {
+    const originalIndex = entry.index;
+    const original = canvas.elements[originalIndex];
+    entry.element = { ...original };
+  }
+
+  const pinnedEntries = working.filter((entry) => isPinned(entry.element, canvasArea));
+  // NaN guard: legacy rects with non-finite top/height poison every sum they
+  // touch (cursor becomes NaN, writes become null). The route coerces first,
+  // but the plan must be robust for any caller — skip the unmeasurable.
+  const finiteTop = (element: RectElement): number =>
+    Number.isFinite(element.top) ? element.top : Number.POSITIVE_INFINITY;
+  const finiteSpan = (element: RectElement): number | null => {
+    const span = element.top + element.height;
+    return Number.isFinite(span) ? span : null;
+  };
+  const pinnedBottom = pinnedEntries.reduce((max, entry) => {
+    const span = finiteSpan(entry.element);
+    return span === null ? max : Math.max(max, span);
+  }, 0);
+  // A pin that hugs the BOTTOM edge (footer bar, quiz footer) is not
+  // something content can be pushed below — its top is the packing
+  // CEILING. Content must then fit ABOVE the bar: start at the margin and
+  // cap the body band at the bar's top. (The naive pinnedBottom-as-floor
+  // put content beyond the canvas — every row "overflowed", nothing moved,
+  // and the occlusion error survived every sweep.)
+  const bottomBarTop = pinnedEntries
+    .filter((entry) => {
+      const element = entry.element;
+      const span = element.top + element.height;
+      return Number.isFinite(span) && Number.isFinite(element.top)
+        && span >= canvasHeight - 8 && element.top > 40;
+    })
+    .reduce((min, entry) => Math.min(min, entry.element.top), Number.POSITIVE_INFINITY);
+  const contentTopStart = pinnedBottom >= canvasHeight - 8 && Number.isFinite(bottomBarTop)
+    ? 40
+    : Math.max(pinnedBottom + PIN_GAP, 40);
+  const contentBottomLimit = Number.isFinite(bottomBarTop)
+    ? Math.min(canvasHeight - EDGE_MARGIN, bottomBarTop - PIN_GAP)
+    : canvasHeight - EDGE_MARGIN;
+
+  const movable = working
+    .filter((entry) => !pinnedEntries.includes(entry))
+    .sort((a, b) => finiteTop(a.element) - finiteTop(b.element) || a.index - b.index);
+
+  const moved: RelayoutMove[] = [];
+  const overflowRows: string[] = [];
+  let cursor = contentTopStart;
+  for (const entry of movable) {
+    const { element } = entry;
+    const rowHeight = effectiveRowHeight(element);
+    if (cursor + rowHeight > contentBottomLimit) {
+      overflowRows.push(element.id);
+      continue;
+    }
+    if (cursor !== element.top) {
+      const toTop = Math.max(0, Math.round(cursor));
+      moved.push({ elementId: element.id, fromTop: element.top, toTop });
+    }
+    cursor += rowHeight + PIN_GAP;
+  }
+
+  return {
+    sceneId: scene.id,
+    sceneTitle: scene.title ?? '',
+    moved,
+    keptPinned: pinnedEntries.map((entry) => ({ id: entry.element.id, reason: pinReason(entry.element, canvasArea) })),
+    overflowRows,
+    fitsWithoutMerge: overflowRows.length === 0,
+    findingsBefore,
+    findingsAfter: findingsBefore.map((finding) => ({
+      kind: finding.kind,
+      severity: finding.severity,
+      message: finding.message,
+    })),
+  };
+}
+
+/**
+ * Z-order truth pass: a decorative shape (no text) that sits ON TOP of
+ * content rows it mostly covers is behind them in intent — the validator
+ * calls the on-top arrangement an occlusion ERROR. Deterministic fix: move
+ * every fully-covered decorative shape just BELOW the content it underlies
+ * (legal layering: decorative behind text). Content positions/geometry are
+ * untouched; only the stacking order lightens, and the id never changes.
+ * Returns the number of shapes demoted.
+ */
+export function demoteCoveredDecoratives(
+  scene: { content?: unknown },
+): number {
+  const canvas = (scene.content as { canvas?: { elements?: Array<{ id: string; type: string; left: number; top: number; width: number; height: number; text?: unknown }> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return 0;
+  let demoted = 0;
+  const elements = canvas.elements;
+  for (let i = elements.length - 1; i >= 0; i--) {
+    const shape = elements[i];
+    if (shape.type !== 'shape' || shape.text !== undefined) continue;
+    const shapeBottom = shape.top + shape.height;
+    const shapeRight = shape.left + shape.width;
+    // A content row (text element) this shape lays on: the shape's place is
+    // behind the EARLIEST such row (stacking order, not geometry).
+    let firstCoveredIndex = -1;
+    for (let j = 0; j < elements.length; j++) {
+      if (j === i) continue;
+      const upper = elements[j];
+      if (upper.type === 'shape' && upper.text === undefined) continue;
+      if (typeof (upper as { content?: string }).content !== 'string' || !(upper as { content?: string }).content) continue;
+      const uBottom = upper.top + upper.height;
+      const uRight = upper.left + upper.width;
+      const overlapX = Math.min(shapeRight, uRight) - Math.max(shape.left, upper.left);
+      const overlapY = Math.min(shapeBottom, uBottom) - Math.max(shape.top, upper.top);
+      const shapeArea = shape.width * shape.height;
+      const covered = shapeArea > 0 ? (Math.max(0, overlapX) * Math.max(0, overlapY)) / shapeArea : 0;
+      if (covered >= 0.95 && (firstCoveredIndex < 0 || j < firstCoveredIndex)) {
+        firstCoveredIndex = j;
+      }
+    }
+    if (firstCoveredIndex >= 0 && i > firstCoveredIndex) {
+      const [moved] = elements.splice(i, 1);
+      elements.splice(firstCoveredIndex, 0, moved);
+      demoted += 1;
+    }
+  }
+  return demoted > 0 ? sanitizeSlidePlacement(canvas as never).changes.length : 0;
+}
+
+/**
+ * Strip orphaned decorative shapes — the ghost-class failure the validator
+ * cannot see. Signature: an interior shape (decorative: no `text`) with NO
+ * text element overlapping it anywhere on the canvas. This is what a split
+ * leaves behind when the text that covered a shape moves to another part and
+ * an older pin-all-shapes pass repeats the shape to every part: geometry-legal
+ * (no collision error) but a bright box covering nothing on screen.
+ *
+ * Edge-hugging frame shapes (headers/banners/dividers by design, e.g. the 3px
+ * title rule) are exempt — they belong to the shared frame, not to one row of
+ * content. Delete-only; returns the number removed.
+ */
+export function hasOrphanDecoratives(scene: { content?: unknown }, canvasHeight?: number): boolean {
+  const canvas = (scene.content as { canvas?: { elements?: Array<{ id: string; type: string; left: number; top: number; width: number; height: number; text?: unknown }> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return false;
+  const height = typeof canvasHeight === 'number' && canvasHeight > 0
+    ? canvasHeight
+    : 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
+  const elements = canvas.elements;
+  for (const shape of elements) {
+    if (shape.type !== 'shape' && shape.type !== 'image') continue;
+    if (shape.width <= 0 || shape.height <= 0) continue;
+    const bottom = shape.top + shape.height;
+    // Frame membership: touches a canvas edge — or is a hairline (≤6px
+    // section rule). Both belong to the page, not to a content row.
+    const edgeHugging = shape.top <= 8 || bottom >= height - 8 || shape.left <= 8;
+    const hairline = shape.height <= 6;
+    if (edgeHugging || hairline) continue;
+    const shapeBottom = shape.top + shape.height;
+    const shapeRight = shape.left + shape.width;
+    let covered = false;
+    for (const upper of elements) {
+      if (upper === shape || upper.type !== 'text') continue;
+      // Text bodies live in `content` (HTML string) on text elements — a
+      // truth learned from the live document, not the type sketch.
+      if (typeof (upper as { content?: string }).content !== 'string' || !(upper as { content?: string }).content) continue;
+      const uBottom = upper.top + upper.height;
+      const uRight = upper.left + upper.width;
+      const overlapX = Math.min(shapeRight, uRight) - Math.max(shape.left, upper.left);
+      const overlapY = Math.min(shapeBottom, uBottom) - Math.max(shape.top, upper.top);
+      if (overlapX > 4 && overlapY > 4) {
+        covered = true;
+        break;
+      }
+    }
+    if (!covered) return true;
+  }
+  return false;
+}
+export function stripOrphanDecoratives(scene: { content?: unknown }, canvasHeight?: number): number {
+  const canvas = (scene.content as { canvas?: { elements?: Array<{ id: string; type: string; left: number; top: number; width: number; height: number; text?: unknown }> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return 0;
+  const height = typeof canvasHeight === 'number' && canvasHeight > 0
+    ? canvasHeight
+    : 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
+  let removed = 0;
+  const elements = canvas.elements;
+  for (let i = elements.length - 1; i >= 0; i--) {
+    const shape = elements[i];
+    if (shape.type !== 'shape' && shape.type !== 'image') continue;
+    if (shape.width <= 0 || shape.height <= 0) continue;
+    const bottom = shape.top + shape.height;
+    // Frame membership: touches a canvas edge — or is a hairline (≤6px
+    // section rule). Both belong to the page, not to a content row.
+    const edgeHugging = shape.top <= 8 || bottom >= height - 8 || shape.left <= 8;
+    const hairline = shape.height <= 6;
+    if (edgeHugging || hairline) continue;
+    const shapeBottom = shape.top + shape.height;
+    const shapeRight = shape.left + shape.width;
+    let covered = false;
+    for (const upper of elements) {
+      if (upper === shape || upper.type !== 'text') continue;
+      // Text bodies live in `content` (HTML string) on text elements — a
+      // truth learned from the live document, not the type sketch.
+      if (typeof (upper as { content?: string }).content !== 'string' || !(upper as { content?: string }).content) continue;
+      const uBottom = upper.top + upper.height;
+      const uRight = upper.left + upper.width;
+      const overlapX = Math.min(shapeRight, uRight) - Math.max(shape.left, upper.left);
+      const overlapY = Math.min(shapeBottom, uBottom) - Math.max(shape.top, upper.top);
+      if (overlapX > 4 && overlapY > 4) {
+        covered = true;
+        break;
+      }
+    }
+    if (!covered) {
+      elements.splice(i, 1);
+      removed += 1;
+    }
+  }
+  return removed;
+}
+
+/**
+ * Nudge rows off hairline rules — the proximity-debt class the collision
+ * gates cannot see. Signature: a text row whose vertical span grazes a
+ * hairline (≤6px decorative rule) by ≤6px, or cuts through it, where the
+ * graze reads as visual sloppiness (the rule is a section line UNDER the
+ * header, not the row's underline). A 3px graze is design-safe for an
+ * underline but a defect when the rule belongs to the header band above.
+ * Deterministic and idempotent: the row moves BELOW the line with a fixed
+ * 8px margin; stacking order, geometry elsewhere and content untouched.
+ * Returns the number of rows nudged.
+ */
+export function nudgeOffHairlines(scene: { content?: unknown }): number {
+  const canvas = (scene.content as { canvas?: { elements?: Array<{ id: string; type: string; left: number; top: number; width: number; height: number; content?: string }> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return 0;
+  const elements = canvas.elements;
+  let nudged = 0;
+  for (const line of elements) {
+    if (line.type !== 'shape' || line.height > 6 || line.width <= 0) continue;
+    const lineBottom = line.top + line.height;
+    for (const row of elements) {
+      if (row === line || row.type !== 'text') continue;
+      if (typeof row.content !== 'string' || !row.content) continue;
+      const rowBottom = row.top + row.height;
+      // Graze (≤6px intrusions) or crossing counts; a row fully below or
+      // fully above with margin is already clean.
+      const overlapY = Math.min(rowBottom, lineBottom) - Math.max(row.top, line.top);
+      const graze = (overlapY > 0 && overlapY <= 6) || (row.top < line.top && rowBottom > lineBottom);
+      if (!graze) continue;
+      // Horizontal kinship: the rule must visually belong to this row's
+      // column region (any horizontal overlap counts for a full-width rule).
+      const overlapX = Math.min(row.left + row.width, line.left + line.width) - Math.max(row.left, line.left);
+      if (overlapX <= 4) continue;
+      row.top = lineBottom + 8;
+      nudged += 1;
+    }
+  }
+  return nudged;
+}
+
+/**
+ * Full-bleed normalization — the wall-of-text class the old splitter left
+ * behind (single rows pinned at y=0 with height spanning the entire canvas).
+ * A text row starting above the body margin (or ending below it) sits
+ * edge-to-edge on a framed deck and reads as a broken page, but is
+ * geometry-legal to every collision gate (nothing overlaps; the box simply
+ * fills the canvas). Deterministic: text rows are clamped into the
+ * [MARGIN, canvasHeight−MARGIN] band; shape/image frame elements are exempt
+ * (they legitimately hug edges). Content untouched; returns rows changed.
+ */
+export function normalizeFullBleedRows(
+  scene: { content?: unknown },
+  canvasHeight?: number,
+): number {
+  const MARGIN = 40;
+  const canvas = (scene.content as { canvas?: { elements?: Array<{ type: string; left: number; top: number; width: number; height: number; content?: string }> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return 0;
+  const height = typeof canvasHeight === 'number' && canvasHeight > 0
+    ? canvasHeight
+    : 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
+  let changed = 0;
+  for (const el of canvas.elements) {
+    if (el.type !== 'text' || typeof el.content !== 'string' || !el.content) continue;
+    // Geometry validity is owned by coerceElementGeometry (the route's first
+    // pass): by the time normalization runs, tops/heights are finite.
+    const span = el.top + el.height;
+    if (el.top >= MARGIN && span <= height - MARGIN) continue;
+    if (el.top < MARGIN || span > height - MARGIN) changed += 1;
+    el.top = Math.max(MARGIN, el.top);
+    el.height = Math.min(el.height, height - MARGIN - el.top);
+    if (el.height <= 0) el.height = 60;
+  }
+  return changed;
+}
+
+const WALL_COVER_RATIO = 0.6;
+const WALL_MIN_CHARS = 600;
+
+/**
+ * Geometry coercion — the NaN-guard every pass needs. Legacy canvases carry
+ * non-finite rects (`top: null` from a patch tier that once accepted null
+ * geometry, `height: undefined` on line elements). Any bare arithmetic on
+ * them (`top + height`) yields NaN, which then flows through the packing
+ * cursor into `element.top = NaN` and lands on disk as `top: null` —
+ * a self-inflicted corruption loop. Coercion runs FIRST, before planning:
+ * non-finite fields become honest body-margin defaults, numeric fields are
+ * untouched. Returns the number of elements touched.
+ */
+export function coerceElementGeometry(scene: { content?: unknown }): number {
+  const canvas = (scene.content as { canvas?: { elements?: Array<Record<string, unknown>> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return 0;
+  let touched = 0;
+  for (const entry of canvas.elements) {
+    const el = entry as { type?: string; left?: unknown; top?: unknown; width?: unknown; height?: unknown; content?: unknown };
+    let changed = false;
+    if (!Number.isFinite(el.top)) {
+      el.top = 40;
+      changed = true;
+    }
+    if (!Number.isFinite(el.left)) {
+      el.left = 60;
+      changed = true;
+    }
+    if (!Number.isFinite(el.width) || (el.width as number) <= 0) {
+      el.width = 880;
+      changed = true;
+    }
+    if (!Number.isFinite(el.height) || (el.height as number) <= 0) {
+      el.height = el.type === 'line'
+        ? 3
+        : el.type === 'text' && typeof el.content === 'string' && el.content
+          ? estimateTextRowHeight({
+              type: 'text' as const,
+              width: el.width as number,
+              content: el.content,
+            } as never)
+          : 60;
+      changed = true;
+    }
+    if (changed) touched += 1;
+  }
+  return touched;
+}
+
+/** True when any element on the canvas carries a non-finite rect field. */
+export function hasNonFiniteGeometry(scene: { content?: unknown }): boolean {
+  const canvas = (scene.content as { canvas?: { elements?: Array<Record<string, unknown>> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return false;
+  return canvas.elements.some((entry) => {
+    const el = entry as { left?: unknown; top?: unknown; width?: unknown; height?: unknown };
+    return ![el.left, el.top, el.width, el.height].every((value) => Number.isFinite(value));
+  });
+}
+/**
+ * Wall-of-text unwrapper — deterministic, byte-preserving. Signature: a text
+ * element covering a large share of the canvas height carrying a wall of
+ * prose: exactly the material one giant row per split part produces. The text
+ * redistributes into one row per paragraph (
+`<p>`-separated) with the
+ * estimated wrapped height per row, stacked from the body margin with even
+ * gaps: same words, same order, same ownership (the original element id rides
+ * the first row so any action anchoring to the wall stays attached). Purports
+ * to layout — no LLM, no rewrite.
+ */
+export function explodeWallRows(
+  scene: { content?: unknown },
+): number {
+  const canvas = (scene.content as {
+    canvas?: { viewportSize?: number; viewportRatio?: number; elements?: Array<Record<string, unknown>>; [key: string]: unknown };
+  } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return 0;
+  const canvasHeight = 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
+  const bodyTop = 40;
+  const bodyBottomLimit = canvasHeight - bodyTop;
+  const wallIndex = canvas.elements.findIndex((el) => {
+    const rect = el as { type?: string; width?: number; height?: number; top?: number; content?: unknown };
+    if (rect.type !== 'text' || typeof rect.content !== 'string') return false;
+    if ((rect.height ?? 0) < WALL_COVER_RATIO * bodyBottomLimit) return false;
+    // A wall has more than one paragraph to redistribute (a lone, tall
+    // heading has nothing to gain from splitting).
+    const paragraphs = splitParagraphs(rect.content);
+    return paragraphs.length >= 2 && paragraphs.reduce((n, p) => n + p.length, 0) >= WALL_MIN_CHARS;
+  });
+  if (wallIndex < 0) return 0;
+  const elementsList = canvas.elements as Array<Record<string, unknown>>;
+  const wall = elementsList[wallIndex] as { id: string; width?: number; left?: number; content: string };
+  const paragraphs = splitParagraphs(wall.content);
+  const width = wall.width ?? 880;
+  // The wall's stack starts BELOW every other content row already on the
+  // canvas (title, hint rows): rows explode INTO the free band, never on top
+  // of the rows whose slot is taken.
+  const otherBottom = elementsList.reduce((max, other) => {
+    const row = other as { type?: string; top?: number; height?: number; content?: unknown };
+    if (other === elementsList[wallIndex] || row.type !== 'text' || typeof row.content !== 'string') return max;
+    return Math.max(max, (row.top ?? 0) + (row.height ?? 0));
+  }, 40);
+  const rows: Array<Record<string, unknown>> = [];
+  let cursor = Math.max(40, otherBottom + 18);
+  paragraphs.forEach((html, i) => {
+    const id = i === 0 ? wall.id : `${wall.id}__r${i}`;
+    const est = estimateTextRowHeight({
+      type: 'text',
+      width,
+      content: html,
+    } as never);
+    if (cursor + est > bodyBottomLimit) return; // paragraph cannot fit — stays in the wall's remains
+    rows.push({
+      ...wall,
+      id,
+      content: html,
+      top: cursor,
+      height: est,
+    });
+    cursor += est + 18;
+  });
+  if (rows.length < 2) return 0;
+  canvas.elements.splice(wallIndex, 1, ...rows);
+  return rows.length - 1;
+};
+
+const splitParagraphs = (html: string): string[] => {
+  const matches = html.match(/<p\b[^>]*>[\s\S]*?<\/p>/g);
+  if (matches && matches.length >= 2) return matches.map((m) => m.trim()).filter(Boolean);
+  // No <p> structure: fall back to double-break blocks, else whole text.
+  const brBlocks = html.split(/(?:<br\s*\/?>\s*){2,}/i).map((block) => block.trim()).filter(Boolean);
+  if (brBlocks.length >= 2) return brBlocks;
+  return [html];
+};
+
+export function applyRelayoutMoves(
+  scene: { content?: unknown },
+  plan: RelayoutPlan,
+): Array<{ elementId: string; fromTop: number; toTop: number }> {
+  const canvas = (scene.content as { canvas?: { elements?: Array<Record<string, unknown>> } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return [];
+  const applied: Array<{ elementId: string; fromTop: number; toTop: number }> = [];
+  for (const move of plan.moved) {
+    const element = canvas.elements.find((entry) => (entry as { id?: string }).id === move.elementId);
+    if (!element) continue;
+    const fromTop = element.top as number;
+    element.top = move.toTop;
+    applied.push({ elementId: move.elementId, fromTop, toTop: move.toTop });
+  }
+  return applied;
+}
+
+export function residualFindings(scene: { content?: unknown }): PlacementFinding[] {
+  const canvas = (scene.content as { canvas?: { viewportSize?: number; viewportRatio?: number; elements?: unknown[] } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return [];
+  return validateSlidePlacement({
+    viewportSize: canvas.viewportSize ?? 1000,
+    viewportRatio: canvas.viewportRatio ?? 0.5625,
+    elements: canvas.elements as never,
+  });
+}
+
+export function sanitizeSceneCanvas(scene: { content?: unknown }): number {
+  const canvas = (scene.content as { canvas?: { viewportSize?: number; viewportRatio?: number; elements?: unknown[] } } | undefined)?.canvas;
+  if (!canvas || !Array.isArray(canvas.elements)) return 0;
+  return sanitizeSlidePlacement(canvas as never).changes.length;
+}
+
+function findFindings(findings: PlacementFinding[]) {
+  return findings.map((finding) => ({
+    kind: finding.kind,
+    severity: finding.severity,
+    message: finding.message,
+  }));
+}
+
+export interface LayoutLedgerStatus {
+  /** Residual error-severity findings after repair (0 = green, write-off). */
+  errors: number;
+  /** Residual warn-severity findings (advisory, never blocks). */
+  warnings: number;
+  /** Epoch ms of the last status-producing maintenance pass. */
+  checkedAt: number;
+}
+
+/**
+ * Red/green doctrine for the layout-debt ledger: a scene only carries
+ * `layoutStatus` when a maintenance pass actually inspected it. `errors: 0`
+ * is the green state; any nonzero count keeps the scene on the debt list.
+ * Set on the scene object in place (extra fields pass validation and the
+ * store persists scenes verbatim).
+ */
+export function applyLayoutLedger(
+  scene: { content?: unknown },
+  findings: ReadonlyArray<{
+    kind: string;
+    severity: 'error' | 'warn';
+    message: string;
+    elementId?: string | undefined;
+    elementIndex?: number | undefined;
+  }>,
+  now: number = Date.now(),
+): LayoutLedgerStatus {
+  const status: LayoutLedgerStatus = {
+    errors: findings.filter((f) => f.severity === 'error').length,
+    warnings: findings.filter((f) => f.severity === 'warn').length,
+    checkedAt: now,
+  };
+  (scene as { layoutStatus?: unknown }).layoutStatus = status;
+  return status;
+}
+
+/** Existing debt marker on a scene, when a past pass wrote one. */
+export function layoutLedgerOf(scene: unknown): LayoutLedgerStatus | null {
+  const value = (scene as { layoutStatus?: unknown } | null)?.layoutStatus;
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { errors?: unknown }).errors === 'number' &&
+    typeof (value as { warnings?: unknown }).warnings === 'number' &&
+    typeof (value as { checkedAt?: unknown }).checkedAt === 'number'
+  ) {
+    return value as LayoutLedgerStatus;
+  }
+  return null;
+}
+
+/**
+ * Incremental-sweep predicate: green evidence newer than the scene's last
+ * content change — and within the age cap — means the scene can skip a full
+ * pass. Debt scenes (errors > 0) are never fresh: they stay in every pass
+ * until cured. The age cap forces a periodic re-check because scene edits do
+ * not all advance `updatedAt` reliably; a visit past the cap refreshes the
+ * evidence, so the sweep stays fast between refreshes.
+ */
+export const LAYOUT_EVIDENCE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Evidence epoch for the tier-1 content-integrity audit. `layoutStatus` blobs
+ * written BEFORE this constant's value carry geometry-only coverage (the old
+ * ledger counted placement findings only), so they must not satisfy
+ * freshness: the sweep re-visits every such scene once, runs the content
+ * audit, and re-stamps. After that one-time full pass the ordinary
+ * incremental predicate resumes (cheap steady state). Bump this value if a
+ * future audit class must re-cover existing ledgers the same way.
+ */
+export const CONTENT_AUDIT_EPOCH_MS = 1_789_900_000_000; // 2026-09-20T10:26Z (tier-1 ship date)
+
+export function isLayoutEvidenceFresh(
+  scene: unknown,
+  now: number = Date.now(),
+  maxAgeMs: number = LAYOUT_EVIDENCE_MAX_AGE_MS,
+): boolean {
+  const ledger = layoutLedgerOf(scene);
+  if (!ledger || ledger.errors > 0) return false;
+  // Pre-epoch evidence is geometry-only coverage — the tier-1 audit has not
+  // inspected this scene, so the sweep must visit it at least once.
+  if (ledger.checkedAt < CONTENT_AUDIT_EPOCH_MS) return false;
+  const updatedAt = Number((scene as { updatedAt?: unknown } | null)?.updatedAt) || 0;
+  if (ledger.checkedAt < updatedAt) return false;
+  return now - ledger.checkedAt < maxAgeMs;
+}
+
+/** Findings from the scene's own hole (validator output) with no context. */
+export function scenePlacementFindings(scene: { content?: unknown }): PlacementFinding[] {
+  return residualFindings(scene);
+}

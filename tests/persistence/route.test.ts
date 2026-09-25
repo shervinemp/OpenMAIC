@@ -7,6 +7,10 @@ describe('embedded persistence route', () => {
     vi.resetModules();
     vi.unstubAllEnvs();
     vi.stubEnv('ASSET_S3_BUCKET', '');
+    // These tests target the Postgres path of the route. The local JSON-file
+    // backend is selected by PERSISTENCE_DIR (often set in .env.local) and is
+    // covered by tests/persistence/file-backed-route.test.ts instead.
+    vi.stubEnv('PERSISTENCE_DIR', '');
     vi.doMock('@/lib/persistence/stage-meta', () => ({
       ensureStageMetaSchema: vi.fn().mockResolvedValue(undefined),
       readStageMeta: vi.fn().mockResolvedValue({

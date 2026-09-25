@@ -2,30 +2,52 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { animate, motion, MotionConfig, useReducedMotion } from 'motion/react';
-import { FileText, HelpCircle, Gamepad2, Puzzle } from 'lucide-react';
+import { FileText, HelpCircle, Gamepad2, Puzzle, Dumbbell, Sigma, BookMarked, Library, Scale, LineChart, GitBranch, PenLine } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store';
-import type { Scene, SceneType } from '@/lib/types/stage';
+import type { Scene } from '@/lib/types/stage';
 import {
   completeSummaryForScenes,
   pendingCompleteSummary,
   readSceneQuizAnswers,
   summarizeScenes,
+  type SummarySceneKind,
 } from '@/lib/classroom/complete-summary';
 import { loadQuizAttemptState } from '@/lib/quiz/runtime';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ClassroomComplete');
 
-const SCENE_TYPE_ICONS: Record<SceneType, typeof FileText> = {
+const SCENE_TYPE_ICONS: Record<SummarySceneKind, typeof FileText> = {
   slide: FileText,
   quiz: HelpCircle,
   interactive: Gamepad2,
   pbl: Puzzle,
+  exercise: Dumbbell,
+  derivation: Sigma,
+  glossary: BookMarked,
+  reading: Library,
+  comparison: Scale,
+  dataReading: LineChart,
+  tradeoffs: GitBranch,
+  freeResponse: PenLine,
 };
 
-const TYPE_ORDER: SceneType[] = ['slide', 'quiz', 'interactive', 'pbl'];
+const TYPE_ORDER: SummarySceneKind[] = [
+  'slide',
+  'quiz',
+  'interactive',
+  'pbl',
+  'exercise',
+  'derivation',
+  'glossary',
+  'reading',
+  'comparison',
+  'dataReading',
+  'tradeoffs',
+  'freeResponse',
+];
 
 const CONFETTI_COLORS = [
   '#fbbf24',
@@ -659,3 +681,4 @@ export function ClassroomCompletePageConnected() {
   const scenes = useStageStore((s) => s.scenes);
   return <ClassroomCompletePage scenes={scenes} title={stage?.name ?? ''} />;
 }
+

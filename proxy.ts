@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAgentRuntimeConfigured, isProWorkbenchEnabled } from '@/lib/config/feature-flags';
 import { verifyAccessTokenEdge } from '@/lib/server/access-token-edge';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Return an actual server-side 404 when either half of the workbench is off.
