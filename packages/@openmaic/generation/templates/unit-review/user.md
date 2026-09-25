@@ -6,4 +6,4 @@ Evaluate the deck above against the unit's objectives and return ONLY the verdic
 
 {"adequate": true, "findings": []}
 
-When inadequate: {"adequate": false, "findings": ["one concrete finding per problem"]}
+When inadequate: {"adequate": false, "findings": ["one concrete, scene-citing finding per problem"]}

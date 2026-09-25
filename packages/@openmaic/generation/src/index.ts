@@ -23,10 +23,7 @@ export type {
 } from './scene-generator.js';
 export { buildCompleteScene } from './scene-builder.js';
 export type { BuildCompleteSceneOptions } from './scene-builder.js';
-export {
-  readGenerationProfile,
-  scaleDepthFloor,
-} from './profile.js';
+export { readGenerationProfile, scaleDepthFloor } from './profile.js';
 export type { GenerationProfile, GenerationProfilePolicy } from './profile.js';
 export {
   isAbortError,
@@ -155,7 +152,7 @@ export type {
   LessonBlueprint,
   ParsedOutlineResponse,
 } from './blueprint.js';
-export { parseJsonResponse } from './json-repair.js';
+export { parseJsonResponse, tryParseJson } from './json-repair.js';
 export type { JsonParsingOptions } from './json-repair.js';
 export {
   extractSlideTexts,

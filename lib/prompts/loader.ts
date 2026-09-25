@@ -11,7 +11,11 @@
 import fs from 'fs';
 import path from 'path';
 import type { PromptId, LoadedPrompt, SnippetId } from './types';
-import { loadPrompt as loadGenerationPrompt } from '@openmaic/generation';
+import {
+  loadPrompt as loadGenerationPrompt,
+  loadSnippet as loadGenerationSnippet,
+  type SnippetId as GenerationSnippetId,
+} from '@openmaic/generation';
 
 /**
  * Get the prompts directory path
@@ -30,9 +34,9 @@ export function loadSnippet(snippetId: SnippetId): string {
   try {
     return fs.readFileSync(snippetPath, 'utf-8').trim();
   } catch {
-    // Fail loud rather than silently shipping `{{snippet:foo}}` to the LLM.
-    // A missing snippet is always a config/typo bug — surface at load time.
-    throw new Error(`Snippet not found: ${snippetId}`);
+    // App-only templates reuse package-owned generation snippets without a
+    // second on-disk copy. The package loader still fails loud on a miss.
+    return loadGenerationSnippet(snippetId as GenerationSnippetId);
   }
 }
 
