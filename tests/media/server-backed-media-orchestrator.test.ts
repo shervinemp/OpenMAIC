@@ -1371,6 +1371,10 @@ describe('server-backed classic media orchestrator', () => {
     });
     let overlapping: Promise<void> | undefined;
     let callsWhenOverlappingStarted = 0;
+    let overlapStarted: (() => void) | undefined;
+    const overlapLaunched = new Promise<void>((resolve) => {
+      overlapStarted = resolve;
+    });
     // The retry path re-enters generation while the first pass is mid-commit.
     mocks.putAsset.mockImplementation(async () => {
       if (!overlapping) {
@@ -1379,12 +1383,17 @@ describe('server-backed classic media orchestrator', () => {
         // call returns.
         callsWhenOverlappingStarted = providerCallCount();
         overlapping = generateMediaForOutlines(outlines, stageId);
+        overlapStarted?.();
         await commitInFlight;
       }
       return 'ast_generated';
     });
 
     const first = generateMediaForOutlines(outlines, stageId);
+    // Wait for the first pass to reach its commit and launch the overlap: how
+    // many microtasks the provider-to-commit path takes is not this spec's
+    // subject, and a fixed tick budget asserted before the overlap existed.
+    await overlapLaunched;
     // Give the second pass every chance to run: if it were not waiting, its
     // collection loop is synchronous and element two is only `pending`, so it
     // would have called the provider by now.
