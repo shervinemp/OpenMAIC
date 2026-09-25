@@ -15,7 +15,9 @@ it('pins representative system and user prompts for every scene kind', async () 
   const capture =
     (kind: string, response: string): AICallFn =>
     async (system, user) => {
-      captured[kind] = { system, user };
+      // The first attempt's prompt: a depth or contract re-prompt appends a
+      // correction block, which is not what this golden pins.
+      captured[kind] ??= { system, user };
       return response;
     };
 

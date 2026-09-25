@@ -1,4 +1,65 @@
+import { readGenerationProfile } from '@openmaic/generation';
 import type { PBLPlannerV2Input, SceneOutline } from '@openmaic/generation';
+
+// The generation contracts in fixture form. Upstream's parity mocks returned
+// one-element slides, bare-recall quiz stems and five-scene decks, which the
+// depth and course contracts reject (and re-prompt) by design; these helpers
+// give a test a conforming payload so it asserts its real subject.
+
+/** Model calls per scene before it fails as `invalid-model-output`. */
+export const CONTENT_ATTEMPTS = readGenerationProfile().contentAttempts + 1;
+
+/** Four substantive text elements: the slide depth floor at the default depth. */
+export function substantiveSlideTexts(): Array<Record<string, unknown>> {
+  return [
+    'Evaporation moves water from liquid into vapor.',
+    'Molecules gain energy when the liquid is heated by the sun.',
+    'For example, a puddle shrinks faster on a hot day than on a cold one.',
+    'Condensation is the reverse process that returns vapor to water.',
+  ].map((text, i) => ({
+    id: `depth_text_${i + 1}`,
+    type: 'text',
+    left: 60,
+    top: 160 + i * 70,
+    width: 880,
+    height: 60,
+    content: `<p>${text}</p>`,
+    defaultFontName: '',
+    defaultColor: '#333333',
+  }));
+}
+
+/**
+ * An outline response that meets the course contract for a default
+ * 20-minute request (2 lessons x 10 scenes). `first` overrides the first
+ * outline; `overrides` the wrapper fields.
+ */
+export function conformingOutlineResponse(
+  overrides: Record<string, unknown> = {},
+  first: Partial<SceneOutline> = {},
+): Record<string, unknown> {
+  const outlines: SceneOutline[] = Array.from({ length: 20 }, (_, i) => ({
+    id: `scene_${i + 1}`,
+    type: 'slide',
+    title: `Topic ${i + 1}`,
+    description: `Describe topic ${i + 1} with a concrete example.`,
+    keyPoints: [`Key point A for topic ${i + 1}`, `Key point B for topic ${i + 1}`],
+    order: i + 1,
+  }));
+  outlines[0] = { ...outlines[0]!, ...first };
+  return {
+    languageDirective: 'Teach in English.',
+    courseTitle: 'Photosynthesis Basics',
+    lessons: [
+      { title: 'Basics', objectives: ['Understand the core process'] },
+      { title: 'Deeper', objectives: ['Apply the core process'] },
+    ],
+    audience: 'General learners',
+    objectives: ['Define the process', 'Explain the process'],
+    outlines,
+    ...overrides,
+  };
+}
 
 export function slideOutline(): SceneOutline {
   return {
@@ -44,7 +105,8 @@ export function dataReadingOutline(): SceneOutline {
   };
 }
 
-export function quizOutline(): SceneOutline {  return {
+export function quizOutline(): SceneOutline {
+  return {
     id: 'quiz-1',
     type: 'quiz',
     title: 'Dependency Injection Check',

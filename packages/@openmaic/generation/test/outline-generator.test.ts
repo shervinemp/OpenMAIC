@@ -11,6 +11,7 @@ import {
   type SceneOutline,
   type UserRequirements,
 } from '@openmaic/generation';
+import { conformingOutlineResponse } from './scene-fixtures.js';
 
 const baseOutline: SceneOutline = {
   id: 'scene_1',
@@ -24,11 +25,7 @@ const baseOutline: SceneOutline = {
 describe('generateSceneOutlinesFromRequirements', () => {
   test('returns enriched outlines from a valid wrapped response', async () => {
     const aiCall: AICallFn = vi.fn(async () =>
-      JSON.stringify({
-        languageDirective: 'Teach in English.',
-        courseTitle: 'Photosynthesis Basics',
-        outlines: [{ ...baseOutline, id: '', order: 42 }],
-      }),
+      JSON.stringify(conformingOutlineResponse({}, { ...baseOutline, id: '', order: 42 })),
     );
 
     const result = await generateSceneOutlinesFromRequirements(
@@ -46,18 +43,12 @@ describe('generateSceneOutlinesFromRequirements', () => {
   });
 
   test('integrates repairable JSON parsing', async () => {
-    const response = `{
-      "languageDirective": "Teach in English.",
-      "courseTitle": "Repair",
-      "outlines": [{
-        "id": "scene_1",
-        "type": "slide",
-        "title": "Repairable",
-        "description": "A repaired response",
-        "keyPoints": ["one"],
-        "order: 7"
-      }]
-    }`;
+    // A conforming deck with a malformed first outline key ("order: 7"),
+    // which the JSON repair pass has to recover.
+    const response = JSON.stringify(
+      conformingOutlineResponse({ courseTitle: 'Repair' }, { title: 'Repairable' }),
+    ).replace('"order":1}', '"order: 7"}');
+    expect(() => JSON.parse(response)).toThrow();
     const result = await generateSceneOutlinesFromRequirements(
       { requirement: 'Test repair' },
       undefined,
@@ -66,7 +57,7 @@ describe('generateSceneOutlinesFromRequirements', () => {
     );
 
     expect(result.success).toBe(true);
-    expect(result.data?.outlines).toMatchObject([{ title: 'Repairable', order: 1 }]);
+    expect(result.data?.outlines[0]).toMatchObject({ title: 'Repairable', order: 1 });
   });
 
   test('supports the legacy flat-array response with a default language directive', async () => {
@@ -74,7 +65,7 @@ describe('generateSceneOutlinesFromRequirements', () => {
       { requirement: 'Teach photosynthesis' },
       undefined,
       undefined,
-      async () => JSON.stringify([baseOutline]),
+      async () => JSON.stringify(conformingOutlineResponse().outlines),
     );
 
     expect(result.success).toBe(true);
@@ -85,11 +76,7 @@ describe('generateSceneOutlinesFromRequirements', () => {
     let capturedPrompt = '';
     const aiCall: AICallFn = async (system, user) => {
       capturedPrompt = `${system}\n${user}`;
-      return JSON.stringify({
-        languageDirective: 'Teach in English.',
-        courseTitle: 'Evaporation',
-        outlines: [],
-      });
+      return JSON.stringify(conformingOutlineResponse({ courseTitle: 'Evaporation' }));
     };
     const requirements: UserRequirements = {
       requirement: 'Teach evaporation with an animation',
@@ -118,19 +105,17 @@ describe('generateSceneOutlinesFromRequirements', () => {
   }
 
   test('trims and caps a string courseTitle', async () => {
-    const result = await runWith({
-      languageDirective: 'Teach in English.',
-      courseTitle: `  ${'A '.repeat(80)}  `,
-      outlines: [],
-    });
+    const result = await runWith(
+      conformingOutlineResponse({ courseTitle: `  ${'A '.repeat(80)}  ` }),
+    );
     expect(result.data?.courseTitle?.length).toBeLessThanOrEqual(120);
     expect(result.data?.courseTitle?.startsWith(' ')).toBe(false);
   });
 
   test.each([
-    [{ languageDirective: 'Teach in English.', outlines: [] }],
-    [{ languageDirective: 'Teach in English.', courseTitle: '   ', outlines: [] }],
-    [{ languageDirective: 'Teach in English.', courseTitle: 123, outlines: [] }],
+    [conformingOutlineResponse({ courseTitle: undefined })],
+    [conformingOutlineResponse({ courseTitle: '   ' })],
+    [conformingOutlineResponse({ courseTitle: 123 })],
   ])('omits a missing, empty, or non-string courseTitle', async (raw) => {
     const result = await runWith(raw);
     expect(result.success).toBe(true);

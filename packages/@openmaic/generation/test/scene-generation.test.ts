@@ -10,6 +10,7 @@ import {
   pblOutline,
   quizOutline,
   slideOutline,
+  substantiveSlideTexts,
   validPBLResponse,
   widgetOutline,
 } from './scene-fixtures.js';
@@ -27,6 +28,7 @@ describe('scene generation primitives', () => {
             height: 100,
             content: 'Dependency injection',
           },
+          ...substantiveSlideTexts(),
         ],
         background: { type: 'solid', color: '#ffffff' },
       }),
@@ -34,7 +36,9 @@ describe('scene generation primitives', () => {
 
     const content = await generateSceneContent(slideOutline(), aiCall);
     expect(content).toMatchObject({
-      elements: [expect.objectContaining({ type: 'text', content: 'Dependency injection' })],
+      elements: expect.arrayContaining([
+        expect.objectContaining({ type: 'text', content: 'Dependency injection' }),
+      ]),
       background: { type: 'solid', color: '#ffffff' },
     });
     expect(aiCall).toHaveBeenCalledTimes(1);
@@ -47,9 +51,10 @@ describe('scene generation primitives', () => {
       return JSON.stringify([
         {
           type: 'single',
-          question: 'Who owns model routing?',
+          question: 'In a dependency-injected generator, who owns the model routing decision?',
           options: ['The caller', 'The package'],
           correctAnswer: 'A',
+          analysis: 'The caller injects the AI call, so routing stays outside the package.',
         },
       ]);
     };
