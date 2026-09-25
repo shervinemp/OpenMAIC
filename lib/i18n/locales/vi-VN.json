@@ -244,6 +244,8 @@
     "doneEditing": "Sửa xong",
     "proModeDisabledHint": "Trang này không sửa được — hãy mở một slide bài học để dùng chế độ Pro.",
     "resumeGeneration": "Tiếp tục",
+    "repairCourse": "Kiểm tra và sửa phương tiện của khóa học",
+    "repairingCourse": "Đang sửa phương tiện của khóa học…",
     "recoveryPending": "{{count}} trang chưa được tạo",
     "recoveryUmbrella": "Khôi phục — đang tự động tiếp tục: {{items}}",
     "ungroupedScenes": "Other scenes"

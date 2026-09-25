@@ -244,6 +244,8 @@
     "doneEditing": "Завершить редактирование",
     "proModeDisabledHint": "Редактирование недоступно на этой странице — откройте слайд курса, чтобы редактировать в Pro-режиме.",
     "resumeGeneration": "Продолжить",
+    "repairCourse": "Проверить и восстановить медиа курса",
+    "repairingCourse": "Восстановление медиа курса…",
     "recoveryPending": "{{count}} ещё не сгенерировано",
     "recoveryUmbrella": "Восстановление — продолжается автоматически: {{items}}",
     "ungroupedScenes": "Other scenes"

@@ -246,7 +246,9 @@
     "recoveryPending": "{{count}} Seite(n) noch nicht generiert",
     "recoveryUmbrella": "Wiederherstellung — läuft automatisch: {{items}}",
     "ungroupedScenes": "Other scenes",
-    "resumeGeneration": "Resume"
+    "resumeGeneration": "Resume",
+    "repairCourse": "Kursmedien prüfen und reparieren",
+    "repairingCourse": "Kursmedien werden repariert…"
   },
   "edit": {
     "proMode": "Pro",

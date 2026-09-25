@@ -61,6 +61,7 @@ vi.stubGlobal('fetch', mockFetch);
 
 import { runOutlineJob, useSceneGenerator } from '@/lib/hooks/use-scene-generator';
 import { useStageStore } from '@/lib/store/stage';
+import { computeActionsSourceHash } from '@/lib/utils/content-hash';
 
 const STAGE_ID = 'stage-heal';
 
@@ -230,12 +231,10 @@ describe('runOutlineJob in repair mode', () => {
     });
     mockFetch.mockImplementation(async () => jsonResponse(200, { success: true, scene: scene(1) }));
     mocks.generateMedia.mockImplementation(async () => {
-      useStageStore
-        .getState()
-        .recordScenePhase(target.id, 'media', {
-          status: 'failed',
-          error: '1/1 media item(s) failed',
-        });
+      useStageStore.getState().recordScenePhase(target.id, 'media', {
+        status: 'failed',
+        error: '1/1 media item(s) failed',
+      });
     });
 
     const result = await runOutlineJob({
@@ -368,5 +367,72 @@ describe('useSceneGenerator', () => {
     });
 
     expect(retrySignal?.aborted).toBe(true);
+  });
+
+  // An edited, unfinished deck: outline 1's slide deleted, then outline 3's
+  // slide dragged to the front (a reorder renumbers scenes, not outlines).
+  it('resumes the outline that lost its slide, not the one whose slide moved', async () => {
+    const moved = { ...scene(3), order: 1 };
+    landStage({
+      scenes: [moved, scene(2)],
+      outlines: [outline(1), outline(2), outline(3)],
+    });
+    const requested: string[] = [];
+    mockFetch.mockImplementation(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { outline?: { id?: string } };
+      if (body.outline?.id) requested.push(body.outline.id);
+      return { ok: false, status: 400, statusText: 'X', json: async () => ({ error: 'stop' }) };
+    });
+    const api = await mountGenerator();
+
+    await act(async () => {
+      await api.generateRemaining({ stageInfo: { name: 'Course' } });
+    });
+
+    expect(requested).toEqual(['outline-1']);
+  });
+});
+
+describe('runOutlineJob on an edited deck', () => {
+  it('reuses the content of its own slide, wherever the reorder put it', async () => {
+    const withContent = (order: number, position: number, canvasId: string): Scene => {
+      const base = { ...scene(order), order: position };
+      const content = { type: 'slide', canvas: { id: canvasId, elements: [] } };
+      return {
+        ...base,
+        content,
+        // The same inputs the runner hashes (no agents/profile/directive).
+        actionsSourceHash: computeActionsSourceHash({
+          content,
+          agents: undefined,
+          userProfile: undefined,
+          languageDirective: undefined,
+        }),
+      } as unknown as Scene;
+    };
+    // Swapped by a drag: outline 1's slide now sits at position 2.
+    const own = withContent(1, 2, 'canvas-own');
+    const other = withContent(2, 1, 'canvas-other');
+    const target = outline(1);
+    landStage({
+      scenes: [other, own],
+      outlines: [target, outline(2)],
+      blueprint: blueprintFor([target, outline(2)]),
+      lessonGroups: groups([1, {}], [2, {}]),
+    });
+
+    const result = await runOutlineJob({
+      outline: target,
+      allOutlines: [target, outline(2)],
+      params: { stageInfo: { name: 'Course' } },
+      signal: new AbortController().signal,
+      mode: 'repair',
+      previousSpeeches: [],
+    });
+
+    expect(result.success).toBe(true);
+    expect((result.scene?.content as { canvas: { id: string } }).canvas.id).toBe('canvas-own');
+    // Its own slide's actions are reused too: nothing is paid for again.
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });

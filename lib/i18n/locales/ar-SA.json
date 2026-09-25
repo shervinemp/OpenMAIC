@@ -244,6 +244,8 @@
     "doneEditing": "إنهاء التحرير",
     "proModeDisabledHint": "التحرير غير متاح في هذه الصفحة — افتح شريحة من الدورة للتحرير باستخدام وضع Pro.",
     "resumeGeneration": "استئناف",
+    "repairCourse": "فحص وسائط الدورة وإصلاحها",
+    "repairingCourse": "جارٍ إصلاح وسائط الدورة…",
     "recoveryPending": "{\\\\\"count\\\\} صفحة/صفحات لم تُولَّد بعد",
     "recoveryUmbrella": "الاسترداد — يستمر تلقائياً: {{items}}",
     "ungroupedScenes": "Other scenes"

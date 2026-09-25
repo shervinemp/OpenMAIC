@@ -34,6 +34,7 @@ import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { computeActionsSourceHash } from '@/lib/utils/content-hash';
+import { indexScenesByOutline } from '@/lib/utils/outline-scene-match';
 import {
   sceneContentFindings,
   stripSourceProvenance,
@@ -1078,9 +1079,11 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
         return { status: 'done' };
       }
       if (mode === 'repair') {
-        const persistedScene = useStageStore
-          .getState()
-          .scenes.find((scene) => scene.order === outline.order);
+        // By outline id: on a reordered deck an order match is some other
+        // slide, whose content (with its own matching hash) would be reused.
+        const persistedScene = indexScenesByOutline(useStageStore.getState().scenes).sceneFor(
+          outline,
+        );
         const reusableContent =
           persistedScene &&
           // Settled iff the persisted scene's hash matches the CURRENT source
@@ -1453,14 +1456,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       // Failed outlines ride along only when the caller asks: the automatic
       // mount resume leaves them parked behind their retry cards, so an
       // unrelated pending outline cannot re-burn every failed one.
-      const completedOrders = new Set(scenes.map((s) => s.order));
+      const materialized = indexScenesByOutline(scenes);
       const skippedIds = new Set(state.skippedOutlineIds);
       const includeFailed = runOptions.includeFailed ?? true;
       const failedIds = new Set(state.failedOutlines.map((o) => o.id));
       const pending = outlines
         .filter(
           (o) =>
-            !completedOrders.has(o.order) &&
+            !materialized.has(o) &&
             !skippedIds.has(o.id) &&
             (includeFailed || !failedIds.has(o.id)),
         )
@@ -1837,7 +1840,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       // edit mode. Failed outlines have no completed scene yet so this is
       // structurally a no-op today, but the guard is in place for the
       // moment a "regenerate a successful scene" path routes through here.
-      const lockedScene = state.scenes.find((s) => s.order === outline.order);
+      const lockedScene = indexScenesByOutline(state.scenes).sceneFor(outline);
       if (
         lockedScene &&
         isSceneEditLocked({

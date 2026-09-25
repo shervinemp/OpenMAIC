@@ -63,11 +63,17 @@ export function Stage({
   classroomId,
   onRetryOutline,
   onResumeGeneration,
+  onRepairCourse,
+  courseRepairing,
 }: {
   classroomId?: string;
   onRetryOutline?: (outlineId: string) => Promise<void>;
   /** Re-kick the scene batch after a provider-failure pause. */
   onResumeGeneration?: () => void;
+  /** Run a narration/media byte repair pass over the course on demand. */
+  onRepairCourse?: () => void;
+  /** Whether a course repair pass is running. */
+  courseRepairing?: boolean;
 }) {
   const { mode, setMode, scenes, currentSceneId, generatingOutlines, stage } = useStageStore();
   const router = useRouter();
@@ -360,6 +366,8 @@ export function Stage({
             onInteractivePickerChange={setPlaybackInteractivePicker}
             onRetryOutline={onRetryOutline}
             onResumeGeneration={onResumeGeneration}
+            onRepairCourse={onRepairCourse}
+            courseRepairing={courseRepairing}
             canEnterProMode={workbenchPlayback || isEditable}
             onEnterProMode={chromeToggleHandler}
             proModeActive={hosted && workbenchPlayback}

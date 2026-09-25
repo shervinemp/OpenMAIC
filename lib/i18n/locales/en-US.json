@@ -245,6 +245,8 @@
     "doneEditing": "Done editing",
     "proModeDisabledHint": "Editing isn't available on this page — open a course slide to edit with Pro mode.",
     "resumeGeneration": "Resume",
+    "repairCourse": "Check & repair course media",
+    "repairingCourse": "Repairing course media…",
     "recoveryPending": "{{count}} page(s) not yet generated",
     "recoveryUmbrella": "Recovery — auto-continuing: {{items}}"
   },

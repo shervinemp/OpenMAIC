@@ -23,6 +23,7 @@ import {
   LineChart,
   GitBranch,
   PenLine,
+  Wrench,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
@@ -32,6 +33,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useNearViewport } from '@/lib/hooks/use-near-viewport';
 import type { Scene, SlideContent, InteractiveContent } from '@/lib/types/stage';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
+import { indexScenesByOutline } from '@/lib/utils/outline-scene-match';
 
 interface SceneSidebarProps {
   readonly collapsed: boolean;
@@ -42,6 +44,10 @@ interface SceneSidebarProps {
   readonly onSkipOutline?: (outlineId: string) => void;
   /** Re-kick the scene batch after a provider-failure pause. */
   readonly onResumeGeneration?: () => void;
+  /** Run a narration/media byte repair pass over the course on demand. */
+  readonly onRepairCourse?: () => void;
+  /** Whether a course repair pass is running. */
+  readonly courseRepairing?: boolean;
 }
 
 const DEFAULT_WIDTH = 220;
@@ -55,6 +61,8 @@ export function SceneSidebar({
   onRetryOutline,
   onSkipOutline,
   onResumeGeneration,
+  onRepairCourse,
+  courseRepairing = false,
 }: SceneSidebarProps) {
   const { t } = useI18n();
   const router = useRouter();
@@ -101,12 +109,10 @@ export function SceneSidebar({
     const mediaStatusByOutline = new Map(
       lessonGroups.flatMap((group) => group.jobs.map((job) => [job.outlineId, job.phases.media])),
     );
-    const sceneByOrder = new Map(scenes.map((scene) => [scene.order, scene]));
+    const materialized = indexScenesByOutline(scenes);
     const lessons = blueprint.lessons.map((lesson) => {
       const total = lesson.outlines.length;
-      const done = lesson.outlines.filter((outline) =>
-        scenes.some((scene) => scene.order === outline.order),
-      ).length;
+      const done = lesson.outlines.filter((outline) => materialized.has(outline)).length;
       const reworked = lesson.outlines.filter(
         (outline) => sceneDepth[String(outline.order)]?.reworked,
       ).length;
@@ -116,7 +122,7 @@ export function SceneSidebar({
           failedOutlineIds.has(outline.id),
       ).length;
       const audioPending = lesson.outlines.filter((outline) => {
-        const scene = sceneByOrder.get(outline.order);
+        const scene = materialized.sceneFor(outline);
         return (
           scene &&
           (failedOutlineIds.has(outline.id) ||
@@ -582,12 +588,30 @@ export function SceneSidebar({
           >
             <img src="/logo-horizontal.png" alt="OpenMAIC" className="h-6" />
           </button>
-          <button
-            onClick={() => onCollapseChange(true)}
-            className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center bg-gray-100/80 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 ring-1 ring-black/[0.04] dark:ring-white/[0.06] hover:bg-gray-200/90 dark:hover:bg-gray-700/90 hover:text-gray-700 dark:hover:text-gray-200 active:scale-90 transition-all duration-200"
-          >
-            <PanelLeftClose className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            {onRepairCourse && (
+              <button
+                onClick={onRepairCourse}
+                disabled={courseRepairing || generationStatus === 'generating'}
+                data-testid="repair-course"
+                aria-label={t(courseRepairing ? 'stage.repairingCourse' : 'stage.repairCourse')}
+                title={t(courseRepairing ? 'stage.repairingCourse' : 'stage.repairCourse')}
+                className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-500 hover:bg-gray-100/90 dark:hover:bg-gray-800/90 hover:text-gray-700 dark:hover:text-gray-200 active:scale-90 transition-all duration-200 disabled:opacity-50 disabled:active:scale-100"
+              >
+                {courseRepairing ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Wrench className="w-3.5 h-3.5" />
+                )}
+              </button>
+            )}
+            <button
+              onClick={() => onCollapseChange(true)}
+              className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center bg-gray-100/80 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 ring-1 ring-black/[0.04] dark:ring-white/[0.06] hover:bg-gray-200/90 dark:hover:bg-gray-700/90 hover:text-gray-700 dark:hover:text-gray-200 active:scale-90 transition-all duration-200"
+            >
+              <PanelLeftClose className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Scenes List */}
