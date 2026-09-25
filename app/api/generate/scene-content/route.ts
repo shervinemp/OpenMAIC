@@ -20,7 +20,7 @@ import type {
   PdfImage,
   ImageMapping,
   UserRequirements,
-  } from '@/lib/types/generation';
+} from '@/lib/types/generation';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -35,6 +35,7 @@ import {
 } from '@/lib/persistence/resolve-vision-images';
 import { takeSceneDepthReport, takeSceneDepthSummary } from '@/lib/generation/content-depth';
 import { buildUnitContext } from '@/lib/generation/unit-context';
+import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import {
   describeSceneFailure,
   recordSceneFailure,
@@ -240,44 +241,48 @@ export async function POST(req: NextRequest) {
         // bytes the base64 path would send BEFORE prompt assembly, keeping the
         // vision prompt byte-identical in both modes (RFC #1153 part 2 B).
         const resolvedImages = await resolveVisionImagesForPrompt(images, req.headers);
-        const callParams = (maxTokens: number | undefined) => ({
-          model: languageModel,
-          system: effectiveSystem,
-          messages: [
-            {
-              role: 'user' as const,
-              content: buildVisionUserContent(userPrompt, resolvedImages),
-            },
-          ],
-          maxOutputTokens: maxTokens ?? sceneOutputBudget,
-          maxRetries: 0,
-        } as Parameters<typeof callLLM>[0]);
+        const callParams = (maxTokens: number | undefined) =>
+          ({
+            model: languageModel,
+            system: effectiveSystem,
+            messages: [
+              {
+                role: 'user' as const,
+                content: buildVisionUserContent(userPrompt, resolvedImages),
+              },
+            ],
+            maxOutputTokens: maxTokens ?? sceneOutputBudget,
+            maxRetries: 0,
+          }) as Parameters<typeof callLLM>[0];
         const first = await callLLM(
           callParams(sceneOutputBudget),
           'scene-content',
           undefined,
           thinkingConfig,
         );
-        result = isReasoningCollapse(first.text) && thinkingIsEnabled
-          ? await callWithoutThinking((maxTokens) => callParams(maxTokens as number))
-          : first.text;
+        result =
+          isReasoningCollapse(first.text) && thinkingIsEnabled
+            ? await callWithoutThinking((maxTokens) => callParams(maxTokens as number))
+            : first.text;
       } else {
-        const callParams = (maxTokens: number | undefined) => ({
-          model: languageModel,
-          system: effectiveSystem,
-          prompt: userPrompt,
-          maxOutputTokens: maxTokens ?? sceneOutputBudget,
-          maxRetries: 0,
-        } as Parameters<typeof callLLM>[0]);
+        const callParams = (maxTokens: number | undefined) =>
+          ({
+            model: languageModel,
+            system: effectiveSystem,
+            prompt: userPrompt,
+            maxOutputTokens: maxTokens ?? sceneOutputBudget,
+            maxRetries: 0,
+          }) as Parameters<typeof callLLM>[0];
         const first = await callLLM(
           callParams(sceneOutputBudget),
           'scene-content',
           undefined,
           thinkingConfig,
         );
-        result = isReasoningCollapse(first.text) && thinkingIsEnabled
-          ? await callWithoutThinking(callParams)
-          : first.text;
+        result =
+          isReasoningCollapse(first.text) && thinkingIsEnabled
+            ? await callWithoutThinking(callParams)
+            : first.text;
       }
       return result;
     };
@@ -446,6 +451,14 @@ export async function POST(req: NextRequest) {
       // Phase 2 §15.5: prerequisite coherence — thread what the unit has
       // already taught so this scene builds on it instead of repeating it.
       unitContext: buildUnitContext(effectiveOutline, allOutlines),
+      // The multi-step planner runs when the single-call PBL planner fails
+      // on a non-provider error (same wiring as the server generation paths).
+      ...(effectiveOutline.type === 'pbl'
+        ? {
+            pblLoopFallback: (input: Parameters<typeof generatePBLV2Project>[0]) =>
+              generatePBLV2Project(input, languageModel, callLLM, { logger: log }, thinkingConfig),
+          }
+        : {}),
       onFailure: (failure) => {
         recordSceneFailure({
           ...failure,
@@ -477,7 +490,8 @@ export async function POST(req: NextRequest) {
 
       log.error(
         `Failed to generate content for: "${effectiveOutline.title}" — reason: ${
-          detail || 'none recorded (no onFailure raise, no depth report; pipeline returned null silently)'
+          detail ||
+          'none recorded (no onFailure raise, no depth report; pipeline returned null silently)'
         } [model=${modelString ?? 'unknown'}, sceneType=${effectiveOutline.type}]`,
       );
 
@@ -496,9 +510,7 @@ export async function POST(req: NextRequest) {
     // corrective re-prompting (or record a first-try pass for completeness).
     const depthSummary =
       takeSceneDepthSummary(effectiveOutline.id) ??
-      (content
-        ? { reworked: false, attempts: 1, findings: [] }
-        : undefined);
+      (content ? { reworked: false, attempts: 1, findings: [] } : undefined);
 
     return apiSuccess({ content, effectiveOutline, depth: depthSummary });
   } catch (error) {

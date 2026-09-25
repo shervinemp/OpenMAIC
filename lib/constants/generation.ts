@@ -20,7 +20,7 @@ export const MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 // characters. Below RAW_THRESHOLD the extracted text is injected as-is;
 // above it a coverage digest (enumerative section cards with page anchors)
 // replaces raw text in the outline prompt. The full text itself is chunked
-// once and retrieved per scene (lib/generation/pdf-retrieval.ts) — the
+// once and retrieved per scene (@openmaic/generation pdf-retrieval) — the
 // digest is only the map, retrieval is the terrain.
 //
 // Coverage commitments (no silent loss):
@@ -276,4 +276,3 @@ export const LLM_CALL_CONCURRENCY = 6;
 // caption fragments may not dominate, and a concrete example/definition/
 // fact is required unless the outline is intro/summary.
 export const MIN_SUBSTANTIVE_ELEMENTS = 4;
-

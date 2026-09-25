@@ -15,7 +15,7 @@
  *   their neighbour but keep their headings listed.
  * - The lens pass (buildDigestLensPrompt) may reorder emphasis but must
  *   return a permutation — it can never remove a section.
- * - The full text itself is chunked once (lib/generation/pdf-retrieval.ts)
+ * - The full text itself is chunked once (@openmaic/generation pdf-retrieval)
  *   and retrieved per scene at content time; the digest is only the map.
  *
  * Everything here is either a pure function or takes an injected `aiCall`
@@ -114,7 +114,8 @@ export type DigestTier = 'raw' | 'single' | 'two-level';
 
 // ==================== Noise stripping ====================
 
-const PAGE_RANGE_RE = /^\s*(?:page|página|seite|pagina|стор|стp)?\s*\d+\s*(?:of|de|von|из|di|\/)\s*\d+\s*$/i;
+const PAGE_RANGE_RE =
+  /^\s*(?:page|página|seite|pagina|стор|стp)?\s*\d+\s*(?:of|de|von|из|di|\/)\s*\d+\s*$/i;
 const SEPARATOR_RE = /^\s*[-_=~*·•]{3,}\s*$/;
 const URL_LINE_RE = /^\s*(?:https?:\/\/|www\.)\S+\s*$/;
 const ISBN_RE = /^\s*isbn[:\s]?[\d\s-]{8,}\s*$/i;
@@ -481,7 +482,12 @@ export function parseDigestBatchResponse(
 ): Map<string, ParsedDigestSection> {
   const parsed = tryParseJson<{ sections?: unknown }>(text);
   const result = new Map<string, ParsedDigestSection>();
-  if (!parsed || typeof parsed !== 'object' || !parsed.sections || typeof parsed.sections !== 'object') {
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    !parsed.sections ||
+    typeof parsed.sections !== 'object'
+  ) {
     return result;
   }
   const idSet = new Set(groupIds);
@@ -555,7 +561,13 @@ export interface DigestRenderResult {
 }
 
 function renderSections(
-  sections: Array<{ heading: string; pageStart?: string; pageEnd?: string; teaches: string[]; keyTerms: string[] }>,
+  sections: Array<{
+    heading: string;
+    pageStart?: string;
+    pageEnd?: string;
+    teaches: string[];
+    keyTerms: string[];
+  }>,
   levelLabel: string,
 ): { text: string; topicCount: number } {
   const topicCount = sections.reduce((sum, section) => sum + section.teaches.length, 0);
@@ -621,9 +633,10 @@ export function renderDocumentDigest(
 
   // Proportional trim: repeatedly drop one topic from the currently largest
   // card until the budget fits. Deterministic; reported, not silent.
-  const cards = digest.level === 'two-level' && digest.chapters
-    ? digest.chapters.map((c) => ({ teaches: c.teaches }))
-    : digest.sections.map((s) => ({ teaches: s.teaches }));
+  const cards =
+    digest.level === 'two-level' && digest.chapters
+      ? digest.chapters.map((c) => ({ teaches: c.teaches }))
+      : digest.sections.map((s) => ({ teaches: s.teaches }));
   let trimmed = 0;
   let current = rendered.text;
   while (current.length > maxChars) {
@@ -750,9 +763,7 @@ export async function buildDocumentDigest(
   // Total LLM calls across BOTH levels drives one continuous progress bar, so
   // a long index never looks stuck between the section and chapter phases.
   const chapterCount =
-    level === 'two-level'
-      ? new Set(groups.map((group) => group.chapter ?? 'none')).size
-      : 0;
+    level === 'two-level' ? new Set(groups.map((group) => group.chapter ?? 'none')).size : 0;
   const totalCalls = batches.length + chapterCount;
 
   // Level 1: section cards. One LLM call per BATCH (a batch packs several

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { generateSceneOutlinesFromRequirements } from '@/lib/generation/outline-generator';
-import { generateSceneContent } from '@/lib/generation/scene-generator';
+import { generateSceneContent } from '@openmaic/generation';
 import type { SceneOutline, UserRequirements } from '@/lib/types/generation';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
 
@@ -80,7 +80,8 @@ describe('media prompt condition wiring', () => {
             top: 80,
             width: 880,
             height: 76,
-            content: '<p style="font-size: 28px;">Evaporation moves water from liquid into vapor.</p>',
+            content:
+              '<p style="font-size: 28px;">Evaporation moves water from liquid into vapor.</p>',
             defaultFontName: '',
             defaultColor: '#333333',
           },

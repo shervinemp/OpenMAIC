@@ -36,8 +36,7 @@ export type PromptId =
   | 'agent-system-wb-teacher'
   | 'agent-system-wb-assistant'
   | 'agent-system-wb-student'
-  | 'director'
-  | 'pbl-design';
+  | 'director';
 
 /**
  * Snippet identifier
