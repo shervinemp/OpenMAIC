@@ -185,7 +185,9 @@ export async function bindCourseRepository(options: {
   if (!isAbsolute(repoPath)) {
     throw new Error(`repoPath must be an absolute path (got ${JSON.stringify(repoPath)})`);
   }
-  if (resolve(repoPath) === resolve(process.cwd())) {
+  // A path comparison, not a file access: the ignore comment keeps Turbopack
+  // from tracing the whole project into the server output.
+  if (resolve(repoPath) === resolve(/*turbopackIgnore: true*/ process.cwd())) {
     throw new Error('repoPath must not be the OpenMAIC application directory');
   }
   if (await getCourseBinding(persistenceDir, stageId)) {
