@@ -39,7 +39,7 @@ import {
   resetGenerationPermissionsForTests,
 } from '@/lib/classroom/generation-permission';
 import { withGenerationPermission } from '@/lib/media/resolve-media-ref';
-import { retryMediaTask } from '@/lib/media/media-orchestrator';
+import { mediaRetryPolicy, retryMediaTask } from '@/lib/media/media-orchestrator';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 
 const stageId = 'permission-stage';
@@ -103,6 +103,8 @@ describe('withdrawing the retry affordance', () => {
 
 describe('retryMediaTask honours the same permission', () => {
   beforeEach(() => {
+    // One provider attempt: the in-pass backoff would outlast the test.
+    mediaRetryPolicy.limit = 1;
     resetGenerationPermissionsForTests();
     mocks.serverBacked.mockReset().mockReturnValue(true);
     mocks.mediaDelete.mockReset().mockResolvedValue(undefined);

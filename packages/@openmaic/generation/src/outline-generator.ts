@@ -215,7 +215,6 @@ export async function generateSceneOutlinesFromRequirements(
   };
 
   let feedback: string | undefined;
-  let lastBlueprint: CourseBlueprint | undefined;
   let lastReport: BlueprintValidationResult | undefined;
 
   for (let attempt = 1; attempt <= MAX_BLUEPRINT_ATTEMPTS; attempt++) {
@@ -252,7 +251,9 @@ export async function generateSceneOutlinesFromRequirements(
         // models may return far more). The downstream Stage.name column is bounded too.
         const rawTitle = parsed.courseTitle;
         courseTitle =
-          typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle.trim().slice(0, 120) : undefined;
+          typeof rawTitle === 'string' && rawTitle.trim()
+            ? rawTitle.trim().slice(0, 120)
+            : undefined;
         rawOutlines = parsed.outlines;
         audience = parsed.audience;
         courseObjectives = parsed.objectives;
@@ -295,8 +296,9 @@ export async function generateSceneOutlinesFromRequirements(
         courseTitle ?? requirements.requirement.slice(0, 30),
       );
 
-      const report = validateBlueprint(blueprint, { tolerance: attempt === MAX_BLUEPRINT_ATTEMPTS });
-      lastBlueprint = blueprint;
+      const report = validateBlueprint(blueprint, {
+        tolerance: attempt === MAX_BLUEPRINT_ATTEMPTS,
+      });
       lastReport = report;
 
       if (report.valid) {
