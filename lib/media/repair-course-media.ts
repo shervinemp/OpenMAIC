@@ -134,11 +134,6 @@ export function isNarrationRef(ref: string): boolean {
   return isNarrationRefShape(ref);
 }
 
-/** Player-equivalent byte probe for ANY ref a scene references. */
-function isNarrationRefLocal(ref: string): boolean {
-  return isNarrationRefShape(ref);
-}
-
 /**
  * Local-first byte detection across a WHOLE set of refs: whichever refs are
  * unresolvable LOCALLY go to the batched server oracle in ONE chunked pass
@@ -168,8 +163,8 @@ async function batchRefResolvesBytes(
   // for the server half; narration falls back to the per-ref resolver (pool
   // leasing + server-seeding mirror) so a single fatal miss isn't
   // misdiagnosed when the pool metadata alone is stale.
-  const narrationMisses = missingLocally.filter(isNarrationRefLocal);
-  const nonNarrationMisses = missingLocally.filter((ref) => !isNarrationRefLocal(ref));
+  const narrationMisses = missingLocally.filter(isNarrationRef);
+  const nonNarrationMisses = missingLocally.filter((ref) => !isNarrationRef(ref));
   // Bounded fan-out: narration resolution DOWNLOADS bytes (pool resolve →
   // server fetch → mirror seed), and an unbounded Promise.all over a whole
   // deck's misses stampedes the dev server and the browser's connection
