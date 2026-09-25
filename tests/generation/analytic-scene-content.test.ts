@@ -21,7 +21,10 @@ import type {
   GeneratedFreeResponseContent,
 } from '@/lib/types/generation';
 
-function outline(type: SceneOutline['type'], depthLevel?: SceneOutline['depthLevel']): SceneOutline {
+function outline(
+  type: SceneOutline['type'],
+  depthLevel?: SceneOutline['depthLevel'],
+): SceneOutline {
   return {
     id: `${type}_1`,
     type,
@@ -61,14 +64,16 @@ const adequateComparison: GeneratedComparisonContent = {
       ],
     },
   ],
-  takeaways: ['Choose TCP when correctness matters more than latency; choose UDP for real-time media.'],
+  takeaways: [
+    'Choose TCP when correctness matters more than latency; choose UDP for real-time media.',
+  ],
 };
 
 describe('validateComparisonDepth', () => {
   test('accepts an adequate comparison table', () => {
-    expect(validateComparisonDepth(outline('comparison', 'intro'), adequateComparison).adequate).toBe(
-      true,
-    );
+    expect(
+      validateComparisonDepth(outline('comparison', 'intro'), adequateComparison).adequate,
+    ).toBe(true);
   });
 
   test('rejects too few dimension rows', () => {
@@ -86,9 +91,7 @@ describe('validateComparisonDepth', () => {
       rows: [{ id: 'r1', dimension: 'Cost', cells: ['Only one complete sentence here.'] }],
     });
     expect(report.adequate).toBe(false);
-    expect(
-      report.findings.some((f) => f.includes('one cell per subject')),
-    ).toBe(true);
+    expect(report.findings.some((f) => f.includes('one cell per subject'))).toBe(true);
   });
 
   test('rejects fragment cells (caption text)', () => {
@@ -153,9 +156,9 @@ const adequateDataReading: GeneratedDataReadingContent = {
 
 describe('validateDataReadingDepth', () => {
   test('accepts an adequate data scene', () => {
-    expect(validateDataReadingDepth(outline('dataReading', 'intro'), adequateDataReading).adequate).toBe(
-      true,
-    );
+    expect(
+      validateDataReadingDepth(outline('dataReading', 'intro'), adequateDataReading).adequate,
+    ).toBe(true);
   });
 
   test('rejects explanations that cite no concrete values', () => {
@@ -170,13 +173,10 @@ describe('validateDataReadingDepth', () => {
   });
 
   test('rejects invalid verdict values', () => {
-    const report = validateDataReadingDepth(
-      outline('dataReading'),
-      ({
-        ...adequateDataReading,
-        claims: [{ ...adequateDataReading.claims[0], verdict: 'maybe' }],
-      }) as unknown as GeneratedDataReadingContent,
-    );
+    const report = validateDataReadingDepth(outline('dataReading'), {
+      ...adequateDataReading,
+      claims: [{ ...adequateDataReading.claims[0], verdict: 'maybe' }],
+    } as unknown as GeneratedDataReadingContent);
     expect(report.adequate).toBe(false);
     expect(report.findings.some((f) => f.includes('verdict'))).toBe(true);
   });
@@ -219,15 +219,15 @@ const adequateTradeoffs: GeneratedTradeoffsContent = {
 
 describe('validateTradeoffsDepth', () => {
   test('accepts an adequate decision scene', () => {
-    expect(validateTradeoffsDepth(outline('tradeoffs', 'intro'), adequateTradeoffs).adequate).toBe(true);
+    expect(validateTradeoffsDepth(outline('tradeoffs', 'intro'), adequateTradeoffs).adequate).toBe(
+      true,
+    );
   });
 
   test('rejects options with no cons', () => {
     const report = validateTradeoffsDepth(outline('tradeoffs'), {
       ...adequateTradeoffs,
-      options: adequateTradeoffs.options.map((o) =>
-        o.id === 'opt-1' ? { ...o, cons: [] } : o,
-      ),
+      options: adequateTradeoffs.options.map((o) => (o.id === 'opt-1' ? { ...o, cons: [] } : o)),
     });
     expect(report.adequate).toBe(false);
     expect(report.findings.some((f) => f.includes('no cons'))).toBe(true);
@@ -236,7 +236,10 @@ describe('validateTradeoffsDepth', () => {
   test('rejects recommendations naming a non-existent option', () => {
     const report = validateTradeoffsDepth(outline('tradeoffs'), {
       ...adequateTradeoffs,
-      recommendation: { choice: 'Quantum caching', justification: 'It wins under the constraints.' },
+      recommendation: {
+        choice: 'Quantum caching',
+        justification: 'It wins under the constraints.',
+      },
     });
     expect(report.adequate).toBe(false);
     expect(report.findings.some((f) => f.includes('no option carries that name'))).toBe(true);
@@ -281,8 +284,9 @@ const adequateFreeResponse: GeneratedFreeResponseContent = {
 
 describe('validateFreeResponseDepth', () => {
   test('accepts an adequate writing task', () => {
-    expect(validateFreeResponseDepth(outline('freeResponse', 'intro'), adequateFreeResponse).adequate)
-      .toBe(true);
+    expect(
+      validateFreeResponseDepth(outline('freeResponse', 'intro'), adequateFreeResponse).adequate,
+    ).toBe(true);
   });
 
   test('rejects a rubric with no essential criterion', () => {
@@ -344,4 +348,3 @@ describe('analytic kinds integrate with outline plumbing', () => {
     expect(bad[0]).toContain('comparison');
   });
 });
-

@@ -184,7 +184,7 @@ describe('generateSceneContent quiz option contract', () => {
             id: 'q1',
             type: 'single',
             question: 'On the grid, which coordinate pair is written as (6, 2)?',
-          analysis: 'The first value is x and the second is y.',
+            analysis: 'The first value is x and the second is y.',
             options: [
               { value: '(6, 2)', label: 'a' },
               { value: '(2, -4)', label: 'b' },
@@ -239,7 +239,7 @@ describe('generateSceneContent quiz option contract', () => {
             id: 'q1',
             type: 'single',
             question: 'On the grid, which coordinate pair is written as (6, 2)?',
-          analysis: 'The first value is x and the second is y.',
+            analysis: 'The first value is x and the second is y.',
             options: [
               { value: 'A', label: '(6, 2)' },
               { value: 'B', label: '(2, -4)' },

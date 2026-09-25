@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 
-const UNIT_CONTEXT = '## What Was Taught So Far (this unit)\n- Process states: ready; running; blocked';
+const UNIT_CONTEXT =
+  '## What Was Taught So Far (this unit)\n- Process states: ready; running; blocked';
 
 const CONTENT_PROMPT_IDS = [
   PROMPT_IDS.SLIDE_CONTENT,

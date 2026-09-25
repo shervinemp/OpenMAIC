@@ -135,12 +135,21 @@ export function createFakeDocumentStore(): FakeDocumentStore {
     },
     async putPhaseStates(
       stageId: string,
-      entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+      entries: ReadonlyArray<{
+        outlineId: string;
+        phase: string;
+        status: string;
+        attempts: number;
+        updatedAt: number;
+        error?: string;
+      }>,
     ) {
       const doc = docs.get(stageId);
       if (!doc) return;
       const outline = (doc.outline ?? {}) as {
-        lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }>;
+        lessonGroups?: Array<{
+          jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }>;
+        }>;
       };
       for (const entry of entries) {
         for (const group of outline.lessonGroups ?? []) {

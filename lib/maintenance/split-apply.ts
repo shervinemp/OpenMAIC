@@ -58,19 +58,30 @@ export interface SplitApplyDocumentShape {
 const FIRST_ROW_TOP = 40;
 const PIN_GAP = 10;
 
-function canvasOf(scene: Record<string, unknown>): { viewportSize: number; viewportRatio: number; elements: Array<Record<string, unknown>>; rest: Record<string, unknown> } | null {
+function canvasOf(scene: Record<string, unknown>): {
+  viewportSize: number;
+  viewportRatio: number;
+  elements: Array<Record<string, unknown>>;
+  rest: Record<string, unknown>;
+} | null {
   const content = scene.content as { type?: string; canvas?: Record<string, unknown> } | null;
   const canvas = content?.canvas;
-  if (!content || content.type !== 'slide' || !canvas || !Array.isArray(canvas.elements)) return null;
-  const { viewportSize: vs, viewportRatio: vr, elements, ...rest } = canvas as {
+  if (!content || content.type !== 'slide' || !canvas || !Array.isArray(canvas.elements))
+    return null;
+  const {
+    viewportSize: vs,
+    viewportRatio: vr,
+    elements,
+    ...rest
+  } = canvas as {
     viewportSize?: number;
     viewportRatio?: number;
     elements: unknown[];
     [key: string]: unknown;
   };
   return {
-    viewportSize: (typeof vs === 'number' ? vs : 1000),
-    viewportRatio: (typeof vr === 'number' ? vr : 0.5625),
+    viewportSize: typeof vs === 'number' ? vs : 1000,
+    viewportRatio: typeof vr === 'number' ? vr : 0.5625,
     elements: elements as Array<Record<string, unknown>>,
     // Theme, background, canvas-level styling: VERBATIM on every part.
     rest,
@@ -83,9 +94,14 @@ export function canSplit(scene: Record<string, unknown>): boolean {
   return !!plan && plan.chunks.length > 1;
 }
 
-function isPinned(element: Record<string, unknown>, canvasArea: number, canvasHeight: number): boolean {
+function isPinned(
+  element: Record<string, unknown>,
+  canvasArea: number,
+  canvasHeight: number,
+): boolean {
   if (element.type === 'line') return true;
-  if (element.type === 'image' && (element as { imageType?: string }).imageType === 'background') return true;
+  if (element.type === 'image' && (element as { imageType?: string }).imageType === 'background')
+    return true;
   if ((element.width as number) * (element.height as number) >= 0.9 * canvasArea) return true;
   // FRAME-ONLY doctrine (matches the plan stage): only edge-hugging shapes
   // join the repeated frame; interior shapes are content — diagrams become
@@ -95,15 +111,29 @@ function isPinned(element: Record<string, unknown>, canvasArea: number, canvasHe
     const bottomEdge = top + ((element.height as number) ?? 0);
     return top <= 8 || canvasHeight - bottomEdge <= 8 || ((element.left as number) ?? 0) <= 8;
   }
-  if (typeof (element as { opacity?: number }).opacity === 'number' && (element as { opacity?: number }).opacity! < 0.25) return true;
+  if (
+    typeof (element as { opacity?: number }).opacity === 'number' &&
+    (element as { opacity?: number }).opacity! < 0.25
+  )
+    return true;
   return false;
 }
 
 /** Verbatim rows re-stacked for one chunk canvas + the pinned frame repeated. */
 export function buildChunkCanvas(
-  canvas: { viewportSize: number; viewportRatio: number; elements: Array<Record<string, unknown>>; rest: Record<string, unknown> },
+  canvas: {
+    viewportSize: number;
+    viewportRatio: number;
+    elements: Array<Record<string, unknown>>;
+    rest: Record<string, unknown>;
+  },
   chunk: { elementIds: string[] },
-): { viewportSize: number; viewportRatio: number; elements: Array<Record<string, unknown>>; [key: string]: unknown } | null {
+): {
+  viewportSize: number;
+  viewportRatio: number;
+  elements: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+} | null {
   if (!canvas || !Array.isArray(canvas.elements)) return null;
   const canvasHeight = Math.round(canvas.viewportSize * canvas.viewportRatio);
   const canvasArea = canvas.viewportSize * canvasHeight;
@@ -140,12 +170,14 @@ export function applySplit(
   if (!canvas) return null;
   const originalOrder = scene.order as number;
   const outlineId = scene.outlineId as string;
-  const outlineSource = document.outline.outlines.find((entry) => (entry as { id?: string }).id === outlineId);
+  const outlineSource = document.outline.outlines.find(
+    (entry) => (entry as { id?: string }).id === outlineId,
+  );
   if (!outlineSource) return null;
   const outlineRecord: Record<string, unknown> = { ...outlineSource };
 
   const actionById = new Map<string, Record<string, unknown>>();
-  for (const action of ((scene.actions ?? []) as Array<Record<string, unknown>>)) {
+  for (const action of (scene.actions ?? []) as Array<Record<string, unknown>>) {
     actionById.set(String(action.id), action);
   }
 
@@ -160,9 +192,10 @@ export function applySplit(
   // family already owns those ids in this document. A taken id extends by a
   // fresh short suffix; deterministic per apply, unique across the document.
   const takenIds = new Set<string>(
-    [...document.scenes, ...((document.outline.outlines ?? []) as Array<Record<string, unknown>>)].map(
-      (entry) => String((entry as { id?: string }).id),
-    ),
+    [
+      ...document.scenes,
+      ...((document.outline.outlines ?? []) as Array<Record<string, unknown>>),
+    ].map((entry) => String((entry as { id?: string }).id)),
   );
   const mintPartId = (base: string, k: number): string => {
     let candidate = `${base}__p${k}`;
@@ -204,7 +237,8 @@ export function applySplit(
       content: {
         type: 'slide',
         canvas: chunkContent,
-        schemaVersion: (scene.content as { schemaVersion?: number } | undefined)?.schemaVersion ?? 1,
+        schemaVersion:
+          (scene.content as { schemaVersion?: number } | undefined)?.schemaVersion ?? 1,
       },
       actions,
       createdAt: (scene.createdAt as number) ?? Date.now(),
@@ -235,8 +269,11 @@ export function applySplit(
 
   document.scenes.splice(sceneIndex, 1, ...newScenes);
 
-  const outlineEntryIndex = document.outline.outlines.findIndex((entry) => (entry as { id?: string }).id === outlineId);
-  if (outlineEntryIndex >= 0) document.outline.outlines.splice(outlineEntryIndex, 1, ...newOutlines);
+  const outlineEntryIndex = document.outline.outlines.findIndex(
+    (entry) => (entry as { id?: string }).id === outlineId,
+  );
+  if (outlineEntryIndex >= 0)
+    document.outline.outlines.splice(outlineEntryIndex, 1, ...newOutlines);
 
   const shift = plan.chunks.length - 1;
   let shifted = 0;
@@ -265,7 +302,10 @@ export function applySplit(
   // and actions arrived verbatim from the original scene — so the generation
   // panel does not render the parts as bare pending envelopes.
   const lessonId = (outlineRecord as { lessonId?: string }).lessonId;
-  const group = (document.outline.lessonGroups.find((g) => g.lessonId === lessonId) ?? null) as { lessonId: string; jobs?: Array<Record<string, unknown>> } | null;
+  const group = (document.outline.lessonGroups.find((g) => g.lessonId === lessonId) ?? null) as {
+    lessonId: string;
+    jobs?: Array<Record<string, unknown>>;
+  } | null;
   if (group) {
     // Narration/media verdicts survive the split: the part actions carry the
     // original audio references verbatim, so a failed or pending tts/media

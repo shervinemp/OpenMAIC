@@ -221,7 +221,10 @@ export class BrowserDocumentStore<
     });
   }
 
-  async saveDocument(doc: MaicDocument<TScene, TStage>, options?: SaveDocumentOptions): Promise<void> {
+  async saveDocument(
+    doc: MaicDocument<TScene, TStage>,
+    options?: SaveDocumentOptions,
+  ): Promise<void> {
     // Forward-compatibility: refuse to persist (and thereby downgrade) a document
     // written by a newer client. `loadDocument` returns such documents untouched;
     // saving one back would relabel its newer-shaped rows as this older version.
@@ -455,15 +458,26 @@ export class BrowserDocumentStore<
 
   async putPhaseStates(
     stageId: string,
-    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+    entries: ReadonlyArray<{
+      outlineId: string;
+      phase: string;
+      status: string;
+      attempts: number;
+      updatedAt: number;
+      error?: string;
+    }>,
   ): Promise<void> {
     if (entries.length === 0) return;
     await this.txRun([OUTLINES], 'readwrite', async (tx) => {
       const outlines = tx.objectStore(OUTLINES);
-      const row = (await reqP<{ stageId: string; outline: unknown } | undefined>(outlines.get(stageId)));
+      const row = await reqP<{ stageId: string; outline: unknown } | undefined>(
+        outlines.get(stageId),
+      );
       if (!row) return;
       const outline = (row.outline ?? {}) as {
-        lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }>;
+        lessonGroups?: Array<{
+          jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }>;
+        }>;
       };
       let touched = 0;
       for (const entry of entries) {

@@ -1602,4 +1602,3 @@ function useAutoResize(ref: React.RefObject<HTMLTextAreaElement | null>, value: 
     return () => cancelAnimationFrame(frame);
   }, [ref, value]);
 }
-

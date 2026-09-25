@@ -27,7 +27,11 @@ export async function POST(req: NextRequest) {
   }
   const fileDir = process.env.PERSISTENCE_DIR;
   if (!fileDir) {
-    return apiError('INVALID_REQUEST', 503, 'this route requires the file-backed persistence backend (PERSISTENCE_DIR)');
+    return apiError(
+      'INVALID_REQUEST',
+      503,
+      'this route requires the file-backed persistence backend (PERSISTENCE_DIR)',
+    );
   }
   let body: { courseId?: string; sceneIds?: string[] };
   try {
@@ -86,26 +90,40 @@ async function runSplitApply(
     return { ok: false, code: 'UPSTREAM_ERROR', status: 500, message: 'course load failed' };
   }
   if (!document) {
-    return { ok: false, code: 'INVALID_REQUEST', status: 404, message: 'course document not found' };
+    return {
+      ok: false,
+      code: 'INVALID_REQUEST',
+      status: 404,
+      message: 'course document not found',
+    };
   }
 
   const requested = body.sceneIds?.length ? body.sceneIds : null;
-  const targets = (document.scenes as unknown as Array<Record<string, unknown>>).filter(
-    (scene) => scene.type === 'slide' && (!requested || requested.includes(String(scene.id))),
-  ).map((scene) => ({
-    scene,
-    errors: residualFindings(scene as never).filter((f) => f.severity === 'error').length,
-    ledgered: layoutLedgerOf(scene) !== null,
-  }));
+  const targets = (document.scenes as unknown as Array<Record<string, unknown>>)
+    .filter(
+      (scene) => scene.type === 'slide' && (!requested || requested.includes(String(scene.id))),
+    )
+    .map((scene) => ({
+      scene,
+      errors: residualFindings(scene as never).filter((f) => f.severity === 'error').length,
+      ledgered: layoutLedgerOf(scene) !== null,
+    }));
 
   const applied: SplitApplyResult[] = [];
   const skipped: Array<{ sceneId: string; reason: string }> = [];
 
   for (const target of targets) {
     if (target.errors === 0 && !target.ledgered) continue;
-    const result = applySplit(document as unknown as SplitApplyDocumentShape, String(target.scene.id));
+    const result = applySplit(
+      document as unknown as SplitApplyDocumentShape,
+      String(target.scene.id),
+    );
     if (result) applied.push(result);
-    else skipped.push({ sceneId: String(target.scene.id), reason: 'plan collapsed to one chunk or outline missing' });
+    else
+      skipped.push({
+        sceneId: String(target.scene.id),
+        reason: 'plan collapsed to one chunk or outline missing',
+      });
   }
 
   if (applied.length > 0) {

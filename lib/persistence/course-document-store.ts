@@ -1,7 +1,10 @@
 import { JsonFileDocumentStore } from '@openmaic/storage/server/file-document-store';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
-import { getCourseGitScheduler, type CourseGitCommitScheduler } from '@/lib/persistence/git-course-sync';
+import {
+  getCourseGitScheduler,
+  type CourseGitCommitScheduler,
+} from '@/lib/persistence/git-course-sync';
 import { GitSyncDocumentStore } from '@/lib/persistence/git-sync-document-store';
 
 /**

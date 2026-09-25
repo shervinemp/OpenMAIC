@@ -35,12 +35,15 @@ export interface BackfillProgress {
   lastRef: string;
 }
 
-async function fetchExistingServerside(ref: string, headers: Record<string, string>): Promise<boolean> {
+async function fetchExistingServerside(
+  ref: string,
+  headers: Record<string, string>,
+): Promise<boolean> {
   try {
-    const response = await fetch(
-      `/api/persistence/assets/${encodeURIComponent(ref)}`,
-      { headers, method: 'GET' },
-    );
+    const response = await fetch(`/api/persistence/assets/${encodeURIComponent(ref)}`, {
+      headers,
+      method: 'GET',
+    });
     return response.ok;
   } catch {
     return false;

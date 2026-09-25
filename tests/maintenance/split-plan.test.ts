@@ -3,8 +3,26 @@ import { computeSplitPlan, computeRowLayout } from '@/lib/maintenance/split-plan
 import { validateSlidePlacement } from '@openmaic/dsl';
 
 function megaScene() {
-  const elements: Array<{ id: string; type: string; left: number; top: number; width: number; height: number; role?: string; content?: string }> = [
-    { id: 'title', type: 'text', left: 60, top: 40, width: 880, height: 50, role: 'title', content: 'H' },
+  const elements: Array<{
+    id: string;
+    type: string;
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    role?: string;
+    content?: string;
+  }> = [
+    {
+      id: 'title',
+      type: 'text',
+      left: 60,
+      top: 40,
+      width: 880,
+      height: 50,
+      role: 'title',
+      content: 'H',
+    },
   ];
   for (let i = 0; i < 40; i++) {
     elements.push({
@@ -18,11 +36,14 @@ function megaScene() {
       content: `Row ${i}`,
     });
   }
-  const actions: Array<{ id: string; type: string; elementId?: string }> = Array.from({ length: 40 }, (_, i) => ({
-    id: `action_${i}`,
-    type: 'spotlight',
-    elementId: `text_${i}`,
-  }));
+  const actions: Array<{ id: string; type: string; elementId?: string }> = Array.from(
+    { length: 40 },
+    (_, i) => ({
+      id: `action_${i}`,
+      type: 'spotlight',
+      elementId: `text_${i}`,
+    }),
+  );
   actions.unshift({ id: 'action_open', type: 'speech' });
   const content = {
     type: 'slide',
@@ -117,7 +138,8 @@ describe('split-plan', () => {
       const lastChunk = chunkById.get(plan.chunks.length - 1)!;
       // The trailing free action rides the NEXT anchor... when none exists it
       // keeps the LAST anchor's chunk; verify both stay fresh-free.
-      void chunkById; expect(p2Chunk ?? lastChunk).toBeTruthy();
+      void chunkById;
+      expect(p2Chunk ?? lastChunk).toBeTruthy();
     }
   });
 });

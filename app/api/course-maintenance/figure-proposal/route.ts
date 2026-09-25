@@ -4,7 +4,11 @@ import { singleFlight } from '@/lib/server/single-flight';
 import { callLLM } from '@/lib/ai/llm';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { apiError, apiSuccess, type ApiErrorCode } from '@/lib/server/api-response';
-import { budgetCrossed, proposeFigure, type FigureProposal } from '@/lib/maintenance/figure-proposal';
+import {
+  budgetCrossed,
+  proposeFigure,
+  type FigureProposal,
+} from '@/lib/maintenance/figure-proposal';
 
 /**
  * Figure-gap proposal generation — READ-ONLY. For each confirmed figure-gap
@@ -54,7 +58,11 @@ export async function POST(req: NextRequest) {
   }
   const fileDir = process.env.PERSISTENCE_DIR;
   if (!fileDir) {
-    return apiError('INVALID_REQUEST', 503, 'this route requires the file-backed persistence backend');
+    return apiError(
+      'INVALID_REQUEST',
+      503,
+      'this route requires the file-backed persistence backend',
+    );
   }
   let body: RequestBody;
   try {
@@ -89,7 +97,12 @@ async function runProposal(
     return { ok: false, code: 'UPSTREAM_ERROR', status: 500, message: 'course load failed' };
   }
   if (!document) {
-    return { ok: false, code: 'INVALID_REQUEST', status: 404, message: 'course document not found' };
+    return {
+      ok: false,
+      code: 'INVALID_REQUEST',
+      status: 404,
+      message: 'course document not found',
+    };
   }
   const byId = new Map<string, Record<string, unknown>>();
   for (const scene of document.scenes as unknown as Array<Record<string, unknown>>) {

@@ -83,7 +83,8 @@ export function SceneSidebar({
   }, [lessonGroups]);
 
   const servableScenes = useMemo(
-    () => scenes.filter((scene) => !scene.outlineId || !layoutFailedOutlineIds.has(scene.outlineId)),
+    () =>
+      scenes.filter((scene) => !scene.outlineId || !layoutFailedOutlineIds.has(scene.outlineId)),
     [scenes, layoutFailedOutlineIds],
   );
 
@@ -143,13 +144,11 @@ export function SceneSidebar({
     // lesson list until the layout train reports done (deterministic pass →
     // bounded patch → split terminal), and its lesson counts it as pending.
     const layoutFailedByOutline = new Map(
-      lessonGroups.flatMap((group) =>
-        group.jobs.map((job) => [job.outlineId, job.phases.layout]),
-      ),
+      lessonGroups.flatMap((group) => group.jobs.map((job) => [job.outlineId, job.phases.layout])),
     );
     const indexByOutlineId = new Map(
       scenes.flatMap((scene, index) =>
-        scene.outlineId ? ([[scene.outlineId, index] as const]) : [],
+        scene.outlineId ? [[scene.outlineId, index] as const] : [],
       ),
     );
     let lessonCursor = 0;
@@ -354,206 +353,205 @@ export function SceneSidebar({
   const displayWidth = collapsed ? 0 : sidebarWidth;
 
   const renderSceneItem = (scene: Scene, sceneIndex: number) => {
-            const isActive = currentSceneId === scene.id;
-            const Icon = getSceneTypeIcon(scene);
-            const isSlide = scene.type === 'slide';
-            const isInteractive = scene.type === 'interactive';
-            const slideContent = isSlide ? (scene.content as SlideContent) : null;
-            const interactiveContent = isInteractive ? (scene.content as InteractiveContent) : null;
+    const isActive = currentSceneId === scene.id;
+    const Icon = getSceneTypeIcon(scene);
+    const isSlide = scene.type === 'slide';
+    const isInteractive = scene.type === 'interactive';
+    const slideContent = isSlide ? (scene.content as SlideContent) : null;
+    const interactiveContent = isInteractive ? (scene.content as InteractiveContent) : null;
 
-            return (
-              <div
-                key={scene.id}
-                data-testid="scene-item"
-                data-scene-id={scene.id}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    selectScene(scene.id);
-                  }
-                }}
-                onClick={() => selectScene(scene.id)}
-                className={cn(
-                  'group relative rounded-lg transition-all duration-200 cursor-pointer flex flex-col gap-1 p-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900',
-                  isActive
-                    ? 'bg-purple-50 dark:bg-purple-900/20 ring-1 ring-purple-200 dark:ring-purple-700'
-                    : 'hover:bg-gray-50/80 dark:hover:bg-gray-800/50',
-                )}
+    return (
+      <div
+        key={scene.id}
+        data-testid="scene-item"
+        data-scene-id={scene.id}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            selectScene(scene.id);
+          }
+        }}
+        onClick={() => selectScene(scene.id)}
+        className={cn(
+          'group relative rounded-lg transition-all duration-200 cursor-pointer flex flex-col gap-1 p-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900',
+          isActive
+            ? 'bg-purple-50 dark:bg-purple-900/20 ring-1 ring-purple-200 dark:ring-purple-700'
+            : 'hover:bg-gray-50/80 dark:hover:bg-gray-800/50',
+        )}
+      >
+        {/* Scene Header */}
+        <div className="flex justify-between items-center px-2 pt-0.5">
+          <div className="flex items-center gap-2 max-w-full">
+            <span
+              className={cn(
+                'text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shrink-0',
+                isActive
+                  ? 'bg-purple-600 dark:bg-purple-500 text-white shadow-sm shadow-purple-500/30'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400',
+              )}
+            >
+              {sceneIndex + 1}
+            </span>
+            <span
+              data-testid="scene-title"
+              className={cn(
+                'text-xs font-bold truncate transition-colors',
+                isActive
+                  ? 'text-purple-700 dark:text-purple-300'
+                  : 'text-gray-600 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100',
+              )}
+            >
+              {scene.title}
+            </span>
+            {sceneDepth[String(scene.order)]?.reworked && (
+              <span
+                className="shrink-0 text-amber-500/90 dark:text-amber-400"
+                title={t('generation.reworkedForDepth')}
               >
-                {/* Scene Header */}
-                <div className="flex justify-between items-center px-2 pt-0.5">
-                  <div className="flex items-center gap-2 max-w-full">
-                    <span
+                ↻
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Thumbnail */}
+        <div className="relative aspect-video w-full rounded overflow-hidden bg-gray-100 dark:bg-gray-800 ring-1 ring-black/5 dark:ring-white/5">
+          <div className="absolute inset-0 flex items-center justify-center">
+            {isSlide && slideContent ? (
+              <LazySlideThumbnail
+                slide={slideContent.canvas}
+                sceneId={scene.id}
+                viewportSize={viewportSize}
+                viewportRatio={viewportRatio}
+                size={Math.max(100, sidebarWidth - 28)}
+              />
+            ) : scene.type === 'quiz' ? (
+              /* Quiz: question bar + 2x2 option grid */
+              <div className="w-full h-full bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/20 p-2 flex flex-col">
+                <div className="h-1.5 w-4/5 bg-orange-200/70 dark:bg-orange-700/30 rounded-full mb-1.5" />
+                <div className="flex-1 grid grid-cols-2 gap-1">
+                  {[0, 1, 2, 3].map((i) => (
+                    <div
+                      key={i}
                       className={cn(
-                        'text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shrink-0',
-                        isActive
-                          ? 'bg-purple-600 dark:bg-purple-500 text-white shadow-sm shadow-purple-500/30'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400',
+                        'rounded flex items-center gap-1 px-1',
+                        i === 1
+                          ? 'bg-orange-400/20 dark:bg-orange-500/20 border border-orange-300/50 dark:border-orange-600/30'
+                          : 'bg-white/60 dark:bg-white/5 border border-orange-100/60 dark:border-orange-800/20',
                       )}
                     >
-                      {sceneIndex + 1}
-                    </span>
-                    <span
-                      data-testid="scene-title"
-                      className={cn(
-                        'text-xs font-bold truncate transition-colors',
-                        isActive
-                          ? 'text-purple-700 dark:text-purple-300'
-                          : 'text-gray-600 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100',
-                      )}
-                    >
-                      {scene.title}
-                    </span>
-                    {sceneDepth[String(scene.order)]?.reworked && (
-                      <span
-                        className="shrink-0 text-amber-500/90 dark:text-amber-400"
-                        title={t('generation.reworkedForDepth')}
-                      >
-                        ↻
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Thumbnail */}
-                <div className="relative aspect-video w-full rounded overflow-hidden bg-gray-100 dark:bg-gray-800 ring-1 ring-black/5 dark:ring-white/5">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    {isSlide && slideContent ? (
-                      <LazySlideThumbnail
-                        slide={slideContent.canvas}
-                        sceneId={scene.id}
-                        viewportSize={viewportSize}
-                        viewportRatio={viewportRatio}
-                        size={Math.max(100, sidebarWidth - 28)}
-                      />
-                    ) : scene.type === 'quiz' ? (
-                      /* Quiz: question bar + 2x2 option grid */
-                      <div className="w-full h-full bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/20 p-2 flex flex-col">
-                        <div className="h-1.5 w-4/5 bg-orange-200/70 dark:bg-orange-700/30 rounded-full mb-1.5" />
-                        <div className="flex-1 grid grid-cols-2 gap-1">
-                          {[0, 1, 2, 3].map((i) => (
-                            <div
-                              key={i}
-                              className={cn(
-                                'rounded flex items-center gap-1 px-1',
-                                i === 1
-                                  ? 'bg-orange-400/20 dark:bg-orange-500/20 border border-orange-300/50 dark:border-orange-600/30'
-                                  : 'bg-white/60 dark:bg-white/5 border border-orange-100/60 dark:border-orange-800/20',
-                              )}
-                            >
-                              <div
-                                className={cn(
-                                  'w-1.5 h-1.5 rounded-full shrink-0',
-                                  i === 1
-                                    ? 'bg-orange-400 dark:bg-orange-500'
-                                    : 'bg-orange-200 dark:bg-orange-700/50',
-                                )}
-                              />
-                              <div
-                                className={cn(
-                                  'h-1 rounded-full flex-1',
-                                  i === 1
-                                    ? 'bg-orange-300/60 dark:bg-orange-600/40'
-                                    : 'bg-orange-100/80 dark:bg-orange-800/30',
-                                )}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : scene.type === 'interactive' && interactiveContent?.html ? (
-                      /* Interactive: live iframe preview */
-                      <ThumbnailInteractive
-                        content={interactiveContent}
-                        size={Math.max(100, sidebarWidth - 28)}
-                      />
-                    ) : scene.type === 'interactive' ? (
-                      /* Interactive: browser window with chrome + content */
-                      <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/20 p-1.5 flex flex-col">
-                        <div className="flex items-center gap-1 mb-1 pb-1 border-b border-emerald-200/40 dark:border-emerald-700/20">
-                          <div className="flex gap-0.5">
-                            <div className="w-1 h-1 rounded-full bg-red-300 dark:bg-red-500/60" />
-                            <div className="w-1 h-1 rounded-full bg-amber-300 dark:bg-amber-500/60" />
-                            <div className="w-1 h-1 rounded-full bg-green-300 dark:bg-green-500/60" />
-                          </div>
-                          <div className="h-1.5 flex-1 bg-emerald-200/40 dark:bg-emerald-700/30 rounded-full ml-0.5" />
-                        </div>
-                        <div className="flex-1 flex gap-1">
-                          <div className="w-1/4 space-y-1 pt-0.5">
-                            {[1, 2, 3].map((i) => (
-                              <div
-                                key={i}
-                                className="h-0.5 w-full bg-emerald-200/60 dark:bg-emerald-700/30 rounded-full"
-                              />
-                            ))}
-                          </div>
-                          <div className="flex-1 bg-emerald-100/40 dark:bg-emerald-800/20 rounded flex items-center justify-center border border-emerald-200/40 dark:border-emerald-700/20">
-                            <Globe className="w-4 h-4 text-emerald-300/80 dark:text-emerald-600/50" />
-                          </div>
-                        </div>
-                      </div>
-                    ) : scene.type === 'pbl' ? (
-                      /* PBL: kanban board with 3 columns */
-                      <div className="w-full h-full bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/20 p-1.5 flex flex-col">
-                        <div className="flex items-center gap-1 mb-1.5">
-                          <div className="w-1.5 h-1.5 rounded bg-blue-300 dark:bg-blue-600" />
-                          <div className="h-1 w-8 bg-blue-200/60 dark:bg-blue-700/30 rounded-full" />
-                        </div>
-                        <div className="flex-1 flex gap-1 overflow-hidden">
-                          {[0, 1, 2].map((col) => (
-                            <div
-                              key={col}
-                              className="flex-1 bg-white/50 dark:bg-white/5 rounded p-0.5 flex flex-col gap-0.5"
-                            >
-                              <div
-                                className={cn(
-                                  'h-0.5 w-3 rounded-full mb-0.5',
-                                  col === 0
-                                    ? 'bg-blue-300/70'
-                                    : col === 1
-                                      ? 'bg-amber-300/70'
-                                      : 'bg-green-300/70',
-                                )}
-                              />
-                              {Array.from({
-                                length: col === 0 ? 3 : col === 1 ? 2 : 1,
-                              }).map((_, i) => (
-                                <div
-                                  key={i}
-                                  className="h-2 w-full bg-blue-100/60 dark:bg-blue-800/20 rounded border border-blue-200/30 dark:border-blue-700/20"
-                                />
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      /* Fallback */
-                      <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-gray-50 dark:bg-gray-800 text-gray-300 dark:text-gray-500">
-                        <Icon className="w-4 h-4" />
-                        <span className="text-[10px] font-bold uppercase tracking-wider opacity-80">
-                          {scene.type}
-                        </span>
-                      </div>
-                    )}
-
-                    {isSlide && (
                       <div
                         className={cn(
-                          'absolute inset-0 bg-purple-500/0 transition-colors',
-                          isActive
-                            ? 'bg-purple-500/0'
-                            : 'group-hover:bg-black/5 dark:group-hover:bg-white/5',
+                          'w-1.5 h-1.5 rounded-full shrink-0',
+                          i === 1
+                            ? 'bg-orange-400 dark:bg-orange-500'
+                            : 'bg-orange-200 dark:bg-orange-700/50',
                         )}
                       />
-                    )}
+                      <div
+                        className={cn(
+                          'h-1 rounded-full flex-1',
+                          i === 1
+                            ? 'bg-orange-300/60 dark:bg-orange-600/40'
+                            : 'bg-orange-100/80 dark:bg-orange-800/30',
+                        )}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : scene.type === 'interactive' && interactiveContent?.html ? (
+              /* Interactive: live iframe preview */
+              <ThumbnailInteractive
+                content={interactiveContent}
+                size={Math.max(100, sidebarWidth - 28)}
+              />
+            ) : scene.type === 'interactive' ? (
+              /* Interactive: browser window with chrome + content */
+              <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/20 p-1.5 flex flex-col">
+                <div className="flex items-center gap-1 mb-1 pb-1 border-b border-emerald-200/40 dark:border-emerald-700/20">
+                  <div className="flex gap-0.5">
+                    <div className="w-1 h-1 rounded-full bg-red-300 dark:bg-red-500/60" />
+                    <div className="w-1 h-1 rounded-full bg-amber-300 dark:bg-amber-500/60" />
+                    <div className="w-1 h-1 rounded-full bg-green-300 dark:bg-green-500/60" />
+                  </div>
+                  <div className="h-1.5 flex-1 bg-emerald-200/40 dark:bg-emerald-700/30 rounded-full ml-0.5" />
+                </div>
+                <div className="flex-1 flex gap-1">
+                  <div className="w-1/4 space-y-1 pt-0.5">
+                    {[1, 2, 3].map((i) => (
+                      <div
+                        key={i}
+                        className="h-0.5 w-full bg-emerald-200/60 dark:bg-emerald-700/30 rounded-full"
+                      />
+                    ))}
+                  </div>
+                  <div className="flex-1 bg-emerald-100/40 dark:bg-emerald-800/20 rounded flex items-center justify-center border border-emerald-200/40 dark:border-emerald-700/20">
+                    <Globe className="w-4 h-4 text-emerald-300/80 dark:text-emerald-600/50" />
                   </div>
                 </div>
               </div>
-            );
+            ) : scene.type === 'pbl' ? (
+              /* PBL: kanban board with 3 columns */
+              <div className="w-full h-full bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/20 p-1.5 flex flex-col">
+                <div className="flex items-center gap-1 mb-1.5">
+                  <div className="w-1.5 h-1.5 rounded bg-blue-300 dark:bg-blue-600" />
+                  <div className="h-1 w-8 bg-blue-200/60 dark:bg-blue-700/30 rounded-full" />
+                </div>
+                <div className="flex-1 flex gap-1 overflow-hidden">
+                  {[0, 1, 2].map((col) => (
+                    <div
+                      key={col}
+                      className="flex-1 bg-white/50 dark:bg-white/5 rounded p-0.5 flex flex-col gap-0.5"
+                    >
+                      <div
+                        className={cn(
+                          'h-0.5 w-3 rounded-full mb-0.5',
+                          col === 0
+                            ? 'bg-blue-300/70'
+                            : col === 1
+                              ? 'bg-amber-300/70'
+                              : 'bg-green-300/70',
+                        )}
+                      />
+                      {Array.from({
+                        length: col === 0 ? 3 : col === 1 ? 2 : 1,
+                      }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="h-2 w-full bg-blue-100/60 dark:bg-blue-800/20 rounded border border-blue-200/30 dark:border-blue-700/20"
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* Fallback */
+              <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-gray-50 dark:bg-gray-800 text-gray-300 dark:text-gray-500">
+                <Icon className="w-4 h-4" />
+                <span className="text-[10px] font-bold uppercase tracking-wider opacity-80">
+                  {scene.type}
+                </span>
+              </div>
+            )}
 
+            {isSlide && (
+              <div
+                className={cn(
+                  'absolute inset-0 bg-purple-500/0 transition-colors',
+                  isActive
+                    ? 'bg-purple-500/0'
+                    : 'group-hover:bg-black/5 dark:group-hover:bg-white/5',
+                )}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -643,7 +641,11 @@ export function SceneSidebar({
                         {unit.lessons.map((lesson) => {
                           const isLessonOpen = openLessons.has(lesson.key);
                           return (
-                            <div key={lesson.key} className="flex flex-col gap-1" data-testid="lesson-section">
+                            <div
+                              key={lesson.key}
+                              className="flex flex-col gap-1"
+                              data-testid="lesson-section"
+                            >
                               <button
                                 type="button"
                                 aria-expanded={isLessonOpen}
@@ -770,191 +772,195 @@ export function SceneSidebar({
             data-testid="generation-dock"
             className="shrink-0 p-2 space-y-2 border-t border-r-[6px] border-transparent border-t-gray-100 dark:border-t-gray-800"
           >
-
-          {/* Single dock card: the active placeholder, or the failed outline
+            {/* Single dock card: the active placeholder, or the failed outline
               when only the red card remains (ONE QUEUE — any unsettled phase
               surfaces the same classic regenerate card, Retry/Skip included). */}
-          {(generatingOutlines.length > 0 || failedOutlines.length > 0) &&
-            (() => {
-              const outline = generatingOutlines[0] ?? failedOutlines[0];
-              if (!outline) return null;
-              const isFailed = failedOutlines.some((f) => f.id === outline.id);
-              const isRetrying = retryingOutlineId === outline.id;
-              const isPaused = generationStatus === 'paused';
-              const isActive = currentSceneId === PENDING_SCENE_ID;
+            {(generatingOutlines.length > 0 || failedOutlines.length > 0) &&
+              (() => {
+                const outline = generatingOutlines[0] ?? failedOutlines[0];
+                if (!outline) return null;
+                const isFailed = failedOutlines.some((f) => f.id === outline.id);
+                const isRetrying = retryingOutlineId === outline.id;
+                const isPaused = generationStatus === 'paused';
+                const isActive = currentSceneId === PENDING_SCENE_ID;
 
-              return (
-                <div
-                  key={`generating-${outline.id}`}
-                  role="button"
-                  tabIndex={0}
-                  aria-disabled={isFailed}
-                  onKeyDown={(e) => {
-                    if (isFailed) return;
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      selectScene(PENDING_SCENE_ID);
-                    }
-                  }}
-                  onClick={() => {
-                    if (isFailed) return;
-                    selectScene(PENDING_SCENE_ID);
-                  }}
-                  className={cn(
-                    'group relative rounded-lg flex flex-col gap-1 p-1.5 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400',
-                    isFailed
-                      ? 'opacity-100 cursor-default'
-                      : 'cursor-pointer hover:bg-gray-50/80 dark:hover:bg-gray-800/50',
-                    !isFailed && !isActive && 'opacity-60',
-                    isActive &&
-                      !isFailed &&
-                      'bg-purple-50 dark:bg-purple-900/20 ring-1 ring-purple-200 dark:ring-purple-700 opacity-100',
-                  )}
-                >
-                  {/* Scene Header */}
-                  <div className="flex justify-between items-center px-2 pt-0.5">
-                    <div className="flex items-center gap-2 max-w-full">
-                      <span
-                        className={cn(
-                          'text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shrink-0',
-                          isActive && !isFailed
-                            ? 'bg-purple-600 dark:bg-purple-500 text-white shadow-sm shadow-purple-500/30'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500',
-                        )}
-                      >
-                        {scenes.length + 1}
-                      </span>
-                      <span
-                        className={cn(
-                          'text-xs font-bold truncate transition-colors',
-                          isActive && !isFailed
-                            ? 'text-purple-700 dark:text-purple-300'
-                            : isFailed
-                              ? 'text-gray-700 dark:text-gray-200'
-                              : 'text-gray-400 dark:text-gray-500',
-                        )}
-                      >
-                        {outline.title}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Skeleton Thumbnail */}
+                return (
                   <div
+                    key={`generating-${outline.id}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-disabled={isFailed}
+                    onKeyDown={(e) => {
+                      if (isFailed) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        selectScene(PENDING_SCENE_ID);
+                      }
+                    }}
+                    onClick={() => {
+                      if (isFailed) return;
+                      selectScene(PENDING_SCENE_ID);
+                    }}
                     className={cn(
-                      'relative aspect-video w-full rounded overflow-hidden ring-1',
+                      'group relative rounded-lg flex flex-col gap-1 p-1.5 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400',
                       isFailed
-                        ? 'bg-red-50/30 dark:bg-red-950/10 ring-red-100 dark:ring-red-900/20'
-                        : 'bg-gray-100 dark:bg-gray-800 ring-black/5 dark:ring-white/5',
+                        ? 'opacity-100 cursor-default'
+                        : 'cursor-pointer hover:bg-gray-50/80 dark:hover:bg-gray-800/50',
+                      !isFailed && !isActive && 'opacity-60',
+                      isActive &&
+                        !isFailed &&
+                        'bg-purple-50 dark:bg-purple-900/20 ring-1 ring-purple-200 dark:ring-purple-700 opacity-100',
                     )}
                   >
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
-                      {isFailed ? (
-                        <div className="flex items-center gap-1 text-xs font-medium text-red-500/90 dark:text-red-400">
-                          {onRetryOutline ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRetryOutline(outline.id);
-                              }}
-                              disabled={
-                                isRetrying || (repairActive === 'narration' || repairActive === 'media')
-                              }
-                              className="p-1 -ml-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors active:scale-95 disabled:opacity-50 disabled:active:scale-100"
-                              title={t('generation.retryScene')}
-                            >
-                              <RefreshCw
-                                className={cn(
-                                  'w-3.5 h-3.5',
-                                  (isRetrying || repairActive === 'narration' || repairActive === 'media') &&
-                                    'animate-spin',
-                                )}
-                              />
-                            </button>
-                          ) : (
-                            <AlertCircle className="w-3.5 h-3.5" />
+                    {/* Scene Header */}
+                    <div className="flex justify-between items-center px-2 pt-0.5">
+                      <div className="flex items-center gap-2 max-w-full">
+                        <span
+                          className={cn(
+                            'text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shrink-0',
+                            isActive && !isFailed
+                              ? 'bg-purple-600 dark:bg-purple-500 text-white shadow-sm shadow-purple-500/30'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500',
                           )}
-                          {onSkipOutline && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onSkipOutline(outline.id);
-                              }}
-                              disabled={isRetrying}
-                              className="p-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors active:scale-95 disabled:opacity-50 disabled:active:scale-100"
-                              title={t('generation.skipScene')}
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
+                        >
+                          {scenes.length + 1}
+                        </span>
+                        <span
+                          className={cn(
+                            'text-xs font-bold truncate transition-colors',
+                            isActive && !isFailed
+                              ? 'text-purple-700 dark:text-purple-300'
+                              : isFailed
+                                ? 'text-gray-700 dark:text-gray-200'
+                                : 'text-gray-400 dark:text-gray-500',
                           )}
-                          <span>
-                            {isRetrying
-                              ? t('generation.retryingScene')
-                              : t('stage.generationFailed')}
-                          </span>
+                        >
+                          {outline.title}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Skeleton Thumbnail */}
+                    <div
+                      className={cn(
+                        'relative aspect-video w-full rounded overflow-hidden ring-1',
+                        isFailed
+                          ? 'bg-red-50/30 dark:bg-red-950/10 ring-red-100 dark:ring-red-900/20'
+                          : 'bg-gray-100 dark:bg-gray-800 ring-black/5 dark:ring-white/5',
+                      )}
+                    >
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
+                        {isFailed ? (
+                          <div className="flex items-center gap-1 text-xs font-medium text-red-500/90 dark:text-red-400">
+                            {onRetryOutline ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRetryOutline(outline.id);
+                                }}
+                                disabled={
+                                  isRetrying ||
+                                  repairActive === 'narration' ||
+                                  repairActive === 'media'
+                                }
+                                className="p-1 -ml-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors active:scale-95 disabled:opacity-50 disabled:active:scale-100"
+                                title={t('generation.retryScene')}
+                              >
+                                <RefreshCw
+                                  className={cn(
+                                    'w-3.5 h-3.5',
+                                    (isRetrying ||
+                                      repairActive === 'narration' ||
+                                      repairActive === 'media') &&
+                                      'animate-spin',
+                                  )}
+                                />
+                              </button>
+                            ) : (
+                              <AlertCircle className="w-3.5 h-3.5" />
+                            )}
+                            {onSkipOutline && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSkipOutline(outline.id);
+                                }}
+                                disabled={isRetrying}
+                                className="p-1 rounded-md hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors active:scale-95 disabled:opacity-50 disabled:active:scale-100"
+                                title={t('generation.skipScene')}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            <span>
+                              {isRetrying
+                                ? t('generation.retryingScene')
+                                : t('stage.generationFailed')}
+                            </span>
+                          </div>
+                        ) : (
+                          <>
+                            <div
+                              className={cn(
+                                'h-2 w-3/5 bg-gray-200 dark:bg-gray-700 rounded',
+                                !isPaused && 'animate-pulse',
+                              )}
+                            />
+                            <div
+                              className={cn(
+                                'h-1.5 w-2/5 bg-gray-200 dark:bg-gray-700 rounded',
+                                !isPaused && 'animate-pulse',
+                              )}
+                            />
+                            <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 mt-0.5">
+                              {isPaused
+                                ? t('stage.paused')
+                                : generationPhase === 'actions'
+                                  ? t('generation.phaseActions')
+                                  : generationPhase === 'tts'
+                                    ? t('generation.phaseNarration')
+                                    : generationPhase === 'content'
+                                      ? t('generation.phaseContent')
+                                      : t('stage.generating')}
+                            </span>
+                            {isPaused && onResumeGeneration && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onResumeGeneration();
+                                }}
+                                className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-purple-600 px-1.5 py-0.5 text-[10px] font-semibold text-white hover:bg-purple-500 transition-colors active:scale-95"
+                                title={t('stage.resumeGeneration')}
+                              >
+                                <Play className="w-2.5 h-2.5" />
+                                {t('stage.resumeGeneration')}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      {/* Phase chips (Pillar 2 §4.2): content → actions → tts → media → layout → semantics */}
+                      {!isFailed && !isPaused && (
+                        <div className="absolute bottom-1 left-1 right-1 flex items-center gap-1">
+                          {(
+                            ['content', 'actions', 'tts', 'media', 'layout', 'semantics'] as const
+                          ).map((phase) => (
+                            <span
+                              key={phase}
+                              className={cn(
+                                'flex-1 h-1 rounded-full transition-colors',
+                                generationPhase === phase
+                                  ? 'bg-purple-500 dark:bg-purple-400 animate-pulse'
+                                  : 'bg-gray-200 dark:bg-gray-700',
+                              )}
+                            />
+                          ))}
                         </div>
-                      ) : (
-                        <>
-                          <div
-                            className={cn(
-                              'h-2 w-3/5 bg-gray-200 dark:bg-gray-700 rounded',
-                              !isPaused && 'animate-pulse',
-                            )}
-                          />
-                          <div
-                            className={cn(
-                              'h-1.5 w-2/5 bg-gray-200 dark:bg-gray-700 rounded',
-                              !isPaused && 'animate-pulse',
-                            )}
-                          />
-                          <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 mt-0.5">
-                            {isPaused
-                              ? t('stage.paused')
-                              : generationPhase === 'actions'
-                                ? t('generation.phaseActions')
-                                : generationPhase === 'tts'
-                                  ? t('generation.phaseNarration')
-                                  : generationPhase === 'content'
-                                    ? t('generation.phaseContent')
-                                    : t('stage.generating')}
-                          </span>
-                          {isPaused && onResumeGeneration && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onResumeGeneration();
-                              }}
-                              className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-purple-600 px-1.5 py-0.5 text-[10px] font-semibold text-white hover:bg-purple-500 transition-colors active:scale-95"
-                              title={t('stage.resumeGeneration')}
-                            >
-                              <Play className="w-2.5 h-2.5" />
-                              {t('stage.resumeGeneration')}
-                            </button>
-                          )}
-                        </>
                       )}
                     </div>
-                    {/* Phase chips (Pillar 2 §4.2): content → actions → tts → media → layout → semantics */}
-                    {!isFailed && !isPaused && (
-                      <div className="absolute bottom-1 left-1 right-1 flex items-center gap-1">
-                        {(['content', 'actions', 'tts', 'media', 'layout', 'semantics'] as const).map((phase) => (
-                          <span
-                            key={phase}
-                            className={cn(
-                              'flex-1 h-1 rounded-full transition-colors',
-                              generationPhase === phase
-                                ? 'bg-purple-500 dark:bg-purple-400 animate-pulse'
-                                : 'bg-gray-200 dark:bg-gray-700',
-                            )}
-                          />
-                        ))}
-                      </div>
-                    )}
                   </div>
-                </div>
-              );
-            })()}
-
+                );
+              })()}
           </div>
         )}
 

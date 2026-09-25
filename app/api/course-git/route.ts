@@ -107,4 +107,3 @@ export async function DELETE(request: Request): Promise<Response> {
   const removed = await unbindCourseRepository(dir, stageId);
   return Response.json({ removed });
 }
-

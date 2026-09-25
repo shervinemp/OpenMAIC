@@ -187,9 +187,7 @@ export interface RepoUpdateCheck {
 }
 
 /** Compare each repo snapshot against persistence: new / update / equal. */
-export async function scanCourseUpdates(
-  persistenceDir: string,
-): Promise<RepoUpdateCheck[]> {
+export async function scanCourseUpdates(persistenceDir: string): Promise<RepoUpdateCheck[]> {
   const checks: RepoUpdateCheck[] = [];
   for (const snapshot of await listRepoCourseSnapshots(persistenceDir)) {
     const persisted = await readPersistedDocument(persistenceDir, snapshot.stageId);
@@ -229,7 +227,11 @@ function git(
  * (COURSE_GIT_SYNC_ALLOW_REMOTE_FETCH) says otherwise; never thrown.
  */
 export async function pullBoundRepos(persistenceDir: string): Promise<void> {
-  if (!['1', 'true'].includes((process.env.COURSE_GIT_SYNC_ALLOW_REMOTE_FETCH ?? '').trim().toLowerCase())) {
+  if (
+    !['1', 'true'].includes(
+      (process.env.COURSE_GIT_SYNC_ALLOW_REMOTE_FETCH ?? '').trim().toLowerCase(),
+    )
+  ) {
     return;
   }
   const repoPaths = new Set(
@@ -288,32 +290,58 @@ export async function runCourseGitSync(
   for (const check of await scanCourseUpdates(persistenceDir)) {
     const { snapshot, state } = check;
     if (state === 'equal') {
-      results.push({ stageId: snapshot.stageId, action: 'equal', detail: 'repo and persistence are identical' });
+      results.push({
+        stageId: snapshot.stageId,
+        action: 'equal',
+        detail: 'repo and persistence are identical',
+      });
       continue;
     }
     if (state === 'invalid') {
-      results.push({ stageId: snapshot.stageId, action: 'rejected', detail: 'repo snapshot is not a valid course document' });
+      results.push({
+        stageId: snapshot.stageId,
+        action: 'rejected',
+        detail: 'repo snapshot is not a valid course document',
+      });
       continue;
     }
     const isNew = state === 'new';
     const allowed =
-      !options.stageIds || options.stageIds.length === 0 || options.stageIds.includes(snapshot.stageId);
+      !options.stageIds ||
+      options.stageIds.length === 0 ||
+      options.stageIds.includes(snapshot.stageId);
     if (!allowed) {
-      results.push({ stageId: snapshot.stageId, action: 'skipped', detail: 'outside this sync run\'s approval list' });
+      results.push({
+        stageId: snapshot.stageId,
+        action: 'skipped',
+        detail: "outside this sync run's approval list",
+      });
       continue;
     }
     if (isNew && (!options.importNew || !autoLoadByRepo.has(snapshot.repoPath))) {
-      results.push({ stageId: snapshot.stageId, action: 'skipped', detail: 'new course waiting for approval to import (autoLoad binding flag)' });
+      results.push({
+        stageId: snapshot.stageId,
+        action: 'skipped',
+        detail: 'new course waiting for approval to import (autoLoad binding flag)',
+      });
       continue;
     }
     if (!isNew && !options.apply) {
-      results.push({ stageId: snapshot.stageId, action: 'skipped', detail: 'update waiting for approval to apply' });
+      results.push({
+        stageId: snapshot.stageId,
+        action: 'skipped',
+        detail: 'update waiting for approval to apply',
+      });
       continue;
     }
 
     const loaded = await readRepoDocument(join(snapshot.repoPath, `${snapshot.stageFile}.json`));
     if (!loaded) {
-      results.push({ stageId: snapshot.stageId, action: 'rejected', detail: 'repo snapshot disappeared mid-sync' });
+      results.push({
+        stageId: snapshot.stageId,
+        action: 'rejected',
+        detail: 'repo snapshot disappeared mid-sync',
+      });
       continue;
     }
     try {
@@ -348,13 +376,18 @@ export async function runCourseGitSync(
             ? `imported "${(document.stage as { title?: string; name?: string }).title ?? (document.stage as { name?: string }).name ?? snapshot.stageId}" from repo`
             : 'repo snapshot restored over persisted course') + bytesDetail,
       });
-      log.info(`Course ${snapshot.stageId} ${isNew ? 'imported' : 'restored'} from ${snapshot.repoPath}${bytesDetail}`);
+      log.info(
+        `Course ${snapshot.stageId} ${isNew ? 'imported' : 'restored'} from ${snapshot.repoPath}${bytesDetail}`,
+      );
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      results.push({ stageId: snapshot.stageId, action: 'rejected', detail: `save failed: ${detail}` });
+      results.push({
+        stageId: snapshot.stageId,
+        action: 'rejected',
+        detail: `save failed: ${detail}`,
+      });
       log.warn(`Inbound apply for ${JSON.stringify(snapshot.stageId)} failed:`, detail);
     }
   }
   return { results };
 }
-

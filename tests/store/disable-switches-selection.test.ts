@@ -150,9 +150,7 @@ describe('disabling the active provider switches selection away', () => {
         'comfyui-video': undefined as never,
       } as never,
     });
-    expect(() =>
-      useSettingsStore.getState().setVideoGenerationEnabled(true),
-    ).not.toThrow();
+    expect(() => useSettingsStore.getState().setVideoGenerationEnabled(true)).not.toThrow();
     // No usable provider → the toggle stays off.
     expect(useSettingsStore.getState().videoGenerationEnabled).toBe(false);
   });

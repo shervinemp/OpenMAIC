@@ -121,9 +121,7 @@ describe('repairCourseMedia — class-agnostic byte detection', () => {
     mocks.drainPendingSceneTTS.mockResolvedValue(0);
 
     const report = await repairCourseMedia(
-      [
-        scene({ id: 's1', order: 1, audioIds: ['tts_s1_a0'], srcRefs: ['gen_img_1'] }),
-      ],
+      [scene({ id: 's1', order: 1, audioIds: ['tts_s1_a0'], srcRefs: ['gen_img_1'] })],
       {
         outlines: [outline('o1', 1, ['gen_img_1'])],
         stageId: 'stage-1',
@@ -184,7 +182,10 @@ describe('repairCourseMedia — class-agnostic byte detection', () => {
     const orphanScene = scene({ id: 'orphan', order: 7, audioIds: [] });
 
     const report = await repairCourseMedia(
-      [scene({ id: 's1', order: 1, audioIds: ['tts_ok'], srcRefs: ['gen_img_1', 'gen_img_2'] }), orphanScene],
+      [
+        scene({ id: 's1', order: 1, audioIds: ['tts_ok'], srcRefs: ['gen_img_1', 'gen_img_2'] }),
+        orphanScene,
+      ],
       {
         outlines: [deckOutline, outlineWithoutScene],
         stageId: 'stage-1',

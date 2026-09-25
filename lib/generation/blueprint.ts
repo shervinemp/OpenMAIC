@@ -38,6 +38,4 @@ export type {
   ParsedOutlineResponse,
 } from '@openmaic/generation';
 
-export {
- legacyBlueprintFromOutlines,
-} from '@openmaic/generation';
+export { legacyBlueprintFromOutlines } from '@openmaic/generation';

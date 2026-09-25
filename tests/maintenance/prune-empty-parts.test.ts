@@ -25,7 +25,10 @@ function slide(
       canvas: {
         viewportSize: 1000,
         viewportRatio: 0.5625,
-        elements: Array.from({ length: elements }, (_, i) => ({ id: `${id}-el${i}`, type: 'text' })),
+        elements: Array.from({ length: elements }, (_, i) => ({
+          id: `${id}-el${i}`,
+          type: 'text',
+        })),
       },
     },
     actions: [],
@@ -41,7 +44,14 @@ function makeDocument(): PruneDocumentShape {
       slide('orphan-empty', 'A genuinely empty intro', 2, 'o-orphan', 0),
       slide('pair-empty-a', 'Twins', 3, 'o-twin-a', 0),
       slide('pair-empty-b', 'Twins', 4, 'o-twin-b', 0),
-      { id: 'quiz-1', outlineId: 'o-quiz', type: 'quiz', title: 'Quiz', order: 5, content: { type: 'quiz', questions: [] } },
+      {
+        id: 'quiz-1',
+        outlineId: 'o-quiz',
+        type: 'quiz',
+        title: 'Quiz',
+        order: 5,
+        content: { type: 'quiz', questions: [] },
+      },
     ],
     outline: {
       outlines: [
@@ -53,8 +63,22 @@ function makeDocument(): PruneDocumentShape {
         { id: 'o-quiz', order: 5, lessonId: 'l2', title: 'Quiz' },
       ],
       lessonGroups: [
-        { lessonId: 'l1', jobs: [{ outlineId: 'o-base', phases: {} }, { outlineId: 'o-p2', phases: {} }, { outlineId: 'o-orphan', phases: {} }] },
-        { lessonId: 'l2', jobs: [{ outlineId: 'o-twin-a', phases: {} }, { outlineId: 'o-twin-b', phases: {} }, { outlineId: 'o-quiz', phases: {} }] },
+        {
+          lessonId: 'l1',
+          jobs: [
+            { outlineId: 'o-base', phases: {} },
+            { outlineId: 'o-p2', phases: {} },
+            { outlineId: 'o-orphan', phases: {} },
+          ],
+        },
+        {
+          lessonId: 'l2',
+          jobs: [
+            { outlineId: 'o-twin-a', phases: {} },
+            { outlineId: 'o-twin-b', phases: {} },
+            { outlineId: 'o-quiz', phases: {} },
+          ],
+        },
       ],
       blueprint: {
         lessons: [

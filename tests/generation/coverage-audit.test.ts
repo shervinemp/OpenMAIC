@@ -36,10 +36,30 @@ The fourth section applies everything.
 function buildFixture(): { digest: DocumentDigest; chunks: PdfChunk[] } {
   const chunks = chunkSourceText(SOURCE, { maxChunkChars: 400 });
   const sections = [
-    { heading: '1.1 Introduction', chapter: '1', pageStart: '1', chunkId: chunks.find((c) => c.pageHint === '1')!.id },
-    { heading: '1.2 Concepts', chapter: '1', pageStart: '10', chunkId: chunks.find((c) => c.pageHint === '10')!.id },
-    { heading: '2.1 Depth', chapter: '2', pageStart: '20', chunkId: chunks.find((c) => c.pageHint === '20')!.id },
-    { heading: '2.2 Practice', chapter: '2', pageStart: '30', chunkId: chunks.find((c) => c.pageHint === '30')!.id },
+    {
+      heading: '1.1 Introduction',
+      chapter: '1',
+      pageStart: '1',
+      chunkId: chunks.find((c) => c.pageHint === '1')!.id,
+    },
+    {
+      heading: '1.2 Concepts',
+      chapter: '1',
+      pageStart: '10',
+      chunkId: chunks.find((c) => c.pageHint === '10')!.id,
+    },
+    {
+      heading: '2.1 Depth',
+      chapter: '2',
+      pageStart: '20',
+      chunkId: chunks.find((c) => c.pageHint === '20')!.id,
+    },
+    {
+      heading: '2.2 Practice',
+      chapter: '2',
+      pageStart: '30',
+      chunkId: chunks.find((c) => c.pageHint === '30')!.id,
+    },
   ];
   return {
     chunks,

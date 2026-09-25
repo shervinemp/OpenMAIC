@@ -38,7 +38,8 @@ const deepSet = (obj, path, value) => {
 
 const countLeaves = (obj) =>
   Object.entries(obj ?? {}).reduce(
-    (n, [, v]) => n + (v !== null && typeof v === 'object' && !Array.isArray(v) ? countLeaves(v) : 1),
+    (n, [, v]) =>
+      n + (v !== null && typeof v === 'object' && !Array.isArray(v) ? countLeaves(v) : 1),
     0,
   );
 
@@ -62,5 +63,7 @@ for (const name of locales) {
     deepSet(target, key, sourceLeaves[key]);
   }
   writeFileSync(path, `${JSON.stringify(target, null, 2)}\n`, 'utf8');
-  console.log(`${name}: filled ${missing.length} missing (from ${SOURCE})${extra.length ? `; ${extra.length} extra left as-is` : ''} — leaves ${countLeaves(target)}`);
+  console.log(
+    `${name}: filled ${missing.length} missing (from ${SOURCE})${extra.length ? `; ${extra.length} extra left as-is` : ''} — leaves ${countLeaves(target)}`,
+  );
 }

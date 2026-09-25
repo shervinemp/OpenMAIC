@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  sanitizeSlidePlacement,
-  validateSlidePlacement,
-  type PPTElement,
-} from '@openmaic/dsl';
+import { sanitizeSlidePlacement, validateSlidePlacement, type PPTElement } from '@openmaic/dsl';
 
 function canvas(elements: PPTElement[], viewportSize = 1000, viewportRatio = 0.5625) {
   return { viewportSize, viewportRatio, elements };

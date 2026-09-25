@@ -65,7 +65,14 @@ export class GitSyncDocumentStore implements BaseStore {
 
   async putPhaseStates(
     stageId: string,
-    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+    entries: ReadonlyArray<{
+      outlineId: string;
+      phase: string;
+      status: string;
+      attempts: number;
+      updatedAt: number;
+      error?: string;
+    }>,
   ): Promise<void> {
     if (entries.length === 0) return;
     await this.inner.putPhaseStates(stageId, entries);

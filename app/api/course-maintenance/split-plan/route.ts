@@ -19,7 +19,11 @@ export async function POST(req: NextRequest) {
   }
   const fileDir = process.env.PERSISTENCE_DIR;
   if (!fileDir) {
-    return apiError('INVALID_REQUEST', 503, 'this route requires the file-backed persistence backend (PERSISTENCE_DIR)');
+    return apiError(
+      'INVALID_REQUEST',
+      503,
+      'this route requires the file-backed persistence backend (PERSISTENCE_DIR)',
+    );
   }
   let body: { courseId?: string; sceneIds?: string[] };
   try {

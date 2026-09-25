@@ -1,8 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import {
-  formatWebSourceLegend,
-  webSourcesToChunks,
-} from '@/lib/generation/web-retrieval';
+import { formatWebSourceLegend, webSourcesToChunks } from '@/lib/generation/web-retrieval';
 import {
   extractCitationMarkers,
   formatRetrievalContext,

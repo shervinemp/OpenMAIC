@@ -50,7 +50,10 @@ interface ModalityInput {
   modelSelected?: boolean;
 }
 
-const blocking = (check: Omit<ReadinessCheck, 'blocking'>): ReadinessCheck => ({ ...check, blocking: true });
+const blocking = (check: Omit<ReadinessCheck, 'blocking'>): ReadinessCheck => ({
+  ...check,
+  blocking: true,
+});
 
 async function probe(
   url: string,
@@ -205,9 +208,18 @@ async function checkImageOrVideo(
       });
     }
     if (reachability === 'auth_error') {
-      return blocking({ key, status: 'auth_error', detail: `the ${key} server rejected the request` });
+      return blocking({
+        key,
+        status: 'auth_error',
+        detail: `the ${key} server rejected the request`,
+      });
     }
-    return { key, status: 'ready', blocking: false, detail: `server reachable at ${resolvedBaseUrl}` };
+    return {
+      key,
+      status: 'ready',
+      blocking: false,
+      detail: `server reachable at ${resolvedBaseUrl}`,
+    };
   }
   return { key, status: 'ready', blocking: false, detail: `${providerId} configured` };
 }
@@ -244,9 +256,18 @@ async function checkTts(input: ModalityInput): Promise<ReadinessCheck | null> {
       });
     }
     if (reachability === 'auth_error') {
-      return blocking({ key: 'tts', status: 'auth_error', detail: 'the tts server rejected the request' });
+      return blocking({
+        key: 'tts',
+        status: 'auth_error',
+        detail: 'the tts server rejected the request',
+      });
     }
-    return { key: 'tts', status: 'ready', blocking: false, detail: `server reachable at ${resolvedBaseUrl}` };
+    return {
+      key: 'tts',
+      status: 'ready',
+      blocking: false,
+      detail: `server reachable at ${resolvedBaseUrl}`,
+    };
   }
   return { key: 'tts', status: 'ready', blocking: false, detail: `${providerId} configured` };
 }

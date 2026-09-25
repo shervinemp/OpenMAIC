@@ -23,10 +23,18 @@ function document(): SplitApplyDocumentShape {
     type: 'slide',
     title: 'Stacked slide',
     order: 8,
-    content: { type: 'slide', canvas: { viewportSize: 1000, viewportRatio: 0.5625, elements }, schemaVersion: 1 },
+    content: {
+      type: 'slide',
+      canvas: { viewportSize: 1000, viewportRatio: 0.5625, elements },
+      schemaVersion: 1,
+    },
     actions: [
       { id: 'speechMid', type: 'speech', text: 't' },
-      ...Array.from({ length: 30 }, (_, i) => ({ id: `spot_${i}`, type: 'spotlight', elementId: `text_${i}` })),
+      ...Array.from({ length: 30 }, (_, i) => ({
+        id: `spot_${i}`,
+        type: 'spotlight',
+        elementId: `text_${i}`,
+      })),
     ],
     createdAt: 1,
     updatedAt: 1,
@@ -39,7 +47,16 @@ function document(): SplitApplyDocumentShape {
     type: 'slide',
     title: 'Next slide',
     order: 9,
-    content: { type: 'slide', canvas: { viewportSize: 1000, viewportRatio: 0.5625, elements: [{ id: 'x', type: 'text', left: 0, top: 0, width: 100, height: 40, role: 'primary' }] } },
+    content: {
+      type: 'slide',
+      canvas: {
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [
+          { id: 'x', type: 'text', left: 0, top: 0, width: 100, height: 40, role: 'primary' },
+        ],
+      },
+    },
     actions: [{ id: 'bSpeech', type: 'speech', text: 'b' }],
     createdAt: 1,
     updatedAt: 1,
@@ -49,8 +66,24 @@ function document(): SplitApplyDocumentShape {
     scenes: [mega, sibling],
     outline: {
       outlines: [
-        { id: 'scene_8', type: 'slide', title: 'Stacked slide', description: 'd', keyPoints: [], order: 8, lessonId: 'lesson_2' },
-        { id: 'scene_9', type: 'slide', title: 'Next slide', description: 'd9', keyPoints: [], order: 9, lessonId: 'lesson_2' },
+        {
+          id: 'scene_8',
+          type: 'slide',
+          title: 'Stacked slide',
+          description: 'd',
+          keyPoints: [],
+          order: 8,
+          lessonId: 'lesson_2',
+        },
+        {
+          id: 'scene_9',
+          type: 'slide',
+          title: 'Next slide',
+          description: 'd9',
+          keyPoints: [],
+          order: 9,
+          lessonId: 'lesson_2',
+        },
       ],
       lessonGroups: [
         {
@@ -104,7 +137,9 @@ describe('split-apply', () => {
   it('redistributes action rows: each original action stays exactly once', () => {
     const doc = document();
     applySplit(doc, 'sceneA');
-    const actionIds = doc.scenes.flatMap((s) => ((s.actions ?? []) as Array<{ id: string }>).map((a) => a.id));
+    const actionIds = doc.scenes.flatMap((s) =>
+      ((s.actions ?? []) as Array<{ id: string }>).map((a) => a.id),
+    );
     expect(new Set(actionIds).size).toBe(32); // 30 spots + opener + sibling speech
     expect(actionIds.length).toBe(32);
   });
@@ -112,7 +147,9 @@ describe('split-apply', () => {
   it('carries tts/media verdicts onto every part job (fill-decay stays visible)', () => {
     const doc = document();
     const group = doc.outline.lessonGroups[0];
-    const original = (group.jobs as Array<Record<string, unknown>>).find((job) => job.outlineId === 'scene_8')!;
+    const original = (group.jobs as Array<Record<string, unknown>>).find(
+      (job) => job.outlineId === 'scene_8',
+    )!;
     (original.phases as Record<string, unknown>).tts = {
       status: 'failed',
       attempts: 1,
@@ -136,8 +173,8 @@ describe('split-apply', () => {
   it('leaves jobs without narration phases phase-free after the split', () => {
     const doc = document();
     const result = applySplit(doc, 'sceneA')!;
-    const partJobs = (doc.outline.lessonGroups[0].jobs as Array<Record<string, unknown>>).filter((job) =>
-      result.parts.some((part) => part.outlineId === job.outlineId),
+    const partJobs = (doc.outline.lessonGroups[0].jobs as Array<Record<string, unknown>>).filter(
+      (job) => result.parts.some((part) => part.outlineId === job.outlineId),
     );
     for (const job of partJobs) {
       expect((job.phases as Record<string, unknown>).tts).toBeUndefined();

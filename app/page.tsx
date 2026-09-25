@@ -49,7 +49,10 @@ import { BACKUP_UI_ENABLED } from '@/lib/backup/config';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
-import { saveGenerationSession, hasGenerationSessionEnvelope } from '@/lib/utils/generation-session-store';
+import {
+  saveGenerationSession,
+  hasGenerationSessionEnvelope,
+} from '@/lib/utils/generation-session-store';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import {
   courseMaterialFingerprint,
@@ -63,10 +66,7 @@ import type {
 import { useSettingsStore } from '@/lib/store/settings';
 import { hasUsableLLMProvider } from '@/lib/store/settings-validation';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
-import {
-  COURSE_SIZE_PRESETS,
-  type CourseSizePreset,
-} from '@/lib/constants/generation';
+import { COURSE_SIZE_PRESETS, type CourseSizePreset } from '@/lib/constants/generation';
 import {
   StageListItem,
   listStages,
@@ -598,7 +598,12 @@ function HomePage() {
     }));
   };
 
-const { probe: probeReadiness, checking: readinessChecking, issues: readinessIssues, dismiss: dismissReadiness } = useGenerationReadiness();
+  const {
+    probe: probeReadiness,
+    checking: readinessChecking,
+    issues: readinessIssues,
+    dismiss: dismissReadiness,
+  } = useGenerationReadiness();
 
   const runGeneration = async () => {
     // No model/provider guard here: generation is gated by `canGenerate`
@@ -998,92 +1003,92 @@ const { probe: probeReadiness, checking: readinessChecking, issues: readinessIss
               </div>
 
               <div className="flex flex-wrap items-center justify-end gap-2 ml-auto max-w-full">
-              {/* Course size preset (Phase 2 §15.3) */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        className={cn(
-                          'shrink-0 h-8 px-2.5 rounded-lg flex items-center gap-1 text-xs font-medium border transition-colors',
-                          form.sizePreset !== 'compact'
-                            ? 'border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300'
-                            : 'border-border/60 text-muted-foreground hover:bg-muted/60',
-                        )}
-                      >
-                        {t(`generation.sizePreset.${form.sizePreset}`)}
-                        <ChevronDown className="size-3" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-44">
-                      {(Object.keys(COURSE_SIZE_PRESETS) as CourseSizePreset[]).map((preset) => (
-                        <DropdownMenuItem
-                          key={preset}
-                          onSelect={() => updateForm('sizePreset', preset)}
-                          className="flex items-center justify-between"
+                {/* Course size preset (Phase 2 §15.3) */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className={cn(
+                            'shrink-0 h-8 px-2.5 rounded-lg flex items-center gap-1 text-xs font-medium border transition-colors',
+                            form.sizePreset !== 'compact'
+                              ? 'border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300'
+                              : 'border-border/60 text-muted-foreground hover:bg-muted/60',
+                          )}
                         >
-                          <span>{t(`generation.sizePreset.${preset}`)}</span>
-                          {form.sizePreset === preset && <Check className="size-3.5" />}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {t('generation.sizePresetHint', {
-                    scenes: COURSE_SIZE_PRESETS[form.sizePreset].maxScenes,
-                    minutes: COURSE_SIZE_PRESETS[form.sizePreset].durationMinutes,
-                  })}
-                </TooltipContent>
-              </Tooltip>
+                          {t(`generation.sizePreset.${form.sizePreset}`)}
+                          <ChevronDown className="size-3" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-44">
+                        {(Object.keys(COURSE_SIZE_PRESETS) as CourseSizePreset[]).map((preset) => (
+                          <DropdownMenuItem
+                            key={preset}
+                            onSelect={() => updateForm('sizePreset', preset)}
+                            className="flex items-center justify-between"
+                          >
+                            <span>{t(`generation.sizePreset.${preset}`)}</span>
+                            {form.sizePreset === preset && <Check className="size-3.5" />}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {t('generation.sizePresetHint', {
+                      scenes: COURSE_SIZE_PRESETS[form.sizePreset].maxScenes,
+                      minutes: COURSE_SIZE_PRESETS[form.sizePreset].durationMinutes,
+                    })}
+                  </TooltipContent>
+                </Tooltip>
 
-              {/* Interactive mode toggle */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <InteractiveModeButton
-                    pressed={form.interactiveMode}
-                    label={t('toolbar.interactiveModeLabel')}
-                    onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
-                  />
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {t('toolbar.interactiveModeHint')}
-                </TooltipContent>
-              </Tooltip>
+                {/* Interactive mode toggle */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <InteractiveModeButton
+                      pressed={form.interactiveMode}
+                      label={t('toolbar.interactiveModeLabel')}
+                      onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {t('toolbar.interactiveModeHint')}
+                  </TooltipContent>
+                </Tooltip>
 
-              {/* Voice input */}
-              <SpeechButton
-                size="md"
-                onTranscription={(text) => {
-                  setForm((prev) => {
-                    const next = prev.requirement + (prev.requirement ? ' ' : '') + text;
-                    updateRequirementCache(next);
-                    return { ...prev, requirement: next };
-                  });
-                }}
-              />
+                {/* Voice input */}
+                <SpeechButton
+                  size="md"
+                  onTranscription={(text) => {
+                    setForm((prev) => {
+                      const next = prev.requirement + (prev.requirement ? ' ' : '') + text;
+                      updateRequirementCache(next);
+                      return { ...prev, requirement: next };
+                    });
+                  }}
+                />
 
-              {/* Send button */}
-              <button
-                onClick={handleGenerate}
-                disabled={!canGenerate || preparingGenerate || readinessChecking}
-                className={cn(
-                  'shrink-0 h-8 rounded-lg flex items-center justify-center gap-1.5 transition-all px-3',
-                  canGenerate && !preparingGenerate && !readinessChecking
-                    ? 'bg-primary text-primary-foreground hover:opacity-90 shadow-sm cursor-pointer'
-                    : 'bg-muted text-muted-foreground/40 cursor-not-allowed',
-                )}
-              >
-                <span className="text-xs font-medium">
-                  {preparingGenerate ? t('stage.generating') : t('toolbar.enterClassroom')}
-                </span>
-                {preparingGenerate ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <ArrowUp className="size-3.5" />
-                )}
-              </button>
+                {/* Send button */}
+                <button
+                  onClick={handleGenerate}
+                  disabled={!canGenerate || preparingGenerate || readinessChecking}
+                  className={cn(
+                    'shrink-0 h-8 rounded-lg flex items-center justify-center gap-1.5 transition-all px-3',
+                    canGenerate && !preparingGenerate && !readinessChecking
+                      ? 'bg-primary text-primary-foreground hover:opacity-90 shadow-sm cursor-pointer'
+                      : 'bg-muted text-muted-foreground/40 cursor-not-allowed',
+                  )}
+                >
+                  <span className="text-xs font-medium">
+                    {preparingGenerate ? t('stage.generating') : t('toolbar.enterClassroom')}
+                  </span>
+                  {preparingGenerate ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <ArrowUp className="size-3.5" />
+                  )}
+                </button>
               </div>
             </div>
           </div>
@@ -2046,5 +2051,3 @@ function ClassroomCard({
 export default function Page() {
   return <HomePage />;
 }
-
-

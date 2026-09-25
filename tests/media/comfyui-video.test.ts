@@ -61,7 +61,11 @@ function stubComfy(history: () => unknown, viewBytes: Uint8Array = VIDEO_BYTES) 
         if (image instanceof Blob) {
           calls.uploadedImageName = 'uploaded-' + image.size + '.png';
         }
-        return jsonResponse({ name: calls.uploadedImageName ?? 'uploaded.png', subfolder: '', type: 'input' });
+        return jsonResponse({
+          name: calls.uploadedImageName ?? 'uploaded.png',
+          subfolder: '',
+          type: 'input',
+        });
       }
       if (url.endsWith('/prompt')) {
         calls.promptBody = JSON.parse(String(init?.body));

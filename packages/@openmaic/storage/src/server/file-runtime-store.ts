@@ -75,9 +75,7 @@ const DEFAULT_PAYLOAD_VALIDATORS: Record<string, RuntimePayloadValidator> = {
           ],
         },
   quizAttempt: (payload) =>
-    isRuntimePayloadObject(payload) &&
-    typeof payload.phase === 'string' &&
-    'answers' in payload
+    isRuntimePayloadObject(payload) && typeof payload.phase === 'string' && 'answers' in payload
       ? { valid: true }
       : {
           valid: false,
@@ -180,7 +178,11 @@ export class JsonFileRuntimeStore implements RuntimeStore {
     await mkdir(this.runtimeDir(), { recursive: true });
     const path = this.sessionPath(sessionId);
     const tmp = `${path}.tmp-${randomBytes(6).toString('hex')}`;
-    await writeFile(tmp, encodeJson(stored, `runtime session ${JSON.stringify(sessionId)}`), 'utf8');
+    await writeFile(
+      tmp,
+      encodeJson(stored, `runtime session ${JSON.stringify(sessionId)}`),
+      'utf8',
+    );
     await rename(tmp, path);
   }
 
@@ -232,7 +234,10 @@ export class JsonFileRuntimeStore implements RuntimeStore {
     const stored = await this.readStored(sessionId);
     if (stored === null) return undefined;
     const session = migrateSession(stored.session);
-    assertValid(validateRuntimeSession(session), `stored runtime session ${JSON.stringify(sessionId)}`);
+    assertValid(
+      validateRuntimeSession(session),
+      `stored runtime session ${JSON.stringify(sessionId)}`,
+    );
     return session;
   }
 
@@ -265,8 +270,10 @@ export class JsonFileRuntimeStore implements RuntimeStore {
   ): Promise<void> {
     assertExpectedLastSeq(options.expectedLastSeq);
     const stored = await this.readStored(sessionId);
-    if (stored === null) throw new Error(`@openmaic/storage: no session ${JSON.stringify(sessionId)}`);
-    if (isFutureRuntimeVersioned(stored.session)) throw futureSessionError(sessionId, stored.session);
+    if (stored === null)
+      throw new Error(`@openmaic/storage: no session ${JSON.stringify(sessionId)}`);
+    if (isFutureRuntimeVersioned(stored.session))
+      throw futureSessionError(sessionId, stored.session);
     const updated: RuntimeSession = { ...migrateSession(stored.session), status, updatedAt };
     assertValid(validateRuntimeSession(updated), `runtime session ${JSON.stringify(sessionId)}`);
     if (options.expectedLastSeq !== undefined) {
@@ -286,7 +293,10 @@ export class JsonFileRuntimeStore implements RuntimeStore {
     init: RuntimeRecordInit<TPayload>,
     options: RuntimeAppendOptions = {},
   ): Promise<RuntimeRecord<TPayload>> {
-    assertValid(validateRuntimeRecord({ ...init, seq: 0 }), `runtime record ${JSON.stringify(init.id)}`);
+    assertValid(
+      validateRuntimeRecord({ ...init, seq: 0 }),
+      `runtime record ${JSON.stringify(init.id)}`,
+    );
     assertExpectedLastSeq(options.expectedLastSeq);
     const stored = await this.readStored(init.sessionId);
     if (stored === null) {
@@ -367,10 +377,7 @@ export class JsonFileRuntimeStore implements RuntimeStore {
         ...migrateSession(stored.session),
         learnerKey: toLearnerKey,
       };
-      assertValid(
-        validateRuntimeSession(updated),
-        `runtime session ${JSON.stringify(updated.id)}`,
-      );
+      assertValid(validateRuntimeSession(updated), `runtime session ${JSON.stringify(updated.id)}`);
       moved.push({ sessionId: stored.session.id, stored, updated });
     }
     if (moved.length === 0) return 0;
@@ -384,7 +391,10 @@ export class JsonFileRuntimeStore implements RuntimeStore {
         const tmp = `${path}.tmp-${randomBytes(6).toString('hex')}`;
         await writeFile(
           tmp,
-          encodeJson({ ...stored, session: updated }, `runtime session ${JSON.stringify(sessionId)}`),
+          encodeJson(
+            { ...stored, session: updated },
+            `runtime session ${JSON.stringify(sessionId)}`,
+          ),
           'utf8',
         );
         return { path, tmp };

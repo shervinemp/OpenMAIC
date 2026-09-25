@@ -18,10 +18,7 @@
  */
 
 import { db } from './database';
-import type {
-  GenerationSessionParams,
-  GenerationSessionState,
-} from '@/lib/types/generation';
+import type { GenerationSessionParams, GenerationSessionState } from '@/lib/types/generation';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('GenerationSessionStore');
@@ -192,10 +189,7 @@ export async function loadGenerationParams(
   stageId: string,
 ): Promise<GenerationSessionParams | null> {
   try {
-    const records = await db.generationSessions
-      .where('session.stageId')
-      .equals(stageId)
-      .toArray();
+    const records = await db.generationSessions.where('session.stageId').equals(stageId).toArray();
     const latest = records.sort((a, b) => a.updatedAt - b.updatedAt).pop();
     if (latest?.session.generationParams) return latest.session.generationParams;
   } catch (e) {

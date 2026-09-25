@@ -49,7 +49,8 @@ for (const [locale, map] of Object.entries(labels)) {
   const path = join(dir, `${locale}.json`);
   const raw = readFileSync(path, 'utf8');
   const doc = JSON.parse(raw);
-  if (!doc.generation || typeof doc.generation !== 'object') throw new Error(`${locale}: no generation block`);
+  if (!doc.generation || typeof doc.generation !== 'object')
+    throw new Error(`${locale}: no generation block`);
   if (!doc.classroomComplete?.trailLabels) throw new Error(`${locale}: no trailLabels block`);
 
   // Insert after sceneTypeReading to keep the specialized kinds grouped.
@@ -62,7 +63,8 @@ for (const [locale, map] of Object.entries(labels)) {
       generation.sceneTypeTradeoffs = map.sceneType[2];
     }
   }
-  if (!generation.sceneTypeComparison) throw new Error(`${locale}: sceneTypeReading anchor missing`);
+  if (!generation.sceneTypeComparison)
+    throw new Error(`${locale}: sceneTypeReading anchor missing`);
 
   const trailLabels = {};
   for (const [key, value] of Object.entries(doc.classroomComplete.trailLabels)) {

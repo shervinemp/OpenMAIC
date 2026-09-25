@@ -33,7 +33,9 @@ export function buildUnitReviewSummary(
   unit: Pick<UnitBlueprint, 'title' | 'objectives' | 'lessons'>,
   outlines: SceneOutline[],
 ): string {
-  const lessonTitles = unit.lessons.map((lesson, index) => `  ${index + 1}. ${lesson.title}`).join('\n');
+  const lessonTitles = unit.lessons
+    .map((lesson, index) => `  ${index + 1}. ${lesson.title}`)
+    .join('\n');
   const sceneLines = outlines.map((outline) => {
     const keyPoints = (outline.keyPoints ?? []).filter(Boolean).slice(0, 5).join('; ');
     return `${outline.order}. [${outline.type}] ${outline.title} — ${outline.description}${
@@ -61,9 +63,10 @@ export function buildUnitReviewSummary(
  * verdict is inadequate — a rejection without concrete feedback cannot
  * drive the corrective loop.
  */
-export function validateUnitReviewVerdict(
-  parsed: unknown,
-): { verdict: UnitReviewVerdict | null; errors: string[] } {
+export function validateUnitReviewVerdict(parsed: unknown): {
+  verdict: UnitReviewVerdict | null;
+  errors: string[];
+} {
   const errors: string[] = [];
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return { verdict: null, errors: ['verdict must be a JSON object'] };

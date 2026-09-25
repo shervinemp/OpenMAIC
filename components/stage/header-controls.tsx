@@ -118,51 +118,45 @@ export function HeaderControls({
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
   const [layoutBusy, setLayoutBusy] = useState(false);
-  const [layoutResult, setLayoutResult] = useState<
-    | {
-        clamped: number;
-        flagged: number;
-        lines: Array<{ sceneTitle: string; message: string; severity: string }>;
-      }
-    | null
-  >(null);
+  const [layoutResult, setLayoutResult] = useState<{
+    clamped: number;
+    flagged: number;
+    lines: Array<{ sceneTitle: string; message: string; severity: string }>;
+  } | null>(null);
 
-  const runPlacementSweep = useCallback(
-    async (repair: boolean) => {
-      setLayoutBusy(true);
-      setLayoutMenuOpen(false);
-      try {
-        const { useStageStore } = await import('@/lib/store');
-        const { sweepScenePlacement } = await import('@/lib/slides/placement-sweep');
-        const state = useStageStore.getState();
-        const current = state.scenes.find(
-          (scene) => scene.id === (state as { currentSceneId?: string }).currentSceneId,
+  const runPlacementSweep = useCallback(async (repair: boolean) => {
+    setLayoutBusy(true);
+    setLayoutMenuOpen(false);
+    try {
+      const { useStageStore } = await import('@/lib/store');
+      const { sweepScenePlacement } = await import('@/lib/slides/placement-sweep');
+      const state = useStageStore.getState();
+      const current = state.scenes.find(
+        (scene) => scene.id === (state as { currentSceneId?: string }).currentSceneId,
+      );
+      const scene = current ?? state.scenes.find((scene) => scene.type === 'slide');
+      if (!scene) throw new Error('no slide scene');
+      const result = sweepScenePlacement(scene as never, { repair });
+      if (repair && result.elementsClamped > 0) {
+        state.setScenes(
+          state.scenes.map((entry) => (entry.id === scene.id ? result.scene : entry)) as never,
         );
-        const scene = current ?? state.scenes.find((scene) => scene.type === 'slide');
-        if (!scene) throw new Error('no slide scene');
-        const result = sweepScenePlacement(scene as never, { repair });
-        if (repair && result.elementsClamped > 0) {
-          state.setScenes(
-            state.scenes.map((entry) => (entry.id === scene.id ? result.scene : entry)) as never,
-          );
-        }
-        setLayoutResult({
-          clamped: result.elementsClamped,
-          flagged: result.findings.length,
-          lines: result.findings.map((finding) => ({
-            sceneTitle: scene.title || scene.id,
-            message: finding.message,
-            severity: finding.severity,
-          })),
-        });
-      } catch (error) {
-        console.error('[layout-sweep]', error);
-      } finally {
-        setLayoutBusy(false);
       }
-    },
-    [],
-  );
+      setLayoutResult({
+        clamped: result.elementsClamped,
+        flagged: result.findings.length,
+        lines: result.findings.map((finding) => ({
+          sceneTitle: scene.title || scene.id,
+          message: finding.message,
+          severity: finding.severity,
+        })),
+      });
+    } catch (error) {
+      console.error('[layout-sweep]', error);
+    } finally {
+      setLayoutBusy(false);
+    }
+  }, []);
 
   // Keep the original full-generation gate for the export menu. Script files
   // are text-only, but the latest review confirmed that this menu intentionally
@@ -326,7 +320,10 @@ export function HeaderControls({
         </button>
       </div>
 
-      <Dialog open={layoutResult !== null || layoutBusy} onOpenChange={(open) => !open && setLayoutResult(null)}>
+      <Dialog
+        open={layoutResult !== null || layoutBusy}
+        onOpenChange={(open) => !open && setLayoutResult(null)}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             {layoutBusy
@@ -352,9 +349,7 @@ export function HeaderControls({
                       <span
                         className={cn(
                           'font-medium',
-                          line.severity === 'error'
-                            ? 'text-red-500'
-                            : 'text-amber-500',
+                          line.severity === 'error' ? 'text-red-500' : 'text-amber-500',
                         )}
                       >
                         {line.severity === 'error' ? '⛔' : '⚠'}

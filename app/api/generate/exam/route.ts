@@ -71,7 +71,8 @@ function coerceFreeResponse(raw: unknown, index: number): ExamFreeResponse | nul
       const criterion = typeof rc.criterion === 'string' ? rc.criterion.trim() : '';
       const lookFor = typeof rc.lookFor === 'string' ? rc.lookFor.trim() : '';
       if (!criterion || !lookFor) return null;
-      const weight = rc.weight === 'essential' || rc.weight === 'important' ? rc.weight : 'important';
+      const weight =
+        rc.weight === 'essential' || rc.weight === 'important' ? rc.weight : 'important';
       return {
         id: typeof rc.id === 'string' && rc.id.trim() ? rc.id.trim() : `rubric_${index + 1}_n`,
         criterion,
@@ -102,10 +103,14 @@ function coerceFreeResponse(raw: unknown, index: number): ExamFreeResponse | nul
 export function findShortfalls(spec: ExamSpec): string[] {
   const findings: string[] = [];
   if (spec.mcQuestions.length < MIN_MC_QUESTIONS) {
-    findings.push(`MC section has ${spec.mcQuestions.length} questions; requires at least ${MIN_MC_QUESTIONS}`);
+    findings.push(
+      `MC section has ${spec.mcQuestions.length} questions; requires at least ${MIN_MC_QUESTIONS}`,
+    );
   }
   if (spec.frQuestions.length < MIN_FR_QUESTIONS) {
-    findings.push(`free-response section has ${spec.frQuestions.length} questions; requires at least ${MIN_FR_QUESTIONS}`);
+    findings.push(
+      `free-response section has ${spec.frQuestions.length} questions; requires at least ${MIN_FR_QUESTIONS}`,
+    );
   }
   return findings;
 }
@@ -122,21 +127,27 @@ export async function POST(req: NextRequest) {
     kind = body.kind;
     const { blueprint, coveredOutlines, languageDirective } = body;
     if ((kind !== 'midterm' && kind !== 'final') || !blueprint) {
-      return apiError('MISSING_REQUIRED_FIELD', 400, 'kind (midterm|final) and blueprint are required');
+      return apiError(
+        'MISSING_REQUIRED_FIELD',
+        400,
+        'kind (midterm|final) and blueprint are required',
+      );
     }
     const examKind: ExamKind = kind;
 
-    const { model: languageModel, modelInfo, thinkingConfig } = await resolveModelFromRequest(
-      req,
-      body,
-      'exam-generation',
-    );
+    const {
+      model: languageModel,
+      modelInfo,
+      thinkingConfig,
+    } = await resolveModelFromRequest(req, body, 'exam-generation');
 
     const digest = coveredOutlines
       .slice(0, 400)
       .map(
         (o) =>
-          `- [${o.type}] ${o.title}\n  objective: ${o.description ?? ''}\n  key points: ${(o.keyPoints ?? [])
+          `- [${o.type}] ${o.title}\n  objective: ${o.description ?? ''}\n  key points: ${(
+            o.keyPoints ?? []
+          )
             .slice(0, 4)
             .join('; ')}`,
       )
@@ -169,7 +180,9 @@ ${languageDirective ? `- Language directive: ${languageDirective}` : '- Write al
         {
           model: languageModel,
           system,
-          prompt: extra ? `${userPrompt}\n\nCONSTRAINT VIOLATION REPORT — fix and resubmit the FULL JSON:\n${extra}` : userPrompt,
+          prompt: extra
+            ? `${userPrompt}\n\nCONSTRAINT VIOLATION REPORT — fix and resubmit the FULL JSON:\n${extra}`
+            : userPrompt,
           maxOutputTokens: modelInfo?.outputWindow,
           maxRetries: 0,
         },
@@ -194,7 +207,9 @@ ${languageDirective ? `- Language directive: ${languageDirective}` : '- Write al
       const blueprintUnits = blueprint.units?.length ?? 0;
       const from = 0;
       const to =
-        examKind === 'midterm' ? Math.max(0, Math.ceil(blueprintUnits / 2) - 1) : Math.max(0, blueprintUnits - 1);
+        examKind === 'midterm'
+          ? Math.max(0, Math.ceil(blueprintUnits / 2) - 1)
+          : Math.max(0, blueprintUnits - 1);
       return {
         kind: examKind,
         title:
@@ -220,11 +235,19 @@ ${languageDirective ? `- Language directive: ${languageDirective}` : '- Write al
       log.warn(`Exam spec shortfall (${findings.join('; ')}); re-prompting once`);
       spec = buildSpec(await calllOnce(findings.join(';\n')));
       if (!spec) {
-        return apiError('GENERATION_FAILED', 500, 'Exam generation returned unparseable output on retry');
+        return apiError(
+          'GENERATION_FAILED',
+          500,
+          'Exam generation returned unparseable output on retry',
+        );
       }
       const retryFindings = findShortfalls(spec);
       if (retryFindings.length) {
-        return apiError('GENERATION_FAILED', 502, `Exam spec incomplete: ${retryFindings.join('; ')}`);
+        return apiError(
+          'GENERATION_FAILED',
+          502,
+          `Exam spec incomplete: ${retryFindings.join('; ')}`,
+        );
       }
     }
 

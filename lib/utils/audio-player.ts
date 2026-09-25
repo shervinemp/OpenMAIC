@@ -203,7 +203,9 @@ export class AudioPlayer {
           warnedMissingAudioIds.size < MISSING_AUDIO_WARN_LIMIT
         ) {
           warnedMissingAudioIds.add(audioId);
-          log.warn(`No pre-generated narration bytes for ${audioId}; falling back to TTS/reading beat`);
+          log.warn(
+            `No pre-generated narration bytes for ${audioId}; falling back to TTS/reading beat`,
+          );
         }
         return false;
       }

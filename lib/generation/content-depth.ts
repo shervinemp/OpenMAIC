@@ -26,8 +26,4 @@ export {
   validateTradeoffsDepth,
   validateSlideDepth,
 } from '@openmaic/generation';
-export type {
-  DepthReport,
-  SceneDepthSummary,
-  SlideDepthOptions,
-} from '@openmaic/generation';
+export type { DepthReport, SceneDepthSummary, SlideDepthOptions } from '@openmaic/generation';

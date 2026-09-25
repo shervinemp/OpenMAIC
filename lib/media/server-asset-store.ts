@@ -32,7 +32,7 @@ function normalizeHeaders(init: HeadersInit | undefined): Record<string, string>
   if (Array.isArray(init)) {
     for (const [name, value] of init) normalized[name.toLowerCase()] = value;
   } else if (typeof (init as Headers).forEach === 'function') {
-    (init as Headers).forEach((value, name) => normalized[name.toLowerCase()] = value);
+    (init as Headers).forEach((value, name) => (normalized[name.toLowerCase()] = value));
   } else {
     for (const [name, value] of Object.entries(init)) normalized[name.toLowerCase()] = value;
   }
@@ -109,9 +109,7 @@ export class HttpAssetStore implements StorageProvider {
     headers['content-type'] = mime || 'application/octet-stream';
     const hasMeta = meta !== undefined && Object.keys(meta).length > 0;
     if (hasMeta) {
-      headers['x-asset-meta'] = btoa(
-        unescape(encodeURIComponent(JSON.stringify(meta))),
-      );
+      headers['x-asset-meta'] = btoa(unescape(encodeURIComponent(JSON.stringify(meta))));
     }
     const response = await fetch(this.assetUrl(ref), {
       method: 'PUT',

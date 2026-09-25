@@ -3,10 +3,7 @@ import { join } from 'node:path';
 
 import { authenticatePersistenceHeaders } from '@/lib/persistence/server-auth';
 import { getCourseBinding } from '@/lib/persistence/git-course-sync';
-import {
-  collectDocumentMediaRefs,
-  isNarrationRefShape,
-} from '@/lib/media/document-media-refs';
+import { collectDocumentMediaRefs, isNarrationRefShape } from '@/lib/media/document-media-refs';
 
 /**
  * GET /api/course-git/report — live course materialization report.
@@ -28,14 +25,23 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request): Promise<Response> {
   const dir = process.env.PERSISTENCE_DIR?.trim();
   if (!dir) {
-    return Response.json({ error: { code: 'GIT_SYNC_UNAVAILABLE', message: 'PERSISTENCE_DIR is not configured' } }, { status: 503 });
+    return Response.json(
+      { error: { code: 'GIT_SYNC_UNAVAILABLE', message: 'PERSISTENCE_DIR is not configured' } },
+      { status: 503 },
+    );
   }
   if (!(await authenticatePersistenceHeaders(request.headers))) {
-    return Response.json({ error: { code: 'UNAUTHENTICATED', message: 'server persistence requires authentication' } }, { status: 401 });
+    return Response.json(
+      { error: { code: 'UNAUTHENTICATED', message: 'server persistence requires authentication' } },
+      { status: 401 },
+    );
   }
   const stageId = new URL(request.url).searchParams.get('stageId');
   if (!stageId) {
-    return Response.json({ error: { code: 'INVALID_STAGE_ID', message: 'stageId is required' } }, { status: 400 });
+    return Response.json(
+      { error: { code: 'INVALID_STAGE_ID', message: 'stageId is required' } },
+      { status: 400 },
+    );
   }
 
   const binding = await getCourseBinding(dir, stageId);
@@ -45,7 +51,12 @@ export async function GET(request: Request): Promise<Response> {
     document = JSON.parse(readFileSync(docPath, 'utf8'));
   } catch {
     return Response.json(
-      { error: { code: 'DOCUMENT_NOT_PERSISTED', message: 'no server-persisted document for this stage' } },
+      {
+        error: {
+          code: 'DOCUMENT_NOT_PERSISTED',
+          message: 'no server-persisted document for this stage',
+        },
+      },
       { status: 404 },
     );
   }

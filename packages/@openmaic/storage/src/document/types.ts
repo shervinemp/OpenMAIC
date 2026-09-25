@@ -112,8 +112,7 @@ export function isStaleOverwrite(
   incoming: { stage: { updatedAt: unknown } },
 ): boolean {
   const storedAt = typeof stored?.stage.updatedAt === 'number' ? stored.stage.updatedAt : NaN;
-  const incomingAt =
-    typeof incoming.stage.updatedAt === 'number' ? incoming.stage.updatedAt : NaN;
+  const incomingAt = typeof incoming.stage.updatedAt === 'number' ? incoming.stage.updatedAt : NaN;
   if (!Number.isFinite(storedAt) || !Number.isFinite(incomingAt)) return false;
   return incomingAt < storedAt - STALE_WRITE_TOLERANCE_MS;
 }
@@ -300,7 +299,14 @@ export interface DocumentStore<TScene extends SceneLike = Scene, TStage extends 
    */
   putPhaseStates(
     stageId: string,
-    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+    entries: ReadonlyArray<{
+      outlineId: string;
+      phase: string;
+      status: string;
+      attempts: number;
+      updatedAt: number;
+      error?: string;
+    }>,
   ): Promise<void>;
 
   /**

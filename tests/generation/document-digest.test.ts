@@ -22,7 +22,11 @@ import {
   type DigestSectionCard,
 } from '@/lib/generation/document-digest';
 import { chunkSourceText } from '@openmaic/generation';
-import { DIGEST_BATCH_CHARS, DIGEST_RAW_THRESHOLD_CHARS, DIGEST_TARGET_CHARS } from '@/lib/constants/generation';
+import {
+  DIGEST_BATCH_CHARS,
+  DIGEST_RAW_THRESHOLD_CHARS,
+  DIGEST_TARGET_CHARS,
+} from '@/lib/constants/generation';
 
 // ~26k chars of textbook-shaped source: chapters 1-3, each with sections.
 const CHAPTER = (n: number, sections: Array<[string, string]>) => {
@@ -307,7 +311,12 @@ describe('renderDocumentDigest', () => {
 
 describe('lens', () => {
   test('lens prompt requires a full permutation and parse validates it', () => {
-    const prompt = buildDigestLensPrompt('learn OS', 'contract', '## Coverage\n### A\n### B\n### C', 'English');
+    const prompt = buildDigestLensPrompt(
+      'learn OS',
+      'contract',
+      '## Coverage\n### A\n### B\n### C',
+      'English',
+    );
     expect(prompt.system).toContain('permutation');
     expect(parseLensOrder('{"order":[2,0,1]}', 3)).toEqual([2, 0, 1]);
     expect(parseLensOrder('{"order":[2,0]}', 3)).toBeNull();

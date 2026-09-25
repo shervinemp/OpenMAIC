@@ -101,9 +101,8 @@ async function fetchServerAudioBlob(audioId: string): Promise<Blob | null> {
   if (pending) return pending;
   const promise = (async () => {
     try {
-      const { isBrowserPersistenceEnabled, getPersistenceRequestHeaders } = await import(
-        '@/lib/persistence/bootstrap'
-      );
+      const { isBrowserPersistenceEnabled, getPersistenceRequestHeaders } =
+        await import('@/lib/persistence/bootstrap');
       if (!isBrowserPersistenceEnabled()) return null;
       const headers = await getPersistenceRequestHeaders();
       const response = await fetch(`/api/persistence/assets/${encodeURIComponent(audioId)}`, {

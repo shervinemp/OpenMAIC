@@ -20,12 +20,40 @@ const stripHtml = (html: string) =>
 
 const isText = (el: unknown) => (el as { type?: string }).type === 'text';
 const rows = (scene: Record<string, unknown>) =>
-  ((scene as { content?: { canvas?: { elements?: unknown[] } } }).content?.canvas?.elements ??
-    []).filter(isText) as Array<{ id: string; content?: string; width?: number; top?: number }>;
+  (
+    (scene as { content?: { canvas?: { elements?: unknown[] } } }).content?.canvas?.elements ?? []
+  ).filter(isText) as Array<{ id: string; content?: string; width?: number; top?: number }>;
 
 const STOP = new Set([
-  'the', 'a', 'an', 'of', 'to', 'in', 'is', 'and', 'or', 'it', 'you', 'your', 'we', 'this', 'that',
-  'on', 'for', 'with', 'as', 'are', 'be', 'by', 'from', 'at', 'so', 'not', 'have', 'has', 'was',
+  'the',
+  'a',
+  'an',
+  'of',
+  'to',
+  'in',
+  'is',
+  'and',
+  'or',
+  'it',
+  'you',
+  'your',
+  'we',
+  'this',
+  'that',
+  'on',
+  'for',
+  'with',
+  'as',
+  'are',
+  'be',
+  'by',
+  'from',
+  'at',
+  'so',
+  'not',
+  'have',
+  'has',
+  'was',
 ]);
 
 // ---------- tier-1 counts ----------
@@ -150,14 +178,13 @@ let figureGapCandidates = 0;
 const figureGapExamples: string[] = [];
 for (const scene of slides) {
   const title = String(scene.title ?? '').toLowerCase();
-  const els = (scene as { content?: { canvas?: { elements?: unknown[] } } }).content?.canvas
-    ?.elements ?? [];
+  const els =
+    (scene as { content?: { canvas?: { elements?: unknown[] } } }).content?.canvas?.elements ?? [];
   const shapes = els.filter((el) => !isText(el));
-  const isHairline = shapes.every(
-    (el) => Number((el as { height?: number }).height) <= 6,
-  );
+  const isHairline = shapes.every((el) => Number((el as { height?: number }).height) <= 6);
   if (shapes.length === 0 || !isHairline) continue;
-  if (!/shape|anatomy|structure|architecture|diagram|compare|side by side|anatomy of/.test(title)) continue;
+  if (!/shape|anatomy|structure|architecture|diagram|compare|side by side|anatomy of/.test(title))
+    continue;
   figureGapCandidates += 1;
   if (figureGapExamples.length < 8) figureGapExamples.push(String(scene.title));
 }
@@ -173,4 +200,3 @@ console.log(`\nspotlight-mismatch candidates (rare-word proxy): ${mismtchCandida
 mismatchExamples.forEach((x) => console.log('  ' + x));
 console.log(`\nfigure-gap candidates (text-only, shape-title): ${figureGapCandidates}`);
 figureGapExamples.forEach((x) => console.log('  ' + x));
-

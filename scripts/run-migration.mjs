@@ -16,7 +16,8 @@ import { chromium } from '../node_modules/.pnpm/playwright@1.58.2/node_modules/p
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 // Browser profile being read (a mirror of the source browser's user-data-dir).
-const PROFILE = process.env.MAIC_MIRROR_PROFILE ?? 'C:\\Users\\sherv\\AppData\\Local\\Temp\\opencode\\ddg-mirror';
+const PROFILE =
+  process.env.MAIC_MIRROR_PROFILE ?? 'C:\\Users\\sherv\\AppData\\Local\\Temp\\opencode\\ddg-mirror';
 const OLD_ORIGIN = 'http://localhost:3000';
 const NEW_ORIGIN = process.env.OPENMAIC_URL ?? 'http://localhost:3001';
 const WORK = 'C:\\Users\\sherv\\AppData\\Local\\Temp\\opencode';

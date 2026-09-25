@@ -107,14 +107,14 @@ describe('sceneContentFindings', () => {
       actions: [spot('t1'), spot('t2')],
     });
     setElements(all, [textEl('t1', '<p>a</p>'), textEl('t2', '<p>b</p>', 200)]);
-    expect(
-      sceneContentFindingsLoose(all).filter((f) => f.kind.startsWith('narration/')),
-    ).toEqual([]);
+    expect(sceneContentFindingsLoose(all).filter((f) => f.kind.startsWith('narration/'))).toEqual(
+      [],
+    );
     const none = slide({ actions: [{ type: 'speech', text: 'x' }] });
     setElements(none, [textEl('t1', '<p>a</p>'), textEl('t2', '<p>b</p>', 200)]);
-    expect(
-      sceneContentFindingsLoose(none).filter((f) => f.kind.startsWith('narration/')),
-    ).toEqual([]);
+    expect(sceneContentFindingsLoose(none).filter((f) => f.kind.startsWith('narration/'))).toEqual(
+      [],
+    );
   });
 
   it('ignores non-slide scenes', () => {
@@ -246,8 +246,7 @@ describe('stripDeadActionAnchors (write-time guard)', () => {
 // ---------- helpers ----------
 
 function setElements(scene: AnyScene, elements: AnyScene[]) {
-  ((scene as { content: { canvas: { elements: AnyScene[] } } }).content.canvas).elements =
-    elements;
+  (scene as { content: { canvas: { elements: AnyScene[] } } }).content.canvas.elements = elements;
 }
 function getElements(scene: AnyScene): readonly AnyScene[] {
   return (scene as { content: { canvas: { elements: readonly AnyScene[] } } }).content.canvas

@@ -266,7 +266,10 @@ describe('narration refused for want of room', () => {
     mockFetch.mockResolvedValue(ttsResponse());
 
     const scene = sceneWithOneLine();
-    await expect(generateTTSForScene(scene)).resolves.toMatchObject({ success: true, failedCount: 0 });
+    await expect(generateTTSForScene(scene)).resolves.toMatchObject({
+      success: true,
+      failedCount: 0,
+    });
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
@@ -364,7 +367,10 @@ describe('narration refused for want of room', () => {
     mockFetch.mockResolvedValueOnce(ttsResponse());
 
     const scene = sceneWithOneLine();
-    await expect(generateTTSForScene(scene)).resolves.toMatchObject({ success: true, failedCount: 0 });
+    await expect(generateTTSForScene(scene)).resolves.toMatchObject({
+      success: true,
+      failedCount: 0,
+    });
 
     expect(mocks.poolPut).not.toHaveBeenCalled();
     expect(audioIdOf(scene)).toBe(derivedRef);

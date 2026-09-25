@@ -37,11 +37,13 @@ export const validateAppScene: SceneValidator = (scene) => {
       const canvas = content ? objectValue(content.canvas) : null;
       const elements = canvas?.elements;
       if (canvas && Array.isArray(elements)) {
-        const { changes } = sanitizeSlidePlacement(canvas as {
-          viewportSize: number;
-          viewportRatio: number;
-          elements: PPTElement[];
-        });
+        const { changes } = sanitizeSlidePlacement(
+          canvas as {
+            viewportSize: number;
+            viewportRatio: number;
+            elements: PPTElement[];
+          },
+        );
         if (changes.length > 0) {
           console.warn(
             `[placement-clamp] scene ${String(value.id ?? '?')}: clamped ${changes.length} out-of-bounds element(s)`,

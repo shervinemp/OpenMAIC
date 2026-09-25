@@ -119,7 +119,14 @@ describe('generation and deck tools', () => {
           aiCall: vi.fn(async () => {
             calls += 1;
             return calls === 1
-              ? JSON.stringify([{ id: 'q1', type: 'short_answer', question: 'Scenario: after the calibration, how do you verify the device is safe to operate?' }])
+              ? JSON.stringify([
+                  {
+                    id: 'q1',
+                    type: 'short_answer',
+                    question:
+                      'Scenario: after the calibration, how do you verify the device is safe to operate?',
+                  },
+                ])
               : JSON.stringify([{ type: 'text', content: 'Narration' }]);
           }),
         }),
@@ -151,7 +158,14 @@ describe('generation and deck tools', () => {
     const aiCall = vi.fn(async () => {
       contentCalls += 1;
       if (contentCalls === 1)
-        return JSON.stringify([{ id: 'q1', type: 'short_answer', question: 'Scenario: which step isolates an unexpected device startup before maintenance begins?' }]);
+        return JSON.stringify([
+          {
+            id: 'q1',
+            type: 'short_answer',
+            question:
+              'Scenario: which step isolates an unexpected device startup before maintenance begins?',
+          },
+        ]);
       if (contentCalls === 2) return JSON.stringify([{ type: 'text', content: 'First narration' }]);
       throw new Error('mid-generation failure');
     });
@@ -321,7 +335,8 @@ describe('generation and deck tools', () => {
                     {
                       id: 'text-1',
                       type: 'text',
-                      content: '<p>A microscope uses lenses to magnify small specimens for study.</p>',
+                      content:
+                        '<p>A microscope uses lenses to magnify small specimens for study.</p>',
                       left: 420,
                       top: 0,
                       width: 500,
@@ -330,7 +345,8 @@ describe('generation and deck tools', () => {
                     {
                       id: 'text-2',
                       type: 'text',
-                      content: '<p>The objective lens produces the first enlarged image of the sample.</p>',
+                      content:
+                        '<p>The objective lens produces the first enlarged image of the sample.</p>',
                       left: 420,
                       top: 80,
                       width: 500,
@@ -339,7 +355,8 @@ describe('generation and deck tools', () => {
                     {
                       id: 'text-3',
                       type: 'text',
-                      content: '<p>For example, a 40x objective shows individual plant cells clearly.</p>',
+                      content:
+                        '<p>For example, a 40x objective shows individual plant cells clearly.</p>',
                       left: 420,
                       top: 160,
                       width: 500,
@@ -348,7 +365,8 @@ describe('generation and deck tools', () => {
                     {
                       id: 'text-4',
                       type: 'text',
-                      content: '<p>Focusing requires moving the stage until the specimen becomes sharp.</p>',
+                      content:
+                        '<p>Focusing requires moving the stage until the specimen becomes sharp.</p>',
                       left: 420,
                       top: 240,
                       width: 500,

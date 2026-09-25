@@ -605,4 +605,3 @@ describe('task-engine outline route', () => {
     expect(done.outlines[0].widgetOutline).toBeUndefined();
   });
 });
-

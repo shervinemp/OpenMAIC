@@ -128,7 +128,8 @@ export async function loadComfyWorkflow(
         );
       }
       const { defaultComfyuiWorkflowFilename } = await import('../comfyui-workflows');
-      filename = (await defaultComfyuiWorkflowFilename(options.preferOutput ?? 'image')) ?? known[0];
+      filename =
+        (await defaultComfyuiWorkflowFilename(options.preferOutput ?? 'image')) ?? known[0];
       console.info(
         `[INFO]  [ComfyUI-${label}] No workflow specified — defaulting to "${filename}"`,
       );

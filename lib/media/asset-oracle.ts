@@ -30,9 +30,7 @@ export interface AssetProbeRequest {
 
 export type AssetProbeResult = Map<string, boolean>;
 
-export async function probeServerAssetPresence(
-  refs: readonly string[],
-): Promise<AssetProbeResult> {
+export async function probeServerAssetPresence(refs: readonly string[]): Promise<AssetProbeResult> {
   const result: AssetProbeResult = new Map();
   const unique = [...new Set(refs.filter((ref) => ref.length > 0))];
   if (unique.length === 0) return result;
@@ -77,17 +75,13 @@ export async function probeLocalAssetPresence(
   try {
     if (/^(tts_|audio_|speech_)/.test(ref)) {
       const { db } = await import('@/lib/utils/database');
-      const row = await db
-        .audioFiles.get(ref)
-        .catch(() => undefined);
+      const row = await db.audioFiles.get(ref).catch(() => undefined);
       if (row?.blob && row.blob.size > 0) return true;
       return false;
     }
     if (!stageId) return false;
     const { db, mediaFileKey } = await import('@/lib/utils/database');
-    const row = await db.mediaFiles
-      .get(mediaFileKey(stageId, ref))
-      .catch(() => undefined);
+    const row = await db.mediaFiles.get(mediaFileKey(stageId, ref)).catch(() => undefined);
     return !!row && (row.size ?? 0) > 0;
   } catch {
     return false;

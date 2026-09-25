@@ -32,7 +32,17 @@ const log = createLogger('ExamView');
 
 type Phase = 'list' | 'generating' | 'taking' | 'grading' | 'reviewing';
 
-const localeCode: Record<string, string> = { en: 'en-US', zh: 'zh-CN', ja: 'ja-JP', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ko: 'ko-KR', pt: 'pt-BR', ru: 'ru-RU' };
+const localeCode: Record<string, string> = {
+  en: 'en-US',
+  zh: 'zh-CN',
+  ja: 'ja-JP',
+  es: 'es-ES',
+  fr: 'fr-FR',
+  de: 'de-DE',
+  ko: 'ko-KR',
+  pt: 'pt-BR',
+  ru: 'ru-RU',
+};
 
 function modelHeaders(): Record<string, string> {
   const config = getCurrentModelConfig();
@@ -48,15 +58,12 @@ function modelHeaders(): Record<string, string> {
 
 /** Same split as the generation route: midterm covers the front half of units. */
 function coverageRange(kind: ExamKind, unitCount: number): [number, number] {
-  const to = kind === 'midterm' ? Math.max(0, Math.ceil(unitCount / 2) - 1) : Math.max(0, unitCount - 1);
+  const to =
+    kind === 'midterm' ? Math.max(0, Math.ceil(unitCount / 2) - 1) : Math.max(0, unitCount - 1);
   return [0, to];
 }
 
-function outlinesForRange(
-  blueprint?: CourseBlueprint,
-  from = 0,
-  to = 0,
-): SceneOutline[] {
+function outlinesForRange(blueprint?: CourseBlueprint, from = 0, to = 0): SceneOutline[] {
   const units = blueprint?.units;
   if (!units?.length) {
     return blueprint?.lessons?.flatMap((lesson) => lesson.outlines) ?? [];
@@ -221,7 +228,9 @@ export default function ExamOverlay({
         <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
           <div className="flex items-center gap-2.5">
             <BookCheck className="h-5 w-5 text-violet-600 dark:text-violet-400" />
-            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{t('exams.title')}</h2>
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+              {t('exams.title')}
+            </h2>
           </div>
           <button
             onClick={close}
@@ -331,7 +340,9 @@ export default function ExamOverlay({
           {phase === 'grading' && (
             <div className="mt-16 flex flex-col items-center gap-3 text-center" aria-live="polite">
               <RefreshCw className="h-8 w-8 animate-spin text-violet-600" />
-              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">{t('exams.grading')}</p>
+              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                {t('exams.grading')}
+              </p>
             </div>
           )}
 
@@ -354,7 +365,14 @@ function ScoreRing({ pct, label }: { pct: number; label: string }) {
       aria-label={`${label}: ${Math.round(pct * 100)}%`}
     >
       <svg width="88" height="88" viewBox="0 0 88 88" aria-hidden="true">
-        <circle cx="44" cy="44" r={radius} fill="none" strokeWidth="7" className="stroke-zinc-200 dark:stroke-zinc-700" />
+        <circle
+          cx="44"
+          cy="44"
+          r={radius}
+          fill="none"
+          strokeWidth="7"
+          className="stroke-zinc-200 dark:stroke-zinc-700"
+        />
         <circle
           cx="44"
           cy="44"
@@ -367,7 +385,14 @@ function ScoreRing({ pct, label }: { pct: number; label: string }) {
           strokeDashoffset={circumference * (1 - clamped)}
           transform="rotate(-90 44 44)"
         />
-        <text x="44" y="49" textAnchor="middle" fontSize="19" fontWeight="700" className="fill-zinc-900 dark:fill-zinc-50">
+        <text
+          x="44"
+          y="49"
+          textAnchor="middle"
+          fontSize="19"
+          fontWeight="700"
+          className="fill-zinc-900 dark:fill-zinc-50"
+        >
           {`${Math.round(pct * 100)}%`}
         </text>
       </svg>
@@ -427,9 +452,9 @@ function ExamTaking({
                     key={opt.value}
                     className={
                       'flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2 text-sm transition-colors ' +
-                        (picked
-                          ? 'border-violet-400 bg-violet-50 dark:border-violet-500 dark:bg-violet-900/20'
-                          : 'border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800')
+                      (picked
+                        ? 'border-violet-400 bg-violet-50 dark:border-violet-500 dark:bg-violet-900/20'
+                        : 'border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800')
                     }
                   >
                     <input
@@ -440,7 +465,9 @@ function ExamTaking({
                       className="mt-0.5 accent-violet-600"
                     />
                     <span>
-                      <span className="mr-1.5 font-semibold tabular-nums text-zinc-400">{opt.value}.</span>
+                      <span className="mr-1.5 font-semibold tabular-nums text-zinc-400">
+                        {opt.value}.
+                      </span>
                       {opt.label}
                     </span>
                   </label>
@@ -457,7 +484,10 @@ function ExamTaking({
         </h3>
         <p className="mb-4 text-xs text-zinc-500 dark:text-zinc-400">{t('exams.frIntro')}</p>
         {spec.frQuestions.map((fr, i) => (
-          <div key={fr.id} className="mb-5 rounded-xl border border-zinc-200 px-5 py-4 dark:border-zinc-700">
+          <div
+            key={fr.id}
+            className="mb-5 rounded-xl border border-zinc-200 px-5 py-4 dark:border-zinc-700"
+          >
             <p className="mb-2 text-sm font-medium text-zinc-800 dark:text-zinc-100">
               <span className="mr-1.5 tabular-nums text-zinc-400">{i + 1}.</span>
               {fr.prompt}
@@ -481,7 +511,9 @@ function ExamTaking({
                 >
                   {c.criterion}
                   <span className="ml-1 text-zinc-400 dark:text-zinc-500">
-                    {c.weight === 'essential' ? t('exams.weightEssential') : t('exams.weightImportant')}
+                    {c.weight === 'essential'
+                      ? t('exams.weightEssential')
+                      : t('exams.weightImportant')}
                   </span>
                 </span>
               ))}
@@ -534,7 +566,10 @@ function ExamReview({ attempt }: { attempt: ExamAttempt }) {
       {spec?.mcQuestions.map((q, qi) => {
         const picked = attempt.mcAnswers[q.id] ?? null;
         return (
-          <div key={q.id} className="mb-4 rounded-xl border border-zinc-200 px-5 py-4 dark:border-zinc-700">
+          <div
+            key={q.id}
+            className="mb-4 rounded-xl border border-zinc-200 px-5 py-4 dark:border-zinc-700"
+          >
             <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">
               <span className="mr-1.5 tabular-nums text-zinc-400">{qi + 1}.</span>
               {q.question}
@@ -548,11 +583,11 @@ function ExamReview({ attempt }: { attempt: ExamAttempt }) {
                     key={opt.value}
                     className={
                       'flex items-center gap-2 rounded-md px-2 py-1.5 ' +
-                        (isAnswer
-                          ? 'bg-green-50 dark:bg-green-900/20'
-                          : isPicked
-                            ? 'bg-red-50 dark:bg-red-900/20'
-                            : '')
+                      (isAnswer
+                        ? 'bg-green-50 dark:bg-green-900/20'
+                        : isPicked
+                          ? 'bg-red-50 dark:bg-red-900/20'
+                          : '')
                     }
                   >
                     {isAnswer ? (
@@ -567,7 +602,9 @@ function ExamReview({ attempt }: { attempt: ExamAttempt }) {
                 );
               })}
             </ul>
-            {q.analysis && <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">{q.analysis}</p>}
+            {q.analysis && (
+              <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">{q.analysis}</p>
+            )}
           </div>
         );
       })}
@@ -575,7 +612,10 @@ function ExamReview({ attempt }: { attempt: ExamAttempt }) {
         const grade = attempt.frGrades.find((x) => x.questionId === fr.id);
         const criterionTextById = new Map(fr.rubric.map((c) => [c.id, c.criterion]));
         return (
-          <div key={fr.id} className="mb-4 rounded-xl border border-zinc-200 px-5 py-4 dark:border-zinc-700">
+          <div
+            key={fr.id}
+            className="mb-4 rounded-xl border border-zinc-200 px-5 py-4 dark:border-zinc-700"
+          >
             <div className="flex items-start justify-between gap-3">
               <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">
                 <span className="mr-1.5 tabular-nums text-zinc-400">{fi + 1}.</span>
@@ -593,7 +633,10 @@ function ExamReview({ attempt }: { attempt: ExamAttempt }) {
             {grade?.criteria?.length ? (
               <ul className="mt-2 space-y-1">
                 {grade.criteria.map((c) => (
-                  <li key={c.id} className="flex items-start gap-2 text-xs text-zinc-600 dark:text-zinc-300">
+                  <li
+                    key={c.id}
+                    className="flex items-start gap-2 text-xs text-zinc-600 dark:text-zinc-300"
+                  >
                     {c.met ? (
                       <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" />
                     ) : (
@@ -611,7 +654,9 @@ function ExamReview({ attempt }: { attempt: ExamAttempt }) {
             ) : null}
             {attempt.frAnswers[fr.id] && (
               <details className="mt-2">
-                <summary className="cursor-pointer text-xs text-zinc-400">{t('exams.yourAnswer')}</summary>
+                <summary className="cursor-pointer text-xs text-zinc-400">
+                  {t('exams.yourAnswer')}
+                </summary>
                 <p className="mt-1 whitespace-pre-wrap rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
                   {attempt.frAnswers[fr.id]}
                 </p>

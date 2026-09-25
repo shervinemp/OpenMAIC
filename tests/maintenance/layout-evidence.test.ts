@@ -21,7 +21,10 @@ describe('isLayoutEvidenceFresh', () => {
 
   it('is not fresh when debt remains', () => {
     expect(
-      isLayoutEvidenceFresh(sceneWith({ errors: 2, warnings: 0, checkedAt: NOW - 1 }, NOW - 5), NOW),
+      isLayoutEvidenceFresh(
+        sceneWith({ errors: 2, warnings: 0, checkedAt: NOW - 1 }, NOW - 5),
+        NOW,
+      ),
     ).toBe(false);
   });
 
@@ -32,7 +35,10 @@ describe('isLayoutEvidenceFresh', () => {
   it('is not fresh when the evidence is older than the age cap', () => {
     expect(
       isLayoutEvidenceFresh(
-        sceneWith(green(NOW - LAYOUT_EVIDENCE_MAX_AGE_MS - 1), NOW - LAYOUT_EVIDENCE_MAX_AGE_MS - 2),
+        sceneWith(
+          green(NOW - LAYOUT_EVIDENCE_MAX_AGE_MS - 1),
+          NOW - LAYOUT_EVIDENCE_MAX_AGE_MS - 2,
+        ),
         NOW,
       ),
     ).toBe(false);

@@ -28,51 +28,21 @@
   "5": {
     "class_type": "MiniMaxH3ImageToVideo",
     "inputs": {
-      "clip": [
-        "2",
-        0
-      ],
-      "vae": [
-        "3",
-        0
-      ],
-      "prompt": [
-        "10",
-        0
-      ],
-      "width": [
-        "8",
-        0
-      ],
-      "height": [
-        "9",
-        0
-      ],
-      "length": [
-        "12",
-        1
-      ]
+      "clip": ["2", 0],
+      "vae": ["3", 0],
+      "prompt": ["10", 0],
+      "width": ["8", 0],
+      "height": ["9", 0],
+      "length": ["12", 1]
     }
   },
   "6": {
     "class_type": "KSampler",
     "inputs": {
-      "model": [
-        "1",
-        0
-      ],
-      "positive": [
-        "5",
-        0
-      ],
-      "negative": [
-        "7",
-        0
-      ],
-      "latent_image": [
-        "5",
-        1
-      ],
+      "model": ["1", 0],
+      "positive": ["5", 0],
+      "negative": ["7", 0],
+      "latent_image": ["5", 1],
       "seed": 123456789,
       "steps": 20,
       "cfg": 1.0,
@@ -87,10 +57,7 @@
   "7": {
     "class_type": "CLIPTextEncode",
     "inputs": {
-      "clip": [
-        "2",
-        0
-      ],
+      "clip": ["2", 0],
       "text": ""
     },
     "_meta": {
@@ -137,67 +104,37 @@
     "class_type": "ComfyMathExpression",
     "inputs": {
       "expression": "max(5, round(a * b))",
-      "values.a": [
-        "11",
-        0
-      ],
-      "values.b": [
-        "17",
-        0
-      ]
+      "values.a": ["11", 0],
+      "values.b": ["17", 0]
     }
   },
   "13": {
     "class_type": "VAEDecode",
     "inputs": {
-      "samples": [
-        "6",
-        0
-      ],
-      "vae": [
-        "3",
-        0
-      ]
+      "samples": ["6", 0],
+      "vae": ["3", 0]
     }
   },
   "14": {
     "class_type": "VAEDecodeAudio",
     "inputs": {
-      "samples": [
-        "6",
-        0
-      ],
-      "vae": [
-        "4",
-        0
-      ]
+      "samples": ["6", 0],
+      "vae": ["4", 0]
     }
   },
   "15": {
     "class_type": "CreateVideo",
     "inputs": {
-      "images": [
-        "13",
-        0
-      ],
-      "fps": [
-        "17",
-        0
-      ],
-      "audio": [
-        "14",
-        0
-      ],
+      "images": ["13", 0],
+      "fps": ["17", 0],
+      "audio": ["14", 0],
       "bit_depth": 8
     }
   },
   "16": {
     "class_type": "SaveVideo",
     "inputs": {
-      "video": [
-        "15",
-        0
-      ],
+      "video": ["15", 0],
       "filename_prefix": "video/MiniMax_H3",
       "format": "auto",
       "codec": "auto"

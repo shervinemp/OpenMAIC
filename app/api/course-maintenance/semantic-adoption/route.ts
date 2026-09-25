@@ -122,7 +122,11 @@ async function runAdoption(
     const highlightId = String(adoption.highlightedElementId);
     const betterId = String(adoption.betterElementId);
     if (!scene) {
-      skipped.push({ sceneId: String(adoption.sceneId), highlightedElementId: highlightId, reason: 'scene not found' });
+      skipped.push({
+        sceneId: String(adoption.sceneId),
+        highlightedElementId: highlightId,
+        reason: 'scene not found',
+      });
       continue;
     }
     // The adopt target MUST exist on this canvas: a route that "invents" a

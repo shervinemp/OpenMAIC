@@ -244,9 +244,7 @@ describe('lessonGroups job model (Pillar 2)', () => {
       expect.objectContaining({
         outline: expect.objectContaining({
           blueprint: expect.objectContaining({ title: 'Test Course' }),
-          lessonGroups: expect.arrayContaining([
-            expect.objectContaining({ lessonId: 'lesson_1' }),
-          ]),
+          lessonGroups: expect.arrayContaining([expect.objectContaining({ lessonId: 'lesson_1' })]),
         }),
       }),
       expect.any(Number),
@@ -260,7 +258,11 @@ describe('lessonGroups job model (Pillar 2)', () => {
       currentSceneId: null,
       chats: [],
       outline: {
-        outlines: [makeOutline('outline-a', 1), makeOutline('outline-b', 2), makeOutline('outline-c', 3)],
+        outlines: [
+          makeOutline('outline-a', 1),
+          makeOutline('outline-b', 2),
+          makeOutline('outline-c', 3),
+        ],
         blueprint: makeBlueprint(),
         createdAt: 1,
         updatedAt: 1,
@@ -327,7 +329,12 @@ describe('lessonGroups job model (Pillar 2)', () => {
           id: `canvas-${id}`,
           viewportSize: 1000,
           viewportRatio: 0.5625,
-          theme: { backgroundColor: '#fff', themeColors: ['#000'], fontColor: '#000', fontName: 'Inter' },
+          theme: {
+            backgroundColor: '#fff',
+            themeColors: ['#000'],
+            fontColor: '#000',
+            fontName: 'Inter',
+          },
           elements: [],
         },
       },

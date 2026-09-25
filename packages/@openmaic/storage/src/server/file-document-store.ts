@@ -103,7 +103,9 @@ function assertValid(result: ReturnType<StageValidator>, label: string): void {
 function assertStorableScene(scene: SceneLike, stageId: string): void {
   const value = scene as { id: unknown; stageId: unknown; order: unknown };
   if (typeof value.id !== 'string') {
-    throw new Error(`@openmaic/storage: scene id must be a string, got ${JSON.stringify(value.id)}`);
+    throw new Error(
+      `@openmaic/storage: scene id must be a string, got ${JSON.stringify(value.id)}`,
+    );
   }
   if (value.stageId !== stageId) {
     throw new Error(
@@ -453,7 +455,14 @@ export class JsonFileDocumentStore<
 
   async putPhaseStates(
     stageId: string,
-    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+    entries: ReadonlyArray<{
+      outlineId: string;
+      phase: string;
+      status: string;
+      attempts: number;
+      updatedAt: number;
+      error?: string;
+    }>,
   ): Promise<void> {
     if (entries.length === 0) return;
     await this.withDocumentLock(stageId, async () => {
@@ -461,7 +470,9 @@ export class JsonFileDocumentStore<
       if (stored === null) return;
       this.assertCurrentForIncrementalWrite(stageId, stored);
       const outline = (stored.outline ?? {}) as {
-        lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }>;
+        lessonGroups?: Array<{
+          jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }>;
+        }>;
       };
       let touched = 0;
       for (const entry of entries) {
