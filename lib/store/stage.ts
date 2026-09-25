@@ -464,6 +464,13 @@ interface StageState {
   addFailedOutline: (outline: SceneOutline) => void;
   clearFailedOutlines: () => void;
   retryFailedOutline: (outlineId: string) => void;
+  /**
+   * Drop an outline's retry card once nothing about it is still broken: its
+   * scene is materialized and no phase row is failed. The repair paths call
+   * this after a phase heals; a card for a still-failed sibling phase (media
+   * after narration healed, say) stays up.
+   */
+  settleFailedOutline: (outlineId: string) => void;
   /** Skip resolution (Pillar 2 §4.9): close a permanently failed outline so
       the deck can complete without it. Session-level (not persisted). */
   skippedOutlineIds: string[];
@@ -489,15 +496,43 @@ function isDeckComplete({
   scenes,
   failedOutlines,
   skippedOutlineIds = [],
+  lessonGroups = [],
 }: Pick<StageState, 'outlines' | 'scenes' | 'failedOutlines'> & {
   skippedOutlineIds?: string[];
+  lessonGroups?: readonly LessonJobGroup[];
 }): boolean {
   const skipped = new Set(skippedOutlineIds);
   return (
     outlines.length > 0 &&
-    failedOutlines.length === 0 &&
+    completionBlockingFailures(failedOutlines, scenes, lessonGroups).length === 0 &&
     outlines.every((o) => scenes.some((s) => s.order === o.order) || skipped.has(o.id))
   );
+}
+
+/**
+ * Failed outlines that hold a deck open. The one queue also carries fill
+ * decay — tts/media/semantics rows behind a live scene — and those never gate
+ * completion: holding a fully materialized deck open for a decayed clip
+ * unfreezes it, so a slide the user later deletes would come back as
+ * "unfinished" generation on the next open. An outline blocks when it has no
+ * scene or its content/actions failed; one with no job row to tell the two
+ * apart (a pre-blueprint deck) blocks, as before.
+ */
+export function completionBlockingFailures(
+  failedOutlines: readonly SceneOutline[],
+  scenes: readonly Pick<Scene, 'order'>[],
+  lessonGroups: readonly LessonJobGroup[] = [],
+): SceneOutline[] {
+  const materializedOrders = new Set(scenes.map((scene) => scene.order));
+  const jobs = new Map(
+    lessonGroups.flatMap((group) => group.jobs.map((job) => [job.outlineId, job] as const)),
+  );
+  return failedOutlines.filter((outline) => {
+    if (!materializedOrders.has(outline.order)) return true;
+    const job = jobs.get(outline.id);
+    if (!job) return true;
+    return job.phases.content?.status === 'failed' || job.phases.actions?.status === 'failed';
+  });
 }
 
 type StagePersistenceSnapshot = Pick<
@@ -1027,9 +1062,16 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   markGenerationCompleteIfDone: () => {
-    const { outlines, scenes, failedOutlines, skippedOutlineIds, generationComplete } = get();
+    const {
+      outlines,
+      scenes,
+      failedOutlines,
+      skippedOutlineIds,
+      generationComplete,
+      lessonGroups,
+    } = get();
     if (generationComplete) return;
-    if (isDeckComplete({ outlines, scenes, failedOutlines, skippedOutlineIds })) {
+    if (isDeckComplete({ outlines, scenes, failedOutlines, skippedOutlineIds, lessonGroups })) {
       get().setGenerationComplete(true);
     }
   },
@@ -1076,6 +1118,26 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     set({
       failedOutlines: get().failedOutlines.filter((o) => o.id !== outlineId),
     });
+  },
+
+  settleFailedOutline: (outlineId) => {
+    const { failedOutlines, scenes, lessonGroups } = get();
+    const outline = failedOutlines.find((o) => o.id === outlineId);
+    if (!outline) return;
+    const materialized = scenes.some(
+      (scene) => scene.outlineId === outlineId || scene.order === outline.order,
+    );
+    if (!materialized) return;
+    const job = lessonGroups
+      .flatMap((group) => group.jobs)
+      .find((entry) => entry.outlineId === outlineId);
+    // The one queue's phases only: layout debt is served by its own train and
+    // never raises a card, so it cannot pin one either.
+    const queuePhases = ['content', 'actions', 'tts', 'media', 'semantics'] as const;
+    const phases = (job?.phases ?? {}) as Partial<Record<string, { status?: string }>>;
+    const anyPhaseFailed = queuePhases.some((name) => phases[name]?.status === 'failed');
+    if (anyPhaseFailed) return;
+    set({ failedOutlines: failedOutlines.filter((o) => o.id !== outlineId) });
   },
 
   skipFailedOutline: (outlineId) => {
@@ -1517,6 +1579,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
             outlines,
             scenes: migrated,
             failedOutlines: uniqueFailedOutlines,
+            lessonGroups: recoveredLessonGroups,
           }) ||
           everyOutlineSettled;
         const generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error' =

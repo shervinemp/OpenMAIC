@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
-import { useStageStore } from '@/lib/store/stage';
+import { completionBlockingFailures, useStageStore } from '@/lib/store/stage';
 import { isSceneEditLocked } from '@/lib/edit/regen-lock';
 import { getCurrentModelConfig, getStageRoutesHeaderValue } from '@/lib/utils/model-config';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -928,9 +928,13 @@ export async function drainPendingSceneTTS(
         if (result.recoveredIds.length > 0) {
           useStageStore.getState().updateScene(scene.id, { actions: scene.actions });
           restored += 1;
-          if (scene.outlineId) {
-            useStageStore.getState().retryFailedOutline(scene.outlineId);
-          }
+        }
+        // Only a scene whose every dead clip came back is healed: a partial
+        // recovery keeps its card (and its failed row) for the clips still
+        // missing.
+        if (scene.outlineId && result.recoveredIds.length > 0 && result.failedCount === 0) {
+          useStageStore.getState().recordScenePhase(scene.outlineId, 'tts', { status: 'done' });
+          useStageStore.getState().settleFailedOutline(scene.outlineId);
         }
         if (result.failedCount > 0) {
           log.warn(
@@ -974,6 +978,15 @@ export interface GenerationParams {
   languageDirective?: string;
   /** Vocational task-engine flag; gates procedural-skill generation server-side (see resolveVocationalActive). */
   taskEngineMode?: boolean;
+}
+
+export interface GenerateRemainingOptions {
+  /**
+   * Regenerate outlines already parked behind retry cards (default true: an
+   * explicit resume means "finish the course"). The automatic mount resume
+   * passes false unless auto-retry of failed generation is opted into.
+   */
+  readonly includeFailed?: boolean;
 }
 
 /** Speech action ids whose narration bytes do not currently resolve. */
@@ -1033,35 +1046,13 @@ interface MaterialPhaseDescriptor {
   readonly queueOnFailure: boolean;
 }
 
-/**
- * Max-3-attempts doctrine for the semantics phase (mirrors the standard
- * generation retry budget): after the cap the phase fails fast — the scene is
- * NOT regenerated wholesale, and the red card persists for curation (skip /
- * manual adopt), breaking attempt loops that would otherwise re-run the
- * judge-adjacent deterministic checks forever.
- */
-const SEMANTICS_PHASE_MAX_ATTEMPTS = 3;
-
-interface SemanticPhaseAttempts {
-  attempts: number;
-  hadAttempt: boolean;
-}
-
-/**
- * Semantics attempts recorded for an outline, INCLUDING the attempt that is
- * running now: `runOutlineJob` records `status: 'running'` (which bumps
- * `attempts`) before the descriptor's `run` reads this.
- */
-function semanticPhaseAttempts(outlineId: string): SemanticPhaseAttempts {
-  const lessonGroups = useStageStore.getState().lessonGroups;
-  const job = (lessonGroups ?? [])
-    .flatMap((group) => group.jobs)
+/** The outline's persisted media phase row, as the media pass left it. */
+function mediaPhaseStatus(outlineId: string): { status?: string; error?: string } | undefined {
+  const job = useStageStore
+    .getState()
+    .lessonGroups.flatMap((group) => group.jobs)
     .find((entry) => entry.outlineId === outlineId);
-  const phase = job?.phases?.semantics as { attempts?: number; status?: string } | undefined;
-  return {
-    attempts: phase?.attempts ?? 0,
-    hadAttempt: phase?.status !== undefined,
-  };
+  return job?.phases?.media as { status?: string; error?: string } | undefined;
 }
 
 /**
@@ -1278,17 +1269,32 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
       // byte-aware requeue dispatched FOR THIS OUTLINE ONLY (batch keeps
       // its global parallel enqueue). Healthy rows skip; dead ones re-kick.
       const { generateMediaForOutlines } = await import('@/lib/media/media-orchestrator');
-      await generateMediaForOutlines(
-        allOutlines.filter((outline) => outline.id === input.outline.id),
-        stageId,
-        signal,
-        { repair: true },
-      ).catch((err: unknown) =>
+      try {
+        await generateMediaForOutlines(
+          allOutlines.filter((outline) => outline.id === input.outline.id),
+          stageId,
+          signal,
+          { repair: true },
+        );
+      } catch (err) {
+        if (isAbortError(err)) throw err;
+        const message = err instanceof Error ? err.message : String(err);
         log.warn(
           `Media repair enqueue for outline ${JSON.stringify(input.outline.id)} failed:`,
-          err instanceof Error ? err.message : err,
-        ),
-      );
+          message,
+        );
+        return { status: 'failed', error: `media repair failed: ${message}` };
+      }
+      // The pass records the outline's media phase itself; answering `done`
+      // regardless overwrote a failure it had just recorded, so a retry card
+      // reported healed media that was still missing.
+      const settled = mediaPhaseStatus(input.outline.id);
+      if (settled?.status === 'failed') {
+        return { status: 'failed', error: settled.error || 'media repair failed' };
+      }
+      if (settled?.status === 'pending') {
+        return { status: 'failed', error: 'media repair deferred: per-pass repair cap reached' };
+      }
       return { status: 'done' };
     },
   },
@@ -1297,23 +1303,19 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
     // (zero tokens): the delete-only strips cure what they can and the
     // residual decides the phase. The judge is NOT a descriptor — it stays a
     // budgeted read-only maintenance pass; this phase marks the section's
-    // DETERMINISTIC truth with the standard attempt cap.
+    // DETERMINISTIC truth.
     key: 'semantics',
     enabled: () => true,
     queueOnFailure: false,
-    run: async (state, input) => {
+    run: async (state) => {
       const scene = state.scene;
       if (!scene) return { status: 'done' }; // no canvas → nothing to judge
-      const outlineId = input.outline.id;
-      // Attempt cap (max-3 retries doctrine, same vocabulary the status
-      // ratchet already records): exhausted attempts keep the scene but fail
-      // the phase, so the red card persists instead of looping.
-      const attemptState = semanticPhaseAttempts(outlineId);
-      // `attempts` already counts this run, so the cap allows exactly
-      // SEMANTICS_PHASE_MAX_ATTEMPTS real checks before failing fast.
-      if (attemptState.attempts > SEMANTICS_PHASE_MAX_ATTEMPTS && attemptState.hadAttempt) {
-        return { status: 'failed', error: 'semantics attempts exhausted' };
-      }
+      // The checks below are deterministic and token-free, so they always run.
+      // A cap on attempts used to fail this phase fast once an outline had
+      // been through it three times — and every narration or media repair
+      // passes through it — so a scene fixed since (edited, or regenerated
+      // through its card) could never pass again and its card never cleared.
+      // Nothing here can loop: a failure parks behind the card like any other.
       // Delete-only auto-fixes: provenance artifacts and dead anchors never
       // fail the train — they ARE the fix.
       const provenanceFixed = stripSourceProvenance(scene as never);
@@ -1403,12 +1405,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
   const mediaAbortRef = useRef<AbortController | null>(null);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const lastParamsRef = useRef<GenerationParams | null>(null);
-  const generateRemainingRef = useRef<((params: GenerationParams) => Promise<void>) | null>(null);
+  const generateRemainingRef = useRef<
+    ((params: GenerationParams, runOptions?: GenerateRemainingOptions) => Promise<void>) | null
+  >(null);
 
   const store = useStageStore;
 
   const generateRemaining = useCallback(
-    async (params: GenerationParams) => {
+    async (params: GenerationParams, runOptions: GenerateRemainingOptions = {}) => {
       lastParamsRef.current = params;
       if (generatingRef.current) return;
       generatingRef.current = true;
@@ -1445,12 +1449,35 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         return;
       }
 
-      // Determine pending outlines (skipped outlines stay closed — Pillar 2 §4.9)
+      // Determine pending outlines (skipped outlines stay closed — Pillar 2 §4.9).
+      // Failed outlines ride along only when the caller asks: the automatic
+      // mount resume leaves them parked behind their retry cards, so an
+      // unrelated pending outline cannot re-burn every failed one.
       const completedOrders = new Set(scenes.map((s) => s.order));
       const skippedIds = new Set(state.skippedOutlineIds);
+      const includeFailed = runOptions.includeFailed ?? true;
+      const failedIds = new Set(state.failedOutlines.map((o) => o.id));
       const pending = outlines
-        .filter((o) => !completedOrders.has(o.order) && !skippedIds.has(o.id))
+        .filter(
+          (o) =>
+            !completedOrders.has(o.order) &&
+            !skippedIds.has(o.id) &&
+            (includeFailed || !failedIds.has(o.id)),
+        )
         .sort((a, b) => a.order - b.order);
+
+      if (
+        pending.length === 0 &&
+        completionBlockingFailures(state.failedOutlines, scenes, state.lessonGroups).length > 0
+      ) {
+        // Only parked failures remain: the deck is not complete, it waits on
+        // its retry cards.
+        store.getState().setGenerationStatus('paused');
+        store.getState().setGeneratingOutlines([]);
+        generationLease();
+        generatingRef.current = false;
+        return;
+      }
 
       if (pending.length === 0) {
         store.getState().setGenerationStatus('completed');
@@ -1675,6 +1702,9 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
           removeGeneratingOutline(outline.id);
           useStageStore.getState().addScene(jobResult.scene!);
+          // A resumed outline that had failed before now has its scene: its
+          // retry card is settled.
+          store.getState().retryFailedOutline(outline.id);
           options.onSceneGenerated?.(jobResult.scene!, outline.order);
           previousSpeeches = (jobResult.scene!.actions || [])
             .filter((a): a is SpeechAction => a.type === 'speech')
@@ -1682,7 +1712,13 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         }
 
         if (!abortRef.current && !pausedByFailureOrAbort) {
-          if (hadContentFailure || store.getState().failedOutlines.length > 0) {
+          const { failedOutlines: failedNow, scenes: scenesNow, lessonGroups } = store.getState();
+          // Fill decay behind a live scene never holds the deck open; only
+          // content/actions failures do.
+          if (
+            hadContentFailure ||
+            completionBlockingFailures(failedNow, scenesNow, lessonGroups).length > 0
+          ) {
             // Some outlines failed but the loop kept going; surface them for
             // retry/skip instead of signalling a clean completion.
             store.getState().setGenerationStatus('paused');
@@ -1738,11 +1774,18 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
     void retrySingleOutlineRef.current?.(next.id);
   };
 
+  // Retries in flight: stop() (navigation away, unmount) must reach them too,
+  // or a retry — and the queue walk it starts — keeps calling providers for a
+  // course the user already left.
+  const retryAbortsRef = useRef(new Set<AbortController>());
+
   const stop = useCallback(() => {
     abortRef.current = true;
     store.getState().bumpGenerationEpoch();
     fetchAbortRef.current?.abort();
     mediaAbortRef.current?.abort();
+    for (const controller of retryAbortsRef.current) controller.abort();
+    retryAbortsRef.current.clear();
   }, [store]);
 
   const isGenerating = useCallback(() => generatingRef.current, []);
@@ -1826,6 +1869,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
       const abortController = new AbortController();
       const signal = abortController.signal;
+      retryAbortsRef.current.add(abortController);
 
       try {
         const sortedScenes = [...store.getState().scenes].sort((a, b) => a.order - b.order);
@@ -1894,9 +1938,21 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           store.getState().markGenerationCompleteIfDone();
         }
       } catch (err) {
+        // Aborted or crashed, the outline is where it started: back behind its
+        // card (the retry removed it up front), no longer "generating".
+        // Leaving it in generatingOutlines kept a spinner with no worker
+        // behind it until the next reload.
         if (!isAbortError(err)) {
-          store.getState().addFailedOutline(outline);
+          log.warn(`Retry of outline ${JSON.stringify(outlineId)} failed:`, err);
         }
+        if (store.getState().generationEpoch === retryEpoch) {
+          removeGeneratingOutline();
+          store.getState().addFailedOutline(outline);
+          store.getState().setGenerationStatus('paused');
+          store.getState().setGenerationPhase('idle');
+        }
+      } finally {
+        retryAbortsRef.current.delete(abortController);
       }
     },
     [store],

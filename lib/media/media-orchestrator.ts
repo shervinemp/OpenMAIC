@@ -364,9 +364,10 @@ async function collectAndGenerate(
 
   // Budget-driven dispatch (provider-budgets.ts): each class carries its own
   // requeue cap and cost weight — cheap jobs first so one heavy item (a video)
-  // cannot head-of-line-block the cheap backlog. Stable within each class; the
-  // per-class caps bound the provider backlog per pass (the rest wait for the
-  // next pass).
+  // cannot head-of-line-block the cheap backlog. Stable within each class. The
+  // per-class caps are the on-load REPAIR spend guard (the rest wait for the
+  // next repair pass); a generation pass takes every request, or a course with
+  // more generated images than the cap kept placeholders until later reloads.
   const budgets = mediaProviderBudgets();
   const costRank = (type: MediaGenerationRequest['type']): number =>
     type === 'video' ? budgets.video.costWeight : budgets.image.costWeight;
@@ -376,6 +377,7 @@ async function collectAndGenerate(
   const dispatchable = [...allRequests]
     .sort((a, b) => costRank(a.type) - costRank(b.type))
     .filter((req) => {
+      if (!options.repair) return true;
       const taken = perClassTaken.get(req.type) ?? 0;
       if (taken >= classCap(req.type)) return false;
       perClassTaken.set(req.type, taken + 1);
@@ -409,7 +411,9 @@ async function collectAndGenerate(
 
   // Process requests serially — image/video APIs have limited concurrency
   const mediaStats = new Map<string, { total: number; done: number; failed: number }>();
-  for (const req of dispatchable) {
+  // Totals span every request an outline has in this pass, dispatched or
+  // capped: an outline is only settled when all of its media is.
+  for (const req of allRequests) {
     const outlineId = outlineByElement.get(req.elementId);
     if (!outlineId) continue;
     const stats = mediaStats.get(outlineId) ?? { total: 0, done: 0, failed: 0 };
@@ -435,8 +439,9 @@ async function collectAndGenerate(
           : { status: 'failed', error: `${stats.failed}/${stats.total} media item(s) failed` },
       );
     // ONE QUEUE: the outline's media phase settled — its red card (if the fail
-    // hydration put it there) drops with the phase.
-    if (stats.failed === 0) useStageStore.getState().retryFailedOutline(outlineId);
+    // hydration put it there) drops with the phase, unless another phase of
+    // the outline is still failed.
+    if (stats.failed === 0) useStageStore.getState().settleFailedOutline(outlineId);
   };
 
   for (const [index, req] of dispatchable.entries()) {
@@ -466,6 +471,24 @@ async function collectAndGenerate(
     await markAssetStorageFull(stageId);
     markStorageFull(dispatchable.slice(index + 1));
     break;
+  }
+
+  // Outlines this pass started but could not finish (capped repair items,
+  // a storage-full stop) are not done: a failure among what ran fails the
+  // phase, otherwise the rest is still owed and the phase stays pending.
+  if (abortSignal?.aborted) return;
+  for (const [outlineId, stats] of mediaStats) {
+    if (!phaseStarted.has(outlineId)) continue;
+    if (stats.done + stats.failed === stats.total) continue;
+    useStageStore
+      .getState()
+      .recordScenePhase(
+        outlineId,
+        'media',
+        stats.failed > 0
+          ? { status: 'failed', error: `${stats.failed}/${stats.total} media item(s) failed` }
+          : { status: 'pending' },
+      );
   }
 }
 

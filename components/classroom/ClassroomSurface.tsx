@@ -372,19 +372,24 @@ export function ClassroomSurface({
         const params = (await loadGenerationParams(classroomId)) ?? {};
         // Asset ids and IndexedDB copies merged (see loadResumeImageMapping).
         const imageMapping = await loadResumeImageMapping(params.pdfImages);
-        generateRemaining({
-          pdfImages: params.pdfImages,
-          imageMapping,
-          stageInfo: {
-            name: stage.name || '',
-            description: stage.description,
-            style: stage.style,
+        generateRemaining(
+          {
+            pdfImages: params.pdfImages,
+            imageMapping,
+            stageInfo: {
+              name: stage.name || '',
+              description: stage.description,
+              style: stage.style,
+            },
+            agents: params.agents,
+            userProfile: params.userProfile,
+            languageDirective: params.languageDirective || stage.languageDirective,
+            taskEngineMode: stage.taskEngineMode,
           },
-          agents: params.agents,
-          userProfile: params.userProfile,
-          languageDirective: params.languageDirective || stage.languageDirective,
-          taskEngineMode: stage.taskEngineMode,
-        });
+          // The same rule `hasPending` used: parked failures stay parked
+          // unless auto-retry is opted into.
+          { includeFailed: autoRetryFailed },
+        );
         // The params record is deliberately kept: a resumed batch can still
         // pause again (provider failure, tab close) and a later resume needs
         // the same media mapping. The TTL sweep reclaims stale records once
@@ -453,6 +458,9 @@ export function ClassroomSurface({
             const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
             if (!scene?.outlineId) return;
             useStageStore.getState().recordScenePhase(scene.outlineId, phase, { status: 'done' });
+            // The card the failure hook (or load hydration) raised drops with
+            // its phase — unless a sibling phase is still failed.
+            useStageStore.getState().settleFailedOutline(scene.outlineId);
           },
         });
       })().catch((err) => log.warn('[Classroom] Media repair resume error:', err));
