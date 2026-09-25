@@ -3,10 +3,7 @@ import { createLogger } from '@/lib/logger';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
-import {
-  collectDocumentMediaRefs,
-  isNarrationRefShape,
-} from '@/lib/media/document-media-refs';
+import { collectDocumentMediaRefs, isNarrationRefShape } from '@/lib/media/document-media-refs';
 import type { Scene } from '@/lib/types/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { MediaGenerationRequest } from '@/lib/media/types';
@@ -26,7 +23,7 @@ const log = createLogger('RepairCourseMedia');
  *     store. Exactly what playback resolves, so "audio-pending" decks (ids
  *     persisted, bytes never materialized) are detected, not mistaken for
  *     done.
-  *   - Every other kind of asset/material the course references — element
+ *   - Every other kind of asset/material the course references — element
  *     images, videos and their mediaRef/poster refs, cover assets,
  *     whiteboard/cover surfaces, agent avatars, anything with bytes the
  *     renderer resolves (the opaque walk over `src`/`audioRef`/`mediaRef`/
@@ -153,9 +150,8 @@ async function batchRefResolvesBytes(
   refs: readonly string[],
   stageId: string | undefined,
 ): Promise<Map<string, boolean>> {
-  const { probeServerAssetPresence, probeLocalAssetPresence } = await import(
-    '@/lib/media/asset-oracle'
-  );
+  const { probeServerAssetPresence, probeLocalAssetPresence } =
+    await import('@/lib/media/asset-oracle');
   const resolved = new Map<string, boolean>();
   const missingLocally: string[] = [];
   for (const ref of refs) {
@@ -254,10 +250,7 @@ export async function repairCourseMedia(
   // lifting a stale persisted failure (see persistedFailedPhases).
   const healthyNarrationScenes = new Set<string>();
   const healthyMediaScenes = new Set<string>();
-  const detectionTargets = [
-    ...scenes,
-    ...(options.additionalAssets ?? []),
-  ] as unknown[];
+  const detectionTargets = [...scenes, ...(options.additionalAssets ?? [])] as unknown[];
   // Oracle batch: collect every ref ONCE, then resolve in a local-first +
   // single-batched-server pass (no per-ref round-trips). Scene attribution
   // happens per material over the resolved map.
@@ -348,7 +341,8 @@ export async function repairCourseMedia(
     // eras) cannot be regenerated from an outline — count them honestly.
     const taskElementIds = new Set(
       options.outlines!.flatMap(
-        (outline) => outline.mediaGenerations?.map((mg: MediaGenerationRequest) => mg.elementId) ?? [],
+        (outline) =>
+          outline.mediaGenerations?.map((mg: MediaGenerationRequest) => mg.elementId) ?? [],
       ),
     );
     let covered = 0;
@@ -373,9 +367,7 @@ export async function repairCourseMedia(
 
   // ---- Post-repair audit: which narration refs are STILL dead ----
   const postAudit = await batchRefResolvesBytes([...deadNarrationRefs], options.stageId);
-  const stillDead: string[] = [...deadNarrationRefs].filter(
-    (ref) => postAudit.get(ref) !== true,
-  );
+  const stillDead: string[] = [...deadNarrationRefs].filter((ref) => postAudit.get(ref) !== true);
   report.audioStillPending = stillDead.length;
 
   // ---- Post-repair resolution: flip phases back to done where every ref

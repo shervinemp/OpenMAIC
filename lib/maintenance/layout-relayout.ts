@@ -51,7 +51,7 @@ function stripHtml(html: string): string {
 }
 
 function effectiveRowHeight(element: RectElement): number {
-    const declared = Number.isFinite(element.height) ? element.height : 0;
+  const declared = Number.isFinite(element.height) ? element.height : 0;
   if (element.type === 'text' && typeof (element as { content?: string }).content === 'string') {
     const content = (element as { content?: string }).content as string;
     const fontSizeMatch = /(?:font-size\s*:\s*)?(\d+(?:\.\d+)?)px/.exec(content);
@@ -96,7 +96,11 @@ export function computeRelayoutPlan(scene: {
   content?: unknown;
 }): RelayoutPlan | null {
   if ((scene as { type?: string }).type !== 'slide') return null;
-  const canvas = (scene.content as { canvas?: { viewportSize?: number; viewportRatio?: number; elements?: RectElement[] } } | undefined)?.canvas;
+  const canvas = (
+    scene.content as
+      | { canvas?: { viewportSize?: number; viewportRatio?: number; elements?: RectElement[] } }
+      | undefined
+  )?.canvas;
   if (!canvas || !Array.isArray(canvas.elements)) return null;
   const viewportSize = typeof canvas.viewportSize === 'number' ? canvas.viewportSize : 1000;
   const viewportRatio = typeof canvas.viewportRatio === 'number' ? canvas.viewportRatio : 0.5625;
@@ -141,13 +145,18 @@ export function computeRelayoutPlan(scene: {
     .filter((entry) => {
       const element = entry.element;
       const span = element.top + element.height;
-      return Number.isFinite(span) && Number.isFinite(element.top)
-        && span >= canvasHeight - 8 && element.top > 40;
+      return (
+        Number.isFinite(span) &&
+        Number.isFinite(element.top) &&
+        span >= canvasHeight - 8 &&
+        element.top > 40
+      );
     })
     .reduce((min, entry) => Math.min(min, entry.element.top), Number.POSITIVE_INFINITY);
-  const contentTopStart = pinnedBottom >= canvasHeight - 8 && Number.isFinite(bottomBarTop)
-    ? 40
-    : Math.max(pinnedBottom + PIN_GAP, 40);
+  const contentTopStart =
+    pinnedBottom >= canvasHeight - 8 && Number.isFinite(bottomBarTop)
+      ? 40
+      : Math.max(pinnedBottom + PIN_GAP, 40);
   const contentBottomLimit = Number.isFinite(bottomBarTop)
     ? Math.min(canvasHeight - EDGE_MARGIN, bottomBarTop - PIN_GAP)
     : canvasHeight - EDGE_MARGIN;
@@ -177,7 +186,10 @@ export function computeRelayoutPlan(scene: {
     sceneId: scene.id,
     sceneTitle: scene.title ?? '',
     moved,
-    keptPinned: pinnedEntries.map((entry) => ({ id: entry.element.id, reason: pinReason(entry.element, canvasArea) })),
+    keptPinned: pinnedEntries.map((entry) => ({
+      id: entry.element.id,
+      reason: pinReason(entry.element, canvasArea),
+    })),
     overflowRows,
     fitsWithoutMerge: overflowRows.length === 0,
     findingsBefore,
@@ -198,10 +210,24 @@ export function computeRelayoutPlan(scene: {
  * untouched; only the stacking order lightens, and the id never changes.
  * Returns the number of shapes demoted.
  */
-export function demoteCoveredDecoratives(
-  scene: { content?: unknown },
-): number {
-  const canvas = (scene.content as { canvas?: { elements?: Array<{ id: string; type: string; left: number; top: number; width: number; height: number; text?: unknown }> } } | undefined)?.canvas;
+export function demoteCoveredDecoratives(scene: { content?: unknown }): number {
+  const canvas = (
+    scene.content as
+      | {
+          canvas?: {
+            elements?: Array<{
+              id: string;
+              type: string;
+              left: number;
+              top: number;
+              width: number;
+              height: number;
+              text?: unknown;
+            }>;
+          };
+        }
+      | undefined
+  )?.canvas;
   if (!canvas || !Array.isArray(canvas.elements)) return 0;
   let demoted = 0;
   const elements = canvas.elements;
@@ -217,13 +243,18 @@ export function demoteCoveredDecoratives(
       if (j === i) continue;
       const upper = elements[j];
       if (upper.type === 'shape' && upper.text === undefined) continue;
-      if (typeof (upper as { content?: string }).content !== 'string' || !(upper as { content?: string }).content) continue;
+      if (
+        typeof (upper as { content?: string }).content !== 'string' ||
+        !(upper as { content?: string }).content
+      )
+        continue;
       const uBottom = upper.top + upper.height;
       const uRight = upper.left + upper.width;
       const overlapX = Math.min(shapeRight, uRight) - Math.max(shape.left, upper.left);
       const overlapY = Math.min(shapeBottom, uBottom) - Math.max(shape.top, upper.top);
       const shapeArea = shape.width * shape.height;
-      const covered = shapeArea > 0 ? (Math.max(0, overlapX) * Math.max(0, overlapY)) / shapeArea : 0;
+      const covered =
+        shapeArea > 0 ? (Math.max(0, overlapX) * Math.max(0, overlapY)) / shapeArea : 0;
       if (covered >= 0.95 && (firstCoveredIndex < 0 || j < firstCoveredIndex)) {
         firstCoveredIndex = j;
       }
@@ -250,11 +281,28 @@ export function demoteCoveredDecoratives(
  * content. Delete-only; returns the number removed.
  */
 export function hasOrphanDecoratives(scene: { content?: unknown }, canvasHeight?: number): boolean {
-  const canvas = (scene.content as { canvas?: { elements?: Array<{ id: string; type: string; left: number; top: number; width: number; height: number; text?: unknown }> } } | undefined)?.canvas;
+  const canvas = (
+    scene.content as
+      | {
+          canvas?: {
+            elements?: Array<{
+              id: string;
+              type: string;
+              left: number;
+              top: number;
+              width: number;
+              height: number;
+              text?: unknown;
+            }>;
+          };
+        }
+      | undefined
+  )?.canvas;
   if (!canvas || !Array.isArray(canvas.elements)) return false;
-  const height = typeof canvasHeight === 'number' && canvasHeight > 0
-    ? canvasHeight
-    : 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
+  const height =
+    typeof canvasHeight === 'number' && canvasHeight > 0
+      ? canvasHeight
+      : 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
   const elements = canvas.elements;
   for (const shape of elements) {
     if (shape.type !== 'shape' && shape.type !== 'image') continue;
@@ -272,7 +320,11 @@ export function hasOrphanDecoratives(scene: { content?: unknown }, canvasHeight?
       if (upper === shape || upper.type !== 'text') continue;
       // Text bodies live in `content` (HTML string) on text elements — a
       // truth learned from the live document, not the type sketch.
-      if (typeof (upper as { content?: string }).content !== 'string' || !(upper as { content?: string }).content) continue;
+      if (
+        typeof (upper as { content?: string }).content !== 'string' ||
+        !(upper as { content?: string }).content
+      )
+        continue;
       const uBottom = upper.top + upper.height;
       const uRight = upper.left + upper.width;
       const overlapX = Math.min(shapeRight, uRight) - Math.max(shape.left, upper.left);
@@ -286,12 +338,32 @@ export function hasOrphanDecoratives(scene: { content?: unknown }, canvasHeight?
   }
   return false;
 }
-export function stripOrphanDecoratives(scene: { content?: unknown }, canvasHeight?: number): number {
-  const canvas = (scene.content as { canvas?: { elements?: Array<{ id: string; type: string; left: number; top: number; width: number; height: number; text?: unknown }> } } | undefined)?.canvas;
+export function stripOrphanDecoratives(
+  scene: { content?: unknown },
+  canvasHeight?: number,
+): number {
+  const canvas = (
+    scene.content as
+      | {
+          canvas?: {
+            elements?: Array<{
+              id: string;
+              type: string;
+              left: number;
+              top: number;
+              width: number;
+              height: number;
+              text?: unknown;
+            }>;
+          };
+        }
+      | undefined
+  )?.canvas;
   if (!canvas || !Array.isArray(canvas.elements)) return 0;
-  const height = typeof canvasHeight === 'number' && canvasHeight > 0
-    ? canvasHeight
-    : 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
+  const height =
+    typeof canvasHeight === 'number' && canvasHeight > 0
+      ? canvasHeight
+      : 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
   let removed = 0;
   const elements = canvas.elements;
   for (let i = elements.length - 1; i >= 0; i--) {
@@ -311,7 +383,11 @@ export function stripOrphanDecoratives(scene: { content?: unknown }, canvasHeigh
       if (upper === shape || upper.type !== 'text') continue;
       // Text bodies live in `content` (HTML string) on text elements — a
       // truth learned from the live document, not the type sketch.
-      if (typeof (upper as { content?: string }).content !== 'string' || !(upper as { content?: string }).content) continue;
+      if (
+        typeof (upper as { content?: string }).content !== 'string' ||
+        !(upper as { content?: string }).content
+      )
+        continue;
       const uBottom = upper.top + upper.height;
       const uRight = upper.left + upper.width;
       const overlapX = Math.min(shapeRight, uRight) - Math.max(shape.left, upper.left);
@@ -341,7 +417,23 @@ export function stripOrphanDecoratives(scene: { content?: unknown }, canvasHeigh
  * Returns the number of rows nudged.
  */
 export function nudgeOffHairlines(scene: { content?: unknown }): number {
-  const canvas = (scene.content as { canvas?: { elements?: Array<{ id: string; type: string; left: number; top: number; width: number; height: number; content?: string }> } } | undefined)?.canvas;
+  const canvas = (
+    scene.content as
+      | {
+          canvas?: {
+            elements?: Array<{
+              id: string;
+              type: string;
+              left: number;
+              top: number;
+              width: number;
+              height: number;
+              content?: string;
+            }>;
+          };
+        }
+      | undefined
+  )?.canvas;
   if (!canvas || !Array.isArray(canvas.elements)) return 0;
   const elements = canvas.elements;
   let nudged = 0;
@@ -355,11 +447,13 @@ export function nudgeOffHairlines(scene: { content?: unknown }): number {
       // Graze (≤6px intrusions) or crossing counts; a row fully below or
       // fully above with margin is already clean.
       const overlapY = Math.min(rowBottom, lineBottom) - Math.max(row.top, line.top);
-      const graze = (overlapY > 0 && overlapY <= 6) || (row.top < line.top && rowBottom > lineBottom);
+      const graze =
+        (overlapY > 0 && overlapY <= 6) || (row.top < line.top && rowBottom > lineBottom);
       if (!graze) continue;
       // Horizontal kinship: the rule must visually belong to this row's
       // column region (any horizontal overlap counts for a full-width rule).
-      const overlapX = Math.min(row.left + row.width, line.left + line.width) - Math.max(row.left, line.left);
+      const overlapX =
+        Math.min(row.left + row.width, line.left + line.width) - Math.max(row.left, line.left);
       if (overlapX <= 4) continue;
       row.top = lineBottom + 8;
       nudged += 1;
@@ -383,11 +477,27 @@ export function normalizeFullBleedRows(
   canvasHeight?: number,
 ): number {
   const MARGIN = 40;
-  const canvas = (scene.content as { canvas?: { elements?: Array<{ type: string; left: number; top: number; width: number; height: number; content?: string }> } } | undefined)?.canvas;
+  const canvas = (
+    scene.content as
+      | {
+          canvas?: {
+            elements?: Array<{
+              type: string;
+              left: number;
+              top: number;
+              width: number;
+              height: number;
+              content?: string;
+            }>;
+          };
+        }
+      | undefined
+  )?.canvas;
   if (!canvas || !Array.isArray(canvas.elements)) return 0;
-  const height = typeof canvasHeight === 'number' && canvasHeight > 0
-    ? canvasHeight
-    : 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
+  const height =
+    typeof canvasHeight === 'number' && canvasHeight > 0
+      ? canvasHeight
+      : 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
   let changed = 0;
   for (const el of canvas.elements) {
     if (el.type !== 'text' || typeof el.content !== 'string' || !el.content) continue;
@@ -417,11 +527,20 @@ const WALL_MIN_CHARS = 600;
  * untouched. Returns the number of elements touched.
  */
 export function coerceElementGeometry(scene: { content?: unknown }): number {
-  const canvas = (scene.content as { canvas?: { elements?: Array<Record<string, unknown>> } } | undefined)?.canvas;
+  const canvas = (
+    scene.content as { canvas?: { elements?: Array<Record<string, unknown>> } } | undefined
+  )?.canvas;
   if (!canvas || !Array.isArray(canvas.elements)) return 0;
   let touched = 0;
   for (const entry of canvas.elements) {
-    const el = entry as { type?: string; left?: unknown; top?: unknown; width?: unknown; height?: unknown; content?: unknown };
+    const el = entry as {
+      type?: string;
+      left?: unknown;
+      top?: unknown;
+      width?: unknown;
+      height?: unknown;
+      content?: unknown;
+    };
     let changed = false;
     if (!Number.isFinite(el.top)) {
       el.top = 40;
@@ -436,15 +555,16 @@ export function coerceElementGeometry(scene: { content?: unknown }): number {
       changed = true;
     }
     if (!Number.isFinite(el.height) || (el.height as number) <= 0) {
-      el.height = el.type === 'line'
-        ? 3
-        : el.type === 'text' && typeof el.content === 'string' && el.content
-          ? estimateTextRowHeight({
-              type: 'text' as const,
-              width: el.width as number,
-              content: el.content,
-            } as never)
-          : 60;
+      el.height =
+        el.type === 'line'
+          ? 3
+          : el.type === 'text' && typeof el.content === 'string' && el.content
+            ? estimateTextRowHeight({
+                type: 'text' as const,
+                width: el.width as number,
+                content: el.content,
+              } as never)
+            : 60;
       changed = true;
     }
     if (changed) touched += 1;
@@ -454,7 +574,9 @@ export function coerceElementGeometry(scene: { content?: unknown }): number {
 
 /** True when any element on the canvas carries a non-finite rect field. */
 export function hasNonFiniteGeometry(scene: { content?: unknown }): boolean {
-  const canvas = (scene.content as { canvas?: { elements?: Array<Record<string, unknown>> } } | undefined)?.canvas;
+  const canvas = (
+    scene.content as { canvas?: { elements?: Array<Record<string, unknown>> } } | undefined
+  )?.canvas;
   if (!canvas || !Array.isArray(canvas.elements)) return false;
   return canvas.elements.some((entry) => {
     const el = entry as { left?: unknown; top?: unknown; width?: unknown; height?: unknown };
@@ -472,18 +594,32 @@ export function hasNonFiniteGeometry(scene: { content?: unknown }): boolean {
  * the first row so any action anchoring to the wall stays attached). Purports
  * to layout — no LLM, no rewrite.
  */
-export function explodeWallRows(
-  scene: { content?: unknown },
-): number {
-  const canvas = (scene.content as {
-    canvas?: { viewportSize?: number; viewportRatio?: number; elements?: Array<Record<string, unknown>>; [key: string]: unknown };
-  } | undefined)?.canvas;
+export function explodeWallRows(scene: { content?: unknown }): number {
+  const canvas = (
+    scene.content as
+      | {
+          canvas?: {
+            viewportSize?: number;
+            viewportRatio?: number;
+            elements?: Array<Record<string, unknown>>;
+            [key: string]: unknown;
+          };
+        }
+      | undefined
+  )?.canvas;
   if (!canvas || !Array.isArray(canvas.elements)) return 0;
-  const canvasHeight = 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
+  const canvasHeight =
+    1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
   const bodyTop = 40;
   const bodyBottomLimit = canvasHeight - bodyTop;
   const wallIndex = canvas.elements.findIndex((el) => {
-    const rect = el as { type?: string; width?: number; height?: number; top?: number; content?: unknown };
+    const rect = el as {
+      type?: string;
+      width?: number;
+      height?: number;
+      top?: number;
+      content?: unknown;
+    };
     if (rect.type !== 'text' || typeof rect.content !== 'string') return false;
     if ((rect.height ?? 0) < WALL_COVER_RATIO * bodyBottomLimit) return false;
     // A wall has more than one paragraph to redistribute (a lone, tall
@@ -493,7 +629,12 @@ export function explodeWallRows(
   });
   if (wallIndex < 0) return 0;
   const elementsList = canvas.elements as Array<Record<string, unknown>>;
-  const wall = elementsList[wallIndex] as { id: string; width?: number; left?: number; content: string };
+  const wall = elementsList[wallIndex] as {
+    id: string;
+    width?: number;
+    left?: number;
+    content: string;
+  };
   const paragraphs = splitParagraphs(wall.content);
   const width = wall.width ?? 880;
   // The wall's stack starts BELOW every other content row already on the
@@ -501,7 +642,8 @@ export function explodeWallRows(
   // of the rows whose slot is taken.
   const otherBottom = elementsList.reduce((max, other) => {
     const row = other as { type?: string; top?: number; height?: number; content?: unknown };
-    if (other === elementsList[wallIndex] || row.type !== 'text' || typeof row.content !== 'string') return max;
+    if (other === elementsList[wallIndex] || row.type !== 'text' || typeof row.content !== 'string')
+      return max;
     return Math.max(max, (row.top ?? 0) + (row.height ?? 0));
   }, 40);
   const rows: Array<Record<string, unknown>> = [];
@@ -526,13 +668,16 @@ export function explodeWallRows(
   if (rows.length < 2) return 0;
   canvas.elements.splice(wallIndex, 1, ...rows);
   return rows.length - 1;
-};
+}
 
 const splitParagraphs = (html: string): string[] => {
   const matches = html.match(/<p\b[^>]*>[\s\S]*?<\/p>/g);
   if (matches && matches.length >= 2) return matches.map((m) => m.trim()).filter(Boolean);
   // No <p> structure: fall back to double-break blocks, else whole text.
-  const brBlocks = html.split(/(?:<br\s*\/?>\s*){2,}/i).map((block) => block.trim()).filter(Boolean);
+  const brBlocks = html
+    .split(/(?:<br\s*\/?>\s*){2,}/i)
+    .map((block) => block.trim())
+    .filter(Boolean);
   if (brBlocks.length >= 2) return brBlocks;
   return [html];
 };
@@ -541,11 +686,15 @@ export function applyRelayoutMoves(
   scene: { content?: unknown },
   plan: RelayoutPlan,
 ): Array<{ elementId: string; fromTop: number; toTop: number }> {
-  const canvas = (scene.content as { canvas?: { elements?: Array<Record<string, unknown>> } } | undefined)?.canvas;
+  const canvas = (
+    scene.content as { canvas?: { elements?: Array<Record<string, unknown>> } } | undefined
+  )?.canvas;
   if (!canvas || !Array.isArray(canvas.elements)) return [];
   const applied: Array<{ elementId: string; fromTop: number; toTop: number }> = [];
   for (const move of plan.moved) {
-    const element = canvas.elements.find((entry) => (entry as { id?: string }).id === move.elementId);
+    const element = canvas.elements.find(
+      (entry) => (entry as { id?: string }).id === move.elementId,
+    );
     if (!element) continue;
     const fromTop = element.top as number;
     element.top = move.toTop;
@@ -555,7 +704,11 @@ export function applyRelayoutMoves(
 }
 
 export function residualFindings(scene: { content?: unknown }): PlacementFinding[] {
-  const canvas = (scene.content as { canvas?: { viewportSize?: number; viewportRatio?: number; elements?: unknown[] } } | undefined)?.canvas;
+  const canvas = (
+    scene.content as
+      | { canvas?: { viewportSize?: number; viewportRatio?: number; elements?: unknown[] } }
+      | undefined
+  )?.canvas;
   if (!canvas || !Array.isArray(canvas.elements)) return [];
   return validateSlidePlacement({
     viewportSize: canvas.viewportSize ?? 1000,
@@ -565,7 +718,11 @@ export function residualFindings(scene: { content?: unknown }): PlacementFinding
 }
 
 export function sanitizeSceneCanvas(scene: { content?: unknown }): number {
-  const canvas = (scene.content as { canvas?: { viewportSize?: number; viewportRatio?: number; elements?: unknown[] } } | undefined)?.canvas;
+  const canvas = (
+    scene.content as
+      | { canvas?: { viewportSize?: number; viewportRatio?: number; elements?: unknown[] } }
+      | undefined
+  )?.canvas;
   if (!canvas || !Array.isArray(canvas.elements)) return 0;
   return sanitizeSlidePlacement(canvas as never).changes.length;
 }

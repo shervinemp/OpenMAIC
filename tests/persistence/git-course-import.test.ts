@@ -71,7 +71,11 @@ function persistedDocuments(): string[] {
 
 describe('inbound course git sync', () => {
   it('discovers repo snapshots with title/sceneCount', async () => {
-    writeFileSync(join(repoPath, 'importStage.json'), JSON.stringify(makeDoc('importStage', 2)), 'utf8');
+    writeFileSync(
+      join(repoPath, 'importStage.json'),
+      JSON.stringify(makeDoc('importStage', 2)),
+      'utf8',
+    );
     writeFileSync(join(repoPath, 'not-a-course.txt'), 'ignore me', 'utf8');
     writeFileSync(join(repoPath, '.hidden.json'), JSON.stringify(makeDoc('hidden')), 'utf8');
     await bindRepo();
@@ -87,7 +91,11 @@ describe('inbound course git sync', () => {
   });
 
   it('scans a repository shared by several bound courses once', async () => {
-    writeFileSync(join(repoPath, 'importStage.json'), JSON.stringify(makeDoc('importStage')), 'utf8');
+    writeFileSync(
+      join(repoPath, 'importStage.json'),
+      JSON.stringify(makeDoc('importStage')),
+      'utf8',
+    );
     await bindRepo();
     await bindCourseRepository({ persistenceDir, stageId: 'secondBound', repoPath });
 
@@ -97,7 +105,11 @@ describe('inbound course git sync', () => {
   });
 
   it('reports new/equal/update states against persistence', async () => {
-    writeFileSync(join(repoPath, 'importStage.json'), JSON.stringify(makeDoc('importStage')), 'utf8');
+    writeFileSync(
+      join(repoPath, 'importStage.json'),
+      JSON.stringify(makeDoc('importStage')),
+      'utf8',
+    );
     await bindRepo({ autoLoad: true });
 
     expect((await scanCourseUpdates(persistenceDir)).map((c) => c.state)).toEqual(['new']);
@@ -114,7 +126,11 @@ describe('inbound course git sync', () => {
   });
 
   it('imports new courses only when importNew AND the binding autoLoads', async () => {
-    writeFileSync(join(repoPath, 'importStage.json'), JSON.stringify(makeDoc('importStage')), 'utf8');
+    writeFileSync(
+      join(repoPath, 'importStage.json'),
+      JSON.stringify(makeDoc('importStage')),
+      'utf8',
+    );
     await bindRepo({ autoLoad: true });
 
     const noImport = await runCourseGitSync(persistenceDir, { importNew: false });
@@ -142,7 +158,12 @@ describe('inbound course git sync', () => {
               id: 'canvas-0',
               viewportSize: 1000,
               viewportRatio: 0.5625,
-              theme: { backgroundColor: '#fff', themeColors: ['#000'], fontColor: '#000', fontName: 'Inter' },
+              theme: {
+                backgroundColor: '#fff',
+                themeColors: ['#000'],
+                fontColor: '#000',
+                fontName: 'Inter',
+              },
               elements: [],
             },
           },
@@ -167,7 +188,10 @@ describe('inbound course git sync', () => {
     persistDocument('boundExisting', makeDoc('boundExisting'));
     await bindRepo({ autoLoad: true });
 
-    const applied = await runCourseGitSync(persistenceDir, { apply: true, stageIds: ['boundExisting'] });
+    const applied = await runCourseGitSync(persistenceDir, {
+      apply: true,
+      stageIds: ['boundExisting'],
+    });
     expect(applied.results[0].action).toBe('applied');
     expect(applied.results[0].detail).toContain('media rows restored: 1');
 
@@ -175,18 +199,27 @@ describe('inbound course git sync', () => {
     // encoded ref; the meta content flows through too.
     const restored = readFileSync(join(persistenceDir, 'assets', 'tts_s1_a0'));
     expect(restored.toString()).toContain('wav-wav');
-    const meta = JSON.parse(readFileSync(join(persistenceDir, 'assets', '.meta', 'tts_s1_a0.json'), 'utf8')) as {
+    const meta = JSON.parse(
+      readFileSync(join(persistenceDir, 'assets', '.meta', 'tts_s1_a0.json'), 'utf8'),
+    ) as {
       mime?: string;
     };
     expect(meta.mime).toBe('audio/wav');
 
     // Idempotent: a re-apply does not duplicate-restores or demote rows.
-    const again = await runCourseGitSync(persistenceDir, { apply: true, stageIds: ['boundExisting'] });
+    const again = await runCourseGitSync(persistenceDir, {
+      apply: true,
+      stageIds: ['boundExisting'],
+    });
     expect(again.results[0].detail).not.toContain('media rows restored: 1');
   });
 
   it('does not auto-import without the binding autoLoad flag', async () => {
-    writeFileSync(join(repoPath, 'importStage.json'), JSON.stringify(makeDoc('importStage')), 'utf8');
+    writeFileSync(
+      join(repoPath, 'importStage.json'),
+      JSON.stringify(makeDoc('importStage')),
+      'utf8',
+    );
     await bindRepo();
 
     const onboard = await runCourseGitSync(persistenceDir, { importNew: true });
@@ -212,9 +245,14 @@ describe('inbound course git sync', () => {
     });
     expect(wrongId.results[0]).toMatchObject({ action: 'skipped' });
 
-    const applied = await runCourseGitSync(persistenceDir, { apply: true, stageIds: ['boundExisting'] });
+    const applied = await runCourseGitSync(persistenceDir, {
+      apply: true,
+      stageIds: ['boundExisting'],
+    });
     expect(applied.results[0]).toMatchObject({ action: 'applied' });
-    const persisted = JSON.parse(readFileSync(join(persistenceDir, 'documents', 'boundExisting.json'), 'utf8')) as {
+    const persisted = JSON.parse(
+      readFileSync(join(persistenceDir, 'documents', 'boundExisting.json'), 'utf8'),
+    ) as {
       scenes: unknown[];
     };
     expect(persisted.scenes).toHaveLength(2);

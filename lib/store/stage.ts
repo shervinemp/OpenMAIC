@@ -52,7 +52,10 @@ const log = createLogger('StageStore');
 function sanitizePersistedExams(
   record: unknown,
   logger: ReturnType<typeof createLogger>,
-): { exams: Partial<Record<ExamKind, ExamSpec>>; attempts: Partial<Record<ExamKind, ExamAttempt[]>> } {
+): {
+  exams: Partial<Record<ExamKind, ExamSpec>>;
+  attempts: Partial<Record<ExamKind, ExamAttempt[]>>;
+} {
   type Persisted = { exams?: unknown; examAttempts?: unknown };
   const src = (record ?? {}) as Persisted;
   const result: Partial<Record<ExamKind, ExamSpec>> = {};
@@ -60,7 +63,12 @@ function sanitizePersistedExams(
   const isValidKind = (k: unknown): k is ExamKind => k === 'midterm' || k === 'final';
   if (src.exams && typeof src.exams === 'object') {
     for (const [kind, spec] of Object.entries(src.exams as Record<string, unknown>)) {
-      if (isValidKind(kind) && spec && typeof spec === 'object' && Array.isArray((spec as ExamSpec).mcQuestions)) {
+      if (
+        isValidKind(kind) &&
+        spec &&
+        typeof spec === 'object' &&
+        Array.isArray((spec as ExamSpec).mcQuestions)
+      ) {
         result[kind] = spec as ExamSpec;
       } else if (spec) {
         logger.warn('Discarding malformed persisted exam spec:', kind);
@@ -481,7 +489,9 @@ function isDeckComplete({
   scenes,
   failedOutlines,
   skippedOutlineIds = [],
-}: Pick<StageState, 'outlines' | 'scenes' | 'failedOutlines'> & { skippedOutlineIds?: string[] }): boolean {
+}: Pick<StageState, 'outlines' | 'scenes' | 'failedOutlines'> & {
+  skippedOutlineIds?: string[];
+}): boolean {
   const skipped = new Set(skippedOutlineIds);
   return (
     outlines.length > 0 &&
@@ -1391,9 +1401,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         // shows the red regenerate box: the recovery check does not depend on
         // a secondary effect, a lease race, or in-memory session state.
         const materializedOrders = new Set(migrated.map((s) => s.order));
-        const missingOutlines = outlines.filter(
-          (o) => !materializedOrders.has(o.order),
-        );
+        const missingOutlines = outlines.filter((o) => !materializedOrders.has(o.order));
         // Orphan self-heal: an outline whose job FULLY committed its content
         // AND actions (content done and not still in-flight/failed) with no
         // scene was DELETED by the user after generation (or its outline prune
@@ -1435,9 +1443,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           ...inMemoryFailed,
           ...recoveredLessonGroups
             .flatMap((group) => group.jobs)
-            .filter(
-              (job) => job.phases.content?.status === 'failed' && job.resolution !== 'skip',
-            )
+            .filter((job) => job.phases.content?.status === 'failed' && job.resolution !== 'skip')
             .map((job) => outlines.find((o) => o.id === job.outlineId))
             .filter((o): o is NonNullable<typeof o> => !!o),
         ];
@@ -1493,7 +1499,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         // half-finished forever (#reload-recovery). Documents with no
         // informative job state (e.g. pre-lessonGroups deletes) keep trusting
         // the flag — no evidence, no resurrection.
-        const contradictsPersistedComplete = !everyOutlineSettled && (
+        const contradictsPersistedComplete =
+          !everyOutlineSettled &&
           outlines.some((o) => {
             if (migrated.some((s) => s.order === o.order)) return false;
             if (orphanOutlineIds.has(o.id)) return false;
@@ -1503,8 +1510,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
               .find((j) => j.outlineId === o.id);
             if (!job) return false;
             return job.resolution !== 'skip';
-          })
-        );
+          });
         const generationComplete =
           (persistedComplete && !contradictsPersistedComplete) ||
           isDeckComplete({
@@ -1514,20 +1520,21 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           }) ||
           everyOutlineSettled;
         const generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error' =
-          generationComplete
-            ? 'completed'
-            : (hasOpenJobsFlag() ? 'paused' : 'idle');
+          generationComplete ? 'completed' : hasOpenJobsFlag() ? 'paused' : 'idle';
 
         function hasOpenJobsFlag(): boolean {
-          return recoveryBasis.length > 0 || recoveredLessonGroups.some((group) =>
-            group.jobs.some(
-              (job) =>
-                ((job.phases.content?.status === 'pending' &&
-                  !orphanOutlineIds.has(job.outlineId)) ||
+          return (
+            recoveryBasis.length > 0 ||
+            recoveredLessonGroups.some((group) =>
+              group.jobs.some(
+                (job) =>
+                  (job.phases.content?.status === 'pending' &&
+                    !orphanOutlineIds.has(job.outlineId)) ||
                   ((job.phases.content?.status === 'failed' ||
                     job.phases.actions?.status === 'failed') &&
-                    job.resolution !== 'skip')),
-            ),
+                    job.resolution !== 'skip'),
+              ),
+            )
           );
         }
         // FOLD-IN GUARD (deleted-after-complete deck): the missing-outline
@@ -1542,13 +1549,9 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
             ? uniqueFailedOutlines
             : [
                 ...uniqueFailedOutlines,
-                ...recoveryBasis.filter(
-                  (o) => !uniqueFailedOutlines.some((f) => f.id === o.id),
-                ),
+                ...recoveryBasis.filter((o) => !uniqueFailedOutlines.some((f) => f.id === o.id)),
               ]),
-          ...fillFailedOutlines.filter(
-            (o) => !uniqueFailedOutlines.some((f) => f.id === o.id),
-          ),
+          ...fillFailedOutlines.filter((o) => !uniqueFailedOutlines.some((f) => f.id === o.id)),
         ];
         set({
           stage: data.stage,

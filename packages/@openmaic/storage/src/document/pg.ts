@@ -776,7 +776,10 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
       // the stored copy forward since this aggregate was loaded must not be
       // silently clobbered. Deliberate wholesale restores pass
       // `allowOlderOverwrite`.
-      if (!options?.allowOlderOverwrite && isStaleOverwrite(existingStage ? { stage: existingStage } : undefined, doc)) {
+      if (
+        !options?.allowOlderOverwrite &&
+        isStaleOverwrite(existingStage ? { stage: existingStage } : undefined, doc)
+      ) {
         throw new DocumentLostUpdateError(
           stageId,
           existingStage!.updatedAt,
@@ -1312,7 +1315,14 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
 
   async putPhaseStates(
     stageId: string,
-    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+    entries: ReadonlyArray<{
+      outlineId: string;
+      phase: string;
+      status: string;
+      attempts: number;
+      updatedAt: number;
+      error?: string;
+    }>,
   ): Promise<void> {
     if (entries.length === 0) return;
     await this.transaction(async (queryable) => {
@@ -1327,7 +1337,9 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
       );
       if (current.rows.length === 0) return;
       const outline = decodeJson<Record<string, unknown>>(current.rows[0].data) as {
-        lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }>;
+        lessonGroups?: Array<{
+          jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }>;
+        }>;
       };
       let touched = 0;
       for (const entry of entries) {
@@ -1352,7 +1364,10 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         `UPDATE document_outlines SET data = $2::jsonb, updated_at = $3 WHERE stage_id = $1`,
         [stageId, encodeJson(outline, `document outline ${stageId}`), stamp],
       );
-      await queryable.query(`UPDATE document_stages SET updated_at = $2 WHERE id = $1`, [stageId, stamp]);
+      await queryable.query(`UPDATE document_stages SET updated_at = $2 WHERE id = $1`, [
+        stageId,
+        stamp,
+      ]);
     });
   }
 

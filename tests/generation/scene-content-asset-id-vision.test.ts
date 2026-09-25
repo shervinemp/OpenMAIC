@@ -45,11 +45,26 @@ function substantiveClaims() {
     content,
   });
   return [
-    claim('claim_1', '<p>A lockout tagout procedure isolates every energy source before maintenance begins, which prevents unexpected machine startup.</p>'),
-    claim('claim_2', '<p>Each authorized employee applies a personal lock to the isolation device, so the machine cannot be re-energized while anyone is working.</p>'),
-    claim('claim_3', '<p>For example, a conveyor with three energy sources (electrical, pneumatic, and gravity) requires three locks and one documented release plan.</p>'),
-    claim('claim_4', '<p>Verification of zero energy - attempting a start after isolation - is mandatory before any hands enter the danger zone.</p>'),
-    claim('claim_5', '<p>Definitions matter here: an authorized employee is trained in lockout, while an affected employee only operates the machine.</p>'),
+    claim(
+      'claim_1',
+      '<p>A lockout tagout procedure isolates every energy source before maintenance begins, which prevents unexpected machine startup.</p>',
+    ),
+    claim(
+      'claim_2',
+      '<p>Each authorized employee applies a personal lock to the isolation device, so the machine cannot be re-energized while anyone is working.</p>',
+    ),
+    claim(
+      'claim_3',
+      '<p>For example, a conveyor with three energy sources (electrical, pneumatic, and gravity) requires three locks and one documented release plan.</p>',
+    ),
+    claim(
+      'claim_4',
+      '<p>Verification of zero energy - attempting a start after isolation - is mandatory before any hands enter the danger zone.</p>',
+    ),
+    claim(
+      'claim_5',
+      '<p>Definitions matter here: an authorized employee is trained in lockout, while an affected employee only operates the machine.</p>',
+    ),
   ];
 }
 

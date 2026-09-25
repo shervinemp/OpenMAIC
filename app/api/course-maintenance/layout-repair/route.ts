@@ -73,7 +73,11 @@ export async function POST(req: NextRequest) {
   }
   const fileDir = process.env.PERSISTENCE_DIR;
   if (!fileDir) {
-    return apiError('INVALID_REQUEST', 503, 'this route requires the file-backed persistence backend (PERSISTENCE_DIR)');
+    return apiError(
+      'INVALID_REQUEST',
+      503,
+      'this route requires the file-backed persistence backend (PERSISTENCE_DIR)',
+    );
   }
   let body: RequestBody;
   try {
@@ -142,7 +146,12 @@ async function runLayoutRepair(
     return { ok: false, code: 'UPSTREAM_ERROR', status: 500, message: 'course load failed' };
   }
   if (!document) {
-    return { ok: false, code: 'INVALID_REQUEST', status: 404, message: 'course document not found' };
+    return {
+      ok: false,
+      code: 'INVALID_REQUEST',
+      status: 404,
+      message: 'course document not found',
+    };
   }
 
   const requestedIds = body.sceneIds?.length ? body.sceneIds : null;
@@ -241,7 +250,14 @@ async function runLayoutRepair(
   // the end: the route mutates document.outline in memory only, so without
   // an explicit phase write every stamp silently evaporates at the request
   // boundary (putScene persists a scene, not the outline).
-  const phaseWrites: Array<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }> = [];
+  const phaseWrites: Array<{
+    outlineId: string;
+    phase: string;
+    status: string;
+    attempts: number;
+    updatedAt: number;
+    error?: string;
+  }> = [];
 
   for (const scene of targets) {
     // Skip gate uses a CHEAP pre-plan on raw geometry: the honest plan is
@@ -256,10 +272,19 @@ async function runLayoutRepair(
     // apply branch stamps the phase truthfully and the lesson list's serving
     // rule — which keys on that phase — then has a real answer for it.
     const outlineId = (scene as { outlineId?: string }).outlineId;
-    const needsPhaseStamp = !outlineId ? false : !(document as {
-      outline?: { lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }> };
-    }).outline?.lessonGroups?.flatMap?.((jobGroup) => jobGroup.jobs ?? [])
-      .some((job) => job.outlineId === outlineId && job.phases?.layout);
+    const needsPhaseStamp = !outlineId
+      ? false
+      : !(
+          document as {
+            outline?: {
+              lessonGroups?: Array<{
+                jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }>;
+              }>;
+            };
+          }
+        ).outline?.lessonGroups
+          ?.flatMap?.((jobGroup) => jobGroup.jobs ?? [])
+          .some((job) => job.outlineId === outlineId && job.phases?.layout);
     // Orphaned decorative shapes (split ghosts) are geometry-legal — the
     // validator sees nothing and the plan is empty — so they are detected
     // explicitly and pull their scene into the apply branch, where the
@@ -340,15 +365,14 @@ async function runLayoutRepair(
       // Element ids whose "[source N]" placeholders were removed this visit
       // (re-derived after the strip so the report cannot overclaim an id).
       const provenanceStripped =
-        scrubbed > 0
-          ? [...preArtifactElements].filter((id) => !sourceIds(scene).has(id))
-          : [];
+        scrubbed > 0 ? [...preArtifactElements].filter((id) => !sourceIds(scene).has(id)) : [];
       // Presentation-pass mutations (z-order, ghosts, hairline grazes,
       // full-bleed walls, wall unwrapping, geometry coercion, provenance
       // strip) are real changes even when the validator's error count stays
       // flat: they must reach the store or the pass heals nothing and
       // reports a phantom fix.
-      const passChanged = coerced + exploded + stripped + nudged + normalized + scrubbed + deadAnchorStrips > 0;
+      const passChanged =
+        coerced + exploded + stripped + nudged + normalized + scrubbed + deadAnchorStrips > 0;
       // The HONEST plan — computed on the post-pass geometry it will move.
       const plan = computeRelayoutPlan(scene);
       if (plan) {
@@ -362,12 +386,23 @@ async function runLayoutRepair(
         plan.overflowRows.length > 0 &&
         !mergeBudgetCrossed(mergeCheckpoint)
       ) {
-        const { model, thinkingConfig } = await resolveModelFromRequest(req, body as never, 'scene-verify');
-        const slideCanvas = (scene.content as { canvas?: { elements?: Array<{ id: string; content?: string }> } } | undefined)?.canvas;
+        const { model, thinkingConfig } = await resolveModelFromRequest(
+          req,
+          body as never,
+          'scene-verify',
+        );
+        const slideCanvas = (
+          scene.content as
+            | { canvas?: { elements?: Array<{ id: string; content?: string }> } }
+            | undefined
+        )?.canvas;
         const rows = slideCanvas?.elements ?? [];
         const rowSummaries = plan.overflowRows.map((id) => {
           const row = rows.find((entry) => entry.id === id);
-          const text = String(row?.content ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 400);
+          const text = String(row?.content ?? '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .slice(0, 400);
           return `${id}: ${text}`;
         });
         mergeCheckpoint.used += 1;
@@ -385,12 +420,18 @@ async function runLayoutRepair(
             thinkingConfig ?? undefined,
           );
           const text = result.text ?? '';
-          const parsed = JSON.parse(text.slice(Math.max(0, text.indexOf('{')), Math.max(0, text.lastIndexOf('}')) + 1)) as { deleteIds?: unknown };
+          const parsed = JSON.parse(
+            text.slice(Math.max(0, text.indexOf('{')), Math.max(0, text.lastIndexOf('}')) + 1),
+          ) as { deleteIds?: unknown };
           if (Array.isArray(parsed.deleteIds)) {
-            const canvas = (scene.content as { canvas?: { elements?: Array<{ id: string }> } } | undefined)?.canvas;
+            const canvas = (
+              scene.content as { canvas?: { elements?: Array<{ id: string }> } } | undefined
+            )?.canvas;
             if (canvas && Array.isArray(canvas.elements)) {
               const deleteIds = new Set(
-                parsed.deleteIds.filter((id): id is string => typeof id === 'string' && plan.overflowRows.includes(id)),
+                parsed.deleteIds.filter(
+                  (id): id is string => typeof id === 'string' && plan.overflowRows.includes(id),
+                ),
               );
               if (deleteIds.size > 0) {
                 canvas.elements = canvas.elements.filter((element) => !deleteIds.has(element.id));
@@ -421,13 +462,29 @@ async function runLayoutRepair(
         mergeCheckpoint.used += 1;
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
-            const { LAYOUT_REPAIR_PROMPT, buildLayoutRepairRequest } = await import('@/app/api/generate/scene-verify/route');
-            const { model, thinkingConfig } = await resolveModelFromRequest(req, body as never, 'scene-verify');
+            const { LAYOUT_REPAIR_PROMPT, buildLayoutRepairRequest } =
+              await import('@/app/api/generate/scene-verify/route');
+            const { model, thinkingConfig } = await resolveModelFromRequest(
+              req,
+              body as never,
+              'scene-verify',
+            );
             const result = await callLLM(
               {
                 model,
                 system: LAYOUT_REPAIR_PROMPT,
-                prompt: buildLayoutRepairRequest((scene.content as unknown as { canvas: { viewportSize: number; viewportRatio: number; elements: Array<Record<string, unknown>> } }).canvas, residual),
+                prompt: buildLayoutRepairRequest(
+                  (
+                    scene.content as unknown as {
+                      canvas: {
+                        viewportSize: number;
+                        viewportRatio: number;
+                        elements: Array<Record<string, unknown>>;
+                      };
+                    }
+                  ).canvas,
+                  residual,
+                ),
                 maxOutputTokens: 4096,
                 maxRetries: 0,
               } as never,
@@ -437,10 +494,13 @@ async function runLayoutRepair(
             );
             const text = result.text ?? '';
             if (text.length === 0) {
-              console.warn('[layout-relayout] patch tier attempt returned empty text (one retry)', JSON.stringify({
-                model,
-                finishReason: (result as { finishReason?: string }).finishReason,
-              }));
+              console.warn(
+                '[layout-relayout] patch tier attempt returned empty text (one retry)',
+                JSON.stringify({
+                  model,
+                  finishReason: (result as { finishReason?: string }).finishReason,
+                }),
+              );
               continue;
             }
             const jsonStart = Math.max(0, text.indexOf('{'));
@@ -452,27 +512,41 @@ async function runLayoutRepair(
               // null geometry (no numeric left/top/width/height) is not a
               // patch, it is a request to corrupt a canvas — reject the whole
               // element list before the shared helper sees it.
-              const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as { elements?: Array<Record<string, unknown>> };
+              const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as {
+                elements?: Array<Record<string, unknown>>;
+              };
               const elements = parsed.elements;
               const geometryless = Array.isArray(elements)
                 ? elements.some((el) => {
-                    const rect = el as { left?: unknown; top?: unknown; width?: unknown; height?: unknown };
+                    const rect = el as {
+                      left?: unknown;
+                      top?: unknown;
+                      width?: unknown;
+                      height?: unknown;
+                    };
                     return ![rect.left, rect.top, rect.width, rect.height].every(
                       (value) => typeof value === 'number' && Number.isFinite(value),
                     );
                   })
                 : false;
               if (!Array.isArray(elements) || geometryless) {
-                console.warn('[layout-relayout] patch tier rejected (missing element list or null geometry)');
+                console.warn(
+                  '[layout-relayout] patch tier rejected (missing element list or null geometry)',
+                );
                 break;
               }
-              const canvas = (scene.content as unknown as { canvas: { elements: Array<Record<string, unknown>> } }).canvas;
+              const canvas = (
+                scene.content as unknown as { canvas: { elements: Array<Record<string, unknown>> } }
+              ).canvas;
               const patched = applyLayoutPatch(canvas as never, elements as never);
               if (patched) sanitizeSceneCanvas(scene);
             }
             break;
           } catch (error) {
-            console.warn('[layout-relayout] bounded patch failed (non-fatal)', (error as Error).message.slice(0, 120));
+            console.warn(
+              '[layout-relayout] bounded patch failed (non-fatal)',
+              (error as Error).message.slice(0, 120),
+            );
             break;
           }
         }
@@ -499,7 +573,14 @@ async function runLayoutRepair(
       const outlineId = (scene as { outlineId?: string }).outlineId;
       if (outlineId) {
         const outlineDoc = document as unknown as {
-          outline?: { lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, { status?: string; attempts?: number; updatedAt?: number }> }> }> };
+          outline?: {
+            lessonGroups?: Array<{
+              jobs?: Array<{
+                outlineId: string;
+                phases?: Record<string, { status?: string; attempts?: number; updatedAt?: number }>;
+              }>;
+            }>;
+          };
         };
         const group = outlineDoc.outline?.lessonGroups?.find((jobGroup) =>
           (jobGroup.jobs ?? []).some((job) => job.outlineId === outlineId),
@@ -508,15 +589,22 @@ async function runLayoutRepair(
           const job = group.jobs?.find((entry) => entry.outlineId === outlineId);
           if (job) {
             const now = Date.now();
-            const previous = job.phases?.layout as { status?: 'pending' | 'running' | 'done' | 'failed'; attempts?: number } | undefined;
+            const previous = job.phases?.layout as
+              | { status?: 'pending' | 'running' | 'done' | 'failed'; attempts?: number }
+              | undefined;
             // Materialization truth joins collision truth: a zero-element
             // slide canvas is an unmaterialized page (the old splitter could
             // leave its first chunk empty). Rendering "empty" with a green
             // phase would be a lie on the lesson list — the serving rule
             // hides failed layouts, which is exactly right for a blank part.
-            const elementCount = (scene.content as { canvas?: { elements?: unknown[] } } | undefined)?.canvas?.elements?.length ?? 0;
+            const elementCount =
+              (scene.content as { canvas?: { elements?: unknown[] } } | undefined)?.canvas?.elements
+                ?.length ?? 0;
             const nextStatus = errorCount > 0 || elementCount === 0 ? 'failed' : 'done';
-            const nextError = elementCount === 0 && errorCount === 0 ? 'empty canvas — unmaterialized part' : undefined;
+            const nextError =
+              elementCount === 0 && errorCount === 0
+                ? 'empty canvas — unmaterialized part'
+                : undefined;
             const transitioned = previous?.status !== undefined && previous.status !== nextStatus;
             const entry = {
               status: nextStatus,
@@ -538,7 +626,9 @@ async function runLayoutRepair(
             // generation the sweep must close — one visit stamps deterministic
             // content-integrity truth beside the geometry truth. Attempts
             // ratchet on status transitions like the layout entry above.
-            const prevSemantics = job.phases?.semantics as { status?: string; attempts?: number } | undefined;
+            const prevSemantics = job.phases?.semantics as
+              | { status?: string; attempts?: number }
+              | undefined;
             const semanticErrors = (contentResidual ?? []).filter(
               (finding) => finding.severity === 'error',
             );
@@ -546,7 +636,10 @@ async function runLayoutRepair(
               semanticErrors.length > 0
                 ? {
                     status: 'failed',
-                    error: semanticErrors.map((finding) => finding.message).join(' | ').slice(0, 200),
+                    error: semanticErrors
+                      .map((finding) => finding.message)
+                      .join(' | ')
+                      .slice(0, 200),
                   }
                 : { status: 'done' };
             const semTransitioned =
@@ -554,7 +647,8 @@ async function runLayoutRepair(
             const semEntry = {
               status: nextSemantics.status,
               attempts:
-                (prevSemantics?.attempts ?? 0) + (semTransitioned || !prevSemantics?.status ? 1 : 0),
+                (prevSemantics?.attempts ?? 0) +
+                (semTransitioned || !prevSemantics?.status ? 1 : 0),
               updatedAt: now,
               ...('error' in nextSemantics ? { error: String(nextSemantics.error) } : {}),
             } as { status: string; attempts: number; updatedAt: number; error?: string };
@@ -589,8 +683,7 @@ async function runLayoutRepair(
       // predates the content audit is geometry-only coverage — the visit must
       // re-stamp even when nothing else changed, or the scene is re-visited
       // on every pass forever (never fresh, findings never recorded).
-      const epochExpired =
-        !!beforeLedger && beforeLedger.checkedAt < CONTENT_AUDIT_EPOCH_MS;
+      const epochExpired = !!beforeLedger && beforeLedger.checkedAt < CONTENT_AUDIT_EPOCH_MS;
       const needsWrite = plan !== null || passChanged || ledgerChanged || epochExpired;
       if (needsWrite) {
         try {
@@ -657,7 +750,10 @@ async function runLayoutRepair(
   // stamps must survive the request boundary.
   if (!body.dryRun && phaseWrites.length > 0) {
     await documentStore.putPhaseStates(courseId, phaseWrites as never).catch((error) => {
-      console.warn('[layout-relayout] phase write failed (non-fatal)', (error as Error).message.slice(0, 140));
+      console.warn(
+        '[layout-relayout] phase write failed (non-fatal)',
+        (error as Error).message.slice(0, 140),
+      );
     });
   }
 

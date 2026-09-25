@@ -145,8 +145,10 @@ export function parseDurationFromText(text: string): number | null {
 
 // ==================== Course type inference ====================
 
-const EXAM_PREP_RE = /\b(exam|exams|prep|preparation|certification|certificate|associate|professional|practice test|mock)\b/i;
-const HANDS_ON_RE = /\b(hands[- ]on|build|building|project[- ]based|workshop|tutorial|lab|practice|practising|practicing|coding|programming|exercises?|homework|problem[- ]?set)\b/i;
+const EXAM_PREP_RE =
+  /\b(exam|exams|prep|preparation|certification|certificate|associate|professional|practice test|mock)\b/i;
+const HANDS_ON_RE =
+  /\b(hands[- ]on|build|building|project[- ]based|workshop|tutorial|lab|practice|practising|practicing|coding|programming|exercises?|homework|problem[- ]?set)\b/i;
 
 /**
  * Infer the course flavor from the requirement text (not the model's
@@ -189,10 +191,7 @@ export function perLessonSceneCap(preset: CourseSizePreset): number {
   const config = COURSE_SIZE_PRESETS[preset];
   return Math.max(
     MIN_SCENES_PER_LESSON,
-    Math.min(
-      config.maxScenes,
-      12 + Math.floor(Math.log2(Math.max(1, config.maxScenes / 30))) * 8,
-    ),
+    Math.min(config.maxScenes, 12 + Math.floor(Math.log2(Math.max(1, config.maxScenes / 30))) * 8),
   );
 }
 
@@ -235,7 +234,8 @@ export function deriveCourseContract(
     lessonSceneTargets.push(target);
   }
 
-  const quizPlacement = courseType === 'exam-prep' ? QUIZ_PLACEMENT_EXAM_PREP : QUIZ_PLACEMENT_DEFAULT;
+  const quizPlacement =
+    courseType === 'exam-prep' ? QUIZ_PLACEMENT_EXAM_PREP : QUIZ_PLACEMENT_DEFAULT;
 
   // Unit split (Phase 2 §15.1): one unit per LESSONS_PER_UNIT lessons,
   // greedy distribution of the remainder onto earlier units.
@@ -345,14 +345,15 @@ export function renderCourseContract(contract: CourseContract, courseType: Cours
 
   // Phase 2 §15.1: unit (chapter) structure above the lessons. Lesson ranges
   // are positional — unit i covers lessons [start, end] of the list above.
-  const units = contract.unitCount > 1
-    ? contract.unitLessonCounts
-        .map((count, index) => {
-          const start = contract.unitLessonCounts.slice(0, index).reduce((a, b) => a + b, 0) + 1;
-          return `  Unit ${index + 1}: exactly ${count} lessons (lessons #${start}-${start + count - 1} above). Invent a unit title and 1-2 unit-level objectives.`;
-        })
-        .join('\n')
-    : '';
+  const units =
+    contract.unitCount > 1
+      ? contract.unitLessonCounts
+          .map((count, index) => {
+            const start = contract.unitLessonCounts.slice(0, index).reduce((a, b) => a + b, 0) + 1;
+            return `  Unit ${index + 1}: exactly ${count} lessons (lessons #${start}-${start + count - 1} above). Invent a unit title and 1-2 unit-level objectives.`;
+          })
+          .join('\n')
+      : '';
 
   const quizPositions = courseQuizPositions(contract);
 
@@ -455,7 +456,9 @@ export function splitIntoLessons(
     const first = lessonOutlines[0];
 
     lessons.push({
-      title: parsedLesson?.title?.trim() || (first ? `Lesson ${i + 1}: ${first.title}` : `Lesson ${i + 1}`),
+      title:
+        parsedLesson?.title?.trim() ||
+        (first ? `Lesson ${i + 1}: ${first.title}` : `Lesson ${i + 1}`),
       objectives:
         parsedLesson?.objectives && parsedLesson.objectives.length > 0
           ? parsedLesson.objectives.slice(0, 2)
@@ -530,7 +533,8 @@ export function buildCourseBlueprint(
   courseType: CourseType,
   fallbackTitle: string,
 ): CourseBlueprint {
-  const languageDirective = parsed.languageDirective?.trim() || 'Teach in the language that matches the user requirement.';
+  const languageDirective =
+    parsed.languageDirective?.trim() || 'Teach in the language that matches the user requirement.';
   const rawTitle = parsed.courseTitle?.trim();
   const title = (rawTitle || fallbackTitle || requirement.slice(0, 30) || 'Course').slice(0, 30);
 
@@ -550,7 +554,10 @@ export function buildCourseBlueprint(
     objectives:
       parsed.objectives && parsed.objectives.length > 0
         ? parsed.objectives.filter((o) => typeof o === 'string' && o.trim()).slice(0, 5)
-        : leveledOutlines.slice(0, 5).map((o) => o.description).filter(Boolean),
+        : leveledOutlines
+            .slice(0, 5)
+            .map((o) => o.description)
+            .filter(Boolean),
     courseType,
     lessonCount: contract.lessonCount,
     quizPlacement: contract.quizPlacement,
@@ -602,7 +609,8 @@ export function validateOutlineShape(outline: SceneOutline): string[] {
     errors.push('outline is not an object');
     return errors;
   }
-  if (!outline.title || !outline.title.trim()) errors.push(`outline #${outline.order} missing title`);
+  if (!outline.title || !outline.title.trim())
+    errors.push(`outline #${outline.order} missing title`);
   // The scene kind is REQUIRED. Without this check a model that leaks
   // non-scene records (e.g. lesson summaries) into the `outlines` array
   // passes validation, and the content stage rejects every such record
@@ -615,8 +623,14 @@ export function validateOutlineShape(outline: SceneOutline): string[] {
   if (outline.type === 'quiz' && !outline.quizConfig) {
     errors.push(`quiz outline "${outline.title || outline.order}" missing quizConfig`);
   }
-  if (outline.type === 'interactive' && !outline.interactiveConfig && !(outline.widgetType && outline.widgetOutline)) {
-    errors.push(`interactive outline "${outline.title || outline.order}" missing widgetType/widgetOutline`);
+  if (
+    outline.type === 'interactive' &&
+    !outline.interactiveConfig &&
+    !(outline.widgetType && outline.widgetOutline)
+  ) {
+    errors.push(
+      `interactive outline "${outline.title || outline.order}" missing widgetType/widgetOutline`,
+    );
   }
   if (outline.type === 'pbl' && !outline.pblConfig) {
     errors.push(`pbl outline "${outline.title || outline.order}" missing pblConfig`);
@@ -637,7 +651,8 @@ export function validateBlueprint(
 
   if (options.legacy) {
     if (!blueprint.title || !blueprint.title.trim()) errors.push('blueprint missing title');
-    if (!blueprint.lessons || blueprint.lessons.length === 0) errors.push('blueprint has no lessons');
+    if (!blueprint.lessons || blueprint.lessons.length === 0)
+      errors.push('blueprint has no lessons');
     for (const lesson of blueprint.lessons) {
       for (const outline of lesson.outlines) errors.push(...validateOutlineShape(outline));
     }
@@ -645,7 +660,8 @@ export function validateBlueprint(
   }
 
   if (!blueprint.title || !blueprint.title.trim()) errors.push('blueprint missing title');
-  if (blueprint.title.length > 30) errors.push(`blueprint title exceeds 30 chars (${blueprint.title.length})`);
+  if (blueprint.title.length > 30)
+    errors.push(`blueprint title exceeds 30 chars (${blueprint.title.length})`);
   if (!blueprint.languageDirective || !blueprint.languageDirective.trim()) {
     errors.push('blueprint missing languageDirective');
   }
@@ -665,7 +681,9 @@ export function validateBlueprint(
       blueprintPreset,
     ).lessonCount;
     if (blueprint.lessons.length !== expectedLessonCount) {
-      errors.push(`lessonCount ${blueprint.lessons.length} does not match the derived split (${expectedLessonCount})`);
+      errors.push(
+        `lessonCount ${blueprint.lessons.length} does not match the derived split (${expectedLessonCount})`,
+      );
     }
   }
 
@@ -680,13 +698,19 @@ export function validateBlueprint(
     total += count;
 
     if (lesson.objectives.length < 1 || lesson.objectives.length > 2) {
-      warnings.push(`lesson ${lessonIndex + 1} has ${lesson.objectives.length} objectives (expected 1-2)`);
+      warnings.push(
+        `lesson ${lessonIndex + 1} has ${lesson.objectives.length} objectives (expected 1-2)`,
+      );
     }
     if (count < MIN_SCENES_PER_LESSON) {
-      errors.push(`lesson ${lessonIndex + 1} has ${count} scenes, below the floor of ${MIN_SCENES_PER_LESSON}`);
+      errors.push(
+        `lesson ${lessonIndex + 1} has ${count} scenes, below the floor of ${MIN_SCENES_PER_LESSON}`,
+      );
     }
     if (count > presetLessonCap) {
-      errors.push(`lesson ${lessonIndex + 1} has ${count} scenes, above the ${blueprintPreset} cap of ${presetLessonCap}`);
+      errors.push(
+        `lesson ${lessonIndex + 1} has ${count} scenes, above the ${blueprintPreset} cap of ${presetLessonCap}`,
+      );
     }
     if (options.tolerance) {
       // ±1 is a last-resort rescue, BUT only for the final-lesson structure:
@@ -724,7 +748,9 @@ export function validateBlueprint(
     errors.push(`course has ${total} scenes, below the floor of ${MIN_SCENES}`);
   }
   if (total > presetConfig.maxScenes) {
-    errors.push(`course has ${total} scenes, above the ${blueprintPreset} cap of ${presetConfig.maxScenes}`);
+    errors.push(
+      `course has ${total} scenes, above the ${blueprintPreset} cap of ${presetConfig.maxScenes}`,
+    );
   }
   // Contract-total closure: per-lesson checks each bound a slice, but an
   // outright overshoot of the course-wide total (e.g. the model emitted
@@ -738,7 +764,9 @@ export function validateBlueprint(
     blueprintPreset,
   ).totalSceneTarget;
   if (total > contractTotalSceneTarget) {
-    errors.push(`course has ${total} scenes, above the contract total of ${contractTotalSceneTarget}`);
+    errors.push(
+      `course has ${total} scenes, above the contract total of ${contractTotalSceneTarget}`,
+    );
   }
 
   // Unit structure (Phase 2 §15.1): when the contract derives more than one
@@ -753,7 +781,9 @@ export function validateBlueprint(
     errors.push(`course has ${expectedUnitCount} derived units but the unit structure is missing`);
   } else if (blueprint.units && blueprint.units.length > 0) {
     if (blueprint.units.length !== expectedUnitCount) {
-      errors.push(`unit count ${blueprint.units.length} does not match the derived split (${expectedUnitCount})`);
+      errors.push(
+        `unit count ${blueprint.units.length} does not match the derived split (${expectedUnitCount})`,
+      );
     }
     let expectedLessonOffset = 0;
     blueprint.units.forEach((unit, unitIndex) => {
@@ -763,11 +793,15 @@ export function validateBlueprint(
       const lessonCount = unit.lessons.length;
       const expectedLessons = contractLessonCountForUnit(blueprint, unitIndex);
       if (lessonCount !== expectedLessons) {
-        errors.push(`unit ${unitIndex + 1} has ${lessonCount} lessons, expected ${expectedLessons}`);
+        errors.push(
+          `unit ${unitIndex + 1} has ${lessonCount} lessons, expected ${expectedLessons}`,
+        );
       }
       const unitTarget = unit.lessons.reduce((sum, lesson) => sum + lesson.sceneTarget, 0);
       if (unit.sceneTarget !== unitTarget) {
-        errors.push(`unit ${unitIndex + 1} sceneTarget ${unit.sceneTarget} does not match its lessons' sum (${unitTarget})`);
+        errors.push(
+          `unit ${unitIndex + 1} sceneTarget ${unit.sceneTarget} does not match its lessons' sum (${unitTarget})`,
+        );
       }
       for (let i = 0; i < lessonCount; i++) {
         if (unit.lessons[i] !== blueprint.lessons[expectedLessonOffset + i]) {
@@ -777,23 +811,35 @@ export function validateBlueprint(
       }
       expectedLessonOffset += lessonCount;
       if (unit.objectives.length < 1 || unit.objectives.length > 2) {
-        warnings.push(`unit ${unitIndex + 1} has ${unit.objectives.length} objectives (expected 1-2)`);
+        warnings.push(
+          `unit ${unitIndex + 1} has ${unit.objectives.length} objectives (expected 1-2)`,
+        );
       }
     });
   }
 
   // Placement advisories: quiz cadence + interactive/pbl caps.
-  const quizCount = blueprint.lessons.flatMap((l) => l.outlines).filter((o) => o.type === 'quiz').length;
+  const quizCount = blueprint.lessons
+    .flatMap((l) => l.outlines)
+    .filter((o) => o.type === 'quiz').length;
   const expectedQuizzes = Math.floor(total / blueprint.quizPlacement);
   if (quizCount < expectedQuizzes) {
-    warnings.push(`quiz cadence: ${quizCount} quizzes vs ~${expectedQuizzes} expected (every ${blueprint.quizPlacement} scenes)`);
+    warnings.push(
+      `quiz cadence: ${quizCount} quizzes vs ~${expectedQuizzes} expected (every ${blueprint.quizPlacement} scenes)`,
+    );
   }
   const unitTotal = blueprint.units?.length ?? 1;
-  const interactiveCount = blueprint.lessons.flatMap((l) => l.outlines).filter((o) => o.type === 'interactive').length;
+  const interactiveCount = blueprint.lessons
+    .flatMap((l) => l.outlines)
+    .filter((o) => o.type === 'interactive').length;
   if (interactiveCount > Math.max(4, unitTotal * 3)) {
-    warnings.push(`interactive cap: ${interactiveCount} interactive scenes (soft cap ${Math.max(4, unitTotal * 3)})`);
+    warnings.push(
+      `interactive cap: ${interactiveCount} interactive scenes (soft cap ${Math.max(4, unitTotal * 3)})`,
+    );
   }
-  const pblCount = blueprint.lessons.flatMap((l) => l.outlines).filter((o) => o.type === 'pbl').length;
+  const pblCount = blueprint.lessons
+    .flatMap((l) => l.outlines)
+    .filter((o) => o.type === 'pbl').length;
   if (pblCount > unitTotal) {
     warnings.push(`pbl cap: ${pblCount} pbl scenes (max ${unitTotal}, one per unit)`);
   }
@@ -840,7 +886,10 @@ function contractLessonCountForUnit(blueprint: CourseBlueprint, unitIndex: numbe
 export function summarizeBlueprintValidation(result: BlueprintValidationResult): string {
   const lines: string[] = [];
   if (result.errors.length > 0) {
-    lines.push('Your previous response did NOT meet the course contract:', ...result.errors.map((e) => `- ${e}`));
+    lines.push(
+      'Your previous response did NOT meet the course contract:',
+      ...result.errors.map((e) => `- ${e}`),
+    );
   }
   if (result.warnings.length > 0) {
     lines.push('Advisory notes:', ...result.warnings.map((w) => `- ${w}`));
@@ -940,10 +989,14 @@ export function legacyBlueprintFromOutlines(
   languageDirective?: string,
 ): CourseBlueprint {
   const assigned = assignLessonIds(outlines, [Math.max(outlines.length, 1)]);
-  const objectives = assigned.slice(0, 5).map((o) => o.description).filter(Boolean);
+  const objectives = assigned
+    .slice(0, 5)
+    .map((o) => o.description)
+    .filter(Boolean);
   return {
     title: (title || 'Legacy Course').slice(0, 30),
-    languageDirective: languageDirective?.trim() || 'Teach in the language that matches the user requirement.',
+    languageDirective:
+      languageDirective?.trim() || 'Teach in the language that matches the user requirement.',
     durationMinutes: DEFAULT_DURATION_MINUTES,
     audience: 'General learners',
     objectives: objectives.length >= 2 ? objectives : [...objectives, 'Apply the covered concepts'],

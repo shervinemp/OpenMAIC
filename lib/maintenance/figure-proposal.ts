@@ -20,7 +20,7 @@ const stripHtml = (html: string) =>
 const PROPOSAL_SYSTEM_PROMPT = [
   'You propose a SMALL DIAGRAM to add to one course slide whose title promises a shape/diagram (e.g. "Star Schema", "Architecture at a Glance") but whose canvas currently holds only scattered text rows.',
   'Hard rules:',
-  '- Propose shapes ONLY from: box (a rectangle node), line (a connector/edge). Optionally give each shape a very short label (2-6 words, derived from the slide\'s own terminology; do NOT invent new terminology).',
+  "- Propose shapes ONLY from: box (a rectangle node), line (a connector/edge). Optionally give each shape a very short label (2-6 words, derived from the slide's own terminology; do NOT invent new terminology).",
   '- Coordinates are absolute canvas pixels: the viewport is 1000 wide.; place ALL shapes in the canvas body band between y=150 and y=520, x between [40,960].',
   '- Shape ids: prefix every id with `fig_` so it cannot collide with existing element ids.',
   '- The diagram must NOT overlap any existing text row (their rects are supplied). Compose inside a free rectangle; DO NOT cover existing content.',
@@ -29,11 +29,20 @@ const PROPOSAL_SYSTEM_PROMPT = [
   'Return STRICT JSON: {"labelsWhenNeeded":true,"shapes":[{"id":"fig_centerBox","kind":"box","left":400,"top":260,"width":200,"height":90,"label":"fact_sales"}],"reason":"…"}',
 ].join('\n');
 
-function buildRequest(scene: {
-  id: string;
-  title: string;
-  content?: { canvas?: { viewportSize?: number; viewportRatio?: number; elements?: ReadonlyArray<Record<string, unknown>> } };
-}, figureGapReason?: string): string {
+function buildRequest(
+  scene: {
+    id: string;
+    title: string;
+    content?: {
+      canvas?: {
+        viewportSize?: number;
+        viewportRatio?: number;
+        elements?: ReadonlyArray<Record<string, unknown>>;
+      };
+    };
+  },
+  figureGapReason?: string,
+): string {
   const canvas = scene.content?.canvas;
   const existing = (canvas?.elements ?? []).map((el) => ({
     id: (el as { id?: string }).id,
@@ -88,7 +97,10 @@ const BODY_TOP = 150;
 const BODY_BOTTOM = 540;
 const MAX_SHAPES = 8;
 
-function validatePolicyProposal(shapes: unknown, taken: Set<string>): { ok: boolean; error?: string } {
+function validatePolicyProposal(
+  shapes: unknown,
+  taken: Set<string>,
+): { ok: boolean; error?: string } {
   if (!Array.isArray(shapes) || shapes.length === 0) {
     return { ok: false, error: 'model proposed no shapes' };
   }
@@ -100,7 +112,8 @@ function validatePolicyProposal(shapes: unknown, taken: Set<string>): { ok: bool
     if ((entry.id as string).startsWith('fig_') === false) {
       return { ok: false, error: `id "${entry.id}" lacks the fig_ prefix` };
     }
-    if (taken.has(entry.id)) return { ok: false, error: `id "${entry.id}" collides with an existing element` };
+    if (taken.has(entry.id))
+      return { ok: false, error: `id "${entry.id}" collides with an existing element` };
     if (ids.has(entry.id)) return { ok: false, error: 'duplicate proposal id' };
     ids.add(entry.id);
     if (entry.kind !== 'box' && entry.kind !== 'line')
@@ -111,7 +124,8 @@ function validatePolicyProposal(shapes: unknown, taken: Set<string>): { ok: bool
     }
     if (entry.top! < BODY_TOP - 8 || entry.top! > BODY_BOTTOM)
       return { ok: false, error: `top ${entry.top} outside the body band` };
-    if (entry.left! < 40 - 8 || entry.left! > 960) return { ok: false, error: 'outside the body band' };
+    if (entry.left! < 40 - 8 || entry.left! > 960)
+      return { ok: false, error: 'outside the body band' };
     if (entry.width! <= 0 || entry.height! < 0) return { ok: false, error: 'degenerate shape' };
   }
   return { ok: true };
@@ -121,7 +135,13 @@ export async function proposeFigure(params: {
   scene: {
     id: string;
     title: string;
-    content?: { canvas?: { viewportSize?: number; viewportRatio?: number; elements?: ReadonlyArray<Record<string, unknown>> } };
+    content?: {
+      canvas?: {
+        viewportSize?: number;
+        viewportRatio?: number;
+        elements?: ReadonlyArray<Record<string, unknown>>;
+      };
+    };
   };
   figureGapReason?: string;
   callLLMImpl: typeof callLLM;
@@ -146,16 +166,25 @@ export async function proposeFigure(params: {
     const jsonStart = text.indexOf('{');
     const jsonEnd = text.lastIndexOf('}');
     if (jsonStart < 0 || jsonEnd <= jsonStart) {
-      return { proposal: null, error: `unparsable response (finishReason: ${(result as { finishReason?: string }).finishReason})` };
+      return {
+        proposal: null,
+        error: `unparsable response (finishReason: ${(result as { finishReason?: string }).finishReason})`,
+      };
     }
-    const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as { shapes?: unknown; reason?: unknown };
+    const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as {
+      shapes?: unknown;
+      reason?: unknown;
+    };
     if (!Array.isArray(parsed.shapes) || parsed.shapes.length === 0) {
       return { proposal: null, error: 'model declined (no free band or no shapes)' };
     }
     const existingIds = new Set(
       (scene.content?.canvas?.elements ?? []).map((el) => (el as { id?: string }).id),
     );
-    const check = validatePolicyProposal(parsed.shapes as Partial<ProposedShape>[], existingIds as Set<string>);
+    const check = validatePolicyProposal(
+      parsed.shapes as Partial<ProposedShape>[],
+      existingIds as Set<string>,
+    );
     if (!check.ok) {
       return { proposal: null, error: `proposal rejected: ${check.error}` };
     }

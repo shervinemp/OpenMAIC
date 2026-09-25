@@ -55,8 +55,23 @@ const enrollmentBlueprint = (kind: ExamKind): { blueprint: unknown; covered: unk
             durationMinutes: 13,
             sceneTarget: 13,
             outlines: [
-              { id: 's1', type: 'slide', title: 'Lakehouse basics', description: 'd', keyPoints: ['delta'], order: 1 },
-              { id: 's2', type: 'quiz', title: 'Q on lakehouse', description: 'd', keyPoints: [], order: 2, quizConfig: {} as never },
+              {
+                id: 's1',
+                type: 'slide',
+                title: 'Lakehouse basics',
+                description: 'd',
+                keyPoints: ['delta'],
+                order: 1,
+              },
+              {
+                id: 's2',
+                type: 'quiz',
+                title: 'Q on lakehouse',
+                description: 'd',
+                keyPoints: [],
+                order: 2,
+                quizConfig: {} as never,
+              },
             ],
           },
         ],
@@ -64,9 +79,10 @@ const enrollmentBlueprint = (kind: ExamKind): { blueprint: unknown; covered: unk
     ],
     lessons: [],
   };
-  const covered = kind === 'midterm'
-    ? courseBlueprint.units.flatMap((u) => u.lessons.flatMap((l) => l.outlines))
-    : courseBlueprint.units.flatMap((u) => u.lessons.flatMap((l) => l.outlines));
+  const covered =
+    kind === 'midterm'
+      ? courseBlueprint.units.flatMap((u) => u.lessons.flatMap((l) => l.outlines))
+      : courseBlueprint.units.flatMap((u) => u.lessons.flatMap((l) => l.outlines));
   return { blueprint: courseBlueprint, covered };
 };
 
@@ -114,8 +130,18 @@ describe('POST /api/generate/exam', () => {
           prompt: 'Design a lakehouse for streaming analytics',
           guidance: ['cite constraints'],
           rubric: [
-            { id: 'r1', criterion: 'Names storage format tradeoffs', weight: 'essential', lookFor: 'delta/parquet reasons' },
-            { id: 'r2', criterion: 'Justifies compute split', weight: 'important', lookFor: 'separation of storage/compute' },
+            {
+              id: 'r1',
+              criterion: 'Names storage format tradeoffs',
+              weight: 'essential',
+              lookFor: 'delta/parquet reasons',
+            },
+            {
+              id: 'r2',
+              criterion: 'Justifies compute split',
+              weight: 'important',
+              lookFor: 'separation of storage/compute',
+            },
           ],
           sampleAnswer: 'A good answer explains…',
           maxPoints: 10,
@@ -157,7 +183,10 @@ describe('POST /api/generate/exam', () => {
     const shortExam = {
       mcQuestions: Array.from({ length: 2 }, (_, i) => ({
         question: `too few ${i}`,
-        options: [{ label: 'a', value: 'A' }, { label: 'b', value: 'B' }],
+        options: [
+          { label: 'a', value: 'A' },
+          { label: 'b', value: 'B' },
+        ],
         answer: ['A'],
         analysis: 'x',
       })),
@@ -166,14 +195,40 @@ describe('POST /api/generate/exam', () => {
     const fullExam = {
       mcQuestions: Array.from({ length: 12 }, (_, i) => ({
         question: `Scenario ${i + 1}`,
-        options: [{ label: 'a', value: 'A' }, { label: 'b', value: 'B' }, { label: 'c', value: 'C' }, { label: 'd', value: 'D' }],
+        options: [
+          { label: 'a', value: 'A' },
+          { label: 'b', value: 'B' },
+          { label: 'c', value: 'C' },
+          { label: 'd', value: 'D' },
+        ],
         answer: ['A'],
         analysis: 'x',
       })),
       frQuestions: [
-        { prompt: 'fr1', rubric: [{ id: 'r1', criterion: 'c', weight: 'essential', lookFor: 'l' }, { id: 'r2', criterion: 'c2', weight: 'important', lookFor: 'l2' }], sampleAnswer: 's' },
-        { prompt: 'fr2', rubric: [{ id: 'r3', criterion: 'c3', weight: 'essential', lookFor: 'l3' }, { id: 'r4', criterion: 'c4', weight: 'important', lookFor: 'l4' }], sampleAnswer: 's2' },
-        { prompt: 'fr3', rubric: [{ id: 'r5', criterion: 'c5', weight: 'essential', lookFor: 'l5' }, { id: 'r6', criterion: 'c6', weight: 'important', lookFor: 'l6' }], sampleAnswer: 's3' },
+        {
+          prompt: 'fr1',
+          rubric: [
+            { id: 'r1', criterion: 'c', weight: 'essential', lookFor: 'l' },
+            { id: 'r2', criterion: 'c2', weight: 'important', lookFor: 'l2' },
+          ],
+          sampleAnswer: 's',
+        },
+        {
+          prompt: 'fr2',
+          rubric: [
+            { id: 'r3', criterion: 'c3', weight: 'essential', lookFor: 'l3' },
+            { id: 'r4', criterion: 'c4', weight: 'important', lookFor: 'l4' },
+          ],
+          sampleAnswer: 's2',
+        },
+        {
+          prompt: 'fr3',
+          rubric: [
+            { id: 'r5', criterion: 'c5', weight: 'essential', lookFor: 'l5' },
+            { id: 'r6', criterion: 'c6', weight: 'important', lookFor: 'l6' },
+          ],
+          sampleAnswer: 's3',
+        },
       ],
     };
     mocks.callLLM
@@ -191,12 +246,16 @@ describe('POST /api/generate/exam', () => {
     expect(mocks.callLLM).toHaveBeenCalledTimes(2);
   });
 
-
   it('rejects a spec that is still short after the corrective retry', async () => {
     const shortExam = {
       mcQuestions: Array.from({ length: 4 }, () => ({
         question: 'q',
-        options: [{ label: 'a', value: 'A' }, { label: 'b', value: 'B' }, { label: 'c', value: 'C' }, { label: 'd', value: 'D' }],
+        options: [
+          { label: 'a', value: 'A' },
+          { label: 'b', value: 'B' },
+          { label: 'c', value: 'C' },
+          { label: 'd', value: 'D' },
+        ],
         answer: ['A'],
         analysis: 'x',
       })),

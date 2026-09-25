@@ -364,23 +364,67 @@ export async function generateSceneContent(
         options.onFailure,
       );
     case 'quiz':
-      return generateQuizContent(outline, aiCall, languageDirective, retrievalContext, unitContext, log, options.onFailure);
+      return generateQuizContent(
+        outline,
+        aiCall,
+        languageDirective,
+        retrievalContext,
+        unitContext,
+        log,
+        options.onFailure,
+      );
     case 'freeResponse':
-      return generateFreeResponseContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
+      return generateFreeResponseContent(
+        outline,
+        aiCall,
+        languageDirective,
+        retrievalContext,
+        unitContext,
+      );
     case 'exercise':
-      return generateExerciseContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
+      return generateExerciseContent(
+        outline,
+        aiCall,
+        languageDirective,
+        retrievalContext,
+        unitContext,
+      );
     case 'derivation':
-      return generateDerivationContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
+      return generateDerivationContent(
+        outline,
+        aiCall,
+        languageDirective,
+        retrievalContext,
+        unitContext,
+      );
     case 'glossary':
       return generateGlossaryContent(outline, aiCall, languageDirective, unitContext);
     case 'reading':
       return generateReadingContent(outline, aiCall, languageDirective, unitContext);
     case 'comparison':
-      return generateComparisonContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
+      return generateComparisonContent(
+        outline,
+        aiCall,
+        languageDirective,
+        retrievalContext,
+        unitContext,
+      );
     case 'dataReading':
-      return generateDataReadingContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
+      return generateDataReadingContent(
+        outline,
+        aiCall,
+        languageDirective,
+        retrievalContext,
+        unitContext,
+      );
     case 'tradeoffs':
-      return generateTradeoffsContent(outline, aiCall, languageDirective, retrievalContext, unitContext);
+      return generateTradeoffsContent(
+        outline,
+        aiCall,
+        languageDirective,
+        retrievalContext,
+        unitContext,
+      );
     case 'pbl':
       return generatePBLSceneContent(
         outline,
@@ -955,14 +999,16 @@ async function generateSlideContent(
     if (generatedData.background) {
       if (generatedData.background.type === 'solid' && generatedData.background.color) {
         background = { type: 'solid', color: generatedData.background.color };
-      } else if (generatedData.background.type === 'gradient' && generatedData.background.gradient) {
+      } else if (
+        generatedData.background.type === 'gradient' &&
+        generatedData.background.gradient
+      ) {
         background = {
           type: 'gradient',
           gradient: generatedData.background.gradient,
         };
       }
     }
-
 
     if (isEditMode) {
       return {
@@ -998,7 +1044,7 @@ async function generateSlideContent(
 
     recordSceneDepthReport(outline.id, depthReport);
     log.error(
-      `Slide depth contract not met for "${outline.title}" after ${maxAttempts} attempts: ${depthReport.findings.join("; ")}`,
+      `Slide depth contract not met for "${outline.title}" after ${maxAttempts} attempts: ${depthReport.findings.join('; ')}`,
     );
     return null;
   }
@@ -1130,7 +1176,7 @@ async function generateQuizContent(
 
     recordSceneDepthReport(outline.id, depthReport);
     log.error(
-      `Quiz depth contract not met for "${outline.title}" after ${maxAttempts} attempts: ${depthReport.findings.join("; ")}`,
+      `Quiz depth contract not met for "${outline.title}" after ${maxAttempts} attempts: ${depthReport.findings.join('; ')}`,
     );
     return null;
   }
@@ -1304,8 +1350,7 @@ async function generateExerciseContent(
     outline,
     PROMPT_IDS.EXERCISE_CONTENT,
     aiCall,
-    (parsed) =>
-      validateExerciseDepth(outline, parsed.problems ?? [], { retrievalContext }),
+    (parsed) => validateExerciseDepth(outline, parsed.problems ?? [], { retrievalContext }),
     { languageDirective, retrievalContext, unitContext },
   );
   if (!payload) return null;
@@ -1323,8 +1368,7 @@ async function generateDerivationContent(
     outline,
     PROMPT_IDS.DERIVATION_CONTENT,
     aiCall,
-    (parsed) =>
-      validateDerivationDepth(outline, parsed.steps ?? [], { retrievalContext }),
+    (parsed) => validateDerivationDepth(outline, parsed.steps ?? [], { retrievalContext }),
     { languageDirective, retrievalContext, unitContext },
   );
   if (!payload) return null;
@@ -1435,7 +1479,6 @@ async function generateTradeoffsContent(
   if (!payload) return null;
   return finalizeRenderedElements(renderTradeoffsToElements(outline, payload));
 }
-
 
 /**
  * Normalize quiz options from AI response.

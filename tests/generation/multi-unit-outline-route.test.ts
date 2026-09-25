@@ -401,7 +401,9 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     // The second lesson of unit 1 sees what lesson 1 covered.
     const secondOfUnit1 = prompts.find((p) => p.includes('Unit 1 of 2, Lesson 2 of 3'));
     expect(secondOfUnit1).toBeDefined();
-    expect(secondOfUnit1).toContain('Covered so far in this unit (build on this; do NOT repeat it)');
+    expect(secondOfUnit1).toContain(
+      'Covered so far in this unit (build on this; do NOT repeat it)',
+    );
     // Coverage is summarized from the prior lesson's scene titles.
     expect(secondOfUnit1).toContain('Process abstraction:');
   });
@@ -432,9 +434,7 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     // The judge is resolved from the env-configured provider/model string.
     expect(resolveModelMock).toHaveBeenCalledWith({ modelString: 'openai/gpt-4o-mini' });
 
-    const calls = callLLMMock.mock.calls.map(
-      (c) => c[0] as { model?: unknown; system?: string },
-    );
+    const calls = callLLMMock.mock.calls.map((c) => c[0] as { model?: unknown; system?: string });
     const reviewCalls = calls.filter((c) => (c.system ?? '').includes('Unit Review Gate'));
     const generationCalls = calls.filter((c) => !(c.system ?? '').includes('Unit Review Gate'));
     expect(reviewCalls.length).toBeGreaterThan(0);
@@ -695,7 +695,13 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
   });
 
   test('unit review judge infra failure accepts the unit (best-effort gate)', async () => {
-    setupMultiUnitFlow({ review: { 0: () => { throw new Error('judge model down'); } } });
+    setupMultiUnitFlow({
+      review: {
+        0: () => {
+          throw new Error('judge model down');
+        },
+      },
+    });
 
     const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
     const response = await POST(
@@ -805,4 +811,3 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(streamLLMMock).not.toHaveBeenCalled();
   });
 });
-

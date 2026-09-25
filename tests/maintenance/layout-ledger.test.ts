@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  applyLayoutLedger,
-  layoutLedgerOf,
-} from '@/lib/maintenance/layout-relayout';
+import { applyLayoutLedger, layoutLedgerOf } from '@/lib/maintenance/layout-relayout';
 
 function overlappingScene(): { type: string; content: unknown } {
   return {

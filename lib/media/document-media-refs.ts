@@ -45,9 +45,7 @@ function refIsMediaCandidate(value: string): boolean {
 }
 
 function normalizeRef(value: string): string {
-  return value.startsWith('/assets/')
-    ? decodeURIComponent(value.slice('/assets/'.length))
-    : value;
+  return value.startsWith('/assets/') ? decodeURIComponent(value.slice('/assets/'.length)) : value;
 }
 
 /**

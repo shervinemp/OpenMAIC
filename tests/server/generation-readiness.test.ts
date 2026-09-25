@@ -56,7 +56,9 @@ describe('generation readiness route', () => {
   it('reports a dead local TTS server as blocking and a live one as ready', async () => {
     stubFetch({ transportError: true });
     const dead = await json(
-      await post({ tts: { enabled: true, providerId: 'custom-tts-kokoro', baseUrl: 'http://localhost:8080' } }),
+      await post({
+        tts: { enabled: true, providerId: 'custom-tts-kokoro', baseUrl: 'http://localhost:8080' },
+      }),
     );
     expect(dead.checks).toEqual([
       {
@@ -69,7 +71,9 @@ describe('generation readiness route', () => {
 
     stubFetch({ status: 200 });
     const alive = await json(
-      await post({ tts: { enabled: true, providerId: 'custom-tts-kokoro', baseUrl: 'http://localhost:8080' } }),
+      await post({
+        tts: { enabled: true, providerId: 'custom-tts-kokoro', baseUrl: 'http://localhost:8080' },
+      }),
     );
     expect(alive.checks).toEqual([
       { key: 'tts', status: 'ready', blocking: false, detail: expect.any(String) },
@@ -141,7 +145,9 @@ describe('generation readiness route', () => {
   it('marks an LLM with neither server key nor base URL as blocking', async () => {
     stubFetch({ status: 200 });
     const data = await json(
-      await post({ llm: { providerId: 'unknown-provider', modelId: 'm-1', apiKey: '', baseUrl: '' } }),
+      await post({
+        llm: { providerId: 'unknown-provider', modelId: 'm-1', apiKey: '', baseUrl: '' },
+      }),
     );
     expect(data.checks).toEqual([
       { key: 'llm', status: 'unconfigured', blocking: true, detail: expect.any(String) },

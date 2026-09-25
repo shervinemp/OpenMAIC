@@ -13,7 +13,9 @@ function repairCallLimit(): number {
   if (typeof window === 'undefined') return DEFAULT_REPAIR_CALL_LIMIT;
   const override = (window as typeof window & { __OPENMAIC_REPAIR_CALL_LIMIT__?: number })
     .__OPENMAIC_REPAIR_CALL_LIMIT__;
-  return typeof override === 'number' && override > 0 ? Math.floor(override) : DEFAULT_REPAIR_CALL_LIMIT;
+  return typeof override === 'number' && override > 0
+    ? Math.floor(override)
+    : DEFAULT_REPAIR_CALL_LIMIT;
 }
 
 const RECT_FIELDS = ['left', 'top', 'width', 'height'] as const;
@@ -64,17 +66,25 @@ export function applyLayoutPatch(
   return true;
 }
 
-export async function verifyAndRepairSlideLayout(
-  content: unknown,
-): Promise<SlideLayoutResult> {
+export async function verifyAndRepairSlideLayout(content: unknown): Promise<SlideLayoutResult> {
   const slide = content as { type?: string; canvas?: CanvasLike } | null;
   const canvas = slide?.type === 'slide' ? slide.canvas : undefined;
   if (!canvas || !Array.isArray(canvas.elements)) {
-    return { content: content as SlideContent, clamped: 0, findings: [], repaired: false, repairFailed: false };
+    return {
+      content: content as SlideContent,
+      clamped: 0,
+      findings: [],
+      repaired: false,
+      repairFailed: false,
+    };
   }
 
   const clamp = sanitizeSlidePlacement(canvas as never);
-  let findings = validateSlidePlacement({ viewportSize: canvas.viewportSize, viewportRatio: canvas.viewportRatio, elements: canvas.elements as never });
+  let findings = validateSlidePlacement({
+    viewportSize: canvas.viewportSize,
+    viewportRatio: canvas.viewportRatio,
+    elements: canvas.elements as never,
+  });
   let repaired = false;
   let repairFailed = false;
   let repairError: string | undefined;
@@ -114,7 +124,11 @@ export async function verifyAndRepairSlideLayout(
       repairFailed = true;
       repairError = error instanceof Error ? error.message : String(error);
     }
-    findings = validateSlidePlacement({ viewportSize: canvas.viewportSize, viewportRatio: canvas.viewportRatio, elements: canvas.elements as never });
+    findings = validateSlidePlacement({
+      viewportSize: canvas.viewportSize,
+      viewportRatio: canvas.viewportRatio,
+      elements: canvas.elements as never,
+    });
     if (findings.some((finding) => finding.severity === 'error')) {
       repairFailed = true;
       repairError ??= 'validator still errors after the layout patch';

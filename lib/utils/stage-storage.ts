@@ -473,13 +473,15 @@ export async function saveStageDataIncremental(
  * so a recovered outline restores the deck and its resume cursor but not
  * the multi-unit nav grouping.
  */
-async function readLegacyStageOutline(
-  stageId: string,
-): Promise<AppDocumentOutline | undefined> {
+async function readLegacyStageOutline(stageId: string): Promise<AppDocumentOutline | undefined> {
   try {
     if (!db.isOpen()) await db.open();
     const outlineRecord = await db.stageOutlines.get(stageId);
-    if (outlineRecord && Array.isArray(outlineRecord.outlines) && outlineRecord.outlines.length > 0) {
+    if (
+      outlineRecord &&
+      Array.isArray(outlineRecord.outlines) &&
+      outlineRecord.outlines.length > 0
+    ) {
       return {
         outlines: outlineRecord.outlines,
         generationComplete: outlineRecord.generationComplete,

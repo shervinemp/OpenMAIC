@@ -49,7 +49,9 @@ describe('chunkSourceText', () => {
   });
 
   test('falls back to chunk-index citations without page markers', () => {
-    const chunks = chunkSourceText('First paragraph of text here.\n\nSecond paragraph of text here.');
+    const chunks = chunkSourceText(
+      'First paragraph of text here.\n\nSecond paragraph of text here.',
+    );
     expect(chunks.length).toBeGreaterThanOrEqual(1);
     expect(chunks.every((c) => c.citation.startsWith('ch.'))).toBe(true);
   });
@@ -60,7 +62,8 @@ describe('chunkSourceText', () => {
   });
 
   test('flushes pending content before a page marker so chunks keep their own page', () => {
-    const text = 'Page 1\n\nAlpha\n\nContent on page one.\n\nPage 2\n\nBeta\n\nContent on page two.';
+    const text =
+      'Page 1\n\nAlpha\n\nContent on page one.\n\nPage 2\n\nBeta\n\nContent on page two.';
     const chunks = chunkSourceText(text, { minChunkChars: 1 });
     const alpha = chunks.find((c) => c.text.includes('Alpha'));
     const beta = chunks.find((c) => c.text.includes('Beta'));

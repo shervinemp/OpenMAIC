@@ -46,7 +46,7 @@ const SYSTEM_PROMPT = [
   '1. spotlightMismatches: the narration names a DIFFERENT concrete subject than the text body of the highlighted element (e.g. the speech teaches "dim_customer: CustomerKey plus effective-date columns" while the highlighted row text reads "dim_date: DateKey, Year, Quarter…" — that IS a mismatch; set betterElementId to the row whose text matches the narration, if one exists on this slide). A spotlight is NOT a mismatch when the narration is about the slide as a whole (title framing, introductory or recap sentences) or the narration visibly deep-dives the highlighted element\'s own text.',
   'Judge the matching speech, then the highlighted element. A pair is mismatched when the narration names a concrete subject that the highlighted element does not depict, per the dim_customer/dim_date example above.',
   'For every proxySuspect index you MUST emit a pairVerdict — clearance is an explicit judgment ({"matched":true,"reason":"…"}), never silence: coverage over tolerance.',
-  'A mismatch is ANY case where the narrative subject differs from the highlighted element\'s topic: e.g. narration discusses dim_customer while the highlight text names dim_date',
+  "A mismatch is ANY case where the narrative subject differs from the highlighted element's topic: e.g. narration discusses dim_customer while the highlight text names dim_date",
   '2. conceptBeforeSubject: the narration TEACHES a named subject that only appears (visibly) on a LATER page of the same lesson — only if the caller supplies sibling pages.',
   '3. duplicateLessonNeighbor: this page-body substantially duplicates the neighbor lesson passed in (deliberate "recap" wording is NOT a duplicate). Omit when none.',
   '4. figureGap: true ONLY if the title promises a shape/diagram/anatomy (star schema, architecture, anatomy, comparison layout) and the canvas has no graphical/structural element (tables, boxes, spokes) — pure scattered text chips do not count.',
@@ -110,9 +110,44 @@ export function isReviewCandidate(scene: {
 }
 
 const STOP_WORDS = new Set([
-  'the', 'a', 'an', 'of', 'to', 'in', 'is', 'and', 'or', 'it', 'you', 'your', 'we', 'this',
-  'that', 'on', 'for', 'with', 'as', 'are', 'be', 'by', 'from', 'at', 'so', 'not', 'have',
-  'has', 'was', 'what', 'when', 'which', 'their', 'they', 'then', 'than', 'into', 'its',
+  'the',
+  'a',
+  'an',
+  'of',
+  'to',
+  'in',
+  'is',
+  'and',
+  'or',
+  'it',
+  'you',
+  'your',
+  'we',
+  'this',
+  'that',
+  'on',
+  'for',
+  'with',
+  'as',
+  'are',
+  'be',
+  'by',
+  'from',
+  'at',
+  'so',
+  'not',
+  'have',
+  'has',
+  'was',
+  'what',
+  'when',
+  'which',
+  'their',
+  'they',
+  'then',
+  'than',
+  'into',
+  'its',
 ]);
 
 const stripHtmlPlain = (html: string) =>
@@ -154,9 +189,9 @@ export function spotlightProxyCandidates(scene: {
       }
     }
     if (!speech) continue;
-    const target = (bodies.get(action.elementId) ?? '').split(/\s+/).filter(
-      (word) => word.length > 4 && !STOP_WORDS.has(word),
-    );
+    const target = (bodies.get(action.elementId) ?? '')
+      .split(/\s+/)
+      .filter((word) => word.length > 4 && !STOP_WORDS.has(word));
     const speechWords = new Set(stripHtmlPlain(speech).split(/\s+/));
     if (target.length > 0 && !target.some((word) => speechWords.has(word))) {
       // Only flag when the pair's row is textual: a chart/image with no
@@ -231,8 +266,7 @@ export async function judgeScene(params: {
       const entry = pairVerdicts.find((candidate) => Number(candidate?.proxyIndex) === proxyIndex);
       if (entry?.matched === true) continue;
       const spotlight = actions[proxyIndex] as { elementId?: string } | undefined;
-      const elementId =
-        typeof spotlight?.elementId === 'string' ? spotlight.elementId : 'unknown';
+      const elementId = typeof spotlight?.elementId === 'string' ? spotlight.elementId : 'unknown';
       if (spotlightMismatchesFromModel.some((m) => m.highlightedElementId === elementId)) continue;
       let speechIndex = -1;
       for (let j = proxyIndex - 1; j >= 0; j -= 1) {
@@ -244,7 +278,9 @@ export async function judgeScene(params: {
       spotlightMismatchesFromModel.push({
         speechIndex,
         highlightedElementId: elementId,
-        ...(typeof entry?.betterElementId === 'string' ? { betterElementId: entry.betterElementId } : {}),
+        ...(typeof entry?.betterElementId === 'string'
+          ? { betterElementId: entry.betterElementId }
+          : {}),
         reason:
           typeof entry?.reason === 'string' && entry.reason
             ? entry.reason
@@ -258,9 +294,10 @@ export async function judgeScene(params: {
         conceptBeforeSubject: Array.isArray(parsed.conceptBeforeSubject)
           ? parsed.conceptBeforeSubject.filter((c) => typeof c?.elementId === 'string')
           : [],
-        duplicateLessonNeighbor: typeof parsed.duplicateLessonNeighbor === 'string'
-          ? parsed.duplicateLessonNeighbor
-          : undefined,
+        duplicateLessonNeighbor:
+          typeof parsed.duplicateLessonNeighbor === 'string'
+            ? parsed.duplicateLessonNeighbor
+            : undefined,
         figureGap: parsed.figureGap && typeof parsed.figureGap === 'object' ? parsed.figureGap : {},
       },
     };

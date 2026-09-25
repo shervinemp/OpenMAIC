@@ -78,10 +78,7 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
     }
   }
 
-  saveDocument(
-    doc: MaicDocument<TScene, TStage>,
-    options?: SaveDocumentOptions,
-  ): Promise<void> {
+  saveDocument(doc: MaicDocument<TScene, TStage>, options?: SaveDocumentOptions): Promise<void> {
     return this.tagged({ stageId: doc.stage.id, mode: 'create' }, () =>
       this.inner.saveDocument(doc, options),
     );
@@ -97,7 +94,14 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
 
   putPhaseStates(
     stageId: string,
-    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+    entries: ReadonlyArray<{
+      outlineId: string;
+      phase: string;
+      status: string;
+      attempts: number;
+      updatedAt: number;
+      error?: string;
+    }>,
   ): Promise<void> {
     return this.tagged({ stageId, mode: 'mutate' }, () =>
       this.inner.putPhaseStates(stageId, entries),

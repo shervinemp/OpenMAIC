@@ -21,7 +21,10 @@ import type {
   ReadingItem,
 } from '@/lib/types/generation';
 
-function outline(type: SceneOutline['type'], depthLevel?: SceneOutline['depthLevel']): SceneOutline {
+function outline(
+  type: SceneOutline['type'],
+  depthLevel?: SceneOutline['depthLevel'],
+): SceneOutline {
   return {
     id: `${type}_1`,
     type,
@@ -47,19 +50,17 @@ describe('validateExerciseDepth', () => {
   });
 
   test('rejects problems without worked solutions', () => {
-    const report = validateExerciseDepth(
-      outline('exercise'),
-      [{ id: 'p1', statement: 'Find x.', solution: '' }],
-    );
+    const report = validateExerciseDepth(outline('exercise'), [
+      { id: 'p1', statement: 'Find x.', solution: '' },
+    ]);
     expect(report.adequate).toBe(false);
     expect(report.findings.some((f) => f.includes('worked'))).toBe(true);
   });
 
   test('rejects bare-fragment statements', () => {
-    const report = validateExerciseDepth(
-      outline('exercise'),
-      [{ id: 'p1', statement: 'The problem', solution: 's' }],
-    );
+    const report = validateExerciseDepth(outline('exercise'), [
+      { id: 'p1', statement: 'The problem', solution: 's' },
+    ]);
     expect(report.adequate).toBe(false);
     expect(report.findings.some((f) => f.includes('fragment'))).toBe(true);
   });
@@ -89,18 +90,22 @@ describe('validateExerciseDepth', () => {
       '--- [source p.2] ---\nConstant-acceleration formulas.',
       '--- [source p.3] ---\nFriction models.',
     ].join('\n');
-    const report = validateExerciseDepth(outline('exercise', 'university'), [
-      {
-        ...worked[0],
-        analysis: 'The method works.',
-      },
-      {
-        id: 'p2',
-        statement: 'Q2 statement with concrete numbers and units.',
-        solution: 'Worked solution.',
-        analysis: 'Analysis.',
-      },
-    ], { retrievalContext: retrieval });
+    const report = validateExerciseDepth(
+      outline('exercise', 'university'),
+      [
+        {
+          ...worked[0],
+          analysis: 'The method works.',
+        },
+        {
+          id: 'p2',
+          statement: 'Q2 statement with concrete numbers and units.',
+          solution: 'Worked solution.',
+          analysis: 'Analysis.',
+        },
+      ],
+      { retrievalContext: retrieval },
+    );
     expect(report.adequate).toBe(false);
     expect(report.findings.some((f) => f.includes('at least 3'))).toBe(true);
   });
@@ -108,8 +113,16 @@ describe('validateExerciseDepth', () => {
 
 describe('validateDerivationDepth', () => {
   const steps: DerivationStep[] = [
-    { id: 'd1', latex: 'F = ma', explanation: 'Newton’s second law defines force as mass times acceleration.' },
-    { id: 'd2', latex: 'v = v_0 + at', explanation: 'Integrating constant acceleration gives the velocity update.' },
+    {
+      id: 'd1',
+      latex: 'F = ma',
+      explanation: 'Newton’s second law defines force as mass times acceleration.',
+    },
+    {
+      id: 'd2',
+      latex: 'v = v_0 + at',
+      explanation: 'Integrating constant acceleration gives the velocity update.',
+    },
   ];
 
   test('intro floor accepts two complete steps', () => {
@@ -138,20 +151,42 @@ describe('validateDerivationDepth', () => {
   test('university floor needs four steps', () => {
     const four = [
       ...steps,
-      { id: 'd3', latex: 's = v_0 t + \\frac{1}{2} a t^2', explanation: 'Integrating velocity gives displacement.' },
-      { id: 'd4', latex: 'v^2 = v_0^2 + 2 a s', explanation: 'Eliminating time combines the previous two equations.' },
+      {
+        id: 'd3',
+        latex: 's = v_0 t + \\frac{1}{2} a t^2',
+        explanation: 'Integrating velocity gives displacement.',
+      },
+      {
+        id: 'd4',
+        latex: 'v^2 = v_0^2 + 2 a s',
+        explanation: 'Eliminating time combines the previous two equations.',
+      },
     ];
     expect(validateDerivationDepth(outline('derivation', 'university'), four).adequate).toBe(true);
-    expect(validateDerivationDepth(outline('derivation', 'university'), steps).adequate).toBe(false);
+    expect(validateDerivationDepth(outline('derivation', 'university'), steps).adequate).toBe(
+      false,
+    );
   });
 });
 
 describe('validateGlossaryDepth', () => {
   const terms: GlossaryTerm[] = [
-    { term: 'Latent heat', definition: 'Energy absorbed or released during a phase change at constant temperature.' },
-    { term: 'Vapor pressure', definition: 'The pressure exerted by a vapor in equilibrium with its liquid.' },
-    { term: 'Dew point', definition: 'The temperature at which air becomes saturated with water vapor.' },
-    { term: 'Relative humidity', definition: 'The ratio of actual vapor pressure to saturation vapor pressure.' },
+    {
+      term: 'Latent heat',
+      definition: 'Energy absorbed or released during a phase change at constant temperature.',
+    },
+    {
+      term: 'Vapor pressure',
+      definition: 'The pressure exerted by a vapor in equilibrium with its liquid.',
+    },
+    {
+      term: 'Dew point',
+      definition: 'The temperature at which air becomes saturated with water vapor.',
+    },
+    {
+      term: 'Relative humidity',
+      definition: 'The ratio of actual vapor pressure to saturation vapor pressure.',
+    },
   ];
 
   test('intro floor accepts four complete terms', () => {
@@ -172,7 +207,10 @@ describe('validateGlossaryDepth', () => {
   test('university floor needs six terms', () => {
     const six = [
       ...terms,
-      { term: 'Adiabatic', definition: 'A process where no heat is exchanged with the surroundings.' },
+      {
+        term: 'Adiabatic',
+        definition: 'A process where no heat is exchanged with the surroundings.',
+      },
       { term: 'Enthalpy', definition: 'Total heat content of a system at constant pressure.' },
     ];
     expect(validateGlossaryDepth(outline('glossary', 'university'), six).adequate).toBe(true);
@@ -182,9 +220,20 @@ describe('validateGlossaryDepth', () => {
 
 describe('validateReadingDepth', () => {
   const items: ReadingItem[] = [
-    { title: 'The Feynman Lectures on Physics', source: 'Feynman et al.', whyRead: 'A classic narrative treatment that deepens the intuition behind the scene’s concepts.' },
-    { title: 'Thermodynamics textbook chapter 3', whyRead: 'Rigorous derivations of the phase-change energetics covered here.' },
-    { title: 'IUPAC standard tables', whyRead: 'Authoritative reference values for the constants used in the worked example.' },
+    {
+      title: 'The Feynman Lectures on Physics',
+      source: 'Feynman et al.',
+      whyRead:
+        'A classic narrative treatment that deepens the intuition behind the scene’s concepts.',
+    },
+    {
+      title: 'Thermodynamics textbook chapter 3',
+      whyRead: 'Rigorous derivations of the phase-change energetics covered here.',
+    },
+    {
+      title: 'IUPAC standard tables',
+      whyRead: 'Authoritative reference values for the constants used in the worked example.',
+    },
   ];
 
   test('intro floor accepts three annotated items', () => {
@@ -204,7 +253,10 @@ describe('validateReadingDepth', () => {
   test('university floor needs five items', () => {
     const five = [
       ...items,
-      { title: 'Original research paper', whyRead: 'Primary source for the result derived in this unit.' },
+      {
+        title: 'Original research paper',
+        whyRead: 'Primary source for the result derived in this unit.',
+      },
       { title: 'Review article', whyRead: 'Survey of competing interpretations.' },
     ];
     expect(validateReadingDepth(outline('reading', 'university'), five).adequate).toBe(true);
@@ -224,7 +276,9 @@ describe('specialized scene renderers', () => {
     ]);
     expect(elements.length).toBeGreaterThan(0);
     const texts = elements.filter((el) => el.type === 'text');
-    expect(texts.some((el) => String((el as { content?: string }).content).includes('Worked solution'))).toBe(true);
+    expect(
+      texts.some((el) => String((el as { content?: string }).content).includes('Worked solution')),
+    ).toBe(true);
     for (const el of elements) {
       const box = el as { left: number; top: number; width: number; height: number };
       expect(box.top + box.height).toBeLessThanOrEqual(562.5);

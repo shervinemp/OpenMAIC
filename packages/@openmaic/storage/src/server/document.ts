@@ -16,7 +16,11 @@ import type {
   SceneValidator,
   StageValidator,
 } from '../document/types.js';
-import { DocumentLostUpdateError, DocumentNotFoundError, DocumentVersionError } from '../document/types.js';
+import {
+  DocumentLostUpdateError,
+  DocumentNotFoundError,
+  DocumentVersionError,
+} from '../document/types.js';
 import { assertMaxBodyBytes, DEFAULT_MAX_BODY_BYTES, readJsonObject } from './read-json.js';
 
 export interface DocumentHttpPrincipal {

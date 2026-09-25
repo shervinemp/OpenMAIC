@@ -2,7 +2,20 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { animate, motion, MotionConfig, useReducedMotion } from 'motion/react';
-import { FileText, HelpCircle, Gamepad2, Puzzle, Dumbbell, Sigma, BookMarked, Library, Scale, LineChart, GitBranch, PenLine } from 'lucide-react';
+import {
+  FileText,
+  HelpCircle,
+  Gamepad2,
+  Puzzle,
+  Dumbbell,
+  Sigma,
+  BookMarked,
+  Library,
+  Scale,
+  LineChart,
+  GitBranch,
+  PenLine,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store';
@@ -681,4 +694,3 @@ export function ClassroomCompletePageConnected() {
   const scenes = useStageStore((s) => s.scenes);
   return <ClassroomCompletePage scenes={scenes} title={stage?.name ?? ''} />;
 }
-

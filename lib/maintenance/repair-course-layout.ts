@@ -61,9 +61,8 @@ export async function repairCourseLayout(
 ): Promise<CourseLayoutRepairReport | null> {
   if (!courseId || appliedCourses.has(courseId)) return null;
   appliedCourses.add(courseId);
-  const { isBrowserPersistenceEnabled, getPersistenceRequestHeaders } = await import(
-    '@/lib/persistence/bootstrap'
-  );
+  const { isBrowserPersistenceEnabled, getPersistenceRequestHeaders } =
+    await import('@/lib/persistence/bootstrap');
   if (!isBrowserPersistenceEnabled()) {
     appliedCourses.delete(courseId);
     return null;
@@ -146,7 +145,9 @@ export async function repairCourseLayout(
               const { useStageStore } = await import('@/lib/store');
               useStageStore.getState().recordScenePhase(outlineId, 'layout', {
                 status: layout.repairFailed ? 'failed' : 'done',
-                error: layout.repairFailed ? (layout.repairError ?? 'layout debt unresolved') : undefined,
+                error: layout.repairFailed
+                  ? (layout.repairError ?? 'layout debt unresolved')
+                  : undefined,
               });
             } catch {
               // Phase recording is best-effort; geometry truth still stands.
@@ -200,11 +201,16 @@ export async function repairCourseLayout(
         if (partCount > 0) {
           summary.residualDebt = 0;
         } else {
-          log.info('split apply was a no-op; deferring residual to the next pass (one-shot reload)');
+          log.info(
+            'split apply was a no-op; deferring residual to the next pass (one-shot reload)',
+          );
         }
         reloadOnceForStructuralChange();
       } else {
-        log.warn('split apply on load failed (non-fatal)', await splitResponse?.text().catch(() => ''));
+        log.warn(
+          'split apply on load failed (non-fatal)',
+          await splitResponse?.text().catch(() => ''),
+        );
       }
     }
     return summary;

@@ -171,9 +171,8 @@ async function serverAssetBlob(
   const promise = (async () => {
     if (isConcreteMediaAddress(ref)) return null;
     try {
-      const { isBrowserPersistenceEnabled, getPersistenceRequestHeaders } = await import(
-        '@/lib/persistence/bootstrap'
-      );
+      const { isBrowserPersistenceEnabled, getPersistenceRequestHeaders } =
+        await import('@/lib/persistence/bootstrap');
       if (!isBrowserPersistenceEnabled()) return null;
       const headers = await getPersistenceRequestHeaders();
       const response = await fetch(`/api/persistence/assets/${encodeURIComponent(ref)}`, {

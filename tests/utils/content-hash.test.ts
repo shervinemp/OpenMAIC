@@ -44,7 +44,11 @@ describe('computeActionsSourceHash', () => {
       computeActionsSourceHash({ content, ...params }),
     );
     expect(
-      computeActionsSourceHash({ content, ...params, agents: [{ id: 'a2', name: 'Ken', role: 'teacher' }] }),
+      computeActionsSourceHash({
+        content,
+        ...params,
+        agents: [{ id: 'a2', name: 'Ken', role: 'teacher' }],
+      }),
     ).not.toBe(computeActionsSourceHash({ content, ...params }));
   });
 

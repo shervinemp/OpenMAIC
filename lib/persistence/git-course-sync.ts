@@ -197,10 +197,7 @@ export async function bindCourseRepository(options: {
   // history later.
   const stageFile = sanitizeStageFile(stageId);
   for (const existing of await readBindings(persistenceDir)) {
-    if (
-      existing.repoPath === repoPath &&
-      sanitizeStageFile(existing.stageId) === stageFile
-    ) {
+    if (existing.repoPath === repoPath && sanitizeStageFile(existing.stageId) === stageFile) {
       throw new Error(
         `stageId ${JSON.stringify(stageId)} would share the snapshot file ${JSON.stringify(stageFile + '.json')} ` +
           `with bound stage ${JSON.stringify(existing.stageId)} in the same repository; use a distinct id`,
@@ -264,7 +261,12 @@ export class CourseGitCommitScheduler {
 
   constructor(
     private readonly persistenceDir: string,
-    options: { debounceMs?: number; push?: boolean; includeMedia?: boolean; disabled?: boolean } = {},
+    options: {
+      debounceMs?: number;
+      push?: boolean;
+      includeMedia?: boolean;
+      disabled?: boolean;
+    } = {},
   ) {
     this.debounceMs = options.debounceMs ?? envDebounceMs() ?? DEFAULT_DEBOUNCE_MS;
     this.push = options.push ?? false;
@@ -385,9 +387,7 @@ export class CourseGitCommitScheduler {
     await this.drain;
   }
 
-  private async partitionByRepo(
-    jobs: readonly CommitJob[],
-  ): Promise<Map<string, CommitJob[]>> {
+  private async partitionByRepo(jobs: readonly CommitJob[]): Promise<Map<string, CommitJob[]>> {
     const byRepo = new Map<string, CommitJob[]>();
     for (const job of jobs) {
       const binding = await getCourseBinding(this.persistenceDir, job.stageId);
@@ -441,14 +441,14 @@ export class CourseGitCommitScheduler {
       // manifest — the browser backfill uploader supplies those bytes first;
       // copy is best-effort and never fails the commit.
       if (this.includeMedia) {
-        await materializeStageAssets(
-          this.persistenceDir,
-          repoPath,
-          job.stageId,
-          document,
-        ).catch((error) => {
-          log.warn(`Asset materialization for ${JSON.stringify(job.stageId)} failed; committing document only:`, error instanceof Error ? error.message : error);
-        });
+        await materializeStageAssets(this.persistenceDir, repoPath, job.stageId, document).catch(
+          (error) => {
+            log.warn(
+              `Asset materialization for ${JSON.stringify(job.stageId)} failed; committing document only:`,
+              error instanceof Error ? error.message : error,
+            );
+          },
+        );
       }
     }
     // Media pipeline provisioning comes FIRST: the LFS clean filter must be
@@ -512,9 +512,7 @@ export class CourseGitCommitScheduler {
         if (remotes.length === 0) {
           log.warn('push skipped: the bound repository has no git remote configured');
         } else {
-          const branch = (
-            await git(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
-          ).stdout.trim();
+          const branch = (await git(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
           const [remote] = remotes;
           const pushed = await git(repoPath, [
             'push',

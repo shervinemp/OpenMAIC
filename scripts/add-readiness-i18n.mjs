@@ -26,7 +26,7 @@ const labels = {
   'fr-FR': {
     title: 'Vérification de disponibilité',
     description:
-      "Certaines cibles de génération activées sont inaccessibles ou non configurées. Vous pouvez continuer, mais ces parties du cours échoueront ou seront ignorées.",
+      'Certaines cibles de génération activées sont inaccessibles ou non configurées. Vous pouvez continuer, mais ces parties du cours échoueront ou seront ignorées.',
     llm: 'Modèle de texte (LLM)',
     image: "Génération d'images",
     video: 'Génération vidéo',
@@ -112,7 +112,8 @@ const labels = {
   },
   'zh-TW': {
     title: '生成前就緒檢查',
-    description: '部分已啟用的生成目標無法使用或未設定。你可以繼續，但課程的這些部分會失敗或被跳過。',
+    description:
+      '部分已啟用的生成目標無法使用或未設定。你可以繼續，但課程的這些部分會失敗或被跳過。',
     llm: '文字模型（LLM）',
     image: '圖像生成',
     video: '影片生成',

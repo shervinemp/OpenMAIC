@@ -134,4 +134,3 @@ export interface SceneOutline {
   widgetType?: WidgetType;
   widgetOutline?: WidgetOutline;
 }
-

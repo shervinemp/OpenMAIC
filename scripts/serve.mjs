@@ -100,7 +100,11 @@ async function start(name, service) {
     return;
   }
   log(service, `starting: ${service.cmd} ${service.args.join(' ')}`);
-  const child = spawn(service.cmd, service.args, { cwd: service.cwd, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: false });
+  const child = spawn(service.cmd, service.args, {
+    cwd: service.cwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: false,
+  });
   children.set(name, child);
   pipe(child, service);
 
@@ -143,9 +147,7 @@ const only = process.argv.slice(2);
 // Ollama is intentionally NOT part of the stack: generation runs on remote
 // providers (e.g. deepseek:deepseek-v4-flash) and Ollama self-manages as a
 // standalone Windows app. Add it back here only if a local LLM is wanted.
-const names = only.length
-  ? only
-  : ['kokoro', 'comfyui', 'openmaic'];
+const names = only.length ? only : ['kokoro', 'comfyui', 'openmaic'];
 let hadError = false;
 
 for (const name of names) {

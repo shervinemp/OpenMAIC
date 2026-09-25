@@ -45,10 +45,7 @@ export interface CoverageAuditResult {
 export function collectCitedMarkers(outlines: SceneOutline[]): Set<string> {
   const markers = new Set<string>();
   for (const outline of outlines) {
-    const sources = [
-      outline.retrievalContext ?? '',
-      ...(outline.keyPoints ?? []).filter(Boolean),
-    ];
+    const sources = [outline.retrievalContext ?? '', ...(outline.keyPoints ?? []).filter(Boolean)];
     for (const source of sources) {
       for (const marker of extractCitationMarkers(source)) {
         markers.add(marker.toLowerCase());

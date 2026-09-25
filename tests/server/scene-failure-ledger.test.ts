@@ -56,12 +56,10 @@ describe('scene failure ledger', () => {
   });
 
   test('describeSceneFailure maps codes and formats findings', () => {
-    expect(
-      describeSceneFailure(undefined),
-    ).toBeUndefined();
+    expect(describeSceneFailure(undefined)).toBeUndefined();
     expect(describeSceneFailure(record())).toContain('could not be parsed');
-    expect(
-      describeSceneFailure(record({ findings: ['slide has 1 substantive element'] })),
-    ).toBe('the model output could not be parsed into the scene schema — findings: slide has 1 substantive element');
+    expect(describeSceneFailure(record({ findings: ['slide has 1 substantive element'] }))).toBe(
+      'the model output could not be parsed into the scene schema — findings: slide has 1 substantive element',
+    );
   });
 });

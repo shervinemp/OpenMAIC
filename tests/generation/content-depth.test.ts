@@ -45,7 +45,10 @@ function slideOutline(title: string, order = 1): SceneOutline {
 const SUBSTANTIVE = [
   textElement('t1', '<p>Evaporation moves water molecules from the liquid phase into vapor.</p>'),
   textElement('t2', '<p>Molecules gain energy when the liquid surface is heated by the sun.</p>'),
-  textElement('t3', '<p>For example, a puddle shrinks much faster on a hot day than a cold one.</p>'),
+  textElement(
+    't3',
+    '<p>For example, a puddle shrinks much faster on a hot day than a cold one.</p>',
+  ),
   textElement('t4', '<p>Condensation reverses the process and returns vapor to liquid water.</p>'),
 ];
 
@@ -59,7 +62,9 @@ describe('text heuristics', () => {
   });
 
   test('substantive detector flags complete claims', () => {
-    expect(isSubstantiveText('Water changes into vapor when the surface is heated by sunlight.')).toBe(true);
+    expect(
+      isSubstantiveText('Water changes into vapor when the surface is heated by sunlight.'),
+    ).toBe(true);
     expect(isSubstantiveText('It is here')).toBe(false); // short verb phrase, < 5 words, < 40 chars
     expect(isSubstantiveText('Bronze tables')).toBe(false);
   });
@@ -90,7 +95,9 @@ describe('validateSlideDepth', () => {
 
   test('requires a concrete example unless intro/summary', () => {
     const noExample = SUBSTANTIVE.map((el, i) =>
-      i === 2 ? textElement('t3', '<p>Humidity is the amount of water vapor present in the air.</p>') : el,
+      i === 2
+        ? textElement('t3', '<p>Humidity is the amount of water vapor present in the air.</p>')
+        : el,
     );
     expect(validateSlideDepth(slideOutline('The Water Cycle'), noExample).adequate).toBe(false);
     // Intro scenes are exempt from the example requirement (Q5) but never from captions.
@@ -132,7 +139,10 @@ describe('validateSlideDepth', () => {
         'a',
         '<p style="font-size: 14px;">COPY INTO loads files from cloud storage into a Delta table in one statement.</p>',
       ),
-      textElement('b', '<p style="font-size: 14px;">The file format is declared after the source, then the table writes commit.</p>'),
+      textElement(
+        'b',
+        '<p style="font-size: 14px;">The file format is declared after the source, then the table writes commit.</p>',
+      ),
       {
         id: 'code',
         type: 'code',
@@ -143,9 +153,7 @@ describe('validateSlideDepth', () => {
         code: 'COPY INTO sales_bronze\nFROM read_files(source_path)\nFILEFORMAT = CSV',
       } as unknown as PPTElement,
     ]);
-    expect(report.findings).not.toContain(
-      expect.stringContaining('no concrete example'),
-    );
+    expect(report.findings).not.toContain(expect.stringContaining('no concrete example'));
     expect(report.exampleCount).toBeGreaterThanOrEqual(1);
   });
 
@@ -246,7 +254,10 @@ describe('depth levels (Phase 2 §15.4)', () => {
     return [
       ...SUBSTANTIVE,
       textElement('t5', '<p>Transpiration releases additional vapor through plant leaves.</p>'),
-      textElement('t6', '<p>Groundwater reservoirs refill when precipitation exceeds evaporation.</p>'),
+      textElement(
+        't6',
+        '<p>Groundwater reservoirs refill when precipitation exceeds evaporation.</p>',
+      ),
     ];
   }
 
@@ -264,7 +275,10 @@ describe('depth levels (Phase 2 §15.4)', () => {
     const outline = { ...slideOutline('The Water Cycle'), depthLevel: 'university' as const };
     const twoCitations = universitySubstantive().map((el, i) =>
       i === 5
-        ? textElement('t6', '<p>Groundwater reservoirs refill when precipitation exceeds evaporation. [source p.1] [source p.2]</p>')
+        ? textElement(
+            't6',
+            '<p>Groundwater reservoirs refill when precipitation exceeds evaporation. [source p.1] [source p.2]</p>',
+          )
         : el,
     );
     const report = validateSlideDepth(outline, twoCitations, { retrievalContext: RETRIEVAL });
@@ -273,10 +287,15 @@ describe('depth levels (Phase 2 §15.4)', () => {
 
     const threeCitations = twoCitations.map((el, i) =>
       i === 5
-        ? textElement('t6', '<p>Groundwater reservoirs refill when precipitation exceeds evaporation. [source p.1] [source p.2] [source p.3]</p>')
+        ? textElement(
+            't6',
+            '<p>Groundwater reservoirs refill when precipitation exceeds evaporation. [source p.1] [source p.2] [source p.3]</p>',
+          )
         : el,
     );
-    expect(validateSlideDepth(outline, threeCitations, { retrievalContext: RETRIEVAL }).adequate).toBe(true);
+    expect(
+      validateSlideDepth(outline, threeCitations, { retrievalContext: RETRIEVAL }).adequate,
+    ).toBe(true);
   });
 
   test('university quizzes need at least 3 options per choice question', () => {
@@ -309,7 +328,7 @@ describe('depth levels (Phase 2 §15.4)', () => {
     expect(report.findings.some((f) => f.includes('at least 3'))).toBe(true);
   });
 
-  test('intro depth level keeps today\'s floor', () => {
+  test("intro depth level keeps today's floor", () => {
     const outline = { ...slideOutline('The Water Cycle'), depthLevel: 'intro' as const };
     expect(validateSlideDepth(outline, SUBSTANTIVE).adequate).toBe(true);
   });

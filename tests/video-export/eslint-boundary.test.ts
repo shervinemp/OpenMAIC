@@ -16,10 +16,8 @@ async function boundaryErrors(code: string): Promise<string[]> {
 describe('Hyperframes emitter lint boundary', () => {
   // Programmatic ESLint runs spawn real linting; 5s is too tight on a
   // loaded machine (flake-prone under full parallel suites).
-  it(
-    'allows only in-module relatives and the shared pure Quiz math renderer',
-    async () => {
-      const errors = await boundaryErrors(`
+  it('allows only in-module relatives and the shared pure Quiz math renderer', async () => {
+    const errors = await boundaryErrors(`
         import type { VideoTimeline } from '../ir';
         import { renderQuizMathText } from '../../quiz/math-text';
         import { escapeHtml } from './format';
@@ -27,10 +25,8 @@ describe('Hyperframes emitter lint boundary', () => {
         export const rendered = renderQuizMathText(escapeHtml('x'));
       `);
 
-      expect(errors).toEqual([]);
-    },
-    30_000,
-  );
+    expect(errors).toEqual([]);
+  }, 30_000);
 
   it.each([
     ['a host-app alias', "import value from '@/lib/store'; export default value;"],

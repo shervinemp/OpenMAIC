@@ -1876,5 +1876,3 @@ export default function GenerationPreviewPage() {
     </Suspense>
   );
 }
-
-

@@ -79,22 +79,18 @@ describe('POST /api/extract-document', () => {
 
   // First route import in the file pulls the extraction stack; under a fully
   // parallel suite that cold import can exceed 5s.
-  it(
-    'returns 400 for unsupported course material MIME types',
-    async () => {
-      const res = await postExtractDocument({
-        file: new File(['x,y'], 'sheet.csv', { type: 'text/csv' }),
-      });
-      const json = await res.json();
+  it('returns 400 for unsupported course material MIME types', async () => {
+    const res = await postExtractDocument({
+      file: new File(['x,y'], 'sheet.csv', { type: 'text/csv' }),
+    });
+    const json = await res.json();
 
-      expect(res.status).toBe(400);
-      expect(json).toMatchObject({
-        success: false,
-        errorCode: 'INVALID_REQUEST',
-      });
-    },
-    30_000,
-  );
+    expect(res.status).toBe(400);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+  }, 30_000);
 
   it("keeps the registry's interpolated MIME in the 400 for an unsupported MIME on the multipart byte form", async () => {
     const probeMime = 'application/x-echo-probe';

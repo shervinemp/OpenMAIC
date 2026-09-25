@@ -119,9 +119,9 @@ describe('generation session store', () => {
   });
 
   it('rejects a session without a sessionId', async () => {
-    await expect(
-      saveGenerationSession({ ...baseSession, sessionId: '' }),
-    ).rejects.toThrow('sessionId');
+    await expect(saveGenerationSession({ ...baseSession, sessionId: '' })).rejects.toThrow(
+      'sessionId',
+    );
   });
 
   it('does not fail the save when the envelope write is rejected', async () => {
@@ -242,10 +242,7 @@ describe('generation session store', () => {
 
   it('falls back to the legacy standalone generationParams payload', async () => {
     mockStageQuery([]);
-    sessionStorageMock.setItem(
-      'generationSession',
-      JSON.stringify(baseSession),
-    );
+    sessionStorageMock.setItem('generationSession', JSON.stringify(baseSession));
     sessionStorageMock.setItem(
       'generationParams',
       JSON.stringify({ agents: [{ id: 'a1', name: 'T', role: 'teacher' }] }),

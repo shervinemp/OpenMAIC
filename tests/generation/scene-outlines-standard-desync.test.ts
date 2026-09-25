@@ -10,7 +10,6 @@ const resolveVisionImagesMock = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/ai/llm', () => ({
   streamLLM: streamLLMMock,
   callLLM: callLLMMock,
-
 }));
 
 vi.mock('@/lib/server/resolve-model', () => ({

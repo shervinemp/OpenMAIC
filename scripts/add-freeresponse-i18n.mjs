@@ -17,7 +17,8 @@ const labels = {
 for (const [locale, map] of Object.entries(labels)) {
   const path = `lib/i18n/locales/${locale}.json`;
   const doc = JSON.parse(readFileSync(path, 'utf8'));
-  if (!doc.generation || !doc.classroomComplete?.trailLabels) throw new Error(`${locale}: missing blocks`);
+  if (!doc.generation || !doc.classroomComplete?.trailLabels)
+    throw new Error(`${locale}: missing blocks`);
 
   const generation = {};
   for (const [key, value] of Object.entries(doc.generation)) {

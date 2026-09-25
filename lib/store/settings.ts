@@ -1477,8 +1477,14 @@ export const useSettingsStore = create<SettingsState>()(
             const provider = IMAGE_PROVIDERS[providerId];
             const config = state.imageProvidersConfig[providerId];
             const imageProvidersConfig =
-              provider?.requiresApiKey === false && config && !config.baseUrl && provider.defaultBaseUrl
-                ? { ...state.imageProvidersConfig, [providerId]: { ...config, baseUrl: provider.defaultBaseUrl } }
+              provider?.requiresApiKey === false &&
+              config &&
+              !config.baseUrl &&
+              provider.defaultBaseUrl
+                ? {
+                    ...state.imageProvidersConfig,
+                    [providerId]: { ...config, baseUrl: provider.defaultBaseUrl },
+                  }
                 : state.imageProvidersConfig;
             return {
               imageProviderId: providerId,
@@ -1562,8 +1568,14 @@ export const useSettingsStore = create<SettingsState>()(
             const provider = VIDEO_PROVIDERS[providerId];
             const config = state.videoProvidersConfig[providerId];
             const videoProvidersConfig =
-              provider?.requiresApiKey === false && config && !config.baseUrl && provider.defaultBaseUrl
-                ? { ...state.videoProvidersConfig, [providerId]: { ...config, baseUrl: provider.defaultBaseUrl } }
+              provider?.requiresApiKey === false &&
+              config &&
+              !config.baseUrl &&
+              provider.defaultBaseUrl
+                ? {
+                    ...state.videoProvidersConfig,
+                    [providerId]: { ...config, baseUrl: provider.defaultBaseUrl },
+                  }
                 : state.videoProvidersConfig;
             return {
               videoProviderId: providerId,

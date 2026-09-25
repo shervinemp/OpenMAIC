@@ -157,7 +157,11 @@ export function GitBindingDialog({
   const applySelected = async (stageIds: string[], apply: boolean, importNew: boolean) => {
     setScanBusy(true);
     try {
-      const result = await applyRepoSync({ apply, importNew, ...(stageIds.length ? { stageIds } : {}) });
+      const result = await applyRepoSync({
+        apply,
+        importNew,
+        ...(stageIds.length ? { stageIds } : {}),
+      });
       if (mountedRef.current) {
         if (result.ok) setApplyResults(result.results);
         else setMessage({ kind: 'error', text: result.message });
@@ -273,9 +277,7 @@ export function GitBindingDialog({
             {updates !== null && (
               <div className="space-y-1.5">
                 {updates.filter((entry) => entry.state !== 'equal').length === 0 ? (
-                  <p className="text-[11px] text-muted-foreground px-1">
-                    {t('gitSync.noUpdates')}
-                  </p>
+                  <p className="text-[11px] text-muted-foreground px-1">{t('gitSync.noUpdates')}</p>
                 ) : (
                   updates
                     .filter((entry) => entry.state !== 'equal')
@@ -302,9 +304,7 @@ export function GitBindingDialog({
                             void applySelected([entry.stageId], true, entry.state === 'new')
                           }
                         >
-                          {entry.state === 'new'
-                            ? t('gitSync.import')
-                            : t('gitSync.applyUpdate')}
+                          {entry.state === 'new' ? t('gitSync.import') : t('gitSync.applyUpdate')}
                         </Button>
                       </div>
                     ))
@@ -315,7 +315,10 @@ export function GitBindingDialog({
             {applyResults && (
               <ul className="space-y-1 rounded-md border bg-muted/30 px-2.5 py-2">
                 {applyResults.map((result) => (
-                  <li key={result.stageId} className="text-[10.5px] text-muted-foreground break-all">
+                  <li
+                    key={result.stageId}
+                    className="text-[10.5px] text-muted-foreground break-all"
+                  >
                     <span
                       className={
                         result.action === 'applied' || result.action === 'imported'
@@ -349,12 +352,7 @@ export function GitBindingDialog({
             )}
           </div>
 
-          <Button
-            size="sm"
-            variant="destructive"
-            disabled={busy}
-            onClick={() => void disconnect()}
-          >
+          <Button size="sm" variant="destructive" disabled={busy} onClick={() => void disconnect()}>
             {busy ? (
               <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
             ) : (
@@ -394,7 +392,11 @@ export function GitBindingDialog({
       )}
 
       {message && (
-        <p className={message.kind === 'ok' ? 'text-xs text-emerald-600' : 'text-xs text-destructive'}>
+        <p
+          className={
+            message.kind === 'ok' ? 'text-xs text-emerald-600' : 'text-xs text-destructive'
+          }
+        >
           {message.text}
         </p>
       )}

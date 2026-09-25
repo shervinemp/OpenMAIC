@@ -58,11 +58,19 @@ async function isUnauthorized(request: NextRequest): Promise<boolean> {
 
 export async function POST(req: NextRequest) {
   if (await isUnauthorized(req)) {
-    return apiError('UNAUTHENTICATED', 401, 'figure-adoption route requires the dev persistence token');
+    return apiError(
+      'UNAUTHENTICATED',
+      401,
+      'figure-adoption route requires the dev persistence token',
+    );
   }
   const fileDir = process.env.PERSISTENCE_DIR;
   if (!fileDir) {
-    return apiError('INVALID_REQUEST', 503, 'this route requires the file-backed persistence backend');
+    return apiError(
+      'INVALID_REQUEST',
+      503,
+      'this route requires the file-backed persistence backend',
+    );
   }
   let body: RequestBody;
   try {
@@ -97,7 +105,12 @@ async function runAdoption(
     return { ok: false, code: 'UPSTREAM_ERROR', status: 500, message: 'course load failed' };
   }
   if (!document) {
-    return { ok: false, code: 'INVALID_REQUEST', status: 404, message: 'course document not found' };
+    return {
+      ok: false,
+      code: 'INVALID_REQUEST',
+      status: 404,
+      message: 'course document not found',
+    };
   }
   const byId = new Map<string, Record<string, unknown>>();
   for (const scene of document.scenes as unknown as Array<Record<string, unknown>>) {
@@ -113,7 +126,17 @@ async function runAdoption(
       skipped.push({ sceneId: String(adoption.sceneId), reason: 'scene not found' });
       continue;
     }
-    const canvas = (scene as { content?: { canvas?: { viewportSize?: number; viewportRatio?: number; elements?: Array<Record<string, unknown>> } } }).content?.canvas;
+    const canvas = (
+      scene as {
+        content?: {
+          canvas?: {
+            viewportSize?: number;
+            viewportRatio?: number;
+            elements?: Array<Record<string, unknown>>;
+          };
+        };
+      }
+    ).content?.canvas;
     if (!canvas || !Array.isArray(canvas.elements)) {
       skipped.push({ sceneId: String(adoption.sceneId), reason: 'no canvas (non-slide?)' });
       continue;
@@ -122,25 +145,36 @@ async function runAdoption(
     // Idempotence: shapes whose ids are already on the canvas = adopt already
     // ran; skip instead of doubling the diagram.
     if (adoption.shapes.every((shape) => existingIds.has(shape.id))) {
-      skipped.push({ sceneId: String(adoption.sceneId), reason: 'all shapes already on canvas (already adopted)' });
+      skipped.push({
+        sceneId: String(adoption.sceneId),
+        reason: 'all shapes already on canvas (already adopted)',
+      });
       continue;
     }
     const fabricated = adoption.shapes.filter((shape) => {
       if (typeof shape?.id !== 'string' || !shape.id) return true;
-      if(!shape.id.startsWith('fig_')) return true;
+      if (!shape.id.startsWith('fig_')) return true;
       if (existingIds.has(shape.id)) return true;
       if (shape.kind !== 'box' && shape.kind !== 'line') return true;
-      return [shape.left, shape.top, shape.width, shape.height].some((value) => !Number.isFinite(Number(value)));
+      return [shape.left, shape.top, shape.width, shape.height].some(
+        (value) => !Number.isFinite(Number(value)),
+      );
     });
     if (fabricated.length > 0) {
-      skipped.push({ sceneId: String(adoption.sceneId), reason: `malformed proposal shapes: ${fabricated.map((s) => s.id).join(', ')}` });
+      skipped.push({
+        sceneId: String(adoption.sceneId),
+        reason: `malformed proposal shapes: ${fabricated.map((s) => s.id).join(', ')}`,
+      });
       continue;
     }
     for (const shape of adoption.shapes) {
       const top = Number(shape.top);
       const left = Number(shape.left);
       if (top < BODY_TOP - 8 || top > BODY_BOTTOM || left < 32 || left > 968) {
-        skipped.push({ sceneId: String(adoption.sceneId), reason: 'shape coordinates outside the body band' });
+        skipped.push({
+          sceneId: String(adoption.sceneId),
+          reason: 'shape coordinates outside the body band',
+        });
         continue;
       }
     }
@@ -200,7 +234,10 @@ async function runAdoption(
         .map((f) => `${f.kind}:${f.elementId}`)
         .join(', ')
         .slice(0, 160);
-      skipped.push({ sceneId: String(adoption.sceneId), reason: `validator error after merge: ${names}` });
+      skipped.push({
+        sceneId: String(adoption.sceneId),
+        reason: `validator error after merge: ${names}`,
+      });
       continue;
     }
     canvasTouched.elements = nextElements;

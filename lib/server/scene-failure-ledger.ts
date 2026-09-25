@@ -73,10 +73,7 @@ const FAILURE_CODE_LABELS: Record<SceneContentFailure['code'], string> = {
  */
 export function describeSceneFailure(record: SceneFailureRecord | undefined): string | undefined {
   if (!record) return undefined;
-  const base =
-    FAILURE_CODE_LABELS[record.code] ?? `generation failure (${record.code})`;
-  const findings = record.findings?.length
-    ? ` — findings: ${record.findings.join('; ')}`
-    : '';
+  const base = FAILURE_CODE_LABELS[record.code] ?? `generation failure (${record.code})`;
+  const findings = record.findings?.length ? ` — findings: ${record.findings.join('; ')}` : '';
   return `${base}${findings}`;
 }

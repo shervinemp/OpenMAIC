@@ -71,8 +71,7 @@ function paragraph(inner: string, fontSize: number, extraStyle = ''): string {
 /** Fit the planned blocks into the canvas: shrink fonts proportionally when
  * the sum of heights would overflow (floor at 12px, one pass). */
 function fitIntoCanvas(specs: ElementSpec[]): ElementSpec[] {
-  const total =
-    specs.reduce((sum, spec) => sum + spec.height + spec.gapAfter, 0) + TITLE_HEIGHT;
+  const total = specs.reduce((sum, spec) => sum + spec.height + spec.gapAfter, 0) + TITLE_HEIGHT;
   if (total <= CANVAS_HEIGHT - 20) return specs;
 
   const available = CONTENT_BUDGET - specs.reduce((sum, spec) => sum + spec.gapAfter, 0);
@@ -256,7 +255,9 @@ export function renderReadingToElements(
 
   items.forEach((item, index) => {
     const sourcePart = item.source?.trim() ? ` <em>(${escapeHtml(item.source)})</em>` : '';
-    const citation = item.citation?.trim() ? ` <span style="color:#5b9bd5;">${escapeHtml(item.citation)}</span>` : '';
+    const citation = item.citation?.trim()
+      ? ` <span style="color:#5b9bd5;">${escapeHtml(item.citation)}</span>`
+      : '';
     const head = `<strong>${index + 1}. ${escapeHtml(item.title)}</strong>${sourcePart}${citation}`;
     const body = escapeHtml(item.whyRead);
     const plain = `${index + 1}. ${item.title} ${item.source ?? ''} ${item.whyRead}`;
@@ -360,9 +361,7 @@ export function renderDataReadingToElements(
 
   // The plotted values, compactly — the "chart" a learner reads.
   for (const series of content.series ?? []) {
-    const pointsText = (series.points ?? [])
-      .map((p) => `${p.x}→${p.y}`)
-      .join('&nbsp;&nbsp; ');
+    const pointsText = (series.points ?? []).map((p) => `${p.x}→${p.y}`).join('&nbsp;&nbsp; ');
     if (!pointsText) continue;
     const text = `${escapeHtml(series.name || 'series')}: ${pointsText}`;
     specs.push({
@@ -413,10 +412,7 @@ export function renderTradeoffsToElements(
   if (content.context?.trim()) {
     specs.push({
       kind: 'text',
-      content: paragraph(
-        `<strong>Decision</strong> — ${escapeHtml(content.context)}`,
-        bodyFont,
-      ),
+      content: paragraph(`<strong>Decision</strong> — ${escapeHtml(content.context)}`, bodyFont),
       height: estimateHeight(content.context, bodyFont) + 14,
       fontSize: bodyFont,
       gapAfter: 6,
@@ -445,8 +441,14 @@ export function renderTradeoffsToElements(
       ? `<br><em>Best for:</em> ${escapeHtml(option.bestFor)}`
       : '';
     const head = `<strong>${escapeHtml(option.name)}</strong>`;
-    const proLine = pros.length > 0 ? `<span style="color:#3f9950;">+ ${pros.map((p) => escapeHtml(p)).join('; + ')}</span>` : '';
-    const conLine = cons.length > 0 ? `<br><span style="color:#c0504d;">− ${cons.map((c) => escapeHtml(c)).join('; − ')}</span>` : '';
+    const proLine =
+      pros.length > 0
+        ? `<span style="color:#3f9950;">+ ${pros.map((p) => escapeHtml(p)).join('; + ')}</span>`
+        : '';
+    const conLine =
+      cons.length > 0
+        ? `<br><span style="color:#c0504d;">− ${cons.map((c) => escapeHtml(c)).join('; − ')}</span>`
+        : '';
     const plain = `${option.name} ${pros.join(' ')} ${cons.join(' ')} ${option.bestFor ?? ''}`;
     specs.push({
       kind: 'text',
@@ -561,5 +563,3 @@ export function renderFreeResponseToElements(
 
   return layOut(fitIntoCanvas(specs));
 }
-
-

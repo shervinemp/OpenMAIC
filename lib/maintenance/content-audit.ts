@@ -165,18 +165,19 @@ export function stripDeadActionAnchors(scene: SlideSceneLike): number {
   const before = scene.actions.length;
   scene.actions = scene.actions.filter(
     (action) =>
-      typeof action.elementId !== 'string' ||
-      !action.elementId ||
-      known.has(action.elementId),
+      typeof action.elementId !== 'string' || !action.elementId || known.has(action.elementId),
   );
-  return before - (
-    scene.actions as Array<{
-      type?: string;
-      elementId?: string;
-      audioId?: string;
-      [key: string]: unknown;
-    }>
-  ).length;
+  return (
+    before -
+    (
+      scene.actions as Array<{
+        type?: string;
+        elementId?: string;
+        audioId?: string;
+        [key: string]: unknown;
+      }>
+    ).length
+  );
 }
 
 /**
@@ -299,14 +300,12 @@ export function splitFamilyDuplicateFindings(doc: {
     const sharedIds = [...idOwners]
       .filter(([, owners]) => owners.size > 1)
       .map(([id]) => id)
-      .filter(
-        (id) =>
-          members.some(
-            (scene) =>
-              (scene.content?.canvas?.elements ?? []).some((element) =>
-                element.id === id && Number(element.height ?? 0) > 6,
-              ),
+      .filter((id) =>
+        members.some((scene) =>
+          (scene.content?.canvas?.elements ?? []).some(
+            (element) => element.id === id && Number(element.height ?? 0) > 6,
           ),
+        ),
       );
     if (sharedIds.length === 0) continue;
     for (const scene of members) {

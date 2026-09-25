@@ -7,7 +7,12 @@
 import { describe, expect, test } from 'vitest';
 import { DSL_VERSION } from '@openmaic/dsl';
 import type { Scene } from '@openmaic/dsl';
-import { DocumentLostUpdateError, DocumentVersionError, type DocumentStore, type MaicDocument } from '../src/index.js';
+import {
+  DocumentLostUpdateError,
+  DocumentVersionError,
+  type DocumentStore,
+  type MaicDocument,
+} from '../src/index.js';
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -299,7 +304,7 @@ export function runDocumentStoreContract(
       expect(loaded!.stage.name).toBe('Intro Course');
     });
 
-    // --- lost-update fence --- 
+    // --- lost-update fence ---
 
     test('refuses a stale whole-aggregate overwrite (lost-update fence)', async () => {
       const store = makeStore();

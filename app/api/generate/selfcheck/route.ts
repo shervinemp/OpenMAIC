@@ -72,22 +72,18 @@ async function checkPersistenceDir(): Promise<HealthCheckResult> {
 
 /** Providers that expose an API key env var in the app's catalog. */
 function registeredLLMProviderIds(): string[] {
-  const ids = [
-    'openai',
-    'anthropic',
-    'google',
-    'deepseek',
-    'openrouter',
-    'grok',
-    'glm',
-  ];
+  const ids = ['openai', 'anthropic', 'google', 'deepseek', 'openrouter', 'grok', 'glm'];
   return ids.filter((id) => !!getProvider(id as ProviderId));
 }
 
 async function checkLLMKey(providerId: string): Promise<HealthCheckResult> {
   const provider = getProvider(providerId as ProviderId);
   if (!provider) {
-    return { id: `llm:${providerId}`, status: 'fail', detail: 'not registered in the model catalog' };
+    return {
+      id: `llm:${providerId}`,
+      status: 'fail',
+      detail: 'not registered in the model catalog',
+    };
   }
   if (!provider.requiresApiKey) {
     return { id: `llm:${providerId}`, status: 'skipped', detail: `${provider.name} is keyless` };
@@ -136,7 +132,9 @@ async function checkTTS(providerId: string): Promise<HealthCheckResult> {
 async function checkLiveLLM(): Promise<HealthCheckResult> {
   const started = Date.now();
   try {
-    const resolved = await resolveModel({ modelString: process.env.DEFAULT_MODEL?.trim() || undefined });
+    const resolved = await resolveModel({
+      modelString: process.env.DEFAULT_MODEL?.trim() || undefined,
+    });
     await callLLM(
       {
         model: resolved.model,
@@ -159,7 +157,6 @@ async function checkLiveLLM(): Promise<HealthCheckResult> {
     return { id: 'llm:live', status: 'fail', detail: `live LLM call failed: ${detail}` };
   }
 }
-
 
 export async function GET(request: Request): Promise<Response> {
   const live = new URL(request.url).searchParams.get('live') === '1';
@@ -199,4 +196,3 @@ async function runGuarded(
     return { id: label, status: 'fail', detail: `selfcheck internal error: ${detail}` };
   }
 }
-

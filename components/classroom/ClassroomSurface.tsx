@@ -359,8 +359,7 @@ export function ClassroomSurface({
     const skipIds = new Set(state.skippedOutlineIds);
     const outlineIsPending = (id: string, order: number): boolean =>
       !completedOrders.has(order) && !skipIds.has(id) && !(failedIds.has(id) && !autoRetryFailed);
-    const hasPending =
-      !generationComplete && outlines.some((o) => outlineIsPending(o.id, o.order));
+    const hasPending = !generationComplete && outlines.some((o) => outlineIsPending(o.id, o.order));
 
     if (hasPending && stage) {
       generationStartedRef.current = true;
@@ -514,7 +513,9 @@ export function ClassroomSurface({
     runtime.__openmaicMediaBackfill = async () => {
       const { useStageStore } = await import('@/lib/store');
       const state = useStageStore.getState();
-      const snapshot = state.stage ? { stage: state.stage, scenes: state.scenes, outline: state.blueprint } : null;
+      const snapshot = state.stage
+        ? { stage: state.stage, scenes: state.scenes, outline: state.blueprint }
+        : null;
       if (!snapshot) throw new Error('no persisted document; open the course first');
       const { backfillCourseMedia } = await import('@/lib/media/backfill-course-media');
       return backfillCourseMedia(snapshot);
@@ -585,7 +586,6 @@ export function ClassroomSurface({
       delete runtime.__openmaicVerifyCourse;
     };
   }, []);
-
 
   const view = resolveClassroomSurfaceView({
     variant,

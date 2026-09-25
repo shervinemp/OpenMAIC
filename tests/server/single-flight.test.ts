@@ -37,10 +37,7 @@ describe('singleFlight', () => {
       await settle();
       return id;
     };
-    const [a, b] = await Promise.all([
-      singleFlight('key-a', task),
-      singleFlight('key-b', task),
-    ]);
+    const [a, b] = await Promise.all([singleFlight('key-a', task), singleFlight('key-b', task)]);
     expect(runs).toBe(2);
     expect(new Set([a, b]).size).toBe(2);
 

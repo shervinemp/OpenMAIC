@@ -116,9 +116,7 @@ export function applyEmptyPartPrune(
   if (blueprint) {
     stripBlueprintOutlines(blueprint.lessons);
     for (const unit of blueprint.units ?? []) {
-      stripBlueprintOutlines(
-        (unit as { lessons?: Array<Record<string, unknown>> }).lessons,
-      );
+      stripBlueprintOutlines((unit as { lessons?: Array<Record<string, unknown>> }).lessons);
     }
   }
 

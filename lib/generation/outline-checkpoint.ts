@@ -20,16 +20,14 @@ export interface OutlineCheckpoint {
   completedUnitCount: number;
   /** The requirement this checkpoint belongs to (adoption match on retry). */
   requirement?: string;
-}export function outlineCheckpointStore(): BrowserKVStore {
+}
+export function outlineCheckpointStore(): BrowserKVStore {
   return new BrowserKVStore();
 }
 
 export async function readOutlineCheckpoint(): Promise<OutlineCheckpoint | null> {
   try {
-    return await outlineCheckpointStore().get<OutlineCheckpoint>(
-      OUTLINE_CHECKPOINT_KEY,
-      'device',
-    );
+    return await outlineCheckpointStore().get<OutlineCheckpoint>(OUTLINE_CHECKPOINT_KEY, 'device');
   } catch {
     return null;
   }

@@ -36,8 +36,17 @@ export async function POST(req: NextRequest) {
   let promptSnippet: string | undefined;
   try {
     const body = (await req.json()) as GradeFrRequest;
-    const { questionId, prompt, userAnswer, rubric, sampleAnswer, maxPoints, commentPrompt, language, withCriteria } =
-      body;
+    const {
+      questionId,
+      prompt,
+      userAnswer,
+      rubric,
+      sampleAnswer,
+      maxPoints,
+      commentPrompt,
+      language,
+      withCriteria,
+    } = body;
     promptSnippet = typeof prompt === 'string' ? prompt.substring(0, 60) : undefined;
     // Per-criterion verdicts are on unless the caller opts out explicitly
     // (the documented default) — the prompt and the parser must agree.

@@ -45,7 +45,9 @@ function base64ToBytes(base64: string): Uint8Array {
 
 function isBinValue(value: unknown): value is { $bin: string } {
   return (
-    typeof value === 'object' && value !== null && typeof (value as { $bin?: unknown }).$bin === 'string'
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { $bin?: unknown }).$bin === 'string'
   );
 }
 
@@ -77,7 +79,7 @@ function documentsFromStores(stores: Record<string, Array<[string, unknown]>>): 
   }
   const outlinesByStage = new Map<string, unknown>(
     (stores.outlines ?? [])
-      .map(([, v]) => [((v as { stageId?: unknown })?.stageId ?? ''), v] as [string, unknown])
+      .map(([, v]) => [(v as { stageId?: unknown })?.stageId ?? '', v] as [string, unknown])
       .filter(([id]) => id !== ''),
   );
   const documents: DocAggregate[] = [];
@@ -120,7 +122,12 @@ async function putAssetToServer(
 ): Promise<void> {
   const headers = await authHeaders();
   headers['content-type'] = mime || 'application/octet-stream';
-  if (meta !== undefined && typeof meta === 'object' && meta !== null && Object.keys(meta).length > 0) {
+  if (
+    meta !== undefined &&
+    typeof meta === 'object' &&
+    meta !== null &&
+    Object.keys(meta).length > 0
+  ) {
     headers['x-asset-meta'] = btoa(unescape(encodeURIComponent(JSON.stringify(meta))));
   }
   const response = await fetch(`/api/persistence/assets/${encodeURIComponent(ref)}`, {
@@ -246,13 +253,20 @@ export default function MigratePage() {
   }
 
   return (
-    <main style={{ maxWidth: 680, margin: '48px auto', padding: '0 16px', fontFamily: 'system-ui, sans-serif' }}>
+    <main
+      style={{
+        maxWidth: 680,
+        margin: '48px auto',
+        padding: '0 16px',
+        fontFamily: 'system-ui, sans-serif',
+      }}
+    >
       <h1>Import previous OpenMAIC data</h1>
       <p>
         Pick the <code>openmaic-migration.json</code> file exported by{' '}
-        <code>scripts/run-migration.mjs</code>. Documents and media assets are
-        written to the server-backed store on this machine (disk); settings are
-        written into this origin&apos;s localStorage.
+        <code>scripts/run-migration.mjs</code>. Documents and media assets are written to the
+        server-backed store on this machine (disk); settings are written into this origin&apos;s
+        localStorage.
       </p>
       <input
         type="file"
@@ -267,18 +281,18 @@ export default function MigratePage() {
       {error && <p style={{ color: '#b00020', whiteSpace: 'pre-wrap' }}>{error}</p>}
       {report && (
         <pre style={{ background: '#f6f6f6', padding: 16, borderRadius: 8, overflowX: 'auto' }}>
-{`Documents: ${report.documents.ok}/${report.documents.total} imported
+          {`Documents: ${report.documents.ok}/${report.documents.total} imported
 Assets:    ${report.assets.ok}/${report.assets.total} uploaded${report.assets.skipped ? ` (${report.assets.skipped} skipped)` : ''}
 Settings:  ${report.localStorageKeys} localStorage keys restored`}
-{report.documents.failed.length > 0
-  ? `\nFailed documents:\n${report.documents.failed
-      .map((f) => `  ${f.id}: ${f.error}`)
-      .join('\n')}`
-  : ''}
-{report.preservedDatabases.length > 0
-  ? `\nPreserved (not restored, schema unknown): ${report.preservedDatabases.join(', ')}`
-  : ''}
-{`\nDone — reload the app to see your lessons.`}
+          {report.documents.failed.length > 0
+            ? `\nFailed documents:\n${report.documents.failed
+                .map((f) => `  ${f.id}: ${f.error}`)
+                .join('\n')}`
+            : ''}
+          {report.preservedDatabases.length > 0
+            ? `\nPreserved (not restored, schema unknown): ${report.preservedDatabases.join(', ')}`
+            : ''}
+          {`\nDone — reload the app to see your lessons.`}
         </pre>
       )}
     </main>

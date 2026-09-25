@@ -193,10 +193,7 @@ describe('drainPendingSceneTTS — byte-aware, per-clip repair', () => {
   });
 
   it('regenerates ONLY the dead clip of a partially damaged scene; the healthy one keeps its id', async () => {
-    const scene = makeScene('s1', 1, [
-      { audioId: 'tts_s1_healthy' },
-      { audioId: 'tts_s1_dead' },
-    ]);
+    const scene = makeScene('s1', 1, [{ audioId: 'tts_s1_healthy' }, { audioId: 'tts_s1_dead' }]);
     audioBytes.set('tts_s1_healthy', new Blob([new Uint8Array([7, 7])]));
     // 'tts_s1_dead' intentionally resolves to nothing.
 
@@ -223,10 +220,7 @@ describe('drainPendingSceneTTS — byte-aware, per-clip repair', () => {
 
   it('partial failure keeps every recovered clip; the failed clip reverts to its persisted ref', async () => {
     failingTexts.add('clip 1 for scene 1');
-    const scene = makeScene('s1', 1, [
-      { audioId: 'tts_s1_dead_a' },
-      { audioId: 'tts_s1_dead_b' },
-    ]);
+    const scene = makeScene('s1', 1, [{ audioId: 'tts_s1_dead_a' }, { audioId: 'tts_s1_dead_b' }]);
 
     const restored = await drainPendingSceneTTS([scene as never]);
 

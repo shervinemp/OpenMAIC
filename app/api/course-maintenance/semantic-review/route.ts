@@ -4,11 +4,7 @@ import { singleFlight } from '@/lib/server/single-flight';
 import { callLLM } from '@/lib/ai/llm';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { apiError, apiSuccess, type ApiErrorCode } from '@/lib/server/api-response';
-import {
-  budgetCrossed,
-  isReviewCandidate,
-  judgeScene,
-} from '@/lib/maintenance/semantic-review';
+import { budgetCrossed, isReviewCandidate, judgeScene } from '@/lib/maintenance/semantic-review';
 
 /**
  * Semantic review pass — READ-ONLY. One LLM call per candidate slide; the
@@ -104,18 +100,25 @@ async function runReview(
     return { ok: false, code: 'UPSTREAM_ERROR', status: 500, message: 'course load failed' };
   }
   if (!document) {
-    return { ok: false, code: 'INVALID_REQUEST', status: 404, message: 'course document not found' };
+    return {
+      ok: false,
+      code: 'INVALID_REQUEST',
+      status: 404,
+      message: 'course document not found',
+    };
   }
 
   const budget = { used: 0, limit: REVIEW_CALL_LIMIT };
-  const maxScenes = typeof body.maxScenes === 'number' && body.maxScenes > 0 ? body.maxScenes : undefined;
+  const maxScenes =
+    typeof body.maxScenes === 'number' && body.maxScenes > 0 ? body.maxScenes : undefined;
   const requestedIds = body.sceneIds?.length ? new Set(body.sceneIds) : null;
-  const candidates = (document.scenes as unknown as Array<Record<string, unknown>>)
-    .filter((scene) => scene.type === 'slide' && isReviewCandidate(scene as never));
+  const candidates = (document.scenes as unknown as Array<Record<string, unknown>>).filter(
+    (scene) => scene.type === 'slide' && isReviewCandidate(scene as never),
+  );
   const base = requestedIds
     ? candidates.filter((scene) => requestedIds.has(String(scene.id)))
     : candidates.slice(typeof body.offset === 'number' && body.offset > 0 ? body.offset : 0);
-  const targets = (maxScenes && !requestedIds ? base.slice(0, maxScenes) : base);
+  const targets = maxScenes && !requestedIds ? base.slice(0, maxScenes) : base;
 
   const findings: Array<{
     sceneId: string;
@@ -162,8 +165,12 @@ async function runReview(
       title: String(scene.title ?? ''),
       order: typeof scene.order === 'number' ? scene.order : undefined,
       spotlightMismatches: verdict.spotlightMismatches as unknown as Array<Record<string, unknown>>,
-      conceptBeforeSubject: verdict.conceptBeforeSubject as unknown as Array<Record<string, unknown>>,
-      ...(verdict.duplicateLessonNeighbor ? { duplicateLessonNeighbor: verdict.duplicateLessonNeighbor } : {}),
+      conceptBeforeSubject: verdict.conceptBeforeSubject as unknown as Array<
+        Record<string, unknown>
+      >,
+      ...(verdict.duplicateLessonNeighbor
+        ? { duplicateLessonNeighbor: verdict.duplicateLessonNeighbor }
+        : {}),
       figureGap: verdict.figureGap as Record<string, unknown>,
     });
   }

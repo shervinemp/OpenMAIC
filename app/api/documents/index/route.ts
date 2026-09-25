@@ -23,10 +23,7 @@ import {
   stripExtractionNoise,
   type DocumentDigest,
 } from '@/lib/generation/document-digest';
-import {
-  captionDocumentImages,
-  type ImageCaption,
-} from '@/lib/generation/image-captioning';
+import { captionDocumentImages, type ImageCaption } from '@/lib/generation/image-captioning';
 import { chunkSourceText, type PdfChunk } from '@openmaic/generation';
 import { createLogger } from '@/lib/logger';
 import { apiError } from '@/lib/server/api-response';
@@ -73,8 +70,11 @@ export async function POST(req: NextRequest) {
     const language = typeof body.language === 'string' && body.language ? body.language : 'English';
     const text = body.text;
 
-    const { model: languageModel, modelInfo, thinkingConfig } =
-      await resolveModelFromRequest(req, body, 'documents-index');
+    const {
+      model: languageModel,
+      modelInfo,
+      thinkingConfig,
+    } = await resolveModelFromRequest(req, body, 'documents-index');
     const hasVision = !!modelInfo?.capabilities?.vision;
 
     const encoder = new TextEncoder();
@@ -138,7 +138,9 @@ export async function POST(req: NextRequest) {
                 {
                   model: languageModel,
                   system,
-                  messages: [{ role: 'user' as const, content: buildVisionUserContent(user, visionImages) }],
+                  messages: [
+                    { role: 'user' as const, content: buildVisionUserContent(user, visionImages) },
+                  ],
                   maxOutputTokens: modelInfo?.outputWindow,
                   maxRetries: 1,
                 },
@@ -272,6 +274,10 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     log.error('Document index request failed:', error);
-    return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : 'Unknown error');
+    return apiError(
+      'INTERNAL_ERROR',
+      500,
+      error instanceof Error ? error.message : 'Unknown error',
+    );
   }
 }

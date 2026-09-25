@@ -194,7 +194,7 @@ describe('size presets (Phase 2 §15.3)', () => {
     expect(resolveSizePreset(42)).toBe('compact');
   });
 
-  test('compact is byte-for-byte today\'s behavior', () => {
+  test("compact is byte-for-byte today's behavior", () => {
     const contract = deriveCourseContract(60, 'explainer', 'compact');
     expect(contract.totalSceneTarget).toBe(30); // capped
     expect(contract.lessonCount).toBe(6);
@@ -331,9 +331,7 @@ describe('size presets (Phase 2 §15.3)', () => {
     const { units: _units, ...withoutUnits } = blueprint;
     void _units;
     const report = validateBlueprint(withoutUnits);
-    expect(report.errors).toContain(
-      'course has 5 derived units but the unit structure is missing',
-    );
+    expect(report.errors).toContain('course has 5 derived units but the unit structure is missing');
   });
 
   test('renderCourseContract mentions the unit structure for multi-unit contracts', () => {
@@ -515,7 +513,10 @@ describe('validateBlueprint', () => {
   });
 
   test('contract text documents the specialized scene types at every preset', () => {
-    const text = renderCourseContract(deriveCourseContract(20, 'explainer', 'intensive'), 'explainer');
+    const text = renderCourseContract(
+      deriveCourseContract(20, 'explainer', 'intensive'),
+      'explainer',
+    );
     expect(text).toContain('"exercise"');
     expect(text).toContain('"derivation"');
     expect(text).toContain('"glossary"');

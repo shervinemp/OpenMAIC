@@ -57,7 +57,7 @@ function mount(): Root {
   const root = createRoot(host);
   hosts.push({ root, host });
   return root;
-}/** Flush the probe's fetch → json → state chain, then the re-render. */
+} /** Flush the probe's fetch → json → state chain, then the re-render. */
 async function flushProbe() {
   await act(async () => {
     await new Promise((settle) => setTimeout(settle, 0));

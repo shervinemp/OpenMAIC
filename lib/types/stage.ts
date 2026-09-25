@@ -179,4 +179,3 @@ export function makeScene<C extends SceneContent>(
 ): Extract<AppScene, { type: C['type'] }> {
   return { ...core, type: content.type, content } as Extract<AppScene, { type: C['type'] }>;
 }
-

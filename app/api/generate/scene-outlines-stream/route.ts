@@ -63,14 +63,8 @@ import {
 } from '@/lib/generation/blueprint';
 import { parseJsonResponse } from '@openmaic/generation';
 import { searchWeb, formatSearchResultsAsContext } from '@/lib/web-search';
-import {
-  formatWebSourceLegend,
-  webSourcesToChunks,
-} from '@/lib/generation/web-retrieval';
-import {
-  renderDocumentDigest,
-  type DocumentDigest,
-} from '@/lib/generation/document-digest';
+import { formatWebSourceLegend, webSourcesToChunks } from '@/lib/generation/web-retrieval';
+import { renderDocumentDigest, type DocumentDigest } from '@/lib/generation/document-digest';
 import {
   auditDigestCoverage,
   collectCitedMarkers,
@@ -496,7 +490,9 @@ async function reviewOutlineDeck(
   }
 }
 
-async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<MultiUnitOutlineResult> {
+async function generateMultiUnitOutlines(
+  run: MultiUnitOutlineRun,
+): Promise<MultiUnitOutlineResult> {
   const { controller, encoder, signal, courseContract } = run;
   const reviewMode = resolveOutlineReviewMode();
   const enqueue = (event: Record<string, unknown>) => {
@@ -555,7 +551,9 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
       }
     }
     if (!syllabus) {
-      throw new Error(`Syllabus did not meet the contract after ${MAX_BLUEPRINT_ATTEMPTS} attempts`);
+      throw new Error(
+        `Syllabus did not meet the contract after ${MAX_BLUEPRINT_ATTEMPTS} attempts`,
+      );
     }
   }
   checkAborted();
@@ -635,9 +633,8 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
         return { context: run.researchContext || 'None', chunks: [] };
       }
       const unit = (syllabus!.units ?? [])[unitIndex];
-      const query =
-        (`${unit?.title ?? ''} ${(unit?.objectives ?? []).join(' ')}`.trim() ||
-          `Unit ${unitIndex + 1}`) as string;
+      const query = (`${unit?.title ?? ''} ${(unit?.objectives ?? []).join(' ')}`.trim() ||
+        `Unit ${unitIndex + 1}`) as string;
       try {
         const result = await searchWeb({
           providerId: wsConfig.providerId as WebSearchProviderId,
@@ -682,8 +679,7 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
     for (let li = 0; li < unitLessonTotal[unitIndex]; li++) {
       const lessonIndex = first + li;
       const unit = syllabusUnits[unitIndex] ?? {};
-      const lesson =
-        unit.lessons?.[li] ??
+      const lesson = unit.lessons?.[li] ??
         syllabusLessons[lessonIndex] ?? {
           title: `Lesson ${lessonIndex + 1}`,
           objectives: [],
@@ -735,9 +731,7 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
     checkAborted();
     const target = lessonTargets[lessonIndex];
     const globalStart = lessonStartOffsets[lessonIndex];
-    const { context: unitResearchContext, chunks: unitChunks } = await getUnitResearch(
-      unitIndex,
-    );
+    const { context: unitResearchContext, chunks: unitChunks } = await getUnitResearch(unitIndex);
 
     const siblingLessons = (unit.lessons ?? []).map((l, i) => {
       const marker = i === lessonIndexInUnit ? '  <-- THIS LESSON (generate only this one)' : '';
@@ -807,9 +801,7 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
             order: globalStart + index + 1,
           }),
         );
-        const uniquified = enriched.map((outline) =>
-          ensureUniqueOutlineId(outline, localUsedIds),
-        );
+        const uniquified = enriched.map((outline) => ensureUniqueOutlineId(outline, localUsedIds));
 
         // Structural check for THIS lesson: scene shape + exact count.
         // A ±1 miss is tolerated only on the final attempt.
@@ -904,26 +896,22 @@ async function generateMultiUnitOutlines(run: MultiUnitOutlineRun): Promise<Mult
   // sequentially and each is handed the unit's accumulating coverage summary.
   // Scenes still stream to the client as soon as the contiguous prefix of
   // lessons completes (releaseReadyLessons).
-  const unitPromises = lazyBoundedMap(
-    pendingUnits,
-    LLM_CALL_CONCURRENCY,
-    async ({ lessons }) => {
-      const coveredSoFar: string[] = [];
-      for (const entry of lessons) {
-        checkAborted();
-        const result = await generateLessonOutline(entry, coveredSoFar);
-        completedLessons.set(entry.lessonIndex, result);
-        releaseReadyLessons();
-        coveredSoFar.push(
-          `- ${entry.lesson.title ?? `Lesson ${entry.lessonIndex + 1}`}: ${result.outlines
-            .map((outline) => outline.title)
-            .filter(Boolean)
-            .slice(0, 5)
-            .join('; ')}`,
-        );
-      }
-    },
-  ).map((promise) =>
+  const unitPromises = lazyBoundedMap(pendingUnits, LLM_CALL_CONCURRENCY, async ({ lessons }) => {
+    const coveredSoFar: string[] = [];
+    for (const entry of lessons) {
+      checkAborted();
+      const result = await generateLessonOutline(entry, coveredSoFar);
+      completedLessons.set(entry.lessonIndex, result);
+      releaseReadyLessons();
+      coveredSoFar.push(
+        `- ${entry.lesson.title ?? `Lesson ${entry.lessonIndex + 1}`}: ${result.outlines
+          .map((outline) => outline.title)
+          .filter(Boolean)
+          .slice(0, 5)
+          .join('; ')}`,
+      );
+    }
+  }).map((promise) =>
     promise.then(
       (value) => ({ ok: true as const, value }),
       (error) => ({ ok: false as const, error }),
@@ -985,7 +973,22 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Requirements are required');
     }
 
-    const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents, durationMinutes, sizePreset, webSearchConfig, pdfHandle, pdfDigest, resumeSyllabus, resumeOutlines, resumeFromUnitIndex } = body as {
+    const {
+      requirements,
+      pdfText,
+      pdfImages,
+      imageMapping,
+      researchContext,
+      agents,
+      durationMinutes,
+      sizePreset,
+      webSearchConfig,
+      pdfHandle,
+      pdfDigest,
+      resumeSyllabus,
+      resumeOutlines,
+      resumeFromUnitIndex,
+    } = body as {
       requirements: UserRequirements;
       pdfText?: string;
       pdfImages?: PdfImage[];
@@ -1124,9 +1127,13 @@ export async function POST(req: NextRequest) {
     const courseContract = contractMode
       ? deriveContractForRequest(sizePreset, courseType, requestDuration.minutes)
       : null;
-    const resolvedDuration = courseContract?.durationMinutes ?? clampDurationMinutes(
-      durationMinutes ?? parseDurationFromText(requirements.requirement) ?? DEFAULT_DURATION_MINUTES,
-    );
+    const resolvedDuration =
+      courseContract?.durationMinutes ??
+      clampDurationMinutes(
+        durationMinutes ??
+          parseDurationFromText(requirements.requirement) ??
+          DEFAULT_DURATION_MINUTES,
+      );
     const courseContractText = courseContract
       ? renderCourseContract(courseContract, courseType)
       : '';
@@ -1303,258 +1310,256 @@ export async function POST(req: NextRequest) {
               log.error(`Multi-unit outline generation failed:`, error);
             }
           } else {
-          // Single-unit (streaming) path. Unlike the multi-unit path above, this
-          // STREAMS text to the client, so there is no server-side result to
-          // persist — aborting the upstream request the moment the client goes
-          // away (rather than completing it) is the correct behaviour here, not
-          // an inconsistency: buffering for a dead connection is pure waste.
-          let attemptStreamError: string | null = null;
-          for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
-            attemptStreamError = null;
-            try {
-              let fullText = '';
-              let scanFrom = 0;
-              parsedOutlines = [];
-              languageDirective = null;
-              courseTitle = null;
-              contractFailed = false;
-              const usedOutlineIds = new Set<string>();
+            // Single-unit (streaming) path. Unlike the multi-unit path above, this
+            // STREAMS text to the client, so there is no server-side result to
+            // persist — aborting the upstream request the moment the client goes
+            // away (rather than completing it) is the correct behaviour here, not
+            // an inconsistency: buffering for a dead connection is pure waste.
+            let attemptStreamError: string | null = null;
+            for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
+              attemptStreamError = null;
+              try {
+                let fullText = '';
+                let scanFrom = 0;
+                parsedOutlines = [];
+                languageDirective = null;
+                courseTitle = null;
+                contractFailed = false;
+                const usedOutlineIds = new Set<string>();
 
-              // Rebuild per attempt: corrective feedback is appended to the
-              // user prompt when the previous attempt missed the contract.
-              const userPrompt = correctiveFeedback
-                ? `${prompts.user}\n\n## Correction Required\n\n${correctiveFeedback}`
-                : prompts.user;
-              const streamParams = visionImages?.length
-                ? {
-                    model: languageModel,
-                    system: prompts.system,
-                    messages: [
-                      {
-                        role: 'user' as const,
-                        content: buildVisionUserContent(userPrompt, visionImages),
+                // Rebuild per attempt: corrective feedback is appended to the
+                // user prompt when the previous attempt missed the contract.
+                const userPrompt = correctiveFeedback
+                  ? `${prompts.user}\n\n## Correction Required\n\n${correctiveFeedback}`
+                  : prompts.user;
+                const streamParams = visionImages?.length
+                  ? {
+                      model: languageModel,
+                      system: prompts.system,
+                      messages: [
+                        {
+                          role: 'user' as const,
+                          content: buildVisionUserContent(userPrompt, visionImages),
+                        },
+                      ],
+                      maxOutputTokens: modelInfo?.outputWindow,
+                      // Some providers fail with an empty chunk sequence instead
+                      // of a thrown error mid-iteration (e.g. a 402 quota
+                      // response); capture the reason here so the failure event
+                      // carries the real cause.
+                      onError: ({ error }: { error: unknown }) => {
+                        attemptStreamError = error instanceof Error ? error.message : String(error);
                       },
-                    ],
-                    maxOutputTokens: modelInfo?.outputWindow,
-                    // Some providers fail with an empty chunk sequence instead
-                    // of a thrown error mid-iteration (e.g. a 402 quota
-                    // response); capture the reason here so the failure event
-                    // carries the real cause.
-                    onError: ({ error }: { error: unknown }) => {
-                      attemptStreamError =
-                        error instanceof Error ? error.message : String(error);
-                    },
-                    // Tear down the upstream LLM request when the client disconnects,
-                    // instead of letting it run to completion for a dead connection.
-                    abortSignal: req.signal,
+                      // Tear down the upstream LLM request when the client disconnects,
+                      // instead of letting it run to completion for a dead connection.
+                      abortSignal: req.signal,
+                    }
+                  : {
+                      model: languageModel,
+                      system: prompts.system,
+                      prompt: userPrompt,
+                      maxOutputTokens: modelInfo?.outputWindow,
+                      onError: ({ error }: { error: unknown }) => {
+                        attemptStreamError = error instanceof Error ? error.message : String(error);
+                      },
+                      abortSignal: req.signal,
+                    };
+
+                const textStream = streamLLM(
+                  streamParams,
+                  'scene-outlines-stream',
+                  thinkingConfig,
+                ).textStream;
+
+                for await (const chunk of textStream) {
+                  // Stop doing work the moment the client goes away — otherwise
+                  // generation keeps running and buffering for a dead connection.
+                  if (req.signal?.aborted) {
+                    stopHeartbeat();
+                    return;
                   }
-                : {
-                    model: languageModel,
-                    system: prompts.system,
-                    prompt: userPrompt,
-                    maxOutputTokens: modelInfo?.outputWindow,
-                    onError: ({ error }: { error: unknown }) => {
-                      attemptStreamError =
-                        error instanceof Error ? error.message : String(error);
-                    },
-                    abortSignal: req.signal,
-                  };
 
-              const textStream = streamLLM(
-                streamParams,
-                'scene-outlines-stream',
-                thinkingConfig,
-              ).textStream;
+                  fullText += chunk;
 
-              for await (const chunk of textStream) {
-                // Stop doing work the moment the client goes away — otherwise
-                // generation keeps running and buffering for a dead connection.
+                  if (fullText.length > MAX_OUTLINE_STREAM_BYTES) {
+                    log.warn(
+                      `Outline stream exceeded ${MAX_OUTLINE_STREAM_BYTES} bytes (len=${fullText.length}); stopping read and finalizing with ${parsedOutlines.length} outline(s)`,
+                    );
+                    break;
+                  }
+
+                  // Try to extract language directive early
+                  if (!languageDirective) {
+                    languageDirective = extractLanguageDirective(fullText);
+                    if (languageDirective) {
+                      const ldEvent = JSON.stringify({
+                        type: 'languageDirective',
+                        data: languageDirective,
+                      });
+                      controller.enqueue(encoder.encode(`data: ${ldEvent}\n\n`));
+                    }
+                  }
+
+                  // Try to extract course title early (same pattern as languageDirective)
+                  if (!courseTitle) {
+                    courseTitle = extractCourseTitle(fullText);
+                    if (courseTitle) {
+                      const ctEvent = JSON.stringify({
+                        type: 'courseTitle',
+                        data: courseTitle,
+                      });
+                      controller.enqueue(encoder.encode(`data: ${ctEvent}\n\n`));
+                    }
+                  }
+
+                  // Try to extract new outlines from the accumulated text,
+                  // resuming the scan from where the previous chunk left off.
+                  const { outlines: newOutlines, scanFrom: nextScanFrom } = extractNewOutlines(
+                    fullText,
+                    scanFrom,
+                  );
+                  scanFrom = nextScanFrom;
+                  for (const outline of newOutlines) {
+                    // Ensure ID and order
+                    const enrichedBase = {
+                      ...outline,
+                      order: parsedOutlines.length + 1,
+                    };
+                    const normalized = taskEngineMode
+                      ? normalizeTaskEngineOutline(enrichedBase, requirements.requirement)
+                      : sanitizeNonTaskEngineOutline(enrichedBase);
+                    const enriched = ensureUniqueOutlineId(normalized, usedOutlineIds);
+                    parsedOutlines.push(enriched);
+
+                    const event = JSON.stringify({
+                      type: 'outline',
+                      data: enriched,
+                      index: parsedOutlines.length - 1,
+                    });
+                    controller.enqueue(encoder.encode(`data: ${event}\n\n`));
+                  }
+                }
+
+                // Validate: got outlines?
+                if (parsedOutlines.length > 0) {
+                  if (!courseTitle) {
+                    // The head-bound streaming scan can miss a title the model
+                    // placed after the outlines array or past the 8KB head window;
+                    // recover it from the now-complete response before finalizing.
+                    courseTitle = extractCourseTitleFromComplete(fullText);
+                  }
+
+                  // Contract mode: assemble the blueprint and hold it to the
+                  // contract. A thin deck re-streams with corrective feedback
+                  // (bounded); on final exhaustion the run fails with the report.
+                  if (contractMode && courseContract) {
+                    const meta = extractWrapperMeta(fullText);
+                    // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
+                    const uniquifiedOutlines = uniquifyMediaElementIds(parsedOutlines);
+                    const blueprint = buildCourseBlueprint(
+                      {
+                        languageDirective: languageDirective || undefined,
+                        courseTitle: courseTitle || undefined,
+                        outlines: uniquifiedOutlines,
+                        audience: meta?.audience,
+                        objectives: meta?.objectives,
+                        lessons: meta?.lessons,
+                        units: meta?.units,
+                      },
+                      requirements.requirement,
+                      courseContract,
+                      courseType,
+                      courseTitle ?? requirements.requirement.slice(0, 30),
+                    );
+                    const report = validateBlueprint(blueprint, {
+                      tolerance: attempt === MAX_BLUEPRINT_ATTEMPTS,
+                    });
+                    if (report.valid) {
+                      finalBlueprint = blueprint;
+                      break;
+                    }
+                    correctiveFeedback = summarizeBlueprintValidation(report);
+                    lastError = correctiveFeedback;
+                    contractFailed = true;
+                    log.warn(
+                      `Blueprint contract not met (attempt ${attempt}/${MAX_BLUEPRINT_ATTEMPTS}): ${report.errors.length} error(s), ${report.warnings.length} warning(s)`,
+                      {
+                        errors: report.errors,
+                        warnings: report.warnings,
+                        firstOutlines: JSON.stringify(parsedOutlines.slice(0, 2)).slice(0, 700),
+                      },
+                    );
+                    if (attempt < MAX_BLUEPRINT_ATTEMPTS) {
+                      const retryEvent = JSON.stringify({
+                        type: 'retry',
+                        attempt,
+                        maxAttempts: MAX_BLUEPRINT_ATTEMPTS,
+                        reason: 'courseContract',
+                      });
+                      controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+                      continue;
+                    }
+                    // Exhausted: fall through to the error path (never accept
+                    // a broken deck).
+                    break;
+                  }
+
+                  break;
+                }
+
+                // Empty result — retry if we have attempts left. A thrown
+                // upstream error (auth, quota, rate limit) keeps ITS message:
+                // "Insufficient Balance" must reach the user verbatim instead of
+                // the misleading generic empty-response text.
+                lastError =
+                  attemptStreamError ??
+                  (fullText.trim()
+                    ? 'LLM response could not be parsed into outlines'
+                    : 'LLM returned empty response');
+                log.warn(
+                  `Outlines attempt ${attempt} diagnostics: textLen=${fullText.length}, outlines=${parsedOutlines.length}, languageDirective=${languageDirective ? 'yes' : 'no'}, preview=${JSON.stringify(fullText.slice(0, 240))}`,
+                );
+
+                if (attempt <= MAX_STREAM_RETRIES) {
+                  log.warn(
+                    `Empty outlines (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}), retrying...`,
+                  );
+                  // Notify client a retry is happening
+                  const retryEvent = JSON.stringify({
+                    type: 'retry',
+                    attempt,
+                    maxAttempts: MAX_STREAM_RETRIES + 1,
+                  });
+                  controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+                }
+              } catch (error) {
+                // Client disconnected (AbortError from the now-propagated signal):
+                // stop immediately, don't burn retries re-running generation.
                 if (req.signal?.aborted) {
                   stopHeartbeat();
                   return;
                 }
-
-                fullText += chunk;
-
-                if (fullText.length > MAX_OUTLINE_STREAM_BYTES) {
-                  log.warn(
-                    `Outline stream exceeded ${MAX_OUTLINE_STREAM_BYTES} bytes (len=${fullText.length}); stopping read and finalizing with ${parsedOutlines.length} outline(s)`,
-                  );
-                  break;
-                }
-
-                // Try to extract language directive early
-                if (!languageDirective) {
-                  languageDirective = extractLanguageDirective(fullText);
-                  if (languageDirective) {
-                    const ldEvent = JSON.stringify({
-                      type: 'languageDirective',
-                      data: languageDirective,
-                    });
-                    controller.enqueue(encoder.encode(`data: ${ldEvent}\n\n`));
-                  }
-                }
-
-                // Try to extract course title early (same pattern as languageDirective)
-                if (!courseTitle) {
-                  courseTitle = extractCourseTitle(fullText);
-                  if (courseTitle) {
-                    const ctEvent = JSON.stringify({
-                      type: 'courseTitle',
-                      data: courseTitle,
-                    });
-                    controller.enqueue(encoder.encode(`data: ${ctEvent}\n\n`));
-                  }
-                }
-
-                // Try to extract new outlines from the accumulated text,
-                // resuming the scan from where the previous chunk left off.
-                const { outlines: newOutlines, scanFrom: nextScanFrom } = extractNewOutlines(
-                  fullText,
-                  scanFrom,
-                );
-                scanFrom = nextScanFrom;
-                for (const outline of newOutlines) {
-                  // Ensure ID and order
-                  const enrichedBase = {
-                    ...outline,
-                    order: parsedOutlines.length + 1,
-                  };
-                  const normalized = taskEngineMode
-                    ? normalizeTaskEngineOutline(enrichedBase, requirements.requirement)
-                    : sanitizeNonTaskEngineOutline(enrichedBase);
-                  const enriched = ensureUniqueOutlineId(normalized, usedOutlineIds);
-                  parsedOutlines.push(enriched);
-
-                  const event = JSON.stringify({
-                    type: 'outline',
-                    data: enriched,
-                    index: parsedOutlines.length - 1,
-                  });
-                  controller.enqueue(encoder.encode(`data: ${event}\n\n`));
-                }
-              }
-
-              // Validate: got outlines?
-              if (parsedOutlines.length > 0) {
-                if (!courseTitle) {
-                  // The head-bound streaming scan can miss a title the model
-                  // placed after the outlines array or past the 8KB head window;
-                  // recover it from the now-complete response before finalizing.
-                  courseTitle = extractCourseTitleFromComplete(fullText);
-                }
-
-                // Contract mode: assemble the blueprint and hold it to the
-                // contract. A thin deck re-streams with corrective feedback
-                // (bounded); on final exhaustion the run fails with the report.
-                if (contractMode && courseContract) {
-                  const meta = extractWrapperMeta(fullText);
-                  // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
-                  const uniquifiedOutlines = uniquifyMediaElementIds(parsedOutlines);
-                  const blueprint = buildCourseBlueprint(
-                    {
-                      languageDirective: languageDirective || undefined,
-                      courseTitle: courseTitle || undefined,
-                      outlines: uniquifiedOutlines,
-                      audience: meta?.audience,
-                      objectives: meta?.objectives,
-                      lessons: meta?.lessons,
-                      units: meta?.units,
-                    },
-                    requirements.requirement,
-                    courseContract,
-                    courseType,
-                    courseTitle ?? requirements.requirement.slice(0, 30),
-                  );
-                  const report = validateBlueprint(blueprint, {
-                    tolerance: attempt === MAX_BLUEPRINT_ATTEMPTS,
-                  });
-                  if (report.valid) {
-                    finalBlueprint = blueprint;
-                    break;
-                  }
-                  correctiveFeedback = summarizeBlueprintValidation(report);
-                  lastError = correctiveFeedback;
-                  contractFailed = true;
-                  log.warn(
-                    `Blueprint contract not met (attempt ${attempt}/${MAX_BLUEPRINT_ATTEMPTS}): ${report.errors.length} error(s), ${report.warnings.length} warning(s)`,
-                    {
-                      errors: report.errors,
-                      warnings: report.warnings,
-                      firstOutlines: JSON.stringify(parsedOutlines.slice(0, 2)).slice(0, 700),
-                    },
-                  );
-                  if (attempt < MAX_BLUEPRINT_ATTEMPTS) {
-                    const retryEvent = JSON.stringify({
-                      type: 'retry',
-                      attempt,
-                      maxAttempts: MAX_BLUEPRINT_ATTEMPTS,
-                      reason: 'courseContract',
-                    });
-                    controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
-                    continue;
-                  }
-                  // Exhausted: fall through to the error path (never accept
-                  // a broken deck).
-                  break;
-                }
-
-                break;
-              }
-
-              // Empty result — retry if we have attempts left. A thrown
-              // upstream error (auth, quota, rate limit) keeps ITS message:
-              // "Insufficient Balance" must reach the user verbatim instead of
-              // the misleading generic empty-response text.
-              lastError =
-                attemptStreamError ??
-                (fullText.trim()
-                  ? 'LLM response could not be parsed into outlines'
-                  : 'LLM returned empty response');
-              log.warn(
-                `Outlines attempt ${attempt} diagnostics: textLen=${fullText.length}, outlines=${parsedOutlines.length}, languageDirective=${languageDirective ? 'yes' : 'no'}, preview=${JSON.stringify(fullText.slice(0, 240))}`,
-              );
-
-              if (attempt <= MAX_STREAM_RETRIES) {
+                lastError = error instanceof Error ? error.message : String(error);
+                attemptStreamError = lastError;
                 log.warn(
-                  `Empty outlines (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}), retrying...`,
+                  `Outlines stream error detail (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}): ${lastError}`,
                 );
-                // Notify client a retry is happening
-                const retryEvent = JSON.stringify({
-                  type: 'retry',
-                  attempt,
-                  maxAttempts: MAX_STREAM_RETRIES + 1,
-                });
-                controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
-              }
-            } catch (error) {
-              // Client disconnected (AbortError from the now-propagated signal):
-              // stop immediately, don't burn retries re-running generation.
-              if (req.signal?.aborted) {
-                stopHeartbeat();
-                return;
-              }
-              lastError = error instanceof Error ? error.message : String(error);
-              attemptStreamError = lastError;
-              log.warn(
-                `Outlines stream error detail (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}): ${lastError}`,
-              );
 
-              if (attempt <= MAX_STREAM_RETRIES) {
-                log.warn(
-                  `Stream error (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}), retrying...`,
-                  error,
-                );
-                const retryEvent = JSON.stringify({
-                  type: 'retry',
-                  attempt,
-                  maxAttempts: MAX_STREAM_RETRIES + 1,
-                });
-                controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
-                continue;
+                if (attempt <= MAX_STREAM_RETRIES) {
+                  log.warn(
+                    `Stream error (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}), retrying...`,
+                    error,
+                  );
+                  const retryEvent = JSON.stringify({
+                    type: 'retry',
+                    attempt,
+                    maxAttempts: MAX_STREAM_RETRIES + 1,
+                  });
+                  controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+                  continue;
+                }
               }
             }
-          }
           }
 
           if (finalBlueprint) {
@@ -1568,11 +1573,12 @@ export async function POST(req: NextRequest) {
             // a global summary. With a document handle the chunks come from
             // the server-side index — the ENTIRE document, not a truncated
             // prefix.
-            const retrievalChunks: PdfChunk[] = indexChunks.length > 0
-              ? indexChunks
-              : pdfText && pdfText.length > 2000
-                ? chunkSourceText(pdfText)
-                : [];
+            const retrievalChunks: PdfChunk[] =
+              indexChunks.length > 0
+                ? indexChunks
+                : pdfText && pdfText.length > 2000
+                  ? chunkSourceText(pdfText)
+                  : [];
             const doneOutlines = finalBlueprint.lessons.flatMap((lesson) =>
               lesson.outlines.map((outline) => {
                 if (outline.retrievalContext || retrievalChunks.length === 0) return outline;
@@ -1608,11 +1614,7 @@ export async function POST(req: NextRequest) {
             // surfaces the report (gap-fill or intentional exclusion).
             if (storedIndex && storedIndex.digest.sections.length > 0) {
               const citedMarkers = collectCitedMarkers(doneOutlines);
-              const audit = auditDigestCoverage(
-                storedIndex.digest,
-                indexChunks,
-                citedMarkers,
-              );
+              const audit = auditDigestCoverage(storedIndex.digest, indexChunks, citedMarkers);
               const coverageEvent = JSON.stringify({
                 type: 'coverage',
                 data: {

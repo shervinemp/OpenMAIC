@@ -68,7 +68,10 @@ export interface RowLayout {
 }
 
 export function computeRowLayout(content: unknown): RowLayout | null {
-  const slide = (content ?? null) as { type?: string; canvas?: { viewportSize?: number; viewportRatio?: number; elements?: RectElement[] } } | null;
+  const slide = (content ?? null) as {
+    type?: string;
+    canvas?: { viewportSize?: number; viewportRatio?: number; elements?: RectElement[] };
+  } | null;
   const canvas = slide?.type === 'slide' ? slide.canvas : undefined;
   if (!canvas || !Array.isArray(canvas.elements) || canvas.elements.length === 0) return null;
   const viewportSize = typeof canvas.viewportSize === 'number' ? canvas.viewportSize : 1000;
@@ -123,11 +126,17 @@ function estimatedRowHeight(element: RectElement): number {
   if (element.type === 'text' && typeof element.content === 'string') {
     const fontSizeMatch = /(?:font-size\s*:\s*)?(\d+(?:\.\d+)?)px/.exec(element.content);
     const fontSize = fontSizeMatch ? parseFloat(fontSizeMatch[1]) : DEFAULT_FONT_PX;
-    const plain = element.content.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+    const plain = element.content
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
     const explicitLines = (element.content.match(/<br\s*\/?>/gi) ?? []).length;
     const charsPerLine = Math.max(8, Math.floor(((element.width ?? 100) - 12) / (fontSize * 0.52)));
     const wrappedLines = Math.ceil(plain.length / charsPerLine) || 1;
-    return Math.ceil(Math.max(explicitLines + 1, wrappedLines) * fontSize * LINE_HEIGHT_FACTOR + PARAGRAPH_PAD);
+    return Math.ceil(
+      Math.max(explicitLines + 1, wrappedLines) * fontSize * LINE_HEIGHT_FACTOR + PARAGRAPH_PAD,
+    );
   }
   return 50;
 }
@@ -175,7 +184,8 @@ export function computeSplitPlan(scene: {
       title: scene.title ?? '',
       order: scene.order ?? -1,
       chunks: [],
-      reason: 'single chunk but error findings remain — needs the regression pass, not the splitter',
+      reason:
+        'single chunk but error findings remain — needs the regression pass, not the splitter',
     } satisfies SplitPlan;
   }
 
@@ -227,12 +237,21 @@ export function computeSplitPlan(scene: {
 }
 
 function sceneContentElements(content: unknown): Array<Record<string, unknown>> {
-  const canvas = (content as { canvas?: { elements?: Array<Record<string, unknown>> } } | undefined)?.canvas;
+  const canvas = (content as { canvas?: { elements?: Array<Record<string, unknown>> } } | undefined)
+    ?.canvas;
   return canvas?.elements ?? [];
 }
 
 export function planSummary(plan: SplitPlan): string {
-  return `${plan.chunks.length} chunk(s): ` + plan.chunks.map((chunk, i) => `p${i + 1}[${chunk.elementIds.length} rows, ${chunk.actionIds.length} actions]`).join(' ');
+  return (
+    `${plan.chunks.length} chunk(s): ` +
+    plan.chunks
+      .map(
+        (chunk, i) =>
+          `p${i + 1}[${chunk.elementIds.length} rows, ${chunk.actionIds.length} actions]`,
+      )
+      .join(' ')
+  );
 }
 
 export { validateSlidePlacement, sanitizeSlidePlacement };

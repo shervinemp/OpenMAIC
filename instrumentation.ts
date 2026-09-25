@@ -97,9 +97,8 @@ export async function register(): Promise<void> {
       (process.env.COURSE_GIT_SYNC_ON_BOOT ?? '').trim().toLowerCase(),
     );
     if (syncOnBoot) {
-      const { runCourseGitSync, scanCourseUpdates } = await import(
-        '@/lib/persistence/git-course-import'
-      );
+      const { runCourseGitSync, scanCourseUpdates } =
+        await import('@/lib/persistence/git-course-import');
       const dir = process.env.PERSISTENCE_DIR?.trim();
       if (dir) {
         const autoApply = ['1', 'true'].includes(
@@ -123,9 +122,7 @@ export async function register(): Promise<void> {
                   }
                 }
               })
-              .catch((error) =>
-                console.error('[course-git] update poll failed:', error),
-              );
+              .catch((error) => console.error('[course-git] update poll failed:', error));
           }, pollRaw);
           pollTimer.unref?.();
         }
