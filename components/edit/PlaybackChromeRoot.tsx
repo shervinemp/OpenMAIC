@@ -106,6 +106,10 @@ interface PlaybackChromeRootProps {
   /** Skip resolution (Pillar 2 §4.9): close a failed outline permanently.
       Defaults to the store action when unset. */
   readonly onSkipOutline?: (outlineId: string) => void;
+  /** Run a narration/media byte repair pass over the course on demand. */
+  readonly onRepairCourse?: () => void;
+  /** Whether a course repair pass is running. */
+  readonly courseRepairing?: boolean;
   /** Whether the Pro Switch in Header should be enabled. */
   readonly canEnterProMode?: boolean;
   /** Pro Switch click handler — parent coordinates teardown + mode flip. */
@@ -132,6 +136,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       onRetryOutline,
       onResumeGeneration,
       onSkipOutline,
+      onRepairCourse,
+      courseRepairing,
       canEnterProMode,
       onEnterProMode,
       proModeActive,
@@ -1734,6 +1740,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           onSceneSelect={gatedSceneSwitch}
           onRetryOutline={onRetryOutline}
           onResumeGeneration={onResumeGeneration}
+          onRepairCourse={onRepairCourse}
+          courseRepairing={courseRepairing}
           onSkipOutline={
             onSkipOutline ?? ((outlineId) => useStageStore.getState().skipFailedOutline(outlineId))
           }

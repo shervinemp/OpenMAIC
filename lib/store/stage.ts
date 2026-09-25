@@ -26,6 +26,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import type { StageManifest } from '@/lib/workbench/stage-freshness';
 import { applyGeneratedAgentsToRegistry } from '@/lib/orchestration/registry/store';
 import { migrateScene } from '@/lib/edit/slide-schema';
+import { indexScenesByOutline } from '@/lib/utils/outline-scene-match';
 import { stripDeadActionAnchors } from '@/lib/maintenance/content-audit';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
@@ -502,10 +503,11 @@ function isDeckComplete({
   lessonGroups?: readonly LessonJobGroup[];
 }): boolean {
   const skipped = new Set(skippedOutlineIds);
+  const materialized = indexScenesByOutline(scenes);
   return (
     outlines.length > 0 &&
     completionBlockingFailures(failedOutlines, scenes, lessonGroups).length === 0 &&
-    outlines.every((o) => scenes.some((s) => s.order === o.order) || skipped.has(o.id))
+    outlines.every((o) => materialized.has(o) || skipped.has(o.id))
   );
 }
 
@@ -520,15 +522,15 @@ function isDeckComplete({
  */
 export function completionBlockingFailures(
   failedOutlines: readonly SceneOutline[],
-  scenes: readonly Pick<Scene, 'order'>[],
+  scenes: readonly Pick<Scene, 'order' | 'outlineId'>[],
   lessonGroups: readonly LessonJobGroup[] = [],
 ): SceneOutline[] {
-  const materializedOrders = new Set(scenes.map((scene) => scene.order));
+  const materialized = indexScenesByOutline(scenes);
   const jobs = new Map(
     lessonGroups.flatMap((group) => group.jobs.map((job) => [job.outlineId, job] as const)),
   );
   return failedOutlines.filter((outline) => {
-    if (!materializedOrders.has(outline.order)) return true;
+    if (!materialized.has(outline)) return true;
     const job = jobs.get(outline.id);
     if (!job) return true;
     return job.phases.content?.status === 'failed' || job.phases.actions?.status === 'failed';
@@ -796,8 +798,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       );
     }
     scenes.push(migrateScene(scene));
-    // Remove the matching outline from generatingOutlines (match by order)
-    const generatingOutlines = get().generatingOutlines.filter((o) => o.order !== scene.order);
+    // Remove the matching outline from generatingOutlines (by outline id;
+    // order only for a scene that carries none)
+    const generatingOutlines = get().generatingOutlines.filter((o) =>
+      scene.outlineId ? o.id !== scene.outlineId : o.order !== scene.order,
+    );
     // Auto-switch from pending page to the newly generated scene
     const shouldSwitch = get().currentSceneId === PENDING_SCENE_ID;
     set({
@@ -1124,10 +1129,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     const { failedOutlines, scenes, lessonGroups } = get();
     const outline = failedOutlines.find((o) => o.id === outlineId);
     if (!outline) return;
-    const materialized = scenes.some(
-      (scene) => scene.outlineId === outlineId || scene.order === outline.order,
-    );
-    if (!materialized) return;
+    if (!indexScenesByOutline(scenes).has(outline)) return;
     const job = lessonGroups
       .flatMap((group) => group.jobs)
       .find((entry) => entry.outlineId === outlineId);
@@ -1447,11 +1449,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         // regenerating a slide the user deletes before the flag was ever
         // recorded.
         //
-        // Matching is by `order`, consistent with the rest of the resume
-        // pipeline. For a never-edited deck order is a faithful key; the only
-        // way it diverges is Pro-mode insert/reorder, which is blocked while
-        // outlines are still pending (see stage-mode edit gating), so an
-        // interrupted deck cannot be edited into a false "all materialized".
+        // Matching is by the outline id each scene was generated from, with
+        // `order` only for scenes that carry none (indexScenesByOutline), as
+        // in the rest of the resume pipeline: Pro-mode insert/reorder
+        // renumbers scenes on a finished deck, and an order match then
+        // pairs outlines with the wrong slides.
         const inMemoryState = get();
         const inMemoryFailed =
           inMemoryState.stage?.id === stageId ? inMemoryState.failedOutlines : [];
@@ -1462,8 +1464,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         // state debt). Mark it failed right here so the very first UI render
         // shows the red regenerate box: the recovery check does not depend on
         // a secondary effect, a lease race, or in-memory session state.
-        const materializedOrders = new Set(migrated.map((s) => s.order));
-        const missingOutlines = outlines.filter((o) => !materializedOrders.has(o.order));
+        const materialized = indexScenesByOutline(migrated);
+        const missingOutlines = outlines.filter((o) => !materialized.has(o));
         // Orphan self-heal: an outline whose job FULLY committed its content
         // AND actions (content done and not still in-flight/failed) with no
         // scene was DELETED by the user after generation (or its outline prune
@@ -1548,7 +1550,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           uniqueFailedOutlines.length === 0 &&
           outlines.length > 0 &&
           outlines.every((o) => {
-            if (migrated.some((s) => s.order === o.order)) return true;
+            if (materialized.has(o)) return true;
             if (orphanOutlineIds.has(o.id)) return true;
             return skippedOutlineIds.includes(o.id);
           });
@@ -1564,7 +1566,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         const contradictsPersistedComplete =
           !everyOutlineSettled &&
           outlines.some((o) => {
-            if (migrated.some((s) => s.order === o.order)) return false;
+            if (materialized.has(o)) return false;
             if (orphanOutlineIds.has(o.id)) return false;
             if (skippedOutlineIds.includes(o.id)) return false;
             const job = recoveredLessonGroups
@@ -1639,7 +1641,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
             ? []
             : outlines.filter(
                 (o) =>
-                  !migrated.some((s) => s.order === o.order) &&
+                  !materialized.has(o) &&
                   !orphanOutlineIds.has(o.id) &&
                   // A skipped outline is settled: it never regenerates, so it
                   // must not render as a "generating" placeholder either.

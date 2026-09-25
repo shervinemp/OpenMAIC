@@ -7,6 +7,7 @@ import { collectDocumentMediaRefs, isNarrationRefShape } from '@/lib/media/docum
 import type { Scene } from '@/lib/types/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { MediaGenerationRequest } from '@/lib/media/types';
+import { indexScenesByOutline } from '@/lib/utils/outline-scene-match';
 
 const log = createLogger('RepairCourseMedia');
 
@@ -316,10 +317,8 @@ export async function repairCourseMedia(
     // An outline whose slide was deleted must not have its media paid for:
     // the scene will never render, so the ref is dead by design unless the
     // outline itself re-materializes.
-    const materializedOrders = new Set(scenes.map((scene) => scene.order));
-    const dispatchOutlines = options.outlines!.filter((outline) =>
-      materializedOrders.has(outline.order),
-    );
+    const materialized = indexScenesByOutline(scenes);
+    const dispatchOutlines = options.outlines!.filter((outline) => materialized.has(outline));
     try {
       await generateMediaForOutlines(dispatchOutlines, options.stageId!, options.signal, {
         repair: true,

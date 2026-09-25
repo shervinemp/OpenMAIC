@@ -153,6 +153,10 @@ export function stageCarriesMediaReference(
 export interface GeneratedMediaDocumentIndex {
   /** Orders of the scenes that exist today. */
   readonly materializedOrders: ReadonlySet<number>;
+  /** Outline ids the existing scenes were generated from. */
+  readonly materializedOutlineIds: ReadonlySet<string>;
+  /** Orders of existing scenes that carry no outline id (pre-outlineId decks). */
+  readonly legacyOrders: ReadonlySet<number>;
   /** Every generation placeholder the document still carries. */
   readonly pendingPlaceholders: ReadonlySet<string>;
   /** Whether every outline of this course already has its scene. */
@@ -163,6 +167,8 @@ export function indexGeneratedMediaReferences(
   document: MediaBearingDocument,
 ): GeneratedMediaDocumentIndex {
   const materializedOrders = new Set<number>();
+  const materializedOutlineIds = new Set<string>();
+  const legacyOrders = new Set<number>();
   const pendingPlaceholders = new Set<string>();
 
   const visit = (slide: SlideLike) => {
@@ -175,11 +181,15 @@ export function indexGeneratedMediaReferences(
   for (const slide of document.stage?.whiteboard ?? []) visit(slide);
   for (const scene of document.scenes ?? []) {
     materializedOrders.add(scene.order);
+    if (scene.outlineId) materializedOutlineIds.add(scene.outlineId);
+    else legacyOrders.add(scene.order);
     for (const slide of slidesOfScene(scene)) visit(slide);
   }
 
   return {
     materializedOrders,
+    materializedOutlineIds,
+    legacyOrders,
     pendingPlaceholders,
     deckComplete: document.generationComplete === true,
   };
@@ -196,20 +206,21 @@ export function indexGeneratedMediaReferences(
  *
  * The absence of a placeholder is decisive only once the slide that would carry
  * it exists, because during a first pass media runs alongside content and the
- * slide may not have been built yet. "Exists" is asked the way the rest of the
- * app asks it — by scene order, the only link between an outline and its scene
- * that the document carries. That link is weaker than it looks: Pro-mode
- * insert and delete rebalance `order`, so on a deck that is still generating,
- * an outline whose scene was renumbered can look unmaterialized and be
- * generated again. A finished deck is exempt: every outline that still has a
- * scene has one, so the placeholder's absence answers on its own and the
- * renumbering cannot cause a needless call.
+ * slide may not have been built yet. "Exists" is asked by the outline id the
+ * scene was generated from (see lib/utils/outline-scene-match.ts): Pro-mode
+ * insert and reorder renumber scenes but not outlines, so an order match can
+ * read a renumbered outline as unmaterialized and generate it again. Scenes
+ * without an outline id fall back to order. Given a bare order (the original
+ * signature), the question is asked by order alone. A finished deck is exempt
+ * either way: the placeholder's absence answers on its own.
  */
 export function isGeneratedMediaSatisfied(
   index: GeneratedMediaDocumentIndex,
-  outlineOrder: number,
+  outline: number | { readonly id: string; readonly order: number },
   placeholderRef: string,
 ): boolean {
   if (index.pendingPlaceholders.has(placeholderRef)) return false;
-  return index.deckComplete || index.materializedOrders.has(outlineOrder);
+  if (index.deckComplete) return true;
+  if (typeof outline === 'number') return index.materializedOrders.has(outline);
+  return index.materializedOutlineIds.has(outline.id) || index.legacyOrders.has(outline.order);
 }

@@ -244,6 +244,8 @@
     "doneEditing": "編集を完了",
     "proModeDisabledHint": "このページでは編集できません。コースのスライドを開くと Pro モードで編集できます。",
     "resumeGeneration": "再開",
+    "repairCourse": "コースのメディアを確認・修復",
+    "repairingCourse": "コースのメディアを修復中…",
     "recoveryPending": "未生成のページ：{{count}}件",
     "recoveryUmbrella": "リカバリー — 自動で継続中：{{items}}",
     "ungroupedScenes": "Other scenes"

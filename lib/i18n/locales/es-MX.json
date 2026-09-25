@@ -244,6 +244,8 @@
     "doneEditing": "Terminar edición",
     "proModeDisabledHint": "La edición no está disponible en esta página — abre una diapositiva del curso para editar con el modo Pro.",
     "resumeGeneration": "Reanudar",
+    "repairCourse": "Revisar y reparar los medios del curso",
+    "repairingCourse": "Reparando los medios del curso…",
     "recoveryPending": "{{count}} página(s) aún sin generar",
     "recoveryUmbrella": "Recuperación — continuando automáticamente: {{items}}",
     "ungroupedScenes": "Other scenes"

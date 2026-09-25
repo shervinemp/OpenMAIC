@@ -32,6 +32,7 @@ import { useStageStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/store/settings';
 import { claimStageSceneLoadToken, isCurrentStageSceneLoadToken } from '@/lib/store/stage';
 import { loadResumeImageMapping } from '@/lib/utils/image-storage';
+import { indexScenesByOutline } from '@/lib/utils/outline-scene-match';
 import {
   clearGenerationSessionForStage,
   loadGenerationParams,
@@ -305,6 +306,101 @@ export function ClassroomSurface({
   // narration exactly as the standalone page does.
   useNarrationAdoption(classroomId, { ready: !loading && !error, mayGenerate });
 
+  // Byte repair (narration + generated media) as ONE re-runnable routine: on
+  // mount for a settled deck, again when the browser comes back online, and on
+  // demand from the sidebar. Detection is player-equivalent ("does the ref
+  // resolve right now"); repair dispatches per class — the TTS drain for
+  // narration, the orchestrator's byte-aware requeue for image/video — and
+  // byte truth hydrates phase rows on the SAME failed queue first, so red
+  // cards exist before the fixes land. Each run is one capped pass (the
+  // per-pass requeue caps are the spend guard), so a heavily decayed course
+  // heals across runs, never through an unbounded loop.
+  const mediaRepairAbortRef = useRef<AbortController | null>(null);
+  const [courseRepairing, setCourseRepairing] = useState(false);
+  const runCourseMediaRepair = useCallback(async (): Promise<void> => {
+    if (mediaRepairAbortRef.current) return; // one run at a time
+    const storeState = useStageStore.getState();
+    const { stage, outlines } = storeState;
+    if (!stage || stage.id !== classroomId || outlines.length === 0) return;
+    // A running batch owns the providers; repair waits for it to settle.
+    if (storeState.generationStatus === 'generating') return;
+    const controller = new AbortController();
+    mediaRepairAbortRef.current = controller;
+    setCourseRepairing(true);
+    const scenes = [...storeState.scenes];
+    // Stale-failure reconciliation input: persisted failed phase rows keyed by
+    // scene id (lessonGroups jobs are outline-keyed). The repair audit lifts
+    // these the moment byte truth disproves them.
+    const failedPhasesBySceneId = new Map<string, Set<'tts' | 'media'>>();
+    const jobByOutlineId = new Map(
+      storeState.lessonGroups.flatMap((group) =>
+        (group.jobs ?? []).map((job) => [job.outlineId, job] as const),
+      ),
+    );
+    for (const scene of scenes) {
+      const job = scene.outlineId ? jobByOutlineId.get(scene.outlineId) : undefined;
+      const phases = new Set<'tts' | 'media'>();
+      if (job?.phases?.tts?.status === 'failed') phases.add('tts');
+      if (job?.phases?.media?.status === 'failed') phases.add('media');
+      if (phases.size > 0) failedPhasesBySceneId.set(scene.id, phases);
+    }
+    try {
+      const { repairCourseMedia } = await import('@/lib/media/repair-course-media');
+      await repairCourseMedia(scenes, {
+        language: storeState.blueprint?.languageDirective,
+        outlines,
+        stageId: stage.id,
+        signal: controller.signal,
+        persistedFailedPhases: failedPhasesBySceneId,
+        onScenePhaseFailure: (sceneId, phase) => {
+          const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
+          if (!scene?.outlineId) return;
+          useStageStore.getState().recordScenePhase(scene.outlineId, phase, {
+            status: 'failed',
+            error: phase === 'tts' ? 'Narration bytes missing' : 'Generated media bytes missing',
+          });
+          const outline = outlines.find((o) => o.id === scene.outlineId);
+          if (outline) useStageStore.getState().addFailedOutline(outline);
+        },
+        // The failure hook's symmetry: when the repair dispatch restores
+        // every ref a scene needs, the recorded failure must lift.
+        onScenePhaseResolved: (sceneId, phase) => {
+          const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
+          if (!scene?.outlineId) return;
+          useStageStore.getState().recordScenePhase(scene.outlineId, phase, { status: 'done' });
+          // The card the failure hook (or load hydration) raised drops with
+          // its phase — unless a sibling phase is still failed.
+          useStageStore.getState().settleFailedOutline(scene.outlineId);
+        },
+      });
+    } catch (err) {
+      if (!controller.signal.aborted) log.warn('[Classroom] Media repair error:', err);
+    } finally {
+      if (mediaRepairAbortRef.current === controller) mediaRepairAbortRef.current = null;
+      setCourseRepairing(false);
+    }
+  }, [classroomId]);
+
+  // Leaving the course (or switching to another) cancels a repair in flight:
+  // its drain and requeue would otherwise keep calling providers for a course
+  // nobody is looking at.
+  useEffect(
+    () => () => {
+      mediaRepairAbortRef.current?.abort();
+      mediaRepairAbortRef.current = null;
+    },
+    [classroomId],
+  );
+
+  // Reconnect: repairs that failed while the network was down get another
+  // pass the moment it is back, instead of waiting for the next page open.
+  useEffect(() => {
+    if (loading || error || !mayGenerate) return;
+    const onOnline = () => void runCourseMediaRepair();
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [loading, error, mayGenerate, runCourseMediaRepair]);
+
   // Auto-resume generation for pending outlines (owner only). Two independent
   // ownership facts gate it. The sidecar's per-viewer answer decides whether
   // this browser may spend the operator's provider budget at all, and fails
@@ -351,15 +447,17 @@ export function ClassroomSurface({
     // the same train automatically when NEXT_PUBLIC_AUTO_RETRY_FAILED_GENERATION
     // is on; otherwise they stay parked behind retry cards so the user decides
     // whether a provider-side failure is worth re-burning tokens.
-    const completedOrders = new Set(scenes.map((s) => s.order));
+    const materialized = indexScenesByOutline(scenes);
     const autoRetryFailed = ['1', 'true'].includes(
       (process.env.NEXT_PUBLIC_AUTO_RETRY_FAILED_GENERATION ?? '0').trim().toLowerCase(),
     );
     const failedIds = new Set(state.failedOutlines.map((o) => o.id));
     const skipIds = new Set(state.skippedOutlineIds);
-    const outlineIsPending = (id: string, order: number): boolean =>
-      !completedOrders.has(order) && !skipIds.has(id) && !(failedIds.has(id) && !autoRetryFailed);
-    const hasPending = !generationComplete && outlines.some((o) => outlineIsPending(o.id, o.order));
+    const outlineIsPending = (outline: { id: string; order: number }): boolean =>
+      !materialized.has(outline) &&
+      !skipIds.has(outline.id) &&
+      !(failedIds.has(outline.id) && !autoRetryFailed);
+    const hasPending = !generationComplete && outlines.some(outlineIsPending);
 
     if (hasPending && stage) {
       generationStartedRef.current = true;
@@ -409,67 +507,14 @@ export function ClassroomSurface({
       void clearGenerationSessionForStage(classroomId);
       // Media recovery (same-train semantics): a fully materialized deck
       // whose narration or image/video/poster bytes decayed gets an automatic
-      // class-agnostic repair run per mount — detection is player-equivalent
-      // ("does the ref resolve right now") and repair dispatches per class:
-      // TTS drain for narration, the orchestrator's byte-aware requeue
-      // (generateMediaForOutlines) for image/video. Byte truth hydrates phase
-      // rows on the SAME failed queue first (red cards on the first render),
-      // then the drain/orchestrator consumes entries per class.
-      const storeState = useStageStore.getState();
-      const storeScenes = storeState.scenes;
-      // Stale-failure reconciliation input: persisted failed phase rows keyed
-      // by scene id (lessonGroups jobs are outline-keyed). The repair audit
-      // lifts these the moment byte truth disproves them.
-      const failedPhasesBySceneId = new Map<string, Set<'tts' | 'media'>>();
-      {
-        const jobByOutlineId = new Map(
-          storeState.lessonGroups.flatMap((group) =>
-            (group.jobs ?? []).map((job) => [job.outlineId, job] as const),
-          ),
-        );
-        for (const scene of storeScenes) {
-          const job = scene.outlineId ? jobByOutlineId.get(scene.outlineId) : undefined;
-          const phases = new Set<'tts' | 'media'>();
-          if (job?.phases?.tts?.status === 'failed') phases.add('tts');
-          if (job?.phases?.media?.status === 'failed') phases.add('media');
-          if (phases.size > 0) failedPhasesBySceneId.set(scene.id, phases);
-        }
-      }
-      void (async () => {
-        const { repairCourseMedia } = await import('@/lib/media/repair-course-media');
-        await repairCourseMedia([...storeScenes], {
-          language: storeState.blueprint?.languageDirective,
-          outlines,
-          stageId: stage.id,
-          persistedFailedPhases: failedPhasesBySceneId,
-          onScenePhaseFailure: (sceneId, phase) => {
-            const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
-            if (!scene?.outlineId) return;
-            useStageStore.getState().recordScenePhase(scene.outlineId, phase, {
-              status: 'failed',
-              error: phase === 'tts' ? 'Narration bytes missing' : 'Generated media bytes missing',
-            });
-            const outline = outlines.find((o) => o.id === scene.outlineId);
-            if (outline) useStageStore.getState().addFailedOutline(outline);
-          },
-          // The failure hook's symmetry: when the repair dispatch restores
-          // every ref a scene needs, the recorded failure must lift.
-          onScenePhaseResolved: (sceneId, phase) => {
-            const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
-            if (!scene?.outlineId) return;
-            useStageStore.getState().recordScenePhase(scene.outlineId, phase, { status: 'done' });
-            // The card the failure hook (or load hydration) raised drops with
-            // its phase — unless a sibling phase is still failed.
-            useStageStore.getState().settleFailedOutline(scene.outlineId);
-          },
-        });
-      })().catch((err) => log.warn('[Classroom] Media repair resume error:', err));
+      // repair run per mount (see runCourseMediaRepair).
+      void runCourseMediaRepair();
       // Layout truth rides the SAME on-load pipeline: one deterministic,
       // tokenless sweep per course per session clamps + move-restacks and
       // keeps the persisted debt ledger honest (write-offs included).
       void (async () => {
         const { repairCourseLayout } = await import('@/lib/maintenance/repair-course-layout');
-        await repairCourseLayout(stage.id, [...storeScenes]);
+        await repairCourseLayout(stage.id, [...useStageStore.getState().scenes]);
         // Split-terminal parts (and any other materially-present scene) get
         // their content fingerprint in the same session.
         const { stampCourseSceneHashes } = await import('@/lib/maintenance/stamp-scene-hashes');
@@ -479,7 +524,7 @@ export function ClassroomSurface({
     // classroomId: the params lookup and session cleanup are keyed by it. A
     // change re-runs this effect, but `generationStartedRef` still guards the
     // one-shot resume.
-  }, [loading, error, mayGenerate, generateRemaining, classroomId]);
+  }, [loading, error, mayGenerate, generateRemaining, classroomId, runCourseMediaRepair]);
 
   // In-page resume after a provider-failure pause (quota exhaustion, flaky
   // free tier): re-kick the batch with the same handoff params the first
@@ -680,6 +725,8 @@ export function ClassroomSurface({
               classroomId={classroomId}
               onRetryOutline={mayGenerate ? retrySingleOutline : undefined}
               onResumeGeneration={mayGenerate ? handleResumeGeneration : undefined}
+              onRepairCourse={mayGenerate ? () => void runCourseMediaRepair() : undefined}
+              courseRepairing={courseRepairing}
             />
           )}
         </div>

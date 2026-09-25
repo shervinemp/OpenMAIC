@@ -464,10 +464,10 @@ export async function saveStageDataIncremental(
  * Recovery is read-only at load time. The adopted outline rides the store's
  * snapshot on the next flush (the flush snapshot carries `outline` into
  * `documentSnapshot`), which also heals the server copy for server-backed
- * persistence. The resume pipeline itself is order-based
- * (`generateRemaining` matches outlines to scenes by `order`), so a
- * recovered flat plan resumes exactly where the deck stopped without
- * re-running materialized scenes.
+ * persistence. The resume pipeline matches outlines to scenes by the outline
+ * id each scene carries, falling back to `order` for scenes without one
+ * (lib/utils/outline-scene-match.ts), so a recovered flat plan resumes
+ * exactly where the deck stopped without re-running materialized scenes.
  *
  * The legacy stores never carried the blueprint's unit/lesson structure,
  * so a recovered outline restores the deck and its resume cursor but not

@@ -657,6 +657,8 @@
     "doneEditing": "Concluir edição",
     "proModeDisabledHint": "A edição não está disponível nesta página — abra um slide do curso para editar no modo Pro.",
     "resumeGeneration": "Retomar",
+    "repairCourse": "Verificar e reparar a mídia do curso",
+    "repairingCourse": "Reparando a mídia do curso…",
     "recoveryPending": "{{count}} página(s) ainda não geradas",
     "recoveryUmbrella": "Recuperação — continuando automaticamente: {{items}}",
     "ungroupedScenes": "Other scenes"

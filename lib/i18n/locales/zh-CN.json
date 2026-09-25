@@ -244,6 +244,8 @@
     "doneEditing": "完成编辑",
     "proModeDisabledHint": "本页不支持编辑——打开任意课程页即可使用 Pro 模式编辑。",
     "resumeGeneration": "继续生成",
+    "repairCourse": "检查并修复课程媒体",
+    "repairingCourse": "正在修复课程媒体…",
     "recoveryPending": "尚有 {{count}} 页未生成",
     "recoveryUmbrella": "恢复 — 自动继续：{{items}}",
     "ungroupedScenes": "Other scenes"

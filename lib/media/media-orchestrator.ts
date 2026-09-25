@@ -314,7 +314,7 @@ async function collectAndGenerate(
         // The document is the authority. A permanently failed task (content
         // policy, generation disabled) is still honoured: it is a refusal to
         // call the provider again, never a claim that media exists.
-        if (isGeneratedMediaSatisfied(documentIndex, outline.order, mg.elementId)) continue;
+        if (isGeneratedMediaSatisfied(documentIndex, outline, mg.elementId)) continue;
         // Stored, waiting for its slide to exist. The drain above already gave
         // away every allocation whose slide has arrived, so what is left here
         // genuinely has nowhere to go yet; asking the provider again would pay
