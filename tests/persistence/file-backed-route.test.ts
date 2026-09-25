@@ -216,4 +216,65 @@ describe('embedded persistence route: file-backed mode', () => {
       });
     });
   });
+
+  // Upstream's allocated-id pool (commitToPool) talks to POST /assets and
+  // /assets/:id/content; without a file-backed store behind them every pooled
+  // narration clip and generated image failed in this mode.
+  describe('asset pool endpoints', () => {
+    const poolClient = async () => {
+      const handle = await makeRoute();
+      const { HttpAssetStore } = await import('@openmaic/storage/asset/http');
+      const store = new HttpAssetStore({
+        baseUrl: 'http://localhost/api/persistence',
+        fetch: (input, init) => handle(new Request(input, init)),
+        headers: () => ({ authorization: `Bearer ${TOKEN}` }),
+      });
+      return { handle, store };
+    };
+
+    it('allocates through POST /assets and serves the id on both read routes', async () => {
+      const { handle, store } = await poolClient();
+      const id = await store.put(new Blob(['narration bytes'], { type: 'audio/mpeg' }), {
+        contentType: 'audio/mpeg',
+      });
+      expect(id).toMatch(/^ast_/);
+
+      const content = await handle(authorized(`/assets/${id}/content`));
+      expect(content.status).toBe(200);
+      expect(content.headers.get('content-type')).toBe('audio/mpeg');
+      expect(content.headers.get('x-asset-revision')).toBe('1');
+      await expect(content.text()).resolves.toBe('narration bytes');
+
+      // Same on-disk layout as the legacy ref route, so snapshots and the
+      // legacy reader see pooled entries too.
+      const legacy = await handle(authorized(`/assets/${id}`));
+      expect(legacy.status).toBe(200);
+      await expect(legacy.text()).resolves.toBe('narration bytes');
+      await expect(readFile(join(dir, 'assets', id), 'utf8')).resolves.toBe('narration bytes');
+    });
+
+    it('keeps a pooled entry revision monotonic across a legacy re-upload', async () => {
+      const { handle, store } = await poolClient();
+      const id = await store.put(new Blob(['v1'], { type: 'image/png' }));
+      const reupload = await handle(
+        authorized(`/assets/${id}`, {
+          method: 'PUT',
+          headers: { 'content-type': 'image/png' },
+          body: 'v2',
+        }),
+      );
+      expect(reupload.status).toBe(204);
+      const content = await handle(authorized(`/assets/${id}/content`));
+      expect(content.headers.get('x-asset-revision')).toBe('2');
+      await expect(content.text()).resolves.toBe('v2');
+    });
+
+    it('demands authentication on the pool routes', async () => {
+      const handle = await makeRoute();
+      const response = await handle(
+        new Request('http://localhost/api/persistence/assets', { method: 'POST' }),
+      );
+      expect(response.status).toBe(401);
+    });
+  });
 });

@@ -9,6 +9,7 @@ import {
   DEFAULT_SIGNED_URL_TTL_SECONDS,
   type AssetIndirectByteEgress,
 } from '@openmaic/storage/server';
+import { JsonFileAssetStore } from '@openmaic/storage/server/file-asset-store';
 import { JsonFileDocumentStore } from '@openmaic/storage/server/file-document-store';
 import { JsonFileRuntimeStore } from '@openmaic/storage/server/file-runtime-store';
 
@@ -182,6 +183,8 @@ function routeRelativePath(request: Request): string {
   return pathname.startsWith(ROUTE_PREFIX) ? pathname.slice(ROUTE_PREFIX.length) || '/' : pathname;
 }
 
+const MAX_ASSET_BYTES = 256 * 1024 * 1024;
+
 /** File-backed (no database) single-user backend for localhost self-hosting. */
 function createFilePersistenceHandler(dir: string): RequestListener {
   const runtimeStore = new JsonFileRuntimeStore({ dir });
@@ -202,12 +205,27 @@ function createFilePersistenceHandler(dir: string): RequestListener {
     authorizeDocuments: async () => true,
     validateScene: validateAppScene,
     validateStage: validateAppStage,
+    // The allocated-id asset pool (POST /assets, /assets/:id/content) on the
+    // same directory layout the legacy /assets/:ref route serves, so pooled
+    // narration and media work without PostgreSQL. One local user: every
+    // method is allowed, and the byte cap matches the legacy route's.
+    assetStore: new JsonFileAssetStore({ dir }),
+    maxAssetBytes: MAX_ASSET_BYTES,
+    maxRequestBytes: MAX_ASSET_BYTES + 1024 * 1024,
   });
 }
 
-// --- Media assets (file-backed, local only) -------------------------------
+/**
+ * The asset pool's routes: the collection (allocation) and `/assets/:id/content`.
+ * Everything else under `/assets` is the legacy two-segment ref route.
+ */
+function isAssetPoolRoute(pathname: string): boolean {
+  if (pathname === '/assets' || pathname === '/assets/') return true;
+  const parts = pathname.split('/');
+  return parts.length === 4 && parts[1] === 'assets' && parts[3] === 'content';
+}
 
-const MAX_ASSET_BYTES = 256 * 1024 * 1024;
+// --- Media assets (file-backed, local only) -------------------------------
 
 function assetAuthorized(request: Request): boolean {
   const token = process.env.PERSISTENCE_DEV_TOKEN;
@@ -262,20 +280,32 @@ async function handleAssetsRequest(
     let meta: Record<string, unknown> | undefined;
     if (metaHeader) {
       try {
-        const parsed = JSON.parse(
-          decodeURIComponent(escape(atob(metaHeader))),
-        ) as Record<string, unknown>;
+        const parsed = JSON.parse(decodeURIComponent(escape(atob(metaHeader)))) as Record<
+          string,
+          unknown
+        >;
         if (typeof parsed === 'object' && parsed !== null) meta = parsed;
       } catch {
         return jsonError(400, 'INVALID_META', 'x-asset-meta must be base64 JSON');
       }
     }
+    // An allocated-id entry (JsonFileAssetStore) keeps its id, principal, and
+    // a monotonic revision when the backfill re-uploads it through this route.
+    const previous =
+      (await readFile(metaPath, 'utf8')
+        .then((raw) => JSON.parse(raw) as { id?: unknown; principal?: unknown; revision?: unknown })
+        .catch(() => null)) ?? {};
+    const identity = {
+      ...(typeof previous.id === 'string' ? { id: previous.id } : {}),
+      ...(typeof previous.principal === 'string' ? { principal: previous.principal } : {}),
+      ...(typeof previous.revision === 'number' ? { revision: previous.revision + 1 } : {}),
+    };
     try {
       await mkdir(metaDir, { recursive: true });
       await writeFile(assetPath, bytes);
       await writeFile(
         metaPath,
-        JSON.stringify({ mime, meta: meta ?? {}, size: bytes.byteLength }),
+        JSON.stringify({ ...identity, mime, meta: meta ?? {}, size: bytes.byteLength }),
         'utf8',
       );
     } catch (error) {
@@ -512,7 +542,7 @@ async function handlePersistenceRequestInner(
       );
     }
     const pathname = new URL(request.url).pathname.replace(/^\/api\/persistence/, '') || '/';
-    if (pathname === '/assets' || pathname.startsWith('/assets/')) {
+    if (pathname.startsWith('/assets/') && !isAssetPoolRoute(pathname)) {
       return handleAssetsRequest(request, fileDir, pathname);
     }
     return runNodeHandler(createFilePersistenceHandler(fileDir), request);
