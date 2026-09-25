@@ -2,7 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { AICallFn, GenerationLogger, SceneContentFailure } from '@openmaic/generation';
 import { generateSceneContent, generateWidgetContent } from '@openmaic/generation';
-import { pblOutline, quizOutline, slideOutline, widgetOutline } from './scene-fixtures.js';
+import {
+  CONTENT_ATTEMPTS,
+  pblOutline,
+  quizOutline,
+  slideOutline,
+  widgetOutline,
+} from './scene-fixtures.js';
 
 const silentLogger: GenerationLogger = {
   debug() {},
@@ -26,9 +32,11 @@ describe('scene content model-output failures', () => {
         onFailure: (failure) => failures.push(failure),
       });
 
+      // Invalid output re-prompts up to the profile's attempt budget, then
+      // reports one failure.
       expect(content).toBeNull();
       expect(failures).toEqual([{ code: 'invalid-model-output' }]);
-      expect(aiCall).toHaveBeenCalledTimes(1);
+      expect(aiCall).toHaveBeenCalledTimes(CONTENT_ATTEMPTS);
     },
   );
 
@@ -52,7 +60,7 @@ describe('scene content model-output failures', () => {
 
     expect(content).toBeNull();
     expect(failures).toEqual([{ code: 'invalid-model-output' }]);
-    expect(aiCall).toHaveBeenCalledTimes(1);
+    expect(aiCall).toHaveBeenCalledTimes(CONTENT_ATTEMPTS);
     expect(
       errors.some((message) => message.includes('script #2') && message.includes('counts')),
     ).toBe(true);

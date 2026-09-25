@@ -6,7 +6,10 @@ import {
   generateSceneContent,
   normalizeQuizOptions,
 } from '../src/scene-generator.js';
-import { quizOutline } from './scene-fixtures.js';
+import { CONTENT_ATTEMPTS, quizOutline } from './scene-fixtures.js';
+
+// Stems long enough to clear the quiz depth contract's bare-recall check.
+const STEM = 'On the grid, which coordinate pair is written as (6, 2)?';
 
 const correctOptions = [
   { value: 'A', label: '(6, 2)' },
@@ -126,7 +129,7 @@ describe('findQuizOptionsContractFailure', () => {
         {
           id: 'q1',
           type: 'single',
-          question: 'Which coordinate is (6, 2)?',
+          question: STEM,
           options: correctOptions,
           answer: ['A'],
         },
@@ -152,7 +155,7 @@ describe('findQuizOptionsContractFailure', () => {
         {
           id: 'q-swap',
           type: 'single',
-          question: 'Which coordinate is (6, 2)?',
+          question: STEM,
           options: swappedOptions,
           answer: ['A'],
         },
@@ -219,7 +222,7 @@ describe('generateSceneContent quiz option contract', () => {
           {
             id: 'q1',
             type: 'single',
-            question: 'Which coordinate is (6, 2)?',
+            question: STEM,
             options: swappedOptions,
             answer: ['(6, 2)'],
           },
@@ -239,9 +242,11 @@ describe('generateSceneContent quiz option contract', () => {
 
     expect(content).toBeNull();
     expect(failures).toEqual([{ code: 'invalid-model-output' }]);
-    expect(errors).toEqual([
-      'Quiz option contract failed for "Dependency Injection Check": question 1 (q1): option 1 value "(6, 2)" is not a single letter A-Z',
-    ]);
+    expect(errors).toEqual(
+      Array(CONTENT_ATTEMPTS).fill(
+        'Quiz option contract failed for "Dependency Injection Check": question 1 (q1): option 1 value "(6, 2)" is not a single letter A-Z',
+      ),
+    );
   });
 
   it('rejects a lowercase letter key instead of rewriting it onto the value', async () => {
@@ -254,7 +259,7 @@ describe('generateSceneContent quiz option contract', () => {
           {
             id: 'q-lower',
             type: 'single',
-            question: 'Which coordinate is (6, 2)?',
+            question: STEM,
             options: [
               { value: '(6, 2)', label: 'a' },
               { value: '(2, -4)', label: 'b' },
@@ -272,14 +277,16 @@ describe('generateSceneContent quiz option contract', () => {
   it('persists a correct option shape unchanged', async () => {
     const failures: SceneContentFailure[] = [];
 
+    const twoQuestionOutline = quizOutline();
+    twoQuestionOutline.quizConfig = { ...twoQuestionOutline.quizConfig!, questionCount: 2 };
     const content = await generateSceneContent(
-      quizOutline(),
+      twoQuestionOutline,
       async () =>
         JSON.stringify([
           {
             id: 'q1',
             type: 'single',
-            question: 'Which coordinate is (6, 2)?',
+            question: STEM,
             options: correctOptions,
             answer: ['A'],
             analysis: 'A is the point (6, 2).',
@@ -288,7 +295,7 @@ describe('generateSceneContent quiz option contract', () => {
           {
             id: 'q2',
             type: 'short_answer',
-            question: 'Describe the point.',
+            question: 'Describe where the point (6, 2) sits on the grid.',
             commentPrompt: 'Mention both coordinates.',
             analysis: 'Both numbers.',
             points: 5,
@@ -324,9 +331,10 @@ describe('generateSceneContent quiz option contract', () => {
         {
           id: 'q1',
           type: 'single',
-          question: 'Which coordinate is (6, 2)?',
+          question: STEM,
           options: correctOptions.slice(0, 2),
           answer: ['(6, 2)'],
+          analysis: 'The first option is the point (6, 2).',
         },
       ]),
     );
@@ -352,7 +360,7 @@ describe('generateSceneContent quiz option contract', () => {
           {
             id: 'q-already',
             type: 'single',
-            question: 'Which coordinate is (6, 2)?',
+            question: STEM,
             options: correctOptions.slice(0, 2),
             answer: ['a'],
           },

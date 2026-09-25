@@ -65,7 +65,7 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 
 ### MAIC Platform Technical Constraints
 
-- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`interactive\` (interactive visualization), and \`pbl\` (project-based learning) are supported
+- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
 - **Slide Scene**: Static PPT pages supporting text, charts, formulas, and other visual components.
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
@@ -86,11 +86,30 @@ When user requirements don't specify, use these defaults:
 
 | Information         | Default Value          |
 | ------------------- | ---------------------- |
-| Course Duration     | 15-20 minutes          |
+| Course Duration     | Resolved by the caller and stated in the Course Contract — never re-inferred |
 | Target Audience     | General learners       |
 | Teaching Style      | Interactive (engaging) |
 | Visual Style        | Professional           |
 | Interactivity Level | Medium                 |
+
+---
+
+## Course Contract (scene count and lesson structure)
+
+The user prompt contains a **Course Contract** block. It is computed from the
+resolved course duration and is **non-negotiable**:
+
+- The contract states the exact number of lessons and the exact scene count
+  per lesson. Produce exactly those numbers — no more, no fewer.
+- Lesson boundaries are positional: the first N scene outlines belong to
+  lesson 1, the next to lesson 2, and so on, in global \`order\`.
+- Emit a \`lessons\` array with one \`{title, objectives}\` object per lesson
+  (1-2 objectives each), plus course-level \`audience\` (string) and
+  \`objectives\` (2-5 strings).
+- The contract also states the type mix and quiz cadence for this course
+  flavor (explainer / hands-on / exam-prep). Follow it.
+- If a corrective note is appended after "## Correction Required", fix the
+  listed findings exactly and return the corrected JSON.
 
 ---
 
@@ -143,7 +162,7 @@ Use \`interactive\` type when a concept benefits significantly from hands-on int
 
 **Constraints**:
 
-- Limit to **1-2 interactive scenes per course** (they are resource-intensive)
+- Spread interactive scenes across the course where they aid learning — coding, simulation, and practice widgets are encouraged; do not restrict yourself to one or two
 - Interactive scenes **require** an \`interactiveConfig\` object
 - Do NOT use interactive for purely textual/conceptual content - use slides instead
 - The \`interactiveConfig.designIdea\` should describe the specific interactive elements and user interactions
@@ -207,7 +226,7 @@ Use \`pbl\` type when the course involves complex, multi-step project work that 
 
 **Constraints**:
 
-- Limit to **at most 1 PBL scene per course** (they are comprehensive and long)
+- Limit to **at most 1 PBL scene per unit** (they are comprehensive and long)
 - PBL scenes **require** a \`pblConfig\` object with: projectTopic, projectDescription, targetSkills, issueCount
 - PBL is for substantial project work - do NOT use for simple exercises or single-step tasks
 - The \`pblConfig.targetSkills\` should list 2-5 specific skills students will develop
@@ -245,6 +264,8 @@ Rules:
 - **Never** return a bare array. The top level is an object, not an array.
 - **Never** omit \`languageDirective\` or \`courseTitle\`. Both are required even if you think they are obvious.
 - **Never** wrap the response in any other structure, prose, or code fence.
+- **Every** object in \`outlines\` MUST carry a \`type\` field — one of: \`slide\`, \`quiz\`, \`interactive\`, \`pbl\`, \`exercise\`, \`derivation\`, \`glossary\`, \`reading\`, \`comparison\`, \`dataReading\`, \`tradeoffs\`. Outlines without \`type\` are rejected.
+- \`outlines\` holds scene records ONLY — never lesson headers or summaries (those go in \`lessons\`).
 
 ### Minimal complete example
 
@@ -296,7 +317,7 @@ Rules:
 | Field             | Type                     | Required | Description                                                                                      |
 | ----------------- | ------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
 | id                | string                   | ✅       | Unique identifier, format: \`scene_1\`, \`scene_2\`...                                               |
-| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"interactive"\`, or \`"pbl"\`                                                 |
+| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, or \`"tradeoffs"\` |
 | title             | string                   | ✅       | Scene title, concise and clear                                                                   |
 | description       | string                   | ✅       | 1-2 sentences describing teaching purpose                                                        |
 | keyPoints         | string[]                 | ✅       | 3-5 core points                                                                                  |
@@ -370,11 +391,11 @@ Omit \`scenarioRoleplay\` and \`scenarioBrief\` entirely for ordinary build-an-a
 
 **Scene-level rules:**
 
-4. \`type\` is one of \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`.
+4. \`type\` is one of \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, \`"tradeoffs"\`.
 5. \`quiz\` scenes must include \`quizConfig\`.
 6. \`interactive\` scenes must include \`widgetType\` and \`widgetOutline\` (preferred). \`interactiveConfig\` is deprecated and only accepted for backwards compatibility.
 7. \`pbl\` scenes must include \`pblConfig\` with \`projectTopic\`, \`projectDescription\`, \`targetSkills\`, \`issueCount\`.
-8. Arrange scenes by inferred duration (typically 1-2 scenes per minute). Insert quizzes at appropriate points. Use interactive scenes sparingly (max 1-2 per course).
+8. Arrange scenes to satisfy the Course Contract exactly (per-lesson counts, course-wide total, quiz cadence, type mix). The contract overrides all other count guidance. Insert quizzes at the contract's positions. Vary the scene types — use interactive scenes, worked exercises, and other non-slide types throughout the course instead of defaulting to a run of slides.
 9. **Language**: Infer from the user's requirement text and context. Output all scene content in the inferred language.
 10. Regardless of information completeness, always output conforming JSON - do not ask questions or request more information
 11. **No teacher identity on slides**: Scene titles and keyPoints must be neutral and topic-focused. Never include the teacher's name or role (e.g., avoid "Teacher Wang's Tips", "Teacher's Wishes"). Use generic labels like "Tips", "Summary", "Key Takeaways" instead.",
@@ -423,9 +444,20 @@ Please automatically infer the following from user requirements:
 
 - Course topic and core content
 - Target audience and difficulty level
-- Course duration (default 15-30 minutes if not specified)
+- Course duration (resolved below — do NOT invent your own)
 - Teaching style (formal/casual/interactive/academic)
 - Visual style (minimal/colorful/professional/playful)
+
+---
+
+## Course Contract (NON-NEGOTIABLE)
+
+The course duration has been resolved to **20 minutes**. The
+scene count and lesson split below are computed from it — they are not
+suggestions and you may not produce fewer scenes, more scenes, or a different
+lesson structure.
+
+
 
 Then output your response as a single JSON object.
 
@@ -435,24 +467,31 @@ Then output your response as a single JSON object.
 {
   "languageDirective": "2-5 sentence instruction describing the course language behavior",
   "courseTitle": "concise course name, ≤30 chars, in the teaching language",
+  "lessons": [ /* array of lesson objects: {"title": "...", "objectives": ["..."]} */ ],
+  "audience": "inferred audience",
+  "objectives": ["course-level objective 1", "course-level objective 2"],
   "outlines": [ /* array of scene objects, schema described below */ ]
 }
 \`\`\`
 
-Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. All three keys are required.
+Never return a bare array. Never omit \`languageDirective\`, \`courseTitle\`, or \`outlines\` — those three keys are required. \`lessons\`, \`audience\`, and \`objectives\` are strongly recommended (they fill the course contract).
 
 **Each scene inside the \`outlines\` array has this minimum shape:**
 
 \`\`\`json
 {
   "id": "scene_1",
-  "type": "slide" | "quiz" | "interactive" | "pbl",
+  "type": "slide" | "quiz" | "interactive" | "pbl" | "exercise" | "derivation" | "glossary" | "reading" | "comparison" | "dataReading" | "tradeoffs",
   "title": "Scene Title",
   "description": "Teaching purpose description",
   "keyPoints": ["Point 1", "Point 2", "Point 3"],
   "order": 1
 }
 \`\`\`
+
+**HARD SCHEMA RULES — outlines violating these are rejected:**
+- EVERY object in \`outlines\` MUST have a \`type\` field, chosen from the list above. An outline without \`type\` is invalid.
+- \`outlines\` contains ONLY scene records. NEVER put lesson titles, section headers, or summary records into \`outlines\` — lessons belong exclusively in the \`lessons\` array.
 
 ### Special Notes
 
@@ -465,15 +504,24 @@ Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. 
    }
    \`\`\`
 
-- **Interactive scenes**: If a concept benefits from hands-on simulation/visualization, use \`"type": "interactive"\` with \`widgetType\` and \`widgetOutline\` fields. Limit to 1-2 per course.
+- **Interactive scenes**: Whenever a concept benefits from hands-on interaction, visualization, or coding practice, use \`"type": "interactive"\` with \`widgetType\` and \`widgetOutline\` fields — spread them across the course rather than holding back.
    - Select widgetType based on concept: simulation (physics/chem), diagram (processes), code (programming), game (practice), visualization3d (3D models)
    - Provide appropriate widgetOutline for the widget type
-- **Scene count**: Based on inferred duration, typically 1-2 scenes per minute
-- **Quiz placement**: Recommend inserting a quiz every 3-5 slides for assessment
+- **Specialized scenes** (use wherever the material calls for them):
+   - \`exercise\` — fully-worked problems (concrete statement + worked solution) for computational/quantitative/coding lessons — include several where the material is computational.
+   - \`derivation\` — step-by-step proof/derivation with LaTeX formulas, for formula-heavy lessons.
+   - \`glossary\` — one per unit: the unit's key terms with complete definitions.
+   - \`reading\` — one per unit: an annotated further-reading list (title + why-read).
+- **Analytic scenes** (use where the content genuinely calls for them):
+   - \`comparison\` — side-by-side table of 2-3 confusable concepts across decision-relevant dimensions (use for "compare X vs Y" material).
+   - \`dataReading\` — a small plotted dataset plus claims the learner evaluates against it (supported/refuted/insufficient); for quantitative trends and measurements.
+   - \`tradeoffs\` — a decision under explicit constraints: options with pros/cons and ONE justified recommendation; for architecture/design/method choices.
+- **Scene count**: Governed entirely by the Course Contract above — produce EXACTLY the per-lesson counts it demands. It overrides any other count guidance in this prompt.
+- **Quiz placement**: Insert quizzes per the Course Contract cadence (course-wide positions). Quiz scenes count toward the lesson totals.
 - **Language**: Infer from the user's requirement text and context, then output all content in the inferred language
 - **If web search results are provided**, reference specific findings and sources in scene descriptions and keyPoints. The search results provide up-to-date information — incorporate it to make the course content current and accurate.
 
-**Final reminder**: your entire response must be a JSON **object** with exactly three top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), and \`outlines\` (array). Do not return a bare array. Do not wrap in prose or code fences.",
+**Final reminder**: your entire response must be a JSON **object** with at least the three top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), and \`outlines\` (array) — plus \`lessons\`, \`audience\`, and \`objectives\` where possible. Do not return a bare array. Do not wrap in prose or code fences. The Course Contract governs the number of scenes: produce exactly what it demands.",
 }
 `;
 
@@ -542,7 +590,7 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 
 ### MAIC Platform Technical Constraints
 
-- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`interactive\` (interactive visualization), and \`pbl\` (project-based learning) are supported
+- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
 - **Slide Scene**: Static PPT pages supporting text, charts, formulas, and other visual components.
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
@@ -563,11 +611,30 @@ When user requirements don't specify, use these defaults:
 
 | Information         | Default Value          |
 | ------------------- | ---------------------- |
-| Course Duration     | 15-20 minutes          |
+| Course Duration     | Resolved by the caller and stated in the Course Contract — never re-inferred |
 | Target Audience     | General learners       |
 | Teaching Style      | Interactive (engaging) |
 | Visual Style        | Professional           |
 | Interactivity Level | Medium                 |
+
+---
+
+## Course Contract (scene count and lesson structure)
+
+The user prompt contains a **Course Contract** block. It is computed from the
+resolved course duration and is **non-negotiable**:
+
+- The contract states the exact number of lessons and the exact scene count
+  per lesson. Produce exactly those numbers — no more, no fewer.
+- Lesson boundaries are positional: the first N scene outlines belong to
+  lesson 1, the next to lesson 2, and so on, in global \`order\`.
+- Emit a \`lessons\` array with one \`{title, objectives}\` object per lesson
+  (1-2 objectives each), plus course-level \`audience\` (string) and
+  \`objectives\` (2-5 strings).
+- The contract also states the type mix and quiz cadence for this course
+  flavor (explainer / hands-on / exam-prep). Follow it.
+- If a corrective note is appended after "## Correction Required", fix the
+  listed findings exactly and return the corrected JSON.
 
 ---
 
@@ -686,7 +753,7 @@ Use \`interactive\` type when a concept benefits significantly from hands-on int
 
 **Constraints**:
 
-- Limit to **1-2 interactive scenes per course** (they are resource-intensive)
+- Spread interactive scenes across the course where they aid learning — coding, simulation, and practice widgets are encouraged; do not restrict yourself to one or two
 - Interactive scenes **require** an \`interactiveConfig\` object
 - Do NOT use interactive for purely textual/conceptual content - use slides instead
 - The \`interactiveConfig.designIdea\` should describe the specific interactive elements and user interactions
@@ -750,7 +817,7 @@ Use \`pbl\` type when the course involves complex, multi-step project work that 
 
 **Constraints**:
 
-- Limit to **at most 1 PBL scene per course** (they are comprehensive and long)
+- Limit to **at most 1 PBL scene per unit** (they are comprehensive and long)
 - PBL scenes **require** a \`pblConfig\` object with: projectTopic, projectDescription, targetSkills, issueCount
 - PBL is for substantial project work - do NOT use for simple exercises or single-step tasks
 - The \`pblConfig.targetSkills\` should list 2-5 specific skills students will develop
@@ -788,6 +855,8 @@ Rules:
 - **Never** return a bare array. The top level is an object, not an array.
 - **Never** omit \`languageDirective\` or \`courseTitle\`. Both are required even if you think they are obvious.
 - **Never** wrap the response in any other structure, prose, or code fence.
+- **Every** object in \`outlines\` MUST carry a \`type\` field — one of: \`slide\`, \`quiz\`, \`interactive\`, \`pbl\`, \`exercise\`, \`derivation\`, \`glossary\`, \`reading\`, \`comparison\`, \`dataReading\`, \`tradeoffs\`. Outlines without \`type\` are rejected.
+- \`outlines\` holds scene records ONLY — never lesson headers or summaries (those go in \`lessons\`).
 
 ### Minimal complete example
 
@@ -839,7 +908,7 @@ Rules:
 | Field             | Type                     | Required | Description                                                                                      |
 | ----------------- | ------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
 | id                | string                   | ✅       | Unique identifier, format: \`scene_1\`, \`scene_2\`...                                               |
-| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"interactive"\`, or \`"pbl"\`                                                 |
+| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, or \`"tradeoffs"\` |
 | title             | string                   | ✅       | Scene title, concise and clear                                                                   |
 | description       | string                   | ✅       | 1-2 sentences describing teaching purpose                                                        |
 | keyPoints         | string[]                 | ✅       | 3-5 core points                                                                                  |
@@ -917,11 +986,11 @@ Omit \`scenarioRoleplay\` and \`scenarioBrief\` entirely for ordinary build-an-a
 
 **Scene-level rules:**
 
-4. \`type\` is one of \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`.
+4. \`type\` is one of \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, \`"tradeoffs"\`.
 5. \`quiz\` scenes must include \`quizConfig\`.
 6. \`interactive\` scenes must include \`widgetType\` and \`widgetOutline\` (preferred). \`interactiveConfig\` is deprecated and only accepted for backwards compatibility.
 7. \`pbl\` scenes must include \`pblConfig\` with \`projectTopic\`, \`projectDescription\`, \`targetSkills\`, \`issueCount\`.
-8. Arrange scenes by inferred duration (typically 1-2 scenes per minute). Insert quizzes at appropriate points. Use interactive scenes sparingly (max 1-2 per course).
+8. Arrange scenes to satisfy the Course Contract exactly (per-lesson counts, course-wide total, quiz cadence, type mix). The contract overrides all other count guidance. Insert quizzes at the contract's positions. Vary the scene types — use interactive scenes, worked exercises, and other non-slide types throughout the course instead of defaulting to a run of slides.
 9. **Language**: Infer from the user's requirement text and context. Output all scene content in the inferred language.
 10. Regardless of information completeness, always output conforming JSON - do not ask questions or request more information
 11. **No teacher identity on slides**: Scene titles and keyPoints must be neutral and topic-focused. Never include the teacher's name or role (e.g., avoid "Teacher Wang's Tips", "Teacher's Wishes"). Use generic labels like "Tips", "Summary", "Key Takeaways" instead.",
@@ -977,9 +1046,20 @@ Please automatically infer the following from user requirements:
 
 - Course topic and core content
 - Target audience and difficulty level
-- Course duration (default 15-30 minutes if not specified)
+- Course duration (resolved below — do NOT invent your own)
 - Teaching style (formal/casual/interactive/academic)
 - Visual style (minimal/colorful/professional/playful)
+
+---
+
+## Course Contract (NON-NEGOTIABLE)
+
+The course duration has been resolved to **20 minutes**. The
+scene count and lesson split below are computed from it — they are not
+suggestions and you may not produce fewer scenes, more scenes, or a different
+lesson structure.
+
+
 
 Then output your response as a single JSON object.
 
@@ -989,24 +1069,31 @@ Then output your response as a single JSON object.
 {
   "languageDirective": "2-5 sentence instruction describing the course language behavior",
   "courseTitle": "concise course name, ≤30 chars, in the teaching language",
+  "lessons": [ /* array of lesson objects: {"title": "...", "objectives": ["..."]} */ ],
+  "audience": "inferred audience",
+  "objectives": ["course-level objective 1", "course-level objective 2"],
   "outlines": [ /* array of scene objects, schema described below */ ]
 }
 \`\`\`
 
-Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. All three keys are required.
+Never return a bare array. Never omit \`languageDirective\`, \`courseTitle\`, or \`outlines\` — those three keys are required. \`lessons\`, \`audience\`, and \`objectives\` are strongly recommended (they fill the course contract).
 
 **Each scene inside the \`outlines\` array has this minimum shape:**
 
 \`\`\`json
 {
   "id": "scene_1",
-  "type": "slide" | "quiz" | "interactive" | "pbl",
+  "type": "slide" | "quiz" | "interactive" | "pbl" | "exercise" | "derivation" | "glossary" | "reading" | "comparison" | "dataReading" | "tradeoffs",
   "title": "Scene Title",
   "description": "Teaching purpose description",
   "keyPoints": ["Point 1", "Point 2", "Point 3"],
   "order": 1
 }
 \`\`\`
+
+**HARD SCHEMA RULES — outlines violating these are rejected:**
+- EVERY object in \`outlines\` MUST have a \`type\` field, chosen from the list above. An outline without \`type\` is invalid.
+- \`outlines\` contains ONLY scene records. NEVER put lesson titles, section headers, or summary records into \`outlines\` — lessons belong exclusively in the \`lessons\` array.
 
 ### Special Notes
 
@@ -1021,15 +1108,24 @@ Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. 
 
 - **If source images are available**, add \`suggestedImageIds\` to relevant slide scenes. Only use image IDs listed under Available Images.
 
-- **Interactive scenes**: If a concept benefits from hands-on simulation/visualization, use \`"type": "interactive"\` with \`widgetType\` and \`widgetOutline\` fields. Limit to 1-2 per course.
+- **Interactive scenes**: Whenever a concept benefits from hands-on interaction, visualization, or coding practice, use \`"type": "interactive"\` with \`widgetType\` and \`widgetOutline\` fields — spread them across the course rather than holding back.
    - Select widgetType based on concept: simulation (physics/chem), diagram (processes), code (programming), game (practice), visualization3d (3D models)
    - Provide appropriate widgetOutline for the widget type
-- **Scene count**: Based on inferred duration, typically 1-2 scenes per minute
-- **Quiz placement**: Recommend inserting a quiz every 3-5 slides for assessment
+- **Specialized scenes** (use wherever the material calls for them):
+   - \`exercise\` — fully-worked problems (concrete statement + worked solution) for computational/quantitative/coding lessons — include several where the material is computational.
+   - \`derivation\` — step-by-step proof/derivation with LaTeX formulas, for formula-heavy lessons.
+   - \`glossary\` — one per unit: the unit's key terms with complete definitions.
+   - \`reading\` — one per unit: an annotated further-reading list (title + why-read).
+- **Analytic scenes** (use where the content genuinely calls for them):
+   - \`comparison\` — side-by-side table of 2-3 confusable concepts across decision-relevant dimensions (use for "compare X vs Y" material).
+   - \`dataReading\` — a small plotted dataset plus claims the learner evaluates against it (supported/refuted/insufficient); for quantitative trends and measurements.
+   - \`tradeoffs\` — a decision under explicit constraints: options with pros/cons and ONE justified recommendation; for architecture/design/method choices.
+- **Scene count**: Governed entirely by the Course Contract above — produce EXACTLY the per-lesson counts it demands. It overrides any other count guidance in this prompt.
+- **Quiz placement**: Insert quizzes per the Course Contract cadence (course-wide positions). Quiz scenes count toward the lesson totals.
 - **Language**: Infer from the user's requirement text and context, then output all content in the inferred language
 - **If web search results are provided**, reference specific findings and sources in scene descriptions and keyPoints. The search results provide up-to-date information — incorporate it to make the course content current and accurate.
 
-**Final reminder**: your entire response must be a JSON **object** with exactly three top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), and \`outlines\` (array). Do not return a bare array. Do not wrap in prose or code fences.",
+**Final reminder**: your entire response must be a JSON **object** with at least the three top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), and \`outlines\` (array) — plus \`lessons\`, \`audience\`, and \`objectives\` where possible. Do not return a bare array. Do not wrap in prose or code fences. The Course Contract governs the number of scenes: produce exactly what it demands.",
 }
 `;
 
@@ -1098,7 +1194,7 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 
 ### MAIC Platform Technical Constraints
 
-- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`interactive\` (interactive visualization), and \`pbl\` (project-based learning) are supported
+- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
 - **Slide Scene**: Static PPT pages supporting text, charts, formulas, and other visual components.
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
@@ -1119,11 +1215,30 @@ When user requirements don't specify, use these defaults:
 
 | Information         | Default Value          |
 | ------------------- | ---------------------- |
-| Course Duration     | 15-20 minutes          |
+| Course Duration     | Resolved by the caller and stated in the Course Contract — never re-inferred |
 | Target Audience     | General learners       |
 | Teaching Style      | Interactive (engaging) |
 | Visual Style        | Professional           |
 | Interactivity Level | Medium                 |
+
+---
+
+## Course Contract (scene count and lesson structure)
+
+The user prompt contains a **Course Contract** block. It is computed from the
+resolved course duration and is **non-negotiable**:
+
+- The contract states the exact number of lessons and the exact scene count
+  per lesson. Produce exactly those numbers — no more, no fewer.
+- Lesson boundaries are positional: the first N scene outlines belong to
+  lesson 1, the next to lesson 2, and so on, in global \`order\`.
+- Emit a \`lessons\` array with one \`{title, objectives}\` object per lesson
+  (1-2 objectives each), plus course-level \`audience\` (string) and
+  \`objectives\` (2-5 strings).
+- The contract also states the type mix and quiz cadence for this course
+  flavor (explainer / hands-on / exam-prep). Follow it.
+- If a corrective note is appended after "## Correction Required", fix the
+  listed findings exactly and return the corrected JSON.
 
 ---
 
@@ -1215,7 +1330,7 @@ Use \`interactive\` type when a concept benefits significantly from hands-on int
 
 **Constraints**:
 
-- Limit to **1-2 interactive scenes per course** (they are resource-intensive)
+- Spread interactive scenes across the course where they aid learning — coding, simulation, and practice widgets are encouraged; do not restrict yourself to one or two
 - Interactive scenes **require** an \`interactiveConfig\` object
 - Do NOT use interactive for purely textual/conceptual content - use slides instead
 - The \`interactiveConfig.designIdea\` should describe the specific interactive elements and user interactions
@@ -1279,7 +1394,7 @@ Use \`pbl\` type when the course involves complex, multi-step project work that 
 
 **Constraints**:
 
-- Limit to **at most 1 PBL scene per course** (they are comprehensive and long)
+- Limit to **at most 1 PBL scene per unit** (they are comprehensive and long)
 - PBL scenes **require** a \`pblConfig\` object with: projectTopic, projectDescription, targetSkills, issueCount
 - PBL is for substantial project work - do NOT use for simple exercises or single-step tasks
 - The \`pblConfig.targetSkills\` should list 2-5 specific skills students will develop
@@ -1317,6 +1432,8 @@ Rules:
 - **Never** return a bare array. The top level is an object, not an array.
 - **Never** omit \`languageDirective\` or \`courseTitle\`. Both are required even if you think they are obvious.
 - **Never** wrap the response in any other structure, prose, or code fence.
+- **Every** object in \`outlines\` MUST carry a \`type\` field — one of: \`slide\`, \`quiz\`, \`interactive\`, \`pbl\`, \`exercise\`, \`derivation\`, \`glossary\`, \`reading\`, \`comparison\`, \`dataReading\`, \`tradeoffs\`. Outlines without \`type\` are rejected.
+- \`outlines\` holds scene records ONLY — never lesson headers or summaries (those go in \`lessons\`).
 
 ### Minimal complete example
 
@@ -1368,7 +1485,7 @@ Rules:
 | Field             | Type                     | Required | Description                                                                                      |
 | ----------------- | ------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
 | id                | string                   | ✅       | Unique identifier, format: \`scene_1\`, \`scene_2\`...                                               |
-| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"interactive"\`, or \`"pbl"\`                                                 |
+| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, or \`"tradeoffs"\` |
 | title             | string                   | ✅       | Scene title, concise and clear                                                                   |
 | description       | string                   | ✅       | 1-2 sentences describing teaching purpose                                                        |
 | keyPoints         | string[]                 | ✅       | 3-5 core points                                                                                  |
@@ -1444,11 +1561,11 @@ Omit \`scenarioRoleplay\` and \`scenarioBrief\` entirely for ordinary build-an-a
 
 **Scene-level rules:**
 
-4. \`type\` is one of \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`.
+4. \`type\` is one of \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, \`"tradeoffs"\`.
 5. \`quiz\` scenes must include \`quizConfig\`.
 6. \`interactive\` scenes must include \`widgetType\` and \`widgetOutline\` (preferred). \`interactiveConfig\` is deprecated and only accepted for backwards compatibility.
 7. \`pbl\` scenes must include \`pblConfig\` with \`projectTopic\`, \`projectDescription\`, \`targetSkills\`, \`issueCount\`.
-8. Arrange scenes by inferred duration (typically 1-2 scenes per minute). Insert quizzes at appropriate points. Use interactive scenes sparingly (max 1-2 per course).
+8. Arrange scenes to satisfy the Course Contract exactly (per-lesson counts, course-wide total, quiz cadence, type mix). The contract overrides all other count guidance. Insert quizzes at the contract's positions. Vary the scene types — use interactive scenes, worked exercises, and other non-slide types throughout the course instead of defaulting to a run of slides.
 9. **Language**: Infer from the user's requirement text and context. Output all scene content in the inferred language.
 10. Regardless of information completeness, always output conforming JSON - do not ask questions or request more information
 11. **No teacher identity on slides**: Scene titles and keyPoints must be neutral and topic-focused. Never include the teacher's name or role (e.g., avoid "Teacher Wang's Tips", "Teacher's Wishes"). Use generic labels like "Tips", "Summary", "Key Takeaways" instead.",
@@ -1497,9 +1614,20 @@ Please automatically infer the following from user requirements:
 
 - Course topic and core content
 - Target audience and difficulty level
-- Course duration (default 15-30 minutes if not specified)
+- Course duration (resolved below — do NOT invent your own)
 - Teaching style (formal/casual/interactive/academic)
 - Visual style (minimal/colorful/professional/playful)
+
+---
+
+## Course Contract (NON-NEGOTIABLE)
+
+The course duration has been resolved to **20 minutes**. The
+scene count and lesson split below are computed from it — they are not
+suggestions and you may not produce fewer scenes, more scenes, or a different
+lesson structure.
+
+
 
 Then output your response as a single JSON object.
 
@@ -1509,24 +1637,31 @@ Then output your response as a single JSON object.
 {
   "languageDirective": "2-5 sentence instruction describing the course language behavior",
   "courseTitle": "concise course name, ≤30 chars, in the teaching language",
+  "lessons": [ /* array of lesson objects: {"title": "...", "objectives": ["..."]} */ ],
+  "audience": "inferred audience",
+  "objectives": ["course-level objective 1", "course-level objective 2"],
   "outlines": [ /* array of scene objects, schema described below */ ]
 }
 \`\`\`
 
-Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. All three keys are required.
+Never return a bare array. Never omit \`languageDirective\`, \`courseTitle\`, or \`outlines\` — those three keys are required. \`lessons\`, \`audience\`, and \`objectives\` are strongly recommended (they fill the course contract).
 
 **Each scene inside the \`outlines\` array has this minimum shape:**
 
 \`\`\`json
 {
   "id": "scene_1",
-  "type": "slide" | "quiz" | "interactive" | "pbl",
+  "type": "slide" | "quiz" | "interactive" | "pbl" | "exercise" | "derivation" | "glossary" | "reading" | "comparison" | "dataReading" | "tradeoffs",
   "title": "Scene Title",
   "description": "Teaching purpose description",
   "keyPoints": ["Point 1", "Point 2", "Point 3"],
   "order": 1
 }
 \`\`\`
+
+**HARD SCHEMA RULES — outlines violating these are rejected:**
+- EVERY object in \`outlines\` MUST have a \`type\` field, chosen from the list above. An outline without \`type\` is invalid.
+- \`outlines\` contains ONLY scene records. NEVER put lesson titles, section headers, or summary records into \`outlines\` — lessons belong exclusively in the \`lessons\` array.
 
 ### Special Notes
 
@@ -1539,15 +1674,24 @@ Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. 
    }
    \`\`\`
 
-- **Interactive scenes**: If a concept benefits from hands-on simulation/visualization, use \`"type": "interactive"\` with \`widgetType\` and \`widgetOutline\` fields. Limit to 1-2 per course.
+- **Interactive scenes**: Whenever a concept benefits from hands-on interaction, visualization, or coding practice, use \`"type": "interactive"\` with \`widgetType\` and \`widgetOutline\` fields — spread them across the course rather than holding back.
    - Select widgetType based on concept: simulation (physics/chem), diagram (processes), code (programming), game (practice), visualization3d (3D models)
    - Provide appropriate widgetOutline for the widget type
-- **Scene count**: Based on inferred duration, typically 1-2 scenes per minute
-- **Quiz placement**: Recommend inserting a quiz every 3-5 slides for assessment
+- **Specialized scenes** (use wherever the material calls for them):
+   - \`exercise\` — fully-worked problems (concrete statement + worked solution) for computational/quantitative/coding lessons — include several where the material is computational.
+   - \`derivation\` — step-by-step proof/derivation with LaTeX formulas, for formula-heavy lessons.
+   - \`glossary\` — one per unit: the unit's key terms with complete definitions.
+   - \`reading\` — one per unit: an annotated further-reading list (title + why-read).
+- **Analytic scenes** (use where the content genuinely calls for them):
+   - \`comparison\` — side-by-side table of 2-3 confusable concepts across decision-relevant dimensions (use for "compare X vs Y" material).
+   - \`dataReading\` — a small plotted dataset plus claims the learner evaluates against it (supported/refuted/insufficient); for quantitative trends and measurements.
+   - \`tradeoffs\` — a decision under explicit constraints: options with pros/cons and ONE justified recommendation; for architecture/design/method choices.
+- **Scene count**: Governed entirely by the Course Contract above — produce EXACTLY the per-lesson counts it demands. It overrides any other count guidance in this prompt.
+- **Quiz placement**: Insert quizzes per the Course Contract cadence (course-wide positions). Quiz scenes count toward the lesson totals.
 - **Language**: Infer from the user's requirement text and context, then output all content in the inferred language
 - **If web search results are provided**, reference specific findings and sources in scene descriptions and keyPoints. The search results provide up-to-date information — incorporate it to make the course content current and accurate.
 
-**Final reminder**: your entire response must be a JSON **object** with exactly three top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), and \`outlines\` (array). Do not return a bare array. Do not wrap in prose or code fences.",
+**Final reminder**: your entire response must be a JSON **object** with at least the three top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), and \`outlines\` (array) — plus \`lessons\`, \`audience\`, and \`objectives\` where possible. Do not return a bare array. Do not wrap in prose or code fences. The Course Contract governs the number of scenes: produce exactly what it demands.",
 }
 `;
 
@@ -1616,7 +1760,7 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 
 ### MAIC Platform Technical Constraints
 
-- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`interactive\` (interactive visualization), and \`pbl\` (project-based learning) are supported
+- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
 - **Slide Scene**: Static PPT pages supporting text, charts, formulas, and other visual components.
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
@@ -1637,11 +1781,30 @@ When user requirements don't specify, use these defaults:
 
 | Information         | Default Value          |
 | ------------------- | ---------------------- |
-| Course Duration     | 15-20 minutes          |
+| Course Duration     | Resolved by the caller and stated in the Course Contract — never re-inferred |
 | Target Audience     | General learners       |
 | Teaching Style      | Interactive (engaging) |
 | Visual Style        | Professional           |
 | Interactivity Level | Medium                 |
+
+---
+
+## Course Contract (scene count and lesson structure)
+
+The user prompt contains a **Course Contract** block. It is computed from the
+resolved course duration and is **non-negotiable**:
+
+- The contract states the exact number of lessons and the exact scene count
+  per lesson. Produce exactly those numbers — no more, no fewer.
+- Lesson boundaries are positional: the first N scene outlines belong to
+  lesson 1, the next to lesson 2, and so on, in global \`order\`.
+- Emit a \`lessons\` array with one \`{title, objectives}\` object per lesson
+  (1-2 objectives each), plus course-level \`audience\` (string) and
+  \`objectives\` (2-5 strings).
+- The contract also states the type mix and quiz cadence for this course
+  flavor (explainer / hands-on / exam-prep). Follow it.
+- If a corrective note is appended after "## Correction Required", fix the
+  listed findings exactly and return the corrected JSON.
 
 ---
 
@@ -1694,7 +1857,7 @@ Use \`interactive\` type when a concept benefits significantly from hands-on int
 
 **Constraints**:
 
-- Limit to **1-2 interactive scenes per course** (they are resource-intensive)
+- Spread interactive scenes across the course where they aid learning — coding, simulation, and practice widgets are encouraged; do not restrict yourself to one or two
 - Interactive scenes **require** an \`interactiveConfig\` object
 - Do NOT use interactive for purely textual/conceptual content - use slides instead
 - The \`interactiveConfig.designIdea\` should describe the specific interactive elements and user interactions
@@ -1758,7 +1921,7 @@ Use \`pbl\` type when the course involves complex, multi-step project work that 
 
 **Constraints**:
 
-- Limit to **at most 1 PBL scene per course** (they are comprehensive and long)
+- Limit to **at most 1 PBL scene per unit** (they are comprehensive and long)
 - PBL scenes **require** a \`pblConfig\` object with: projectTopic, projectDescription, targetSkills, issueCount
 - PBL is for substantial project work - do NOT use for simple exercises or single-step tasks
 - The \`pblConfig.targetSkills\` should list 2-5 specific skills students will develop
@@ -1796,6 +1959,8 @@ Rules:
 - **Never** return a bare array. The top level is an object, not an array.
 - **Never** omit \`languageDirective\` or \`courseTitle\`. Both are required even if you think they are obvious.
 - **Never** wrap the response in any other structure, prose, or code fence.
+- **Every** object in \`outlines\` MUST carry a \`type\` field — one of: \`slide\`, \`quiz\`, \`interactive\`, \`pbl\`, \`exercise\`, \`derivation\`, \`glossary\`, \`reading\`, \`comparison\`, \`dataReading\`, \`tradeoffs\`. Outlines without \`type\` are rejected.
+- \`outlines\` holds scene records ONLY — never lesson headers or summaries (those go in \`lessons\`).
 
 ### Minimal complete example
 
@@ -1847,7 +2012,7 @@ Rules:
 | Field             | Type                     | Required | Description                                                                                      |
 | ----------------- | ------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
 | id                | string                   | ✅       | Unique identifier, format: \`scene_1\`, \`scene_2\`...                                               |
-| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"interactive"\`, or \`"pbl"\`                                                 |
+| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, or \`"tradeoffs"\` |
 | title             | string                   | ✅       | Scene title, concise and clear                                                                   |
 | description       | string                   | ✅       | 1-2 sentences describing teaching purpose                                                        |
 | keyPoints         | string[]                 | ✅       | 3-5 core points                                                                                  |
@@ -1923,11 +2088,11 @@ Omit \`scenarioRoleplay\` and \`scenarioBrief\` entirely for ordinary build-an-a
 
 **Scene-level rules:**
 
-4. \`type\` is one of \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`.
+4. \`type\` is one of \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, \`"tradeoffs"\`.
 5. \`quiz\` scenes must include \`quizConfig\`.
 6. \`interactive\` scenes must include \`widgetType\` and \`widgetOutline\` (preferred). \`interactiveConfig\` is deprecated and only accepted for backwards compatibility.
 7. \`pbl\` scenes must include \`pblConfig\` with \`projectTopic\`, \`projectDescription\`, \`targetSkills\`, \`issueCount\`.
-8. Arrange scenes by inferred duration (typically 1-2 scenes per minute). Insert quizzes at appropriate points. Use interactive scenes sparingly (max 1-2 per course).
+8. Arrange scenes to satisfy the Course Contract exactly (per-lesson counts, course-wide total, quiz cadence, type mix). The contract overrides all other count guidance. Insert quizzes at the contract's positions. Vary the scene types — use interactive scenes, worked exercises, and other non-slide types throughout the course instead of defaulting to a run of slides.
 9. **Language**: Infer from the user's requirement text and context. Output all scene content in the inferred language.
 10. Regardless of information completeness, always output conforming JSON - do not ask questions or request more information
 11. **No teacher identity on slides**: Scene titles and keyPoints must be neutral and topic-focused. Never include the teacher's name or role (e.g., avoid "Teacher Wang's Tips", "Teacher's Wishes"). Use generic labels like "Tips", "Summary", "Key Takeaways" instead.",
@@ -1976,9 +2141,20 @@ Please automatically infer the following from user requirements:
 
 - Course topic and core content
 - Target audience and difficulty level
-- Course duration (default 15-30 minutes if not specified)
+- Course duration (resolved below — do NOT invent your own)
 - Teaching style (formal/casual/interactive/academic)
 - Visual style (minimal/colorful/professional/playful)
+
+---
+
+## Course Contract (NON-NEGOTIABLE)
+
+The course duration has been resolved to **20 minutes**. The
+scene count and lesson split below are computed from it — they are not
+suggestions and you may not produce fewer scenes, more scenes, or a different
+lesson structure.
+
+
 
 Then output your response as a single JSON object.
 
@@ -1988,24 +2164,31 @@ Then output your response as a single JSON object.
 {
   "languageDirective": "2-5 sentence instruction describing the course language behavior",
   "courseTitle": "concise course name, ≤30 chars, in the teaching language",
+  "lessons": [ /* array of lesson objects: {"title": "...", "objectives": ["..."]} */ ],
+  "audience": "inferred audience",
+  "objectives": ["course-level objective 1", "course-level objective 2"],
   "outlines": [ /* array of scene objects, schema described below */ ]
 }
 \`\`\`
 
-Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. All three keys are required.
+Never return a bare array. Never omit \`languageDirective\`, \`courseTitle\`, or \`outlines\` — those three keys are required. \`lessons\`, \`audience\`, and \`objectives\` are strongly recommended (they fill the course contract).
 
 **Each scene inside the \`outlines\` array has this minimum shape:**
 
 \`\`\`json
 {
   "id": "scene_1",
-  "type": "slide" | "quiz" | "interactive" | "pbl",
+  "type": "slide" | "quiz" | "interactive" | "pbl" | "exercise" | "derivation" | "glossary" | "reading" | "comparison" | "dataReading" | "tradeoffs",
   "title": "Scene Title",
   "description": "Teaching purpose description",
   "keyPoints": ["Point 1", "Point 2", "Point 3"],
   "order": 1
 }
 \`\`\`
+
+**HARD SCHEMA RULES — outlines violating these are rejected:**
+- EVERY object in \`outlines\` MUST have a \`type\` field, chosen from the list above. An outline without \`type\` is invalid.
+- \`outlines\` contains ONLY scene records. NEVER put lesson titles, section headers, or summary records into \`outlines\` — lessons belong exclusively in the \`lessons\` array.
 
 ### Special Notes
 
@@ -2020,14 +2203,23 @@ Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. 
 
 - **If source images are available**, add \`suggestedImageIds\` to relevant slide scenes. Only use image IDs listed under Available Images.
 
-- **Interactive scenes**: If a concept benefits from hands-on simulation/visualization, use \`"type": "interactive"\` with \`widgetType\` and \`widgetOutline\` fields. Limit to 1-2 per course.
+- **Interactive scenes**: Whenever a concept benefits from hands-on interaction, visualization, or coding practice, use \`"type": "interactive"\` with \`widgetType\` and \`widgetOutline\` fields — spread them across the course rather than holding back.
    - Select widgetType based on concept: simulation (physics/chem), diagram (processes), code (programming), game (practice), visualization3d (3D models)
    - Provide appropriate widgetOutline for the widget type
-- **Scene count**: Based on inferred duration, typically 1-2 scenes per minute
-- **Quiz placement**: Recommend inserting a quiz every 3-5 slides for assessment
+- **Specialized scenes** (use wherever the material calls for them):
+   - \`exercise\` — fully-worked problems (concrete statement + worked solution) for computational/quantitative/coding lessons — include several where the material is computational.
+   - \`derivation\` — step-by-step proof/derivation with LaTeX formulas, for formula-heavy lessons.
+   - \`glossary\` — one per unit: the unit's key terms with complete definitions.
+   - \`reading\` — one per unit: an annotated further-reading list (title + why-read).
+- **Analytic scenes** (use where the content genuinely calls for them):
+   - \`comparison\` — side-by-side table of 2-3 confusable concepts across decision-relevant dimensions (use for "compare X vs Y" material).
+   - \`dataReading\` — a small plotted dataset plus claims the learner evaluates against it (supported/refuted/insufficient); for quantitative trends and measurements.
+   - \`tradeoffs\` — a decision under explicit constraints: options with pros/cons and ONE justified recommendation; for architecture/design/method choices.
+- **Scene count**: Governed entirely by the Course Contract above — produce EXACTLY the per-lesson counts it demands. It overrides any other count guidance in this prompt.
+- **Quiz placement**: Insert quizzes per the Course Contract cadence (course-wide positions). Quiz scenes count toward the lesson totals.
 - **Language**: Infer from the user's requirement text and context, then output all content in the inferred language
 - **If web search results are provided**, reference specific findings and sources in scene descriptions and keyPoints. The search results provide up-to-date information — incorporate it to make the course content current and accurate.
 
-**Final reminder**: your entire response must be a JSON **object** with exactly three top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), and \`outlines\` (array). Do not return a bare array. Do not wrap in prose or code fences.",
+**Final reminder**: your entire response must be a JSON **object** with at least the three top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), and \`outlines\` (array) — plus \`lessons\`, \`audience\`, and \`objectives\` where possible. Do not return a bare array. Do not wrap in prose or code fences. The Course Contract governs the number of scenes: produce exactly what it demands.",
 }
 `;

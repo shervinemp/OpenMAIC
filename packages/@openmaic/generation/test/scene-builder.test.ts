@@ -58,11 +58,14 @@ describe('buildCompleteScene', () => {
     ['comparison', comparisonOutline],
     ['tradeoffs', tradeoffsOutline],
     ['dataReading', dataReadingOutline],
-  ] as const)('assembles a %s outline with rendered slide elements into a slide scene', (_kind, outline) => {
-    const scene = buildCompleteScene(outline(), content, [], 'stage-1');
-    expect(scene).not.toBeNull();
-    expect(scene?.type).toBe('slide');
-    expect(scene?.outlineId).toBe(outline().id);
-    expect(validateScene(scene)).toEqual({ valid: true });
-  });
+  ] as const)(
+    'assembles a %s outline with rendered slide elements into a slide scene',
+    (_kind, outline) => {
+      const scene = buildCompleteScene(outline(), content, [], 'stage-1');
+      expect(scene).not.toBeNull();
+      expect(scene?.type).toBe('slide');
+      expect(scene?.outlineId).toBe(outline().id);
+      expect(validateScene(scene)).toEqual({ valid: true });
+    },
+  );
 });

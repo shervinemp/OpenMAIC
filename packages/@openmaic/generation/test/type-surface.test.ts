@@ -47,12 +47,7 @@ type _BuildKeys = Assert<Equal<keyof BuildCompleteSceneOptions, 'sceneId'>>;
 type _PBLInputKeys = Assert<
   Equal<
     keyof PBLPlannerV2Input,
-    | 'outline'
-    | 'courseContext'
-    | 'user'
-    | 'priorQuizResults'
-    | 'targetLanguage'
-    | 'languageModel'
+    'outline' | 'courseContext' | 'user' | 'priorQuizResults' | 'targetLanguage' | 'languageModel'
   >
 >;
 

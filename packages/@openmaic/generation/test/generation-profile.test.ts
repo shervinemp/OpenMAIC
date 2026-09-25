@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { readGenerationProfile, scaleDepthFloor } from '../src/profile';
+import { readGenerationProfile, scaleDepthFloor } from '../src/profile.js';
 
 /**
  * `readGenerationProfile` reads env per call (no module cache), so each case

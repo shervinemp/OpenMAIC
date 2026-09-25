@@ -319,7 +319,7 @@ Rules:
 | Field             | Type                     | Required | Description                                                                                      |
 | ----------------- | ------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
 | id                | string                   | ✅       | Unique identifier, format: `scene_1`, `scene_2`...                                               |
-| type              | string                   | ✅       | `"slide"`, `"quiz"`, `"interactive"`, `"pbl"`, `"exercise"`, `"derivation"`, `"glossary"`, or `"reading"`                                                 |
+| type              | string                   | ✅       | `"slide"`, `"quiz"`, `"interactive"`, `"pbl"`, `"exercise"`, `"derivation"`, `"glossary"`, `"reading"`, `"comparison"`, `"dataReading"`, or `"tradeoffs"` |
 | title             | string                   | ✅       | Scene title, concise and clear                                                                   |
 | description       | string                   | ✅       | 1-2 sentences describing teaching purpose                                                        |
 | keyPoints         | string[]                 | ✅       | 3-5 core points                                                                                  |
@@ -397,7 +397,7 @@ Omit `scenarioRoleplay` and `scenarioBrief` entirely for ordinary build-an-artef
 
 **Scene-level rules:**
 
-4. `type` is one of `"slide"`, `"quiz"`, `"interactive"`, `"pbl"`, `"exercise"`, `"derivation"`, `"glossary"`, `"reading"`.
+4. `type` is one of `"slide"`, `"quiz"`, `"interactive"`, `"pbl"`, `"exercise"`, `"derivation"`, `"glossary"`, `"reading"`, `"comparison"`, `"dataReading"`, `"tradeoffs"`.
 5. `quiz` scenes must include `quizConfig`.
 6. `interactive` scenes must include `widgetType` and `widgetOutline` (preferred). `interactiveConfig` is deprecated and only accepted for backwards compatibility.
 7. `pbl` scenes must include `pblConfig` with `projectTopic`, `projectDescription`, `targetSkills`, `issueCount`.
