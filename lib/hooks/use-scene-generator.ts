@@ -80,18 +80,14 @@ async function claimGenerationLease(stageId: string): Promise<(() => void) | nul
   });
   return new Promise<(() => void) | null>((resolveOuter) => {
     void navigator.locks
-      .request(
-        `openmaic-generate:${stageId}`,
-        { ifAvailable: true },
-        (lock: unknown) => {
-          if (!lock) {
-            resolveOuter(null);
-            return undefined;
-          }
-          resolveOuter(() => release());
-          return parked as unknown as Promise<void>;
-        },
-      )
+      .request(`openmaic-generate:${stageId}`, { ifAvailable: true }, (lock: unknown) => {
+        if (!lock) {
+          resolveOuter(null);
+          return undefined;
+        }
+        resolveOuter(() => release());
+        return parked as unknown as Promise<void>;
+      })
       .catch((error) => {
         log.error('Generation lease request failed:', error);
         resolveOuter(() => release());
@@ -350,7 +346,8 @@ function attachActionsSourceHash(
   } as Scene;
 }
 
-interface TTSApiResponse {  success?: boolean;
+interface TTSApiResponse {
+  success?: boolean;
   base64?: string;
   format?: string;
   error?: string;
@@ -730,9 +727,7 @@ export async function generateTTSForScene(
   }
   const targets = onlyActionIds
     ? speechActions.filter((action) =>
-        onlyActionIds.some(
-          (id) => action.id === id || action.id.startsWith(`${id}_tts_`),
-        ),
+        onlyActionIds.some((id) => action.id === id || action.id.startsWith(`${id}_tts_`)),
       )
     : speechActions;
   if (targets.length === 0) {
@@ -747,9 +742,7 @@ export async function generateTTSForScene(
   // On any failure, these are restored verbatim — a failed pass can never
   // strip audio the deck already had, and healthy actions outside the target
   // set are invisible to this function's failure handling by construction.
-  const previousTargetIds = new Map(
-    targets.map((action) => [action.id, action.audioId] as const),
-  );
+  const previousTargetIds = new Map(targets.map((action) => [action.id, action.audioId] as const));
   /**
    * Actions holding retained bytes rather than a fresh allocation.
    *
@@ -766,21 +759,6 @@ export async function generateTTSForScene(
   // Scene order keeps the provider request correlation label unique. Storage
   // identity is allocated by the pool and is never derived from this value.
   const sceneOrder = scene.order;
-
-  /**
-   * Undo this scene's narration, keeping whatever a rollback cannot own.
-   *
-   * Everything in `freshAllocations` was minted for this scene and nothing else
-   * holds it, so its local copy goes. A retained refusal is the exception, and
-   * the only one.
-   */
-  const rollBackFreshNarration = async (): Promise<void> => {
-    await removeFreshTtsAllocations(freshAllocations);
-    for (const action of speechActions) {
-      if (retainedRefusals.has(action)) continue;
-      delete action.audioId;
-    }
-  };
 
   // Generate + store one action's audio. Failures are counted, not thrown, so
   // one bad clip never aborts the rest of the scene.
@@ -973,7 +951,8 @@ export async function drainPendingSceneTTS(
   return restored;
 }
 
-export interface UseSceneGeneratorOptions {  onSceneGenerated?: (scene: Scene, index: number) => void;
+export interface UseSceneGeneratorOptions {
+  onSceneGenerated?: (scene: Scene, index: number) => void;
   onSceneFailed?: (outline: SceneOutline, error: string) => void;
   /** TTS demotion: audio failed but the scene was kept (fill phase retryable). */
   onSceneTtsFailed?: (outline: SceneOutline, error: string) => void;
@@ -1042,7 +1021,10 @@ interface MaterialPhaseDescriptor {
    * repair mode; the batch keeps its global parallel enqueue).
    */
   enabled: (ctx: { mode: OutlineJobMode }) => boolean;
-  run: (state: OutlineJobRunState, input: OutlineJobInput) => Promise<{
+  run: (
+    state: OutlineJobRunState,
+    input: OutlineJobInput,
+  ) => Promise<{
     status: 'done' | 'failed';
     error?: string;
   }>;
@@ -1090,7 +1072,8 @@ function semanticPhaseAttempts(outlineId: string): SemanticPhaseAttempts {
  */
 const SCENE_KEEPING_PHASES: ReadonlySet<MaterialPhaseKey> = new Set(['tts', 'media', 'semantics']);
 
-const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [  {
+const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
+  {
     key: 'content',
     enabled: () => true,
     queueOnFailure: true,
@@ -1136,7 +1119,8 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [  {
             );
             return {
               status: 'failed',
-              error: 'layout repair failed: ' + (layout.repairError || 'unresolved placement findings'),
+              error:
+                'layout repair failed: ' + (layout.repairError || 'unresolved placement findings'),
             };
           }
           if (layout.repaired || layout.clamped > 0) {
@@ -1299,12 +1283,11 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [  {
         stageId,
         signal,
         { repair: true },
-      ).catch(
-        (err: unknown) =>
-          log.warn(
-            `Media repair enqueue for outline ${JSON.stringify(input.outline.id)} failed:`,
-            err instanceof Error ? err.message : err,
-          ),
+      ).catch((err: unknown) =>
+        log.warn(
+          `Media repair enqueue for outline ${JSON.stringify(input.outline.id)} failed:`,
+          err instanceof Error ? err.message : err,
+        ),
       );
       return { status: 'done' };
     },
@@ -1336,7 +1319,8 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [  {
       const provenanceFixed = stripSourceProvenance(scene as never);
       const deadAnchorsFixed = stripDeadActionAnchors(scene as never);
       const residual = sceneContentFindings(scene as never).filter(
-        (finding) => !(finding.kind === 'provenance/source-artifact' && provenanceFixed > 0) &&
+        (finding) =>
+          !(finding.kind === 'provenance/source-artifact' && provenanceFixed > 0) &&
           !(finding.kind === 'action/dead-element-reference' && deadAnchorsFixed > 0),
       );
       const broken = residual.filter((finding) => finding.severity === 'error');
@@ -1452,7 +1436,9 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       // Cross-tab lease: exactly one tab per stage resumes generation.
       const generationLease = await claimGenerationLease(stage.id);
       if (generationLease === null) {
-        log.info(`Another browser tab is already driving generation for ${stage.id}; skipping duplicate resume`);
+        log.info(
+          `Another browser tab is already driving generation for ${stage.id}; skipping duplicate resume`,
+        );
         store.getState().setGenerationStatus('idle');
         store.getState().setGeneratingOutlines([]);
         generatingRef.current = false;
@@ -1869,11 +1855,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           // A fill/curation failure (tts/media/semantics) still produced a
           // playable scene: land it, so the retry card repairs the missing
           // row instead of re-paying content + actions on the next attempt.
-          if (
-            sceneKept &&
-            jobResult.scene &&
-            store.getState().generationEpoch === retryEpoch
-          ) {
+          if (sceneKept && jobResult.scene && store.getState().generationEpoch === retryEpoch) {
             removeGeneratingOutline();
             useStageStore.getState().addScene(jobResult.scene);
           }

@@ -1034,10 +1034,13 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       return () => {
         cancelled = true;
         clearAutoAdvanceTimer();
-        // Stop the engine this closure built even if the async init was
-        // between its cancelled checks when cleanup fires (never
-        // engineRef.current — a fast remount may already have replaced it).
-        void Promise.resolve().then(() => sceneEngine?.stop());
+        // A registered engine is stopped by whoever replaces it (the next
+        // scene's init) or by the unmount teardown; stopping it here too
+        // double-stopped it. Only an engine this closure built but never
+        // registered (the async init was between its cancelled checks) is
+        // ours to stop — never engineRef.current, which a fast remount may
+        // already have replaced.
+        if (sceneEngine && engineRef.current !== sceneEngine) sceneEngine.stop();
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps -- Only re-run when scene changes, functions are stable refs
     }, [currentScene]);
@@ -1731,7 +1734,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           onSceneSelect={gatedSceneSwitch}
           onRetryOutline={onRetryOutline}
           onResumeGeneration={onResumeGeneration}
-          onSkipOutline={onSkipOutline ?? ((outlineId) => useStageStore.getState().skipFailedOutline(outlineId))}
+          onSkipOutline={
+            onSkipOutline ?? ((outlineId) => useStageStore.getState().skipFailedOutline(outlineId))
+          }
         />
 
         {/* Main Content Area */}

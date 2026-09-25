@@ -192,12 +192,10 @@ export class HttpDocumentStore<
         const details = errorBody?.error?.details as
           | { storedUpdatedAt?: unknown; incomingUpdatedAt?: unknown }
           | undefined;
-        const storedUpdatedAt = typeof details?.storedUpdatedAt === 'number'
-          ? details.storedUpdatedAt
-          : NaN;
-        const incomingUpdatedAt = typeof details?.incomingUpdatedAt === 'number'
-          ? details.incomingUpdatedAt
-          : NaN;
+        const storedUpdatedAt =
+          typeof details?.storedUpdatedAt === 'number' ? details.storedUpdatedAt : NaN;
+        const incomingUpdatedAt =
+          typeof details?.incomingUpdatedAt === 'number' ? details.incomingUpdatedAt : NaN;
         throw new DocumentLostUpdateError(
           versionErrorStageId,
           storedUpdatedAt,
@@ -294,8 +292,15 @@ export class HttpDocumentStore<
   }
 
   async putPhaseStates(
-    stageId: string,
-    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+    _stageId: string,
+    _entries: ReadonlyArray<{
+      outlineId: string;
+      phase: string;
+      status: string;
+      attempts: number;
+      updatedAt: number;
+      error?: string;
+    }>,
   ): Promise<void> {
     // Job-envelope phase truth is a maintenance-tier concept on backends the
     // HTTP document routes do not model; callers (the classroom pipelines)

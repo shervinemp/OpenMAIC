@@ -191,7 +191,11 @@ export function extractSlideTexts(elements: PPTElement[]): {
       // feeds the example-evidence count.
       const code = element as { code?: unknown; latex?: unknown };
       const body =
-        typeof code.code === 'string' ? code.code : typeof code.latex === 'string' ? code.latex : '';
+        typeof code.code === 'string'
+          ? code.code
+          : typeof code.latex === 'string'
+            ? code.latex
+            : '';
       if (body.trim()) codeBodies.push(body.trim());
     }
   }
@@ -257,9 +261,7 @@ export function validateSlideDepth(
     }
   }
   // Code/formula blocks contribute example evidence ONLY — never prose stats.
-  for (const body of codeBodies) {
-    exampleCount += 1;
-  }
+  exampleCount += codeBodies.length;
 
   const findings: string[] = [];
 
@@ -346,7 +348,10 @@ export function validateQuizDepth(
 
   if (retrievalContext) {
     const combinedText = questions
-      .map((q) => `${q.question} ${q.analysis ?? ''} ${(q.options ?? []).map((o) => o.label).join(' ')}`)
+      .map(
+        (q) =>
+          `${q.question} ${q.analysis ?? ''} ${(q.options ?? []).map((o) => o.label).join(' ')}`,
+      )
       .join(' ');
     findings.push(...citationFindings(combinedText, retrievalContext, floor.minCitations));
   }
@@ -418,7 +423,11 @@ export function validateExerciseDepth(
       .map((p) => `${p.statement} ${p.hint ?? ''} ${p.solution} ${p.analysis ?? ''}`)
       .join(' ');
     findings.push(
-      ...citationFindings(combinedText, options.retrievalContext, scaledCourseFloor(depthLevel).minCitations),
+      ...citationFindings(
+        combinedText,
+        options.retrievalContext,
+        scaledCourseFloor(depthLevel).minCitations,
+      ),
     );
   }
 
@@ -445,7 +454,9 @@ export function validateDerivationDepth(
       findings.push(`derivation step "${step.id}" is missing the latex formula`);
     }
     if (!step.explanation?.trim()) {
-      findings.push(`derivation step "${step.id}" is missing the explanation of why the step holds`);
+      findings.push(
+        `derivation step "${step.id}" is missing the explanation of why the step holds`,
+      );
     } else if (isCaptionText(stripHtml(step.explanation))) {
       findings.push(
         `derivation step "${step.id}" explanation is a fragment ("${step.explanation.slice(0, 60)}") — write a complete sentence`,
@@ -456,17 +467,18 @@ export function validateDerivationDepth(
   if (options.retrievalContext) {
     const combinedText = steps.map((s) => `${s.claim ?? ''} ${s.explanation}`).join(' ');
     findings.push(
-      ...citationFindings(combinedText, options.retrievalContext, scaledCourseFloor(depthLevel).minCitations),
+      ...citationFindings(
+        combinedText,
+        options.retrievalContext,
+        scaledCourseFloor(depthLevel).minCitations,
+      ),
     );
   }
 
   return blankFindingsReport(complete.length, findings);
 }
 
-export function validateGlossaryDepth(
-  outline: SceneOutline,
-  terms: GlossaryTerm[],
-): DepthReport {
+export function validateGlossaryDepth(outline: SceneOutline, terms: GlossaryTerm[]): DepthReport {
   const depthLevel = resolveDepthLevel(outline.depthLevel);
   const floor = scaledSpecialtyFloor(depthLevel);
   const findings: string[] = [];
@@ -571,7 +583,11 @@ export function validateComparisonDepth(
       .concat(content.takeaways ?? [])
       .join(' ');
     findings.push(
-      ...citationFindings(combinedText, options.retrievalContext, scaledCourseFloor(depthLevel).minCitations),
+      ...citationFindings(
+        combinedText,
+        options.retrievalContext,
+        scaledCourseFloor(depthLevel).minCitations,
+      ),
     );
   }
 
@@ -596,7 +612,10 @@ export function validateDataReadingDepth(
   }
   for (const s of series) {
     if (!s.name?.trim()) findings.push(`a data series is missing its name`);
-    if ((s.points?.length ?? 0) > 0 && (s.points ?? []).some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) {
+    if (
+      (s.points?.length ?? 0) > 0 &&
+      (s.points ?? []).some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))
+    ) {
       findings.push(`data series "${s.name}" has a non-numeric point`);
     }
   }
@@ -608,9 +627,7 @@ export function validateDataReadingDepth(
   const validVerdicts = new Set(['supported', 'refuted', 'insufficient']);
   const completeClaims = (content.claims ?? []).filter(
     (claim) =>
-      claim.statement?.trim() &&
-      validVerdicts.has(claim.verdict) &&
-      claim.explanation?.trim(),
+      claim.statement?.trim() && validVerdicts.has(claim.verdict) && claim.explanation?.trim(),
   );
   if (completeClaims.length < floor.minDataClaims) {
     findings.push(
@@ -619,7 +636,9 @@ export function validateDataReadingDepth(
   }
   for (const claim of content.claims ?? []) {
     if (claim.statement?.trim() && !validVerdicts.has(claim.verdict)) {
-      findings.push(`claim "${claim.statement.slice(0, 60)}" has verdict "${String(claim.verdict)}" - use supported / refuted / insufficient`);
+      findings.push(
+        `claim "${claim.statement.slice(0, 60)}" has verdict "${String(claim.verdict)}" - use supported / refuted / insufficient`,
+      );
     }
     if (claim.explanation?.trim() && !/\d/.test(stripHtml(claim.explanation))) {
       findings.push(
@@ -633,7 +652,11 @@ export function validateDataReadingDepth(
       .map((claim) => `${claim.statement} ${claim.explanation}`)
       .join(' ');
     findings.push(
-      ...citationFindings(combinedText, options.retrievalContext, scaledCourseFloor(depthLevel).minCitations),
+      ...citationFindings(
+        combinedText,
+        options.retrievalContext,
+        scaledCourseFloor(depthLevel).minCitations,
+      ),
     );
   }
 
@@ -657,7 +680,9 @@ export function validateTradeoffsDepth(
     );
   }
   if ((content.constraints ?? []).filter((c) => c?.trim()).length === 0) {
-    findings.push('trade-off scene lists no constraints - options must be judged against explicit limits');
+    findings.push(
+      'trade-off scene lists no constraints - options must be judged against explicit limits',
+    );
   }
 
   const options_ = content.options ?? [];
@@ -701,7 +726,11 @@ export function validateTradeoffsDepth(
       recommendation?.justification ?? '',
     ].join(' ');
     findings.push(
-      ...citationFindings(combinedText, options.retrievalContext, scaledCourseFloor(depthLevel).minCitations),
+      ...citationFindings(
+        combinedText,
+        options.retrievalContext,
+        scaledCourseFloor(depthLevel).minCitations,
+      ),
     );
   }
 
@@ -770,7 +799,11 @@ export function validateFreeResponseDepth(
       content.sampleAnswer,
     ].join(' ');
     findings.push(
-      ...citationFindings(combinedText, options.retrievalContext, scaledCourseFloor(depthLevel).minCitations),
+      ...citationFindings(
+        combinedText,
+        options.retrievalContext,
+        scaledCourseFloor(depthLevel).minCitations,
+      ),
     );
   }
 

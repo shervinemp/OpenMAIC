@@ -12,7 +12,6 @@ import type {
   WidgetConfigBase,
   WidgetType,
 } from '@openmaic/dsl';
-import type { PBLProjectV2 } from './pbl/types.js';
 
 /** AI-generated slide payload before it is assembled into a scene. */
 export interface GeneratedSlideContent {
@@ -43,7 +42,7 @@ export interface GeneratedInteractiveContent {
 
 /** AI-generated PBL payload. The persisted project contract is owned by the DSL. */
 export interface GeneratedPBLContent {
-  projectV2?: PBLProjectV2;
+  projectV2: PBLProject;
 }
 
 export type GeneratedSceneContent =
@@ -60,10 +59,10 @@ export type CompleteScene = Scene<Action, CompleteSceneContent> & { outlineId: s
 /** Widget configuration emitted by the model and normalized by the scene layer. */
 export type WidgetConfig = WidgetConfigBase;
 
-// ==================== Specialty scene content (Phase 2 15.4b) ====================
+// ==================== Specialty scene content (Phase 2 §15.4b) ====================
 // Structured payload types for the four specialty scene kinds. Each kind has
 // a count floor that scales with the course depth level (constants.ts); the
-// scene-type set stays closed - but the depth contract for these kinds is
+// scene-type set stays closed — but the depth contract for these kinds is
 // enforced on the structured payload.
 
 /**
@@ -86,8 +85,8 @@ export interface GeneratedExerciseContent {
 }
 
 /**
- * One derivation/proof step. latex is the rendered formula; xplanation
- * is the prose that motivates the step. claim is the optional goal being
+ * One derivation/proof step. `latex` is the rendered formula; `explanation`
+ * is the prose that motivates the step. `claim` is the optional goal being
  * established.
  */
 export interface DerivationStep {
@@ -199,7 +198,6 @@ export interface GeneratedTradeoffsContent {
     justification: string;
   };
 }
-
 
 export interface RubricCriterion {
   id: string;
