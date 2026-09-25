@@ -67,6 +67,14 @@
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js"
     },
+    "./server/file-document-store": {
+      "types": "./dist/server/file-document-store.d.ts",
+      "import": "./dist/server/file-document-store.js"
+    },
+    "./server/file-runtime-store": {
+      "types": "./dist/server/file-runtime-store.d.ts",
+      "import": "./dist/server/file-runtime-store.js"
+    },
     "./server/reference": {
       "types": "./dist/server/reference.d.ts",
       "import": "./dist/server/reference.js"
@@ -74,6 +82,14 @@
     "./pg-json": {
       "types": "./dist/pg-json.d.ts",
       "import": "./dist/pg-json.js"
+    },
+    "./server/file-document-store": {
+      "types": "./dist/server/file-document-store.d.ts",
+      "import": "./dist/server/file-document-store.js"
+    },
+    "./server/file-runtime-store": {
+      "types": "./dist/server/file-runtime-store.d.ts",
+      "import": "./dist/server/file-runtime-store.js"
     }
   },
   "files": [

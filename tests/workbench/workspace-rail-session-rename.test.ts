@@ -16,6 +16,12 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { RAIL_TAB_STORAGE_KEY } from '@/lib/workbench/workspace-rail-tab';
 
+// The rail renders the whole session list through React in jsdom; this file
+// exceeds the 5s default only when the suite runs fully parallel on a loaded
+// machine (it passes standalone in well under half that). Raise this file's
+// ceiling so the suite is not flake-prone on slower CI runners.
+vi.setConfig({ testTimeout: 30_000 });
+
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
 }));

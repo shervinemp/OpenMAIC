@@ -424,4 +424,57 @@ describe('model-routes', () => {
     });
     expect(getUserStageRoute(routes, 'chat-adapter')).toBeUndefined();
   });
+
+  describe('thinking presets (OPENMAIC_THINKING_PRESET)', () => {
+    beforeEach(() => {
+      delete process.env.OPENMAIC_THINKING_PRESET;
+    });
+    afterEach(() => {
+      delete process.env.OPENMAIC_THINKING_PRESET;
+    });
+
+    it('unset preset falls to the balanced profile default (lean thinking)', async () => {
+      delete process.env.OPENMAIC_GENERATION_PROFILE;
+      const { presetThinkingFor } = await import('@/lib/server/model-routes');
+      expect(presetThinkingFor('scene-content')).toEqual({ enabled: false });
+      expect(presetThinkingFor('scene-outlines-stream')).toEqual({
+        enabled: true,
+        budgetTokens: 6000,
+      });
+    });
+
+    it('quality preset resolves to provider defaults (no thinking override)', async () => {
+      process.env.OPENMAIC_THINKING_PRESET = 'quality';
+      const { presetThinkingFor } = await import('@/lib/server/model-routes');
+      expect(presetThinkingFor('scene-content')).toBeUndefined();
+      expect(presetThinkingFor('scene-outlines-stream')).toBeUndefined();
+    });
+
+    it('apply the preset table exactly, plus unknown values warn and fall through', async () => {
+      const warn = vi.fn();
+      vi.doMock('@/lib/logger', () => ({
+        createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+      }));
+      process.env.OPENMAIC_THINKING_PRESET = 'not-a-preset';
+      const mod = await import('@/lib/server/model-routes');
+      // An invalid explicit preset warns and drops to the GENERATION PROFILE's
+      // thinking default (here .env.local's OPENMAIC_THINKING_PRESET may still
+      // leak 'lean', so assert the merged behavior, not a bare undefined).
+      delete process.env.OPENMAIC_GENERATION_PROFILE;
+      mod.presetThinkingFor('scene-content');
+      expect(warn).toHaveBeenCalled();
+
+      process.env.OPENMAIC_THINKING_PRESET = 'lean';
+      expect(mod.presetThinkingFor('scene-content')).toEqual({ enabled: false });
+      expect(mod.presetThinkingFor('scene-actions')).toEqual({ enabled: false });
+      expect(mod.presetThinkingFor('exam-grading')).toEqual({
+        enabled: true,
+        budgetTokens: 4000,
+      });
+      // composite fallback inherits the parent's preset entry
+      expect(mod.presetThinkingFor('scene-content:quiz')).toEqual({ enabled: false });
+      // unlisted judgment stage (e.g. driver chats) keeps its provider default
+      expect(mod.presetThinkingFor('maic-agent-driver')).toBeUndefined();
+    });
+  });
 });

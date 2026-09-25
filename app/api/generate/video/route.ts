@@ -2,7 +2,9 @@
  * Video Generation API
  *
  * Generates a video from a text prompt using the specified provider.
- * Uses async task pattern (submit → poll) so maxDuration is set to 5 minutes.
+ * Uses async task pattern (submit → poll). The ComfyUI adapter allows up to
+ * 30 min of queue wait plus a 60 min execution budget (MiniMax H3 on a 12 GB
+ * card can run 30-60+ min for a 1080p clip), so maxDuration covers the sum.
  *
  * POST /api/generate/video
  *
@@ -18,7 +20,7 @@
 
 import { NextRequest } from 'next/server';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
-import { generateVideo, normalizeVideoOptions } from '@/lib/media/video-providers';
+import { generateVideo, normalizeVideoOptions, VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import {
   isServerConfiguredProvider,
   isServerProviderDisabled,
@@ -34,7 +36,7 @@ import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
 const log = createLogger('VideoGeneration API');
 
-export const maxDuration = 300;
+export const maxDuration = 5400;
 
 export async function POST(request: NextRequest) {
   try {
@@ -69,8 +71,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // A client-supplied remote input image (image-to-video) is fetched
+    // server-side by the ComfyUI adapter - same SSRF policy as base URLs.
+    // Unconditional: self-hosted deployments allow local targets through
+    // ALLOW_LOCAL_NETWORKS on the guard itself, never by skipping it.
+    if (body.inputImage && /^https?:\/\//i.test(body.inputImage)) {
+      const ssrfError = await validateUrlForSSRF(body.inputImage);
+      if (ssrfError) {
+        return apiError('INVALID_URL', 403, ssrfError);
+      }
+    }
+
     const apiKey = resolveVideoApiKey(providerId, clientApiKey);
-    if (!apiKey) {
+    const providerDef = VIDEO_PROVIDERS[providerId];
+    // Keyless local providers (e.g. ComfyUI) need no credential.
+    if (providerDef?.requiresApiKey && !apiKey) {
       return apiError(
         'MISSING_API_KEY',
         401,

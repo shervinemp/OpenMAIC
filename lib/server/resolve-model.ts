@@ -20,6 +20,7 @@ import {
   getStageRoute,
   getUserStageRoute,
   parseUserStageRoutes,
+  presetThinkingFor,
   type LlmStage,
   type UserStageRoute,
 } from '@/lib/server/model-routes';
@@ -152,12 +153,19 @@ export async function resolveModel(params: {
   // ThinkingConfig (mode/effort/level/enabled/budgetTokens/…) which callLLM
   // normalizes against the model's capability:
   //  - routed + thinking set → the route's thinking wins (over client thinking).
-  //  - routed + no thinking  → routed model uses its own default; client thinking
-  //    is dropped (it belonged to the client's other model).
-  //  - unrouted              → honor the client's thinking config.
+  //  - routed + no thinking  → the OPENMAIC_THINKING_PRESET default for this
+  //    stage applies (validate-gated stages skip CoT, judgment stages keep a
+  //    budget); with no preset match, the routed model uses its own default.
+  //    Client thinking is dropped in both cases (it belonged to the client's
+  //    other model).
+  //  - unrouted              → honor the client's thinking config; when the
+  //    client carries none, the preset still applies. Otherwise a client that
+  //    never sets thinkingConfig (the common case — the UI sends a bare
+  //    x-model) silently bypasses `OPENMAIC_THINKING_PRESET=lean`, and volume
+  //    stages burn provider-default reasoning on machine-validated JSON.
   const thinkingConfig: ThinkingConfig | undefined = routed
-    ? stageRoute?.thinking
-    : params.thinkingConfig;
+    ? (stageRoute?.thinking ?? presetThinkingFor(params.stage))
+    : (params.thinkingConfig ?? presetThinkingFor(params.stage));
 
   return {
     model,

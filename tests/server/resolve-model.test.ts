@@ -239,11 +239,14 @@ describe('resolveModel — per-stage resolution order', () => {
     });
   });
 
-  it('routed-without-thinking drops client thinking (routed model uses its default)', async () => {
+  it('routed-without-thinking drops client thinking for the stage default (lean preset applies to scene-content)', async () => {
     process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': 'deepseek:deepseek-v4-pro' });
     const { resolveModel } = await import('@/lib/server/resolve-model');
     const r = await resolveModel({ stage: 'scene-content', thinkingConfig: { effort: 'high' } });
-    expect(r.thinkingConfig).toBeUndefined();
+    // scene-content sits in the lean preset table (balanced default) and the
+    // routed route carries no thinking, so the preset's {enabled:false} wins
+    // while the client's effort is dropped.
+    expect(r.thinkingConfig).toEqual({ enabled: false });
   });
 
   it('unrouted stage keeps the client thinking config', async () => {

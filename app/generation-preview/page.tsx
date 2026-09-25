@@ -33,15 +33,23 @@ import {
   cleanupOldImages,
   storeImages,
 } from '@/lib/utils/image-storage';
+import {
+  cleanupOldGenerationSessions,
+  clearGenerationSession,
+  clearGenerationSessionEnvelope,
+  loadGenerationSession,
+  readGenerationSessionEnvelope,
+  saveGenerationSession,
+} from '@/lib/utils/generation-session-store';
 import { getCurrentModelConfig, getStageRoutesHeaderValue } from '@/lib/utils/model-config';
 import { resolveSessionDocumentSources } from '@/lib/document/session-sources';
-import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import {
   MAX_DOCUMENT_BUNDLE_FILES,
   MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES,
   buildDocumentBundle,
   type ParsedDocumentPart,
 } from '@/lib/document/bundle';
+import type { DocumentDigest } from '@/lib/generation/document-digest';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import { nanoid } from 'nanoid';
 import type { GeneratedAgentConfig, Stage } from '@/lib/types/stage';
@@ -50,6 +58,7 @@ import type {
   PdfImage,
   ImageMapping,
   SessionDocumentSource,
+  CourseBlueprint,
 } from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
@@ -64,6 +73,19 @@ import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
 
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
+
+// Multi-unit outline checkpoint (§16 recovery): the syllabus + completed unit
+// outlines, persisted as units finish so a mid-run failure can resume instead
+// of regenerating everything. Keyed by session id so a fresh run never reuses
+// a stale checkpoint.
+// Outline checkpoint helpers moved to lib/generation/outline-checkpoint.ts (shared with home-page retry adoption).
+
+import {
+  clearOutlineCheckpoint,
+  readOutlineCheckpoint,
+  writeOutlineCheckpoint,
+  type OutlineCheckpoint,
+} from '@/lib/generation/outline-checkpoint';
 
 type ParsedDocumentResponseImage = {
   id: string;
@@ -175,7 +197,14 @@ function GenerationPreviewContent() {
 
   const persistSession = (nextSession: GenerationSessionState) => {
     setSession(nextSession);
-    sessionStorage.setItem('generationSession', JSON.stringify(nextSession));
+    // The full session (document text, images, digest, research context) is
+    // far too large for sessionStorage's ~5MB quota — it lives in IndexedDB
+    // (see generation-session-store). Fire-and-forget: the in-memory state
+    // stays authoritative for the running flow, every later checkpoint writes
+    // a superset, and a failed write must never kill the generation.
+    saveGenerationSession(nextSession).catch((storageError) => {
+      log.warn('Failed to persist generation session:', storageError);
+    });
   };
 
   const clearOutlineReviewTimer = () => {
@@ -216,30 +245,43 @@ function GenerationPreviewContent() {
       }
     });
 
-  // Load session from sessionStorage
+  // Load session from IndexedDB (pointer envelope in sessionStorage)
   useEffect(() => {
     cleanupOldImages(24).catch((e) => log.error(e));
+    // Sessions abandoned before their natural end (tab closed mid-run) would
+    // otherwise linger in IndexedDB forever.
+    cleanupOldGenerationSessions(24).catch((e) => log.error(e));
 
-    const saved = sessionStorage.getItem('generationSession');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as GenerationSessionState;
-        if (!parsed.previewPhase) {
-          parsed.previewPhase = parsed.sceneOutlines?.length ? 'outline-ready' : 'preparing';
+    let cancelled = false;
+    loadGenerationSession()
+      .then((saved) => {
+        if (cancelled) return;
+        if (saved) {
+          try {
+            if (!saved.previewPhase) {
+              saved.previewPhase = saved.sceneOutlines?.length ? 'outline-ready' : 'preparing';
+            }
+            // Restore review intent: a saved 'review' phase without outlines means the user
+            // had opened the editor mid-stream before the refresh — preserve that intent so
+            // the post-stream auto-continue timer doesn't fire after SSE restart.
+            if (saved.previewPhase === 'review' && !saved.sceneOutlines?.length) {
+              outlineReviewIntentRef.current = true;
+            }
+            saved.taskEngineMode = saved.taskEngineMode === true;
+            setSession(saved);
+          } catch (e) {
+            log.error('Failed to restore generation session:', e);
+          }
         }
-        // Restore review intent: a saved 'review' phase without outlines means the user
-        // had opened the editor mid-stream before the refresh — preserve that intent so
-        // the post-stream auto-continue timer doesn't fire after SSE restart.
-        if (parsed.previewPhase === 'review' && !parsed.sceneOutlines?.length) {
-          outlineReviewIntentRef.current = true;
-        }
-        parsed.taskEngineMode = parsed.taskEngineMode === true;
-        setSession(parsed);
-      } catch (e) {
-        log.error('Failed to parse generation session:', e);
-      }
-    }
-    setSessionLoaded(true);
+        setSessionLoaded(true);
+      })
+      .catch((e) => {
+        log.error('Failed to load generation session:', e);
+        if (!cancelled) setSessionLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Abort all in-flight requests on unmount
@@ -309,6 +351,15 @@ function GenerationPreviewContent() {
     const generationSession = sessionOverride ?? session;
     if (!generationSession) return;
 
+    // The course was already persisted (user backed out mid-content
+    // generation). Don't re-run the outline/first-scene flow — hand off to
+    // the classroom page, which resumes generation for every pending
+    // outline (including scene 1).
+    if (generationSession.stageId) {
+      router.push(`/classroom/${generationSession.stageId}`);
+      return;
+    }
+
     // Create AbortController for this generation run
     abortControllerRef.current?.abort();
     const controller = new AbortController();
@@ -327,7 +378,12 @@ function GenerationPreviewContent() {
 
       // Determine if we need the document analysis step
       const documentSources = resolveSessionDocumentSources(currentSession);
-      const hasPdfToAnalyze = documentSources.length > 0 && !currentSession.pdfText;
+      // Re-extract + re-index when the extracted text is missing OR when a prior
+      // indexing request was aborted before it could persist the server-side
+      // index (text present but no handle). Skipping the latter silently yields
+      // an outline with zero coverage sections.
+      const hasPdfToAnalyze =
+        documentSources.length > 0 && (!currentSession.pdfText || !currentSession.pdfHandle);
       // If no document to analyze, skip to the next available step
       if (!hasPdfToAnalyze) {
         const firstNonPdfIdx = activeSteps.findIndex((s) => s.id !== 'pdf-analysis');
@@ -421,7 +477,7 @@ function GenerationPreviewContent() {
         const bundle = buildDocumentBundle(parsedParts);
         const imageStorageIds = await storeImages(bundle.images);
 
-        const pdfImages: PdfImage[] = bundle.images.map((img, i) => ({
+        let pdfImages: PdfImage[] = bundle.images.map((img, i) => ({
           id: img.id,
           src: '',
           pageNumber: img.pageNumber,
@@ -436,33 +492,152 @@ function GenerationPreviewContent() {
           storageId: imageStorageIds[i],
         }));
 
+        // ── Document indexing (Phase 2 §16) ──
+        // The FULL extracted text + every image go to the server-side index
+        // (sha256-handled, cached): coverage digest for the outline stage,
+        // batched vision captions for ALL images, full-text retrieval chunks.
+        // Failure degrades gracefully to the legacy truncated-prefix path.
+        const notices: string[] = [];
+        let pdfHandle: string | undefined;
+        let pdfDigest: DocumentDigest | undefined;
+        let documentIndex: GenerationSessionState['documentIndex'] | undefined;
+        if (bundle.text.length > 0) {
+          try {
+            setStatusMessage(t('generation.indexingDocument'));
+            const indexData = await new Promise<{
+              handle: string;
+              tier: string;
+              digest: DocumentDigest;
+              captions: Record<string, { caption: string; kind: string }>;
+              chunkCount: number;
+              totalImageCount: number;
+              captionedCount: number;
+            }>((resolve, reject) => {
+              fetch('/api/documents/index', {
+                method: 'POST',
+                headers: getApiHeaders(),
+                body: JSON.stringify({
+                  text: bundle.text,
+                  images: bundle.images.map((img) => ({
+                    id: img.id,
+                    src: img.src,
+                    pageNumber: img.pageNumber,
+                    width: img.width,
+                    height: img.height,
+                    description: img.description,
+                  })),
+                }),
+                signal,
+              })
+                .then((res) => {
+                  if (!res.ok) {
+                    return res.json().then((d) => {
+                      reject(new Error(d.error || t('generation.documentIndexFailed')));
+                    });
+                  }
+                  const reader = res.body?.getReader();
+                  if (!reader) {
+                    reject(new Error(t('generation.documentIndexFailed')));
+                    return;
+                  }
+                  const decoder = new TextDecoder();
+                  let sseBuffer = '';
+                  const pump = (): Promise<void> =>
+                    reader.read().then(({ done, value }) => {
+                      if (value) {
+                        sseBuffer += decoder.decode(value, { stream: !done });
+                        const lines = sseBuffer.split('\n');
+                        sseBuffer = lines.pop() || '';
+                        for (const line of lines) {
+                          if (!line.startsWith('data: ')) continue;
+                          try {
+                            const evt = JSON.parse(line.slice(6));
+                            if (evt.type === 'progress') {
+                              const { phase, done: progressDone, total } = evt;
+                              setStatusMessage(
+                                phase === 'captions'
+                                  ? t('generation.captioningProgress', {
+                                      done: progressDone,
+                                      total,
+                                    })
+                                  : t('generation.indexingProgress', {
+                                      done: progressDone,
+                                      total,
+                                    }),
+                              );
+                            } else if (evt.type === 'done') {
+                              resolve(evt.data);
+                              return;
+                            } else if (evt.type === 'error') {
+                              reject(new Error(evt.error));
+                              return;
+                            }
+                          } catch (e) {
+                            log.error('Failed to parse document index SSE:', line, e);
+                          }
+                        }
+                      }
+                      if (done) return;
+                      return pump();
+                    });
+                  pump().catch(reject);
+                })
+                .catch(reject);
+            });
+
+            pdfHandle = indexData.handle;
+            pdfDigest = indexData.digest;
+            documentIndex = {
+              tier: indexData.tier,
+              chunkCount: indexData.chunkCount,
+              totalImageCount: indexData.totalImageCount,
+              captionedCount: indexData.captionedCount,
+            };
+
+            // Captions enrich every image — no metadata-only image anywhere.
+            if (indexData.captions && Object.keys(indexData.captions).length > 0) {
+              pdfImages = pdfImages.map((img) => {
+                const caption = indexData.captions[img.id];
+                if (!caption) return img;
+                const captionText = `${caption.caption} (${caption.kind})`;
+                return {
+                  ...img,
+                  description: img.description
+                    ? `${img.description} | ${captionText}`
+                    : captionText,
+                };
+              });
+            }
+
+            setStatusMessage(
+              t('generation.documentIndexed', {
+                sections: indexData.digest.sections.length,
+                images: indexData.captionedCount,
+              }),
+            );
+          } catch (indexError) {
+            if (signal?.aborted) throw indexError;
+            log.warn('Document indexing failed; continuing without coverage index:', indexError);
+            notices.push(t('generation.documentIndexFailed'));
+          }
+        }
+
         // Update session with extracted document data
-        const updatedSession = {
+        const updatedSession: GenerationSessionState = {
           ...currentSession,
           documentSources,
           pdfText: bundle.text,
           pdfImages,
           imageStorageIds,
           pdfStorageKey: undefined, // Clear so we don't re-parse
+          pdfHandle,
+          pdfDigest,
+          documentIndex,
         };
-        setSession(updatedSession);
-        sessionStorage.setItem('generationSession', JSON.stringify(updatedSession));
+        persistSession(updatedSession);
 
-        // Truncation warnings
-        const warnings: string[] = [];
-        if (bundle.totalRawTextLength > bundle.textContentBudget) {
-          warnings.push(t('generation.textTruncated', { n: bundle.textContentBudget }));
-        }
-        if (bundle.totalImageCount > MAX_VISION_IMAGES) {
-          warnings.push(
-            t('generation.imageTruncated', {
-              total: bundle.totalImageCount,
-              max: MAX_VISION_IMAGES,
-            }),
-          );
-        }
-        if (warnings.length > 0) {
-          setTruncationWarnings(warnings);
+        if (notices.length > 0) {
+          setTruncationWarnings(notices);
         }
 
         // Reassign local reference for subsequent steps
@@ -473,50 +648,58 @@ function GenerationPreviewContent() {
       // Step: Web Search (if enabled)
       const webSearchStepIdx = activeSteps.findIndex((s) => s.id === 'web-search');
       if (currentSession.requirements.webSearch && webSearchStepIdx >= 0) {
-        setCurrentStepIndex(webSearchStepIdx);
-        setWebSearchSources([]);
+        // Resume: a persisted researchContext means the search already
+        // completed in a previous run — re-running it would discard the
+        // recovered sources and pay for the query again. Restore the UI and
+        // continue straight to the outline step instead.
+        if (currentSession.researchContext) {
+          setWebSearchSources(currentSession.researchSources ?? []);
+        } else {
+          setCurrentStepIndex(webSearchStepIdx);
+          setWebSearchSources([]);
 
-        const wsSettings = useSettingsStore.getState();
-        const wsProviderId = wsSettings.webSearchProviderId;
-        const wsConfig = wsSettings.webSearchProvidersConfig?.[wsProviderId];
-        const res = await fetch('/api/web-search', {
-          method: 'POST',
-          headers: getApiHeaders(),
-          body: JSON.stringify(
-            withThinkingConfig({
-              query: currentSession.requirements.requirement,
-              pdfText: currentSession.pdfText || undefined,
-              providerId: wsProviderId,
-              apiKey: wsConfig?.apiKey || undefined,
-              baseUrl: wsProviderId === 'searxng' ? undefined : wsConfig?.baseUrl || undefined,
-              baiduSubSources: wsProviderId === 'baidu' ? wsSettings.baiduSubSources : undefined,
-              claudeModelId: wsProviderId === 'claude' ? wsConfig?.modelId || undefined : undefined,
-            }),
-          ),
-          signal,
-        });
+          const wsSettings = useSettingsStore.getState();
+          const wsProviderId = wsSettings.webSearchProviderId;
+          const wsConfig = wsSettings.webSearchProvidersConfig?.[wsProviderId];
+          const res = await fetch('/api/web-search', {
+            method: 'POST',
+            headers: getApiHeaders(),
+            body: JSON.stringify(
+              withThinkingConfig({
+                query: currentSession.requirements.requirement,
+                pdfText: currentSession.pdfText || undefined,
+                providerId: wsProviderId,
+                apiKey: wsConfig?.apiKey || undefined,
+                baseUrl: wsProviderId === 'searxng' ? undefined : wsConfig?.baseUrl || undefined,
+                baiduSubSources: wsProviderId === 'baidu' ? wsSettings.baiduSubSources : undefined,
+                claudeModelId:
+                  wsProviderId === 'claude' ? wsConfig?.modelId || undefined : undefined,
+              }),
+            ),
+            signal,
+          });
 
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({ error: 'Web search failed' }));
-          throw new Error(data.error || t('generation.webSearchFailed'));
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({ error: 'Web search failed' }));
+            throw new Error(data.error || t('generation.webSearchFailed'));
+          }
+
+          const searchData = await res.json();
+          const sources = (searchData.sources || []).map((s: { title: string; url: string }) => ({
+            title: s.title,
+            url: s.url,
+          }));
+          setWebSearchSources(sources);
+
+          const updatedSessionWithSearch: GenerationSessionState = {
+            ...currentSession,
+            researchContext: searchData.context || '',
+            researchSources: sources,
+          };
+          persistSession(updatedSessionWithSearch);
+          currentSession = updatedSessionWithSearch;
+          activeSteps = getActiveSteps(currentSession);
         }
-
-        const searchData = await res.json();
-        const sources = (searchData.sources || []).map((s: { title: string; url: string }) => ({
-          title: s.title,
-          url: s.url,
-        }));
-        setWebSearchSources(sources);
-
-        const updatedSessionWithSearch = {
-          ...currentSession,
-          researchContext: searchData.context || '',
-          researchSources: sources,
-        };
-        setSession(updatedSessionWithSearch);
-        sessionStorage.setItem('generationSession', JSON.stringify(updatedSessionWithSearch));
-        currentSession = updatedSessionWithSearch;
-        activeSteps = getActiveSteps(currentSession);
       }
 
       // Load imageMapping early (needed for both outline and scene generation).
@@ -549,6 +732,7 @@ function GenerationPreviewContent() {
       let outlines = currentSession.sceneOutlines;
       let languageDirective = currentSession.languageDirective;
       let courseTitle = currentSession.courseTitle;
+      let blueprint: CourseBlueprint | undefined;
 
       const outlineStepIdx = activeSteps.findIndex((s) => s.id === 'outline');
       setCurrentStepIndex(outlineStepIdx >= 0 ? outlineStepIdx : 0);
@@ -557,15 +741,39 @@ function GenerationPreviewContent() {
         setStreamingOutlines([]);
         setIsOutlineStreaming(true);
 
+        // Read a prior partial-run checkpoint (matched by session id) so a
+        // failed multi-unit run resumes from its last completed unit instead of
+        // regenerating everything. Durable (device KV) so a tab close or browser
+        // restart doesn't lose the partial outline.
+        let resumeSyllabus: unknown;
+        let resumeOutlines: SceneOutline[] | undefined;
+        let resumeFromUnitIndex: number | undefined;
+        try {
+          const checkpoint = await readOutlineCheckpoint();
+          if (
+            checkpoint &&
+            checkpoint.sessionId === currentSession.sessionId &&
+            checkpoint.completedUnitCount > 0
+          ) {
+            resumeSyllabus = checkpoint.syllabus;
+            resumeOutlines = checkpoint.outlines as SceneOutline[];
+            resumeFromUnitIndex = checkpoint.completedUnitCount;
+          }
+        } catch (e) {
+          log.warn('Failed to read outline checkpoint:', e);
+        }
+
         const outlineResult = await new Promise<{
           outlines: SceneOutline[];
           languageDirective: string;
           courseTitle?: string;
           taskEngineMode: boolean;
+          blueprint?: CourseBlueprint;
         }>((resolve, reject) => {
           const collected: SceneOutline[] = [];
           let directive: string | undefined;
           let title: string | undefined;
+          let checkpointSyllabus: unknown = null;
 
           fetch('/api/generate/scene-outlines-stream', {
             method: 'POST',
@@ -573,10 +781,36 @@ function GenerationPreviewContent() {
             body: JSON.stringify(
               withThinkingConfig({
                 requirements: currentSession.requirements,
-                pdfText: currentSession.pdfText,
+                sizePreset: currentSession.sizePreset ?? 'compact',
+                // Phase 2 §16: with a handle the outline prompt gets the
+                // coverage digest and the server loads the full text itself —
+                // no giant pdfText payload, no truncated prefix.
+                pdfText: currentSession.pdfHandle ? undefined : currentSession.pdfText,
+                pdfHandle: currentSession.pdfHandle,
+                pdfDigest: currentSession.pdfDigest,
                 pdfImages: currentSession.pdfImages,
                 imageMapping,
                 researchContext: currentSession.researchContext,
+                resumeSyllabus,
+                resumeOutlines,
+                resumeFromUnitIndex,
+                // Phase 2 §15.2: per-unit web research for multi-unit courses.
+                webSearchConfig: currentSession.requirements.webSearch
+                  ? (() => {
+                      const ws = useSettingsStore.getState();
+                      const wsConfig = ws.webSearchProvidersConfig?.[ws.webSearchProviderId];
+                      return {
+                        providerId: ws.webSearchProviderId,
+                        apiKey: wsConfig?.apiKey || undefined,
+                        baseUrl:
+                          ws.webSearchProviderId === 'searxng'
+                            ? undefined
+                            : wsConfig?.baseUrl || undefined,
+                        baiduSubSources:
+                          ws.webSearchProviderId === 'baidu' ? ws.baiduSubSources : undefined,
+                      };
+                    })()
+                  : undefined,
               }),
             ),
             signal,
@@ -612,9 +846,26 @@ function GenerationPreviewContent() {
                           directive = evt.data;
                         } else if (evt.type === 'courseTitle') {
                           title = evt.data;
+                        } else if (evt.type === 'syllabus') {
+                          checkpointSyllabus = evt;
                         } else if (evt.type === 'outline') {
                           collected.push(evt.data);
                           setStreamingOutlines([...collected]);
+                        } else if (evt.type === 'unitDone') {
+                          // Multi-unit checkpoint: persist this unit's completed
+                          // outlines so a mid-run failure can resume here.
+                          try {
+                            const checkpoint: OutlineCheckpoint = {
+                              sessionId: currentSession.sessionId,
+                              syllabus: checkpointSyllabus,
+                              outlines: [...collected],
+                              completedUnitCount: Number(evt.index) + 1,
+                              requirement: currentSession.requirements.requirement,
+                            };
+                            void writeOutlineCheckpoint(checkpoint);
+                          } catch (e) {
+                            log.warn('Failed to persist outline checkpoint:', e);
+                          }
                         } else if (evt.type === 'retry') {
                           collected.length = 0;
                           // Drop any directive/title latched from the failed
@@ -627,6 +878,12 @@ function GenerationPreviewContent() {
                           setStatusMessage(t('generation.outlineRetrying'));
                         } else if (evt.type === 'done') {
                           directive = evt.languageDirective || directive;
+                          // The full deck completed — the checkpoint is obsolete.
+                          try {
+                            void clearOutlineCheckpoint();
+                          } catch {
+                            /* ignore */
+                          }
                           resolve({
                             outlines: evt.outlines || collected,
                             languageDirective:
@@ -634,8 +891,37 @@ function GenerationPreviewContent() {
                               'Teach in the language that matches the user requirement.',
                             courseTitle: evt.courseTitle || title,
                             taskEngineMode: resolveTaskEngineModeFromOutlineDoneEvent(evt),
+                            blueprint: evt.blueprint,
                           });
                           return;
+                        } else if (evt.type === 'coverage') {
+                          // §16 coverage audit: sections of the source document
+                          // no lesson cites — surfaced, never silently dropped.
+                          const coverage = evt.data as {
+                            report?: string;
+                            coverageRatio?: number;
+                            gapCount?: number;
+                            uncoveredChapters?: string[];
+                            trimmedTopics?: number;
+                          };
+                          if (coverage.gapCount && coverage.gapCount > 0) {
+                            const gapText = t('generation.coverageGaps', {
+                              count: coverage.gapCount,
+                            });
+                            setTruncationWarnings((prev) => [
+                              ...prev,
+                              gapText,
+                              ...(coverage.report ? [coverage.report] : []),
+                            ]);
+                          }
+                          if (coverage.trimmedTopics && coverage.trimmedTopics > 0) {
+                            setTruncationWarnings((prev) => [
+                              ...prev,
+                              t('generation.coverageDigestTrimmed', {
+                                count: coverage.trimmedTopics,
+                              }),
+                            ]);
+                          }
                         } else if (evt.type === 'error') {
                           reject(new Error(evt.error));
                           return;
@@ -674,6 +960,7 @@ function GenerationPreviewContent() {
         outlines = outlineResult.outlines;
         languageDirective = outlineResult.languageDirective;
         courseTitle = outlineResult.courseTitle;
+        blueprint = outlineResult.blueprint;
         const effectiveTaskEngineMode = outlineResult.taskEngineMode;
         setIsOutlineStreaming(false);
 
@@ -945,6 +1232,36 @@ function GenerationPreviewContent() {
       stage.videoManifest = buildVideoManifestFromOutlines(outlines);
       store.setStage(stage);
       store.setOutlines(outlines);
+      if (blueprint) {
+        store.setBlueprint(blueprint);
+      }
+
+      // Persist the course EARLY — before any scene exists — so "back to
+      // requirements" leaves a live item in the classroom list. The
+      // classroom page's resume path regenerates every pending outline
+      // (including scene 1), so nothing is lost.
+      const userProfile =
+        currentSession.requirements.userNickname || currentSession.requirements.userBio
+          ? `Student: ${currentSession.requirements.userNickname || 'Unknown'}${currentSession.requirements.userBio ? ` — ${currentSession.requirements.userBio}` : ''}`
+          : undefined;
+      store.setGeneratingOutlines(outlines);
+      currentSession = {
+        ...currentSession,
+        stageId: stage.id,
+        // Params the classroom resume path needs after the handoff (it reads
+        // them from the session record — see generation-session-store).
+        generationParams: {
+          pdfImages: currentSession.pdfImages,
+          agents,
+          userProfile,
+          languageDirective,
+        },
+      };
+      await store.saveToStorage();
+      // Awaited: the classroom page loads these params cross-page, so the
+      // record must be durable before the flow continues.
+      await saveGenerationSession(currentSession);
+      setSession(currentSession);
 
       // Advance to slide-content step
       const contentStepIdx = activeSteps.findIndex((s) => s.id === 'slide-content');
@@ -956,11 +1273,6 @@ function GenerationPreviewContent() {
         description: stage.description,
         style: stage.style,
       };
-
-      const userProfile =
-        currentSession.requirements.userNickname || currentSession.requirements.userBio
-          ? `Student: ${currentSession.requirements.userNickname || 'Unknown'}${currentSession.requirements.userBio ? ` — ${currentSession.requirements.userBio}` : ''}`
-          : undefined;
 
       // Generate ONLY the first scene
       store.setGeneratingOutlines(outlines);
@@ -1038,18 +1350,11 @@ function GenerationPreviewContent() {
       const remaining = outlines.filter((o) => o.order !== firstScene.order);
       store.setGeneratingOutlines(remaining);
 
-      // Store generation params for classroom to continue generation
-      sessionStorage.setItem(
-        'generationParams',
-        JSON.stringify({
-          pdfImages: currentSession.pdfImages,
-          agents,
-          userProfile,
-          languageDirective,
-        }),
-      );
-
-      sessionStorage.removeItem('generationSession');
+      // Drop only the pointer envelope: the home page must not offer a
+      // "resume" prompt, but the classroom page still reads generationParams
+      // from the IndexedDB record after this navigation and clears the record
+      // itself once consumed.
+      clearGenerationSessionEnvelope();
       await store.saveToStorage();
       router.push(`/classroom/${stage.id}`);
     } catch (err) {
@@ -1059,7 +1364,17 @@ function GenerationPreviewContent() {
         log.info('[GenerationPreview] Generation aborted');
         return;
       }
-      sessionStorage.removeItem('generationSession');
+      // A failed run still has the course persisted (early persist) — the
+      // classroom list keeps it and the classroom page can retry.
+      if (currentSession?.stageId) {
+        router.push(`/classroom/${currentSession.stageId}`);
+        return;
+      }
+      // The course was NOT yet persisted (outline stage failed). Keep the
+      // session so the user can resume from the home page
+      // "resume generation" prompt instead of re-typing and re-uploading
+      // everything. The resume path re-runs generation with the original
+      // inputs (document blobs are still in IndexedDB).
       setError(err instanceof Error ? err.message : String(err));
     }
   };
@@ -1076,7 +1391,14 @@ function GenerationPreviewContent() {
     abortControllerRef.current?.abort();
     clearOutlineReviewTimer();
     outlineReviewIntentRef.current = false;
-    sessionStorage.removeItem('generationSession');
+    // A persisted course (stageId in the session) lives in the classroom
+    // list — drop the session so the home page doesn't offer a redundant
+    // "resume" prompt. Otherwise (outline phase) keep it so generation can
+    // be resumed from the home page.
+    const envelope = readGenerationSessionEnvelope();
+    if (envelope?.stageId) {
+      void clearGenerationSession();
+    }
     router.push('/');
   };
 
@@ -1190,7 +1512,7 @@ function GenerationPreviewContent() {
     void startGeneration(confirmedSession);
   };
 
-  // Still loading session from sessionStorage
+  // Still loading session (IndexedDB + envelope)
   if (!sessionLoaded) {
     return (
       <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
@@ -1554,3 +1876,5 @@ export default function GenerationPreviewPage() {
     </Suspense>
   );
 }
+
+

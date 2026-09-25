@@ -137,7 +137,7 @@
  * - Always include provider name in error messages
  */
 
-import { extractText, getDocumentProxy, extractImages } from 'unpdf';
+import { extractText, getDocumentProxy, extractImages, renderPageAsImage } from 'unpdf';
 import sharp from 'sharp';
 import type { PDFParserConfig } from './types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
@@ -232,6 +232,10 @@ export async function parsePDF(
       result = await parseWithAliDocMind(config, pdfBuffer, options);
       break;
 
+    case 'local_vision':
+      result = await parseWithLocalVision(config, pdfBuffer);
+      break;
+
     default:
       throw new Error(`Unsupported PDF provider: ${config.providerId}`);
   }
@@ -260,10 +264,17 @@ async function parseWithUnpdf(pdfBuffer: Buffer, textOnly = false): Promise<Pars
   );
   const numPages = pdf.numPages;
 
-  // Extract text using the document proxy
-  const { text: pdfText } = await extractText(pdf, {
-    mergePages: true,
-  });
+  // Extract per-page text. Do NOT use `mergePages: true` — unpdf's merge path
+  // runs `.replace(/\s+/g, " ")`, which collapses every newline (and multi-space
+  // run) into a single space, turning a 400-page book into ONE line. That breaks
+  // the chunker (2 chunks instead of ~1000) and the coverage digest (1 section
+  // instead of the real chapters), so the outline stage never sees the material.
+  // Join pages ourselves with explicit page markers instead, preserving
+  // intra-page line breaks and giving the chunker page anchors for citations.
+  const { text: pageTexts } = await extractText(pdf);
+  const pdfText = pageTexts
+    .map((pageText, index) => `\n\n[Page ${index + 1}]\n\n${pageText}`)
+    .join('');
 
   // Extract images using the same document proxy
   const images: string[] = [];
@@ -689,6 +700,71 @@ export async function parseWithMinerUDocument(
   }
 
   return extractMinerUResult(fileResult);
+}
+
+/**
+ * Local Vision API implementation
+ *
+ * Uses a local OpenAI-compatible endpoint (vLLM/Ollama running Qwen2-VL or
+ * similar) to perform OCR and layout analysis on rendered PDF pages.
+ */
+async function parseWithLocalVision(
+  config: PDFParserConfig,
+  pdfBuffer: Buffer,
+): Promise<ParsedPdfContent> {
+  const pdf = await getDocumentProxy(new Uint8Array(pdfBuffer));
+  const numPages = pdf.numPages;
+
+  let fullText = '';
+  const allImages: string[] = [];
+  const baseUrl = config.baseUrl || 'http://127.0.0.1:11434/v1';
+
+  for (let i = 1; i <= numPages; i++) {
+    const imageArrayBuffer = await renderPageAsImage(new Uint8Array(pdfBuffer), i, { scale: 2 });
+    const base64Image = Buffer.from(imageArrayBuffer).toString('base64');
+    const imageUrl = `data:image/png;base64,${base64Image}`;
+
+    const payload = {
+      model: 'qwen2-vl',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: 'Transcribe the text in this document image accurately. Preserve the layout, headings, paragraphs, and list structures using Markdown. If there are tables or formulas, transcribe them into Markdown tables or LaTeX blocks respectively.',
+            },
+            { type: 'image_url', image_url: { url: imageUrl } },
+          ],
+        },
+      ],
+    };
+
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Local Vision OCR error: ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const pageText = data.choices?.[0]?.message?.content || '';
+    fullText += `\n\n--- Page ${i} ---\n\n${pageText}`;
+  }
+
+  return {
+    text: fullText.trim(),
+    images: allImages,
+    metadata: {
+      pageCount: numPages,
+      parser: 'local_vision',
+    },
+  };
 }
 
 /**

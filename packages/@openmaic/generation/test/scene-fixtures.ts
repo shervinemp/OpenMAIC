@@ -11,8 +11,40 @@ export function slideOutline(): SceneOutline {
   };
 }
 
-export function quizOutline(): SceneOutline {
+export function comparisonOutline(): SceneOutline {
   return {
+    id: 'comparison-1',
+    type: 'comparison',
+    title: 'Data Lake vs. Data Warehouse vs. Lakehouse',
+    description: 'Compare the three storage architectures on exam-relevant dimensions.',
+    keyPoints: ['Openness', 'Schema timing'],
+    order: 5,
+  };
+}
+
+export function tradeoffsOutline(): SceneOutline {
+  return {
+    id: 'tradeoffs-1',
+    type: 'tradeoffs',
+    title: 'Choosing a Governance Model',
+    description: 'Weigh the three governance options under stated constraints.',
+    keyPoints: ['Cost', 'Control'],
+    order: 6,
+  };
+}
+
+export function dataReadingOutline(): SceneOutline {
+  return {
+    id: 'dataReading-1',
+    type: 'dataReading',
+    title: 'Reading the Throughput Chart',
+    description: 'Judge claims against the plotted throughput values.',
+    keyPoints: ['Read the axes', 'Cite values'],
+    order: 7,
+  };
+}
+
+export function quizOutline(): SceneOutline {  return {
     id: 'quiz-1',
     type: 'quiz',
     title: 'Dependency Injection Check',

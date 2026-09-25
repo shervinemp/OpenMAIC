@@ -61,7 +61,7 @@ Produce a **`courseTitle`** (required): a concise, human-readable name for the *
 
 ### MAIC Platform Technical Constraints
 
-- **Scene Types**: `slide` (presentation), `quiz` (assessment), `interactive` (interactive visualization), and `pbl` (project-based learning) are supported
+- **Scene Types**: `slide` (presentation), `quiz` (assessment), `interactive` (interactive visualization), `pbl` (project-based learning), plus specialized kinds — `exercise` (worked problems), `derivation` (proofs), `glossary` (key terms), `reading` (further reading) — are supported
 - **Slide Scene**: Static PPT pages supporting text, charts, formulas, and other visual components.
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
@@ -82,11 +82,30 @@ When user requirements don't specify, use these defaults:
 
 | Information         | Default Value          |
 | ------------------- | ---------------------- |
-| Course Duration     | 15-20 minutes          |
+| Course Duration     | Resolved by the caller and stated in the Course Contract — never re-inferred |
 | Target Audience     | General learners       |
 | Teaching Style      | Interactive (engaging) |
 | Visual Style        | Professional           |
 | Interactivity Level | Medium                 |
+
+---
+
+## Course Contract (scene count and lesson structure)
+
+The user prompt contains a **Course Contract** block. It is computed from the
+resolved course duration and is **non-negotiable**:
+
+- The contract states the exact number of lessons and the exact scene count
+  per lesson. Produce exactly those numbers — no more, no fewer.
+- Lesson boundaries are positional: the first N scene outlines belong to
+  lesson 1, the next to lesson 2, and so on, in global `order`.
+- Emit a `lessons` array with one `{title, objectives}` object per lesson
+  (1-2 objectives each), plus course-level `audience` (string) and
+  `objectives` (2-5 strings).
+- The contract also states the type mix and quiz cadence for this course
+  flavor (explainer / hands-on / exam-prep). Follow it.
+- If a corrective note is appended after "## Correction Required", fix the
+  listed findings exactly and return the corrected JSON.
 
 ---
 
@@ -145,7 +164,7 @@ Use `interactive` type when a concept benefits significantly from hands-on inter
 
 **Constraints**:
 
-- Limit to **1-2 interactive scenes per course** (they are resource-intensive)
+- Spread interactive scenes across the course where they aid learning — coding, simulation, and practice widgets are encouraged; do not restrict yourself to one or two
 - Interactive scenes **require** an `interactiveConfig` object
 - Do NOT use interactive for purely textual/conceptual content - use slides instead
 - The `interactiveConfig.designIdea` should describe the specific interactive elements and user interactions
@@ -209,7 +228,7 @@ Use `pbl` type when the course involves complex, multi-step project work that be
 
 **Constraints**:
 
-- Limit to **at most 1 PBL scene per course** (they are comprehensive and long)
+- Limit to **at most 1 PBL scene per unit** (they are comprehensive and long)
 - PBL scenes **require** a `pblConfig` object with: projectTopic, projectDescription, targetSkills, issueCount
 - PBL is for substantial project work - do NOT use for simple exercises or single-step tasks
 - The `pblConfig.targetSkills` should list 2-5 specific skills students will develop
@@ -298,7 +317,7 @@ Rules:
 | Field             | Type                     | Required | Description                                                                                      |
 | ----------------- | ------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
 | id                | string                   | ✅       | Unique identifier, format: `scene_1`, `scene_2`...                                               |
-| type              | string                   | ✅       | `"slide"`, `"quiz"`, `"interactive"`, or `"pbl"`                                                 |
+| type              | string                   | ✅       | `"slide"`, `"quiz"`, `"interactive"`, `"pbl"`, `"exercise"`, `"derivation"`, `"glossary"`, or `"reading"`                                                 |
 | title             | string                   | ✅       | Scene title, concise and clear                                                                   |
 | description       | string                   | ✅       | 1-2 sentences describing teaching purpose                                                        |
 | keyPoints         | string[]                 | ✅       | 3-5 core points                                                                                  |
@@ -376,11 +395,11 @@ Omit `scenarioRoleplay` and `scenarioBrief` entirely for ordinary build-an-artef
 
 **Scene-level rules:**
 
-4. `type` is one of `"slide"`, `"quiz"`, `"interactive"`, `"pbl"`.
+4. `type` is one of `"slide"`, `"quiz"`, `"interactive"`, `"pbl"`, `"exercise"`, `"derivation"`, `"glossary"`, `"reading"`.
 5. `quiz` scenes must include `quizConfig`.
 6. `interactive` scenes must include `widgetType` and `widgetOutline` (preferred). `interactiveConfig` is deprecated and only accepted for backwards compatibility.
 7. `pbl` scenes must include `pblConfig` with `projectTopic`, `projectDescription`, `targetSkills`, `issueCount`.
-8. Arrange scenes by inferred duration (typically 1-2 scenes per minute). Insert quizzes at appropriate points. Use interactive scenes sparingly (max 1-2 per course).
+8. Arrange scenes to satisfy the Course Contract exactly (per-lesson counts, course-wide total, quiz cadence, type mix). The contract overrides all other count guidance. Insert quizzes at the contract's positions. Vary the scene types — use interactive scenes, worked exercises, and other non-slide types throughout the course instead of defaulting to a run of slides.
 9. **Language**: Infer from the user's requirement text and context. Output all scene content in the inferred language.
 10. Regardless of information completeness, always output conforming JSON - do not ask questions or request more information
 11. **No teacher identity on slides**: Scene titles and keyPoints must be neutral and topic-focused. Never include the teacher's name or role (e.g., avoid "Teacher Wang's Tips", "Teacher's Wishes"). Use generic labels like "Tips", "Summary", "Key Takeaways" instead.

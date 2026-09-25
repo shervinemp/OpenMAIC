@@ -150,6 +150,11 @@ describe('PG-mode folder listing and creation', () => {
   beforeEach(() => {
     discovery = null;
     vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
+    // PG-mode presupposes the folder routes could answer (agent runtime +
+    // DATABASE_URL): without them `listFolders` correctly falls back to Dexie
+    // and these route-stub suites test nothing.
+    vi.stubEnv('OPENMAIC_AGENT_RUNTIME_ENABLED', 'true');
+    vi.stubEnv('DATABASE_URL', 'postgres://test');
     vi.stubGlobal('fetch', vi.fn());
     mocks.listDocuments.mockClear();
     mocks.listLegacyStages.mockClear();

@@ -27,6 +27,7 @@ import type {
 } from '../types';
 import { aspectRatioToDimensions, IMAGE_PROVIDERS } from '../image-providers';
 import { assertNotRedirected } from '../redirect-guard';
+import { cancelComfyPrompt } from './comfyui-shared';
 
 // ---------------------------------------------------------------------------
 // Logger  (matches openmaic's [TIMESTAMP] [LEVEL] [Component] format)
@@ -55,8 +56,15 @@ const DEFAULT_WORKFLOW_FILENAME = 'comfyui-workflow.json';
 const DEFAULT_WORKFLOW_PUBLIC_PATH = `/${DEFAULT_WORKFLOW_FILENAME}`;
 /** Polling interval while waiting for the queue to finish (ms) */
 const POLL_INTERVAL_MS = 1500;
-/** Hard timeout for a single generation request (ms) */
-const GENERATION_TIMEOUT_MS = 300_000; // 5 minutes
+/** Hard timeout for a single generation request (ms). Local 20B workflows
+ *  (Qwen-Image-2512 at 50 steps on a 12 GB card) measure ~5.5-6.5 min, so
+ *  this mirrors the 15-min budget the video route/adapter use. */
+const GENERATION_TIMEOUT_MS = 900_000;
+/** How long a prompt may sit in ComfyUI's queue before execution starts (ms).
+ *  The queue is serial, so a slow video ahead (e.g. H3 on a 12 GB card) can
+ *  block for tens of minutes — that wait must not count against the
+ *  execution budget above. */
+const QUEUE_WAIT_TIMEOUT_MS = 30 * 60_000;
 /**
  * Per-request timeout for individual ComfyUI HTTP calls (ms). The 5-minute
  * bound above is on the *polling loop* only — without this, an awaited call
@@ -149,10 +157,10 @@ async function loadWorkflow(
       //      to pass for ComfyUI (IMAGE_PROVIDERS['comfyui-image'].models is []).
       //   2. The provider is selected in Settings but no workflow has been
       //      clicked yet, so x-image-model is empty.
-      // Default to the first workflow actually discovered in public/ rather
-      // than a hard-coded name: the set of workflow files is user-supplied and
-      // nothing guarantees any particular filename (e.g. comfyui-workflow.json)
-      // exists. This is the same list /api/comfyui-workflows shows the user.
+      // Prefer the first workflow that actually produces still images: the
+      // discovery list includes video workflows (e.g. comfyui-minimax-h3.json),
+      // and defaulting into one of those would load a huge video model and
+      // OOM on an image request.
       const known = await listComfyuiWorkflowFilenames();
       if (known.length === 0) {
         log.error('No ComfyUI workflow files found in public/');
@@ -161,8 +169,9 @@ async function loadWorkflow(
             'Add at least one comfyui-*.json workflow — see comfyui-setup-instructions.md.',
         );
       }
-      filename = known[0];
-      log.info(`No workflow specified — defaulting to first available: "${filename}"`);
+      const { defaultComfyuiWorkflowFilename } = await import('../comfyui-workflows');
+      filename = (await defaultComfyuiWorkflowFilename('image')) ?? known[0];
+      log.info(`No workflow specified — defaulting to first image workflow: "${filename}"`);
     }
 
     const publicDir = path.join(process.cwd(), 'public');
@@ -606,15 +615,28 @@ export async function generateWithComfyuiImage(
   const promptId = await queuePrompt(baseUrl, workflow, clientId);
 
   // 4. Poll history until complete -------------------------------------------
-  const deadline = Date.now() + GENERATION_TIMEOUT_MS;
+  // Two-phase budget: waiting in the ComfyUI queue is "free" (a slow video can
+  // hold the serial queue for tens of minutes on a 12 GB card), while the
+  // execution budget only starts counting once the prompt actually runs.
+  const queueWaitDeadline = Date.now() + QUEUE_WAIT_TIMEOUT_MS;
+  let executionDeadline = Number.POSITIVE_INFINITY;
   let entry: HistoryEntry | null = null;
   let pollCount = 0;
 
   log.info(`Polling for completion [prompt_id: ${promptId}]`);
-  while (Date.now() < deadline) {
+  while (true) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     pollCount++;
     entry = await pollHistory(baseUrl, promptId);
+
+    // /history only returns an entry once execution starts; anchor the
+    // execution budget to that moment and log how long the queue held us.
+    if (entry && executionDeadline === Number.POSITIVE_INFINITY) {
+      executionDeadline = Date.now() + GENERATION_TIMEOUT_MS;
+      log.info(
+        `Execution started after ${((Date.now() - startTime) / 1000).toFixed(1)}s in queue [prompt_id: ${promptId}]`,
+      );
+    }
 
     // Fail fast on a runtime execution error. A workflow that errors mid-run
     // records completed:false with status_str:"error", so without this check
@@ -636,21 +658,35 @@ export async function generateWithComfyuiImage(
       break;
     }
 
-    if (pollCount % 10 === 0) {
-      log.debug(
-        `Still waiting… ${pollCount} polls, ${((Date.now() - startTime) / 1000).toFixed(0)}s elapsed`,
+    const budget = entry ? executionDeadline : queueWaitDeadline;
+    if (Date.now() > budget) {
+      const cancelled = await cancelComfyPrompt(baseUrl, promptId, FETCH_TIMEOUT_MS);
+      if (entry) {
+        log.error(
+          `Generation timed out after ${GENERATION_TIMEOUT_MS / 1000}s of execution [prompt_id: ${promptId}]`,
+        );
+        throw new Error(
+          `ComfyUI generation timed out after ${GENERATION_TIMEOUT_MS / 1000}s of execution ` +
+            `(prompt_id: ${promptId})` +
+            (cancelled ? '. The prompt was cancelled.' : ''),
+        );
+      }
+      log.error(
+        `Generation waited ${QUEUE_WAIT_TIMEOUT_MS / 1000}s in the queue without starting [prompt_id: ${promptId}]`,
+      );
+      throw new Error(
+        `ComfyUI generation waited ${QUEUE_WAIT_TIMEOUT_MS / 1000}s in the queue without ` +
+          `starting (prompt_id: ${promptId}). Something ahead of it is stuck or the queue ` +
+          `is blocked by a long-running video.` +
+          (cancelled ? ' The prompt was cancelled.' : ''),
       );
     }
-  }
 
-  if (!entry?.status?.completed) {
-    log.error(
-      `Generation timed out after ${GENERATION_TIMEOUT_MS / 1000}s [prompt_id: ${promptId}]`,
-    );
-    throw new Error(
-      `ComfyUI generation timed out after ${GENERATION_TIMEOUT_MS / 1000}s ` +
-        `(prompt_id: ${promptId})`,
-    );
+    if (pollCount % 10 === 0) {
+      log.debug(
+        `Still waiting… ${pollCount} polls, ${((Date.now() - startTime) / 1000).toFixed(0)}s elapsed${entry ? '' : ' (queued)'}`,
+      );
+    }
   }
 
   // 5. Extract the first output image ----------------------------------------

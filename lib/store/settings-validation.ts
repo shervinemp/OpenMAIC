@@ -20,6 +20,10 @@ export type ProviderCfgLike = {
   enabled?: boolean;
 };
 
+// Client-safe: the pure workflow-filename predicate lives in a module whose
+// fs-dependent functions are dynamically imported (see lib/media/comfyui-workflows.ts).
+import { isComfyuiWorkflowFilename } from '@/lib/media/comfyui-workflows';
+
 /**
  * Check whether a provider has a usable *credential path* (server config or
  * client key/baseUrl). This is the store-level notion and deliberately does
@@ -93,6 +97,26 @@ export function resolveSelectedModel(
   return availableModels[0]?.id ?? '';
 }
 
+/**
+ * Model-selection resolution for MEDIA providers.
+ *
+ * ComfyUI image/video providers register `models: []` in the static
+ * registry because their selectable models are workflow JSON files
+ * discovered at runtime from `public/` (see lib/media/comfyui-workflows.ts).
+ * Resolving the selection against an empty static list would therefore wipe
+ * the user's chosen workflow to '' on every server-provider sync — exactly
+ * what happens after a server restart. When the static list is empty, keep
+ * the persisted id iff it is a plausible workflow filename; otherwise clear
+ * it (a stale non-workflow id from a different provider is not recoverable).
+ */
+export function resolveMediaModelSelection(
+  currentModelId: string,
+  staticModels: Array<{ id: string }>,
+): string {
+  if (staticModels.length > 0) return resolveSelectedModel(currentModelId, staticModels);
+  return isComfyuiWorkflowFilename(currentModelId) ? currentModelId : '';
+}
+
 export interface LLMProviderCfgLike {
   requiresApiKey?: boolean;
   apiKey?: string;
@@ -156,23 +180,21 @@ export function hasUsableLLMProvider(
  * 排除；client-key 条目仍尊重授权开关。
  */
 export function buildUsableFallbackOrder<T extends string>(
-  config: Record<
-    string,
-    { isServerConfigured?: boolean; apiKey?: string; serverDisabled?: boolean; enabled?: boolean }
-  >,
+  config: Record<string, ProviderCfgLike | null | undefined>,
   opts?: { ignoreEnabledForServerConfigured?: boolean },
 ): T[] {
-  const clientUsable = (c: { serverDisabled?: boolean; enabled?: boolean }) =>
-    !c.serverDisabled && c.enabled !== false;
-  const serverUsable = (c: { serverDisabled?: boolean; enabled?: boolean }) =>
+  const serverUsable = (c: ProviderCfgLike) =>
     !c.serverDisabled && (opts?.ignoreEnabledForServerConfigured || c.enabled !== false);
   return [
-    // Server-disabled providers are never fallback targets.
+    // Server-disabled providers are never fallback targets. Null/undefined
+    // entries (persisted holes from a deleted provider) carry no flags to read.
     ...Object.entries(config)
-      .filter(([, c]) => c.isServerConfigured && serverUsable(c))
+      .filter(([, c]) => !!c && c.isServerConfigured && serverUsable(c))
       .map(([id]) => id as T),
+    // Client entries use the same usability rule as selection: an API key, or
+    // a user-provided base URL for keyless local providers (Ollama, ComfyUI).
     ...Object.entries(config)
-      .filter(([, c]) => !c.isServerConfigured && clientUsable(c) && !!c.apiKey)
+      .filter(([, c]) => !!c && !c.isServerConfigured && isProviderUsable(c))
       .map(([id]) => id as T),
   ];
 }

@@ -47,7 +47,20 @@ interface OutlinesEditorProps {
   onCollapse?: () => void;
 }
 
-const SCENE_TYPES: SceneType[] = ['slide', 'quiz', 'interactive', 'pbl'];
+const SCENE_TYPES: SceneType[] = [
+  'slide',
+  'quiz',
+  'interactive',
+  'pbl',
+  'exercise',
+  'derivation',
+  'glossary',
+  'reading',
+  'comparison',
+  'dataReading',
+  'tradeoffs',
+  'freeResponse',
+];
 
 const TYPE_THEME: Record<
   SceneType,
@@ -82,6 +95,54 @@ const TYPE_THEME: Record<
     accent: 'bg-amber-500',
     dot: 'bg-amber-400',
   },
+  exercise: {
+    chip: 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300',
+    chipHover: 'hover:bg-teal-100/80 dark:hover:bg-teal-500/15',
+    accent: 'bg-teal-500',
+    dot: 'bg-teal-400',
+  },
+  derivation: {
+    chip: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300',
+    chipHover: 'hover:bg-indigo-100/80 dark:hover:bg-indigo-500/15',
+    accent: 'bg-indigo-500',
+    dot: 'bg-indigo-400',
+  },
+  glossary: {
+    chip: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300',
+    chipHover: 'hover:bg-rose-100/80 dark:hover:bg-rose-500/15',
+    accent: 'bg-rose-500',
+    dot: 'bg-rose-400',
+  },
+  reading: {
+    chip: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300',
+    chipHover: 'hover:bg-cyan-100/80 dark:hover:bg-cyan-500/15',
+    accent: 'bg-cyan-500',
+    dot: 'bg-cyan-400',
+  },
+  comparison: {
+    chip: 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300',
+    chipHover: 'hover:bg-violet-100/80 dark:hover:bg-violet-500/15',
+    accent: 'bg-violet-500',
+    dot: 'bg-violet-400',
+  },
+  dataReading: {
+    chip: 'bg-lime-50 text-lime-700 dark:bg-lime-500/10 dark:text-lime-300',
+    chipHover: 'hover:bg-lime-100/80 dark:hover:bg-lime-500/15',
+    accent: 'bg-lime-500',
+    dot: 'bg-lime-400',
+  },
+  tradeoffs: {
+    chip: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300',
+    chipHover: 'hover:bg-orange-100/80 dark:hover:bg-orange-500/15',
+    accent: 'bg-orange-500',
+    dot: 'bg-orange-400',
+  },
+  freeResponse: {
+    chip: 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-500/10 dark:text-fuchsia-300',
+    chipHover: 'hover:bg-fuchsia-100/80 dark:hover:bg-fuchsia-500/15',
+    accent: 'bg-fuchsia-500',
+    dot: 'bg-fuchsia-400',
+  },
 };
 
 function normalizeOrder(outlines: SceneOutline[]): SceneOutline[] {
@@ -101,6 +162,22 @@ function useSceneTypeLabel() {
         return t('generation.sceneTypeInteractive');
       case 'pbl':
         return t('generation.sceneTypePbl');
+      case 'exercise':
+        return t('generation.sceneTypeExercise');
+      case 'derivation':
+        return t('generation.sceneTypeDerivation');
+      case 'glossary':
+        return t('generation.sceneTypeGlossary');
+      case 'reading':
+        return t('generation.sceneTypeReading');
+      case 'comparison':
+        return t('generation.sceneTypeComparison');
+      case 'dataReading':
+        return t('generation.sceneTypeDataReading');
+      case 'tradeoffs':
+        return t('generation.sceneTypeTradeoffs');
+      case 'freeResponse':
+        return t('generation.sceneTypeFreeResponse');
       case 'slide':
       default:
         return t('generation.sceneTypeSlide');
@@ -640,7 +717,13 @@ function SceneRow({
                   disabled={disabled}
                   label={sceneTypeLabel(outline.type)}
                   theme={theme}
-                  connected={!disabled && outline.type !== 'slide'}
+                  getLabel={sceneTypeLabel}
+                  connected={
+                    !disabled &&
+                    (outline.type === 'quiz' ||
+                      outline.type === 'interactive' ||
+                      outline.type === 'pbl')
+                  }
                 />
               </div>
               {!disabled && <DeleteSceneButton onConfirm={onRemove} />}
@@ -759,6 +842,7 @@ function TypePill({
   disabled,
   label,
   theme,
+  getLabel,
   connected = false,
 }: {
   type: SceneType;
@@ -766,10 +850,11 @@ function TypePill({
   disabled: boolean;
   label: string;
   theme: (typeof TYPE_THEME)[SceneType];
+  /** Explicit label lookup — no dynamic `sceneType${...}` i18n key construction. */
+  getLabel: (type: SceneType) => string;
   /** When part of a cascading group, drop own rounding so the wrapper clips it. */
   connected?: boolean;
 }) {
-  const { t } = useI18n();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={disabled}>
@@ -787,7 +872,7 @@ function TypePill({
           {!disabled && <ChevronDown className="size-3 opacity-70" />}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[140px]">
+      <DropdownMenuContent align="end" className="min-w-[140px] max-h-72 overflow-y-auto">
         {SCENE_TYPES.map((option) => {
           const optionTheme = TYPE_THEME[option];
           return (
@@ -798,7 +883,7 @@ function TypePill({
             >
               <span className="flex items-center gap-2">
                 <span className={cn('size-2 rounded-full', optionTheme.accent)} />
-                {t(`generation.sceneType${capitalize(option)}`)}
+                {getLabel(option)}
               </span>
               {option === type && <Check className="size-3.5 text-muted-foreground" />}
             </DropdownMenuItem>
@@ -1518,6 +1603,3 @@ function useAutoResize(ref: React.RefObject<HTMLTextAreaElement | null>, value: 
   }, [ref, value]);
 }
 
-function capitalize(input: string): string {
-  return input.charAt(0).toUpperCase() + input.slice(1);
-}

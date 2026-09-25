@@ -3,15 +3,23 @@ import { createStageAPI } from '@/lib/api/stage-api';
 import type { StageStore } from '@/lib/api/stage-api-types';
 import {
   applyOutlineFallbacks,
+  chunkSourceText,
+  formatRetrievalContext,
   generateSceneOutlinesFromRequirements,
   generateSceneActions,
   generateSceneContent,
   isAbortError,
   PBLGenerationError,
+  retrieveChunks,
   withGenerationRetry,
   type AICallFn,
   type AgentInfo,
+  type PdfChunk,
 } from '@openmaic/generation';
+import { buildUnitContext } from '@/lib/generation/unit-context';
+import { renderDocumentDigest } from '@/lib/generation/document-digest';
+import { loadDocumentIndex } from '@/lib/server/document-index-store';
+import { DIGEST_TARGET_CHARS } from '@/lib/constants/generation';
 import { createSceneWithActions } from '@/lib/server/scene-generation';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { getDefaultAgents } from '@/lib/orchestration/registry/store';
@@ -58,6 +66,8 @@ export function containPBLGenerationError(error: unknown, sceneTitle: string): n
 export interface GenerateClassroomInput {
   requirement: string;
   pdfContent?: { text: string; images: string[] };
+  /** Document index handle (Phase 2 §16) — full text lives server-side. */
+  pdfHandle?: string;
   enableWebSearch?: boolean;
   webSearchProviderId?: WebSearchProviderId;
   webSearchApiKey?: string;
@@ -478,7 +488,18 @@ export async function generateClassroom(
     requirement,
   };
   const vocationalActive = resolveVocationalActive(requirements);
-  const pdfText = pdfContent?.text || undefined;
+
+  // ── Full-document coverage (Phase 2 §16) ──
+  // With a handle: the FULL text (for retrieval + search excerpts) and the
+  // coverage DIGEST (for the outline prompt) come from the server-side index
+  // — never a truncated prefix.
+  const storedIndex = input.pdfHandle ? await loadDocumentIndex(input.pdfHandle) : null;
+  const pdfText = storedIndex?.text || pdfContent?.text || undefined;
+  const outlineSourceText = storedIndex
+    ? storedIndex.digest.sections.length > 0
+      ? renderDocumentDigest(storedIndex.digest, { maxChars: DIGEST_TARGET_CHARS }).text
+      : storedIndex.text
+    : pdfText;
 
   await options.onProgress?.({
     step: 'researching',
@@ -549,7 +570,7 @@ export async function generateClassroom(
 
   const outlinesResult = await generateSceneOutlinesFromRequirements(
     requirements,
-    pdfText,
+    outlineSourceText,
     undefined,
     aiCall,
     {
@@ -636,11 +657,33 @@ export async function generateClassroom(
     log.info('Stage 2: Generating scene content and actions...');
     let generatedScenes = 0;
 
+    // Pillar 3b: build the per-scene retrieval index once from the full
+    // source text, then retrieve the top-k chunks for each outline at content
+    // time so scenes are grounded in the actual source (not a single global
+    // summary). Skip for tiny sources (no retrieval signal). With a document
+    // handle the index covers the ENTIRE document.
+    const retrievalChunks: PdfChunk[] =
+      storedIndex && storedIndex.chunks.length > 0
+        ? storedIndex.chunks
+        : pdfText && pdfText.length > 2000
+          ? chunkSourceText(pdfText)
+          : [];
+
     for (const [index, outline] of outlines.entries()) {
       const safeOutline = applyOutlineFallbacks(outline, true, {
         allowProceduralSkill: vocationalActive,
       });
       const progressStart = 30 + Math.floor((index / Math.max(outlines.length, 1)) * 60);
+
+      // Retrieval context for this scene (frozen on the outline so
+      // regenerations reuse the same cited chunks).
+      if (retrievalChunks.length > 0 && !safeOutline.retrievalContext) {
+        const query = `${safeOutline.title}\n${safeOutline.description}\n${(safeOutline.keyPoints ?? []).join('\n')}`;
+        const retrieved = retrieveChunks(query, retrievalChunks);
+        if (retrieved.length > 0) {
+          safeOutline.retrievalContext = formatRetrievalContext(retrieved);
+        }
+      }
 
       await options.onProgress?.({
         step: 'generating_scenes',
@@ -678,6 +721,10 @@ export async function generateClassroom(
                 agents,
                 languageDirective,
                 allowProceduralSkill: vocationalActive,
+                retrievalContext: safeOutline.retrievalContext,
+                // Phase 2 §15.5: prerequisite coherence — thread what the unit
+                // has already taught so this scene builds on it.
+                unitContext: buildUnitContext(safeOutline, outlines),
                 ...(safeOutline.type === 'pbl'
                   ? {
                       pblLoopFallback: (input) =>

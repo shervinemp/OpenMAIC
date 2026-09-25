@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 import { GET } from '@/app/api/health/route';
-import { middleware } from '@/middleware';
+// The fork names the Next 16 request hook `proxy` (proxy.ts); same gate.
+import { proxy as middleware } from '@/proxy';
 
 vi.mock('@/lib/server/provider-config', () => ({
   getServerWebSearchProviders: () => ({}),

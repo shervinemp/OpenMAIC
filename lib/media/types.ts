@@ -209,7 +209,8 @@ export type VideoProviderId =
   | 'minimax-video'
   | 'grok-video'
   | 'openrouter-video'
-  | 'happyhorse';
+  | 'happyhorse'
+  | 'comfyui-video';
 // Add new video providers below (uncomment and modify):
 // | 'runway'
 // | 'pika'
@@ -282,6 +283,11 @@ export interface VideoGenerationOptions {
   stageId?: string;
   /** Cancel server-side provider I/O (agent runtime / background callers). */
   signal?: AbortSignal;
+  /**
+   * Optional source image for image-to-video generation (base64 data URL or
+   * http(s) URL). Providers that only do text-to-video ignore it.
+   */
+  inputImage?: string;
 }
 
 /**

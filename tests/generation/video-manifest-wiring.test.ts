@@ -2,6 +2,60 @@ import { describe, expect, test } from 'vitest';
 import { generateSceneContent, type AICallFn } from '@openmaic/generation';
 import type { GeneratedSlideContent, SceneOutline } from '@/lib/types/generation';
 
+/**
+ * Slide content now runs the depth contract: every mock slide carries four
+ * substantive text elements (the contract minimum) alongside the video
+ * element under test.
+ */
+function substantiveTexts(): Array<Record<string, unknown>> {
+  return [
+    {
+      id: 't1',
+      type: 'text',
+      left: 60,
+      top: 40,
+      width: 800,
+      height: 40,
+      content: '<p>Motion is a change of position measured over time.</p>',
+      defaultFontName: '',
+      defaultColor: '#333333',
+    },
+    {
+      id: 't2',
+      type: 'text',
+      left: 60,
+      top: 90,
+      width: 800,
+      height: 40,
+      content: '<p>Velocity describes both the speed and the direction of that motion.</p>',
+      defaultFontName: '',
+      defaultColor: '#333333',
+    },
+    {
+      id: 't3',
+      type: 'text',
+      left: 60,
+      top: 140,
+      width: 800,
+      height: 40,
+      content: '<p>For example, a horse galloping across a field accelerates with each stride.</p>',
+      defaultFontName: '',
+      defaultColor: '#333333',
+    },
+    {
+      id: 't4',
+      type: 'text',
+      left: 60,
+      top: 190,
+      width: 800,
+      height: 40,
+      content: '<p>Acceleration is the rate at which velocity changes over time.</p>',
+      defaultFontName: '',
+      defaultColor: '#333333',
+    },
+  ];
+}
+
 describe('video manifest wiring', () => {
   test('corrects an invalid generated video src to the only available mediaRef', async () => {
     const outline: SceneOutline = {
@@ -25,6 +79,7 @@ describe('video manifest wiring', () => {
       JSON.stringify({
         background: { type: 'solid', color: '#ffffff' },
         elements: [
+          ...substantiveTexts(),
           {
             id: 'video_001',
             type: 'video',
@@ -64,6 +119,7 @@ describe('video manifest wiring', () => {
       JSON.stringify({
         background: { type: 'solid', color: '#ffffff' },
         elements: [
+          ...substantiveTexts(),
           {
             id: 'video_001',
             type: 'video',
@@ -106,6 +162,7 @@ describe('video manifest wiring', () => {
       JSON.stringify({
         background: { type: 'solid', color: '#ffffff' },
         elements: [
+          ...substantiveTexts(),
           {
             id: 'video_001',
             type: 'video',

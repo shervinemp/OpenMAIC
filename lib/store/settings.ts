@@ -46,6 +46,7 @@ import { createLogger } from '@/lib/logger';
 import {
   validateProvider,
   resolveSelectedModel,
+  resolveMediaModelSelection,
   isLLMProviderConfigured,
   buildUsableFallbackOrder,
 } from '@/lib/store/settings-validation';
@@ -323,6 +324,7 @@ export interface SettingsState {
       apiKey: string;
       baseUrl: string;
       enabled: boolean;
+      requiresApiKey?: boolean;
       isServerConfigured?: boolean;
       /** Admin/server-level force-off (server-providers.yml / env). Overrides `enabled`. */
       serverDisabled?: boolean;
@@ -340,6 +342,7 @@ export interface SettingsState {
       apiKey: string;
       baseUrl: string;
       enabled: boolean;
+      requiresApiKey?: boolean;
       isServerConfigured?: boolean;
       /** Admin/server-level force-off (server-providers.yml / env). Overrides `enabled`. */
       serverDisabled?: boolean;
@@ -756,6 +759,7 @@ const getDefaultVideoConfig = () => ({
     'grok-video': { apiKey: '', baseUrl: '', enabled: false },
     'openrouter-video': { apiKey: '', baseUrl: '', enabled: false },
     happyhorse: { apiKey: '', baseUrl: '', enabled: false },
+    'comfyui-video': { apiKey: '', baseUrl: '', enabled: false },
   } as Record<VideoProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
 
@@ -1108,7 +1112,7 @@ export const useSettingsStore = create<SettingsState>()(
         playbackSpeed: 1,
 
         // Layout preferences
-        sidebarCollapsed: true,
+        sidebarCollapsed: false,
         chatAreaCollapsed: true,
         chatAreaWidth: 320,
         editRailCollapsed: false,
@@ -1465,16 +1469,26 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Image Generation actions
         setImageProvider: (providerId) =>
-          set((state) => ({
-            imageProviderId: providerId,
-            imageModelId: resolveSelectedModel(
-              state.imageModelId,
-              resolveMediaModels(
-                IMAGE_PROVIDERS[providerId]?.models ?? [],
-                state.imageProvidersConfig[providerId],
+          set((state) => {
+            // Selecting a keyless provider is the user's intent to use it —
+            // seed its default base URL (if empty) so the provider counts as
+            // configured and the generation toggle can be enabled without the
+            // user retyping a default the adapter would assume anyway.
+            const provider = IMAGE_PROVIDERS[providerId];
+            const config = state.imageProvidersConfig[providerId];
+            const imageProvidersConfig =
+              provider?.requiresApiKey === false && config && !config.baseUrl && provider.defaultBaseUrl
+                ? { ...state.imageProvidersConfig, [providerId]: { ...config, baseUrl: provider.defaultBaseUrl } }
+                : state.imageProvidersConfig;
+            return {
+              imageProviderId: providerId,
+              imageProvidersConfig,
+              imageModelId: resolveMediaModelSelection(
+                state.imageModelId,
+                resolveMediaModels(provider?.models ?? [], imageProvidersConfig[providerId]),
               ),
-            ),
-          })),
+            };
+          }),
         setImageModelId: (modelId) => set({ imageModelId: modelId }),
 
         setImageProviderConfig: (providerId, config) =>
@@ -1542,16 +1556,24 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Video Generation actions
         setVideoProvider: (providerId) =>
-          set((state) => ({
-            videoProviderId: providerId,
-            videoModelId: resolveSelectedModel(
-              state.videoModelId,
-              resolveMediaModels(
-                VIDEO_PROVIDERS[providerId]?.models ?? [],
-                state.videoProvidersConfig[providerId],
+          set((state) => {
+            // Symmetric with image: selecting a keyless provider seeds its
+            // default base URL so it counts as configured (see setImageProvider).
+            const provider = VIDEO_PROVIDERS[providerId];
+            const config = state.videoProvidersConfig[providerId];
+            const videoProvidersConfig =
+              provider?.requiresApiKey === false && config && !config.baseUrl && provider.defaultBaseUrl
+                ? { ...state.videoProvidersConfig, [providerId]: { ...config, baseUrl: provider.defaultBaseUrl } }
+                : state.videoProvidersConfig;
+            return {
+              videoProviderId: providerId,
+              videoProvidersConfig,
+              videoModelId: resolveMediaModelSelection(
+                state.videoModelId,
+                resolveMediaModels(provider?.models ?? [], videoProvidersConfig[providerId]),
               ),
-            ),
-          })),
+            };
+          }),
         setVideoModelId: (modelId) => set({ videoModelId: modelId }),
 
         setVideoProviderConfig: (providerId, config) =>
@@ -1580,10 +1602,16 @@ export const useSettingsStore = create<SettingsState>()(
               // disabled provider with an empty key.
               if (config.enabled === false) {
                 const providerIds = Object.keys(VIDEO_PROVIDERS) as VideoProviderId[];
+                // Keyless local providers (e.g. ComfyUI) only count as usable
+                // fallbacks once the user has actually pointed one at a base
+                // URL; an unconfigured one must never silently claim selection.
+                const isUsableVideoFallback = (id: VideoProviderId): boolean =>
+                  isUsableMediaProvider(VIDEO_PROVIDERS[id], videoProvidersConfig[id]) &&
+                  (!!VIDEO_PROVIDERS[id]?.requiresApiKey ||
+                    !!videoProvidersConfig[id]?.baseUrl ||
+                    !!videoProvidersConfig[id]?.isServerConfigured);
                 const usableFallback = providerIds.find(
-                  (id) =>
-                    id !== providerId &&
-                    isUsableMediaProvider(VIDEO_PROVIDERS[id], videoProvidersConfig[id]),
+                  (id) => id !== providerId && isUsableVideoFallback(id),
                 );
                 const fallback =
                   usableFallback ?? providerIds.find((id) => id !== providerId) ?? providerId;
@@ -1616,9 +1644,12 @@ export const useSettingsStore = create<SettingsState>()(
         setImageGenerationEnabled: (enabled) => {
           if (enabled) {
             const cfg = get().imageProvidersConfig;
-            // 与课程模型配置的提示守卫同口径：凭证 + 授权开关都要过。
+            // Same guard as the course-model-config prompt: credentials + the
+            // authorization toggle. Keyless local providers (e.g. ComfyUI)
+            // count as credentialed once a base URL is set.
             const hasUsable = Object.values(cfg).some(
-              (c) => (c.isServerConfigured || c.apiKey) && c.enabled !== false,
+              (c) =>
+                !!c && (c.isServerConfigured || c.apiKey || !!c.baseUrl) && c.enabled !== false,
             );
             if (!hasUsable) return;
           }
@@ -1627,8 +1658,11 @@ export const useSettingsStore = create<SettingsState>()(
         setVideoGenerationEnabled: (enabled) => {
           if (enabled) {
             const cfg = get().videoProvidersConfig;
+            // Keyless local providers (e.g. ComfyUI) count as credentialed
+            // once a base URL is set.
             const hasUsable = Object.values(cfg).some(
-              (c) => (c.isServerConfigured || c.apiKey) && c.enabled !== false,
+              (c) =>
+                !!c && (c.isServerConfigured || c.apiKey || !!c.baseUrl) && c.enabled !== false,
             );
             if (!hasUsable) return;
           }
@@ -1890,6 +1924,7 @@ export const useSettingsStore = create<SettingsState>()(
                 if (newImageConfig[key]) {
                   newImageConfig[key] = {
                     ...newImageConfig[key],
+                    requiresApiKey: IMAGE_PROVIDERS[key]?.requiresApiKey ?? true,
                     isServerConfigured: false,
                     serverDisabled: false,
                   };
@@ -1921,6 +1956,7 @@ export const useSettingsStore = create<SettingsState>()(
                 if (newVideoConfig[key]) {
                   newVideoConfig[key] = {
                     ...newVideoConfig[key],
+                    requiresApiKey: VIDEO_PROVIDERS[key]?.requiresApiKey ?? true,
                     isServerConfigured: false,
                     serverDisabled: false,
                   };
@@ -2058,7 +2094,7 @@ export const useSettingsStore = create<SettingsState>()(
                   )
                 : [];
               const validImageModel = validImageProvider
-                ? resolveSelectedModel(state.imageModelId, imageModels)
+                ? resolveMediaModelSelection(state.imageModelId, imageModels)
                 : '';
               const videoModels = validVideoProvider
                 ? resolveMediaModels(
@@ -2067,7 +2103,7 @@ export const useSettingsStore = create<SettingsState>()(
                   )
                 : [];
               const validVideoModel = validVideoProvider
-                ? resolveSelectedModel(state.videoModelId, videoModels)
+                ? resolveMediaModelSelection(state.videoModelId, videoModels)
                 : '';
 
               const validTTSVoice =

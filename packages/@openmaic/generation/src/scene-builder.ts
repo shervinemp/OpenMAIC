@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import type { Action, Slide, SlideTheme } from '@openmaic/dsl';
 import type { SceneOutline } from './outline-types.js';
+import { isSlideLikeOutline } from './outline-type.js';
 import type {
   CompleteScene,
   GeneratedInteractiveContent,
@@ -33,7 +34,11 @@ export function buildCompleteScene(
   const sceneId = options.sceneId ?? nanoid();
   const timestamps = { createdAt: Date.now(), updatedAt: Date.now() };
 
-  if (outline.type === 'slide' && 'elements' in content) {
+  // Slide-like kinds (slide + exercise/derivation/glossary/reading and the
+  // analytic kinds comparison/dataReading/tradeoffs — Phase 2 15.4b/15.9)
+  // render as standard slide scenes; their structured payloads are laid out
+  // into elements by specialized-scene-render before reaching this builder.
+  if (isSlideLikeOutline(outline) && 'elements' in content) {
     const defaultTheme: SlideTheme = {
       backgroundColor: '#ffffff',
       themeColors: ['#5b9bd5', '#ed7d31', '#a5a5a5', '#ffc000', '#4472c4'],

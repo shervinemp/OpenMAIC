@@ -1,46 +1,11 @@
 import { ScanLine, Search, Bot, FileText, LayoutPanelLeft, Clapperboard } from 'lucide-react';
 import { useSettingsStore } from '@/lib/store/settings';
-import type {
-  SceneOutline,
-  UserRequirements,
-  PdfImage,
-  ImageMapping,
-  SessionDocumentSource,
-} from '@/lib/types/generation';
+import type { GenerationSessionState } from '@/lib/types/generation';
 
-// Session state stored in sessionStorage
-export interface GenerationSessionState {
-  sessionId: string;
-  requirements: UserRequirements;
-  pdfText: string;
-  documentSources?: SessionDocumentSource[];
-  pdfImages?: PdfImage[];
-  imageStorageIds?: string[];
-  imageMapping?: ImageMapping;
-  sceneOutlines?: SceneOutline[] | null;
-  currentStep: 'generating' | 'complete';
-  previewPhase?: 'preparing' | 'outline-ready' | 'review' | 'generating-content';
-  // PDF deferred parsing fields
-  pdfStorageKey?: string;
-  pdfFileName?: string;
-  documentMimeType?: string;
-  pdfProviderId?: string;
-  pdfProviderConfig?: {
-    apiKey?: string;
-    baseUrl?: string;
-    accessKeyId?: string;
-    accessKeySecret?: string;
-  };
-  // Web search context
-  researchContext?: string;
-  researchSources?: Array<{ title: string; url: string }>;
-  // Language directive inferred from outline generation
-  languageDirective?: string;
-  // Concise course title inferred from outline generation (used as the stage name)
-  courseTitle?: string;
-  // Server-effective vocational mode from the outline generation done event.
-  taskEngineMode?: boolean;
-}
+// The full session-state type lives with its sibling generation types in
+// lib/types/generation.ts (the persistence layer depends on it); re-exported
+// here for the page components.
+export type { GenerationSessionState };
 
 export type GenerationStep = {
   id: string;

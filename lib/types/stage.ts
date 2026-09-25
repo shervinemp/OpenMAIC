@@ -69,8 +69,8 @@ export type InteractiveContent = DslInteractiveContent<WidgetConfig>;
  * the app retains its read-only typed view of that record and widens
  * `projectV2` with learner/runtime state.
  */
-export type PBLContent = DslPBLContent & {
-  projectConfig?: PBLProjectConfig & Record<string, unknown>;
+export type PBLContent = Omit<DslPBLContent, 'projectConfig'> & {
+  projectConfig?: PBLProjectConfig;
   projectV2?: PBLProjectV2;
 };
 
@@ -107,8 +107,41 @@ export type AppScene = DslScene<Action, SceneContent> & {
    * scene-derived outline.
    */
   outlineId?: string;
+  /**
+   * The outline kind this scene was generated from (Phase 2 §15.4b). The
+   * specialized kinds (exercise / derivation / glossary / reading) render as
+   * standard `slide` scenes; this annotation keeps their pedagogical identity
+   * visible in the sidebar and the completion summary instead of collapsing
+   * them into "slide". Absent on inserted scenes and pre-existing data, where
+   * callers fall back to `scene.type`.
+   */
+  sceneKind?: SceneOutlineKind;
+  /**
+   * Fingerprint of the exact content + action-relevant session inputs the
+   * persisted scene's actions were generated from (content, agents, user
+   * profile, language directive — see `computeActionsSourceHash`). Lets a
+   * retry that regenerates byte-identical content reuse this scene's actions
+   * and rendered TTS instead of re-paying the actions LLM pass. Absent on
+   * pre-guard scenes, where the guard falls back to a fresh actions pass.
+   */
+  actionsSourceHash?: string;
 };
 export type Scene = AppScene;
+
+/** The full outline-kind union, incl. the specialized + analytic slide-like kinds. */
+export type SceneOutlineKind =
+  | 'slide'
+  | 'quiz'
+  | 'interactive'
+  | 'pbl'
+  | 'exercise'
+  | 'derivation'
+  | 'glossary'
+  | 'reading'
+  | 'comparison'
+  | 'dataReading'
+  | 'tradeoffs'
+  | 'freeResponse';
 
 /**
  * A partial update for {@link AppScene} — the patch shape used by `updateScene` /
@@ -146,3 +179,4 @@ export function makeScene<C extends SceneContent>(
 ): Extract<AppScene, { type: C['type'] }> {
   return { ...core, type: content.type, content } as Extract<AppScene, { type: C['type'] }>;
 }
+

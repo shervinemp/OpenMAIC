@@ -240,6 +240,13 @@ export interface SceneCore<TAction = Action> {
   // Multi-agent discussion configuration
   multiAgent?: MultiAgentConfig;
 
+  // Actions-source fingerprint (app-injected): the hash that `computeActionsSourceHash`
+  // produced over the GENERATED content + generation params at the time the
+  // actions were created. Persisted (not just live) so the repair hash-reuse
+  // gate survives a page reload — without it every retry re-pays the full
+  // content/actions LLM passes even when only TTS or media is missing.
+  actionsSourceHash?: string;
+
   // Metadata
   createdAt?: number;
   updatedAt?: number;

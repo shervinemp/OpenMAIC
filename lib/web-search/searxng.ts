@@ -48,6 +48,27 @@ function mapSearxngResult(
   };
 }
 
+async function fetchSearxngWithRetry(url: string, signal?: AbortSignal): Promise<Response> {
+  const MAX_ATTEMPTS = 3;
+  const RETRY_DELAY_MS = [1000, 2000, 4000];
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const res = await proxyFetch(url, {
+      method: 'GET',
+      headers: SEARXNG_HEADERS,
+      ...(signal ? { signal } : {}),
+    });
+    if (res.ok) return res;
+    const errorText = (await res.text().catch(() => '')).slice(0, 200);
+    const retryable = res.status === 429 || res.status >= 500;
+    if (retryable && attempt < MAX_ATTEMPTS - 1) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS[attempt] ?? 4000));
+      continue;
+    }
+    throw new Error(`SearXNG error (${res.status}): ${errorText || res.statusText}`);
+  }
+  throw new Error('SearXNG error: retries exhausted');
+}
+
 export async function searchWithSearxng(params: {
   query: string;
   maxResults?: number;
@@ -63,16 +84,7 @@ export async function searchWithSearxng(params: {
 
   const startedAt = Date.now();
   const requestUrl = buildSearxngSearchUrl(baseUrl, query);
-  const res = await proxyFetch(requestUrl, {
-    method: 'GET',
-    headers: SEARXNG_HEADERS,
-    ...(signal ? { signal } : {}),
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => '');
-    throw new Error(`SearXNG error (${res.status}): ${errorText || res.statusText}`);
-  }
+  const res = await fetchSearxngWithRetry(requestUrl, signal);
 
   const rawText = await res.text();
   let data: {

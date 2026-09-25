@@ -21,6 +21,7 @@
  */
 
 import { createLogger } from '@/lib/logger';
+import { readGenerationProfile } from '@openmaic/generation';
 import type {
   ThinkingConfig,
   ThinkingEffort,
@@ -122,8 +123,8 @@ function parseThinking(key: string, raw: unknown): ThinkingConfig | undefined {
  *
  * `scene-content:<type>` are finer-grained composite keys: when a scene-content
  * request carries an `outline.type`, it routes via the composite key and falls
- * back to the base `scene-content` route (see getStageModel). Only the four
- * core scene types are routable; interactive widget sub-types are not split.
+ * back to the base `scene-content` route (see getStageModel). Only the scene
+ * types are routable; interactive widget sub-types are not split.
  *
  * `pbl-v2-runtime:<route>` keys follow the same composite fallback pattern:
  * a specific runtime endpoint can be routed independently, or inherit the base
@@ -131,14 +132,26 @@ function parseThinking(key: string, raw: unknown): ThinkingConfig | undefined {
  */
 export const LLM_STAGES = [
   'scene-outlines-stream',
+  'documents-index',
   'scene-content',
   'scene-content:slide',
   'scene-content:quiz',
   'scene-content:interactive',
   'scene-content:pbl',
+  'scene-content:exercise',
+  'scene-content:derivation',
+  'scene-content:glossary',
+  'scene-content:reading',
+  'scene-content:comparison',
+  'scene-content:dataReading',
+  'scene-content:tradeoffs',
+  'scene-content:freeResponse',
   'scene-actions',
+  'scene-verify',
   'agent-profiles',
   'quiz-grade',
+  'exam-generation',
+  'exam-grading',
   'pbl-chat',
   'pbl-v2-runtime',
   'pbl-v2-runtime:instructor',
@@ -343,6 +356,100 @@ export function getUserStageRoute(
   while (key) {
     const route = userRoutes[key];
     if (route) return route;
+    const lastColon = key.lastIndexOf(':');
+    key = lastColon > 0 ? key.slice(0, lastColon) : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Thinking presets (issue: reasoning-token spend control).
+ *
+ * `OPENMAIC_THINKING_PRESET` picks a DEFAULT thinking policy across stages so
+ * operators don't have to hand-write a per-stage `thinking` block per model.
+ * `MODEL_ROUTES` per-stage `thinking` always wins; the preset fills in only
+ * where the route (or its parent, via the same composite fallback as the
+ * model) carries no explicit thinking.
+ *
+ * - `lean` — the token-saving default for volume generation: stages whose
+ *   output is machine-validated JSON (slide/quiz/analytic content, scene
+ *   actions, indexing) do NOT reason — the depth contracts and structured
+ *   validators already enforce quality, and one provider call per scene
+ *   output dropped ~85% of its output tokens in a measured run. Judgment
+ *   stages keep a bounded budget (planning, exams, interactive widgets,
+ *   derivations, rubric grading).
+ * - `quality` — provider defaults everywhere (same as leaving it unset).
+ *
+ * Unset (or any other value) = provider defaults, documented instead of
+ * silently changed.
+ */
+export type ThinkingPreset = 'lean' | 'quality';
+
+/**
+ * The `lean` preset table: stage -> thinking default. Anything absent from
+ * both preset tables resolves to provider defaults openly.
+ */
+export const THINKING_PRESET_LEAN: Partial<Record<LlmStage, ThinkingConfig>> = {
+  // Machine-validated structured output: validation + one findings re-prompt
+  // replaces long CoT.
+  'scene-content': { enabled: false },
+  'scene-content:slide': { enabled: false },
+  'scene-content:quiz': { enabled: false },
+  'scene-content:pbl': { enabled: false },
+  'scene-content:glossary': { enabled: false },
+  'scene-content:reading': { enabled: false },
+  'scene-content:comparison': { enabled: false },
+  'scene-content:dataReading': { enabled: false },
+  'scene-content:tradeoffs': { enabled: false },
+  'scene-actions': { enabled: false },
+  'web-search-query-rewrite': { enabled: false },
+  'conversation-title': { enabled: false },
+  'documents-index': { enabled: false },
+
+  // Judgment / long-horizon stages: reasoning earns its tokens.
+  // `scene-verify` is the layout/quality judge: enabled WITHOUT budgetTokens —
+  // DeepSeek ignores budgets anyway and runs reasoning to its own cap, which
+  // is the "cranked thinking on the judge" posture. Regeneration stages above
+  // stay lean.
+  'scene-verify': { enabled: true },
+  'scene-outlines-stream': { enabled: true, budgetTokens: 6000 },
+  'scene-content:interactive': { enabled: true, budgetTokens: 8000 },
+  'scene-content:derivation': { enabled: true, budgetTokens: 6000 },
+  'scene-content:exercise': { enabled: true, budgetTokens: 4000 },
+  'scene-content:freeResponse': { enabled: true, budgetTokens: 4000 },
+  'exam-generation': { enabled: true, budgetTokens: 6000 },
+  'exam-grading': { enabled: true, budgetTokens: 4000 },
+  'quiz-grade': { enabled: true, budgetTokens: 3000 },
+  'pbl-chat': { enabled: true, budgetTokens: 4000 },
+  'pbl-v2-runtime:evaluate': { enabled: true, budgetTokens: 4000 },
+};
+
+export function readThinkingPresetEnv(): ThinkingPreset | undefined {
+  const value = process.env.OPENMAIC_THINKING_PRESET?.trim();
+  if (value) {
+    if (value === 'lean' || value === 'quality') return value;
+    log.warn(
+      `OPENMAIC_THINKING_PRESET="${value}" is not one of (lean|quality); the generation profile default applies.`,
+    );
+  }
+  // No explicit thinking env: the generation profile's thinking axis picks the
+  // default (economy implies lean; balanced is lean today; premium keeps
+  // provider defaults).
+  return readGenerationProfile().thinkingPreset;
+}
+
+/**
+ * Preset thinking for a stage when the operator's route (checked by the
+ * caller) carried no explicit `thinking`. Resolves the same composite way as
+ * `getStageModel`: exact key first, then ancestor prefixes.
+ */
+export function presetThinkingFor(stage?: string): ThinkingConfig | undefined {
+  const preset = readThinkingPresetEnv();
+  if (!preset || preset === 'quality' || !stage) return undefined;
+  let key: string | undefined = stage;
+  while (key) {
+    const entry = THINKING_PRESET_LEAN[key as LlmStage];
+    if (entry) return entry;
     const lastColon = key.lastIndexOf(':');
     key = lastColon > 0 ? key.slice(0, lastColon) : undefined;
   }

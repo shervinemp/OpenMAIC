@@ -148,6 +148,15 @@ async function runtimeChatRecords(store: RuntimeStore): Promise<RuntimeRecord[]>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Node >= 24 ships the Web Locks API on `navigator`, which silently reroutes
+  // every save that does not opt into explicit lock stubbing from the
+  // lock-free ISOLATED path (what CI on node 22 validates) into the lock-protected
+  // APPEND path, whose contracts these tests do not assert. Pin the file to
+  // the lock-free semantics: tests that exercise the append path stub a
+  // navigator with `locks` themselves.
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    vi.stubGlobal('navigator', { userAgent: navigator.userAgent });
+  }
 });
 
 afterEach(() => {

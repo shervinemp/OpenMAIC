@@ -147,7 +147,49 @@ export async function resolveStoredBytes(
     const resolved = renderableMediaUrl(state);
     return resolved ? fetchBytes(resolved, fetchPolicy) : null;
   }
-  return null;
+
+  // SERVER FALLBACK (any asset class — audio, image, video): the persistence
+  // store is the bytes' home (uploaded at generation time or by a backfill).
+  // A local miss is not "dead"; hydrate from the server so a deck that says
+  // complete actually plays everywhere. Key convention mirrors the local
+  // media mirror: stage-scoped (`stageId:ref`) when that scope exists.
+  const { isConcreteMediaAddress: isConcrete } = await import('./resolve-media-ref');
+  if (isConcrete(effectiveRef)) return null;
+  const serverKey = stageId ? `${stageId}:${effectiveRef}` : effectiveRef;
+  return await serverAssetBlob(serverKey, options.fetchPolicy);
+}
+
+const SERVER_ASSET_SINGLE_FLIGHT = new Map<string, Promise<Blob | null>>();
+
+/** Serialize identical refs — repair loops + N tabs must not stampede. */
+async function serverAssetBlob(
+  ref: string,
+  _fetchPolicy?: StoredBytesFetchPolicy,
+): Promise<Blob | null> {
+  const pending = SERVER_ASSET_SINGLE_FLIGHT.get(ref);
+  if (pending) return pending;
+  const promise = (async () => {
+    if (isConcreteMediaAddress(ref)) return null;
+    try {
+      const { isBrowserPersistenceEnabled, getPersistenceRequestHeaders } = await import(
+        '@/lib/persistence/bootstrap'
+      );
+      if (!isBrowserPersistenceEnabled()) return null;
+      const headers = await getPersistenceRequestHeaders();
+      const response = await fetch(`/api/persistence/assets/${encodeURIComponent(ref)}`, {
+        headers,
+      });
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      if (!blob || blob.size === 0) return null;
+      return blob;
+    } catch {
+      return null;
+    }
+  })();
+  SERVER_ASSET_SINGLE_FLIGHT.set(ref, promise);
+  void promise.finally(() => SERVER_ASSET_SINGLE_FLIGHT.delete(ref));
+  return promise;
 }
 
 /**

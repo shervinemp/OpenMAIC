@@ -28,13 +28,20 @@ import type {
   DocumentFolderStore,
   DocumentSummary,
   MaicDocument,
+  SaveDocumentOptions,
   SceneLike,
   SceneValidator,
   StageFreshnessManifest,
   StageFreshnessManifestStore,
   StageValidator,
 } from './types.js';
-import { DocumentFolderLimitError, DocumentNotFoundError, DocumentVersionError } from './types.js';
+import {
+  DocumentFolderLimitError,
+  DocumentLostUpdateError,
+  DocumentNotFoundError,
+  DocumentVersionError,
+  isStaleOverwrite,
+} from './types.js';
 import {
   documentAssetScopes,
   forgetDocumentAssetWithdrawal,
@@ -734,7 +741,10 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     }
   }
 
-  async saveDocument(doc: MaicDocument<TScene, TStage>): Promise<void> {
+  async saveDocument(
+    doc: MaicDocument<TScene, TStage>,
+    options?: SaveDocumentOptions,
+  ): Promise<void> {
     if (isFutureVersioned(doc)) {
       throw new DocumentVersionError(
         doc.stage.id,
@@ -759,6 +769,22 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
           `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
             `stored copy is at DSL version ${JSON.stringify(dslVersionOf(existingStage))}, newer ` +
             `than this client's ${DSL_VERSION}`,
+        );
+      }
+      // Lost-update fence, read and compared inside the save transaction: a
+      // concurrent writer (another tab, an agent tool, a restore) that moved
+      // the stored copy forward since this aggregate was loaded must not be
+      // silently clobbered. Deliberate wholesale restores pass
+      // `allowOlderOverwrite`.
+      if (!options?.allowOlderOverwrite && isStaleOverwrite(existingStage ? { stage: existingStage } : undefined, doc)) {
+        throw new DocumentLostUpdateError(
+          stageId,
+          existingStage!.updatedAt,
+          doc.stage.updatedAt,
+          `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
+            `stored copy is newer (${JSON.stringify(existingStage!.updatedAt)}) than the ` +
+            `incoming save (${JSON.stringify(doc.stage.updatedAt)}); reload and retry, or ` +
+            'pass allowOlderOverwrite for a deliberate restore',
         );
       }
 
@@ -1281,6 +1307,52 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
           scope: sceneAssetScope(scene.id, scene),
         });
       }
+    });
+  }
+
+  async putPhaseStates(
+    stageId: string,
+    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+  ): Promise<void> {
+    if (entries.length === 0) return;
+    await this.transaction(async (queryable) => {
+      const stored = await this.loadStage(queryable, stageId, 'update');
+      if (!stored) return;
+      if (dslVersionOf(stored) !== DSL_VERSION) {
+        throw this.currentVersionError('putPhaseStates into', stageId, stored);
+      }
+      const current = await queryable.query<StoredJsonRow>(
+        `SELECT data FROM document_outlines WHERE stage_id = $1`,
+        [stageId],
+      );
+      if (current.rows.length === 0) return;
+      const outline = decodeJson<Record<string, unknown>>(current.rows[0].data) as {
+        lessonGroups?: Array<{ jobs?: Array<{ outlineId: string; phases?: Record<string, unknown> }> }>;
+      };
+      let touched = 0;
+      for (const entry of entries) {
+        for (const group of outline.lessonGroups ?? []) {
+          const job = (group.jobs ?? []).find((job) => job.outlineId === entry.outlineId);
+          if (!job) continue;
+          job.phases = {
+            ...(job.phases ?? {}),
+            [entry.phase]: {
+              status: entry.status,
+              attempts: entry.attempts,
+              updatedAt: entry.updatedAt,
+              ...(entry.error ? { error: entry.error } : {}),
+            },
+          };
+          touched += 1;
+        }
+      }
+      if (touched === 0) return;
+      const stamp = new Date().toISOString();
+      await queryable.query(
+        `UPDATE document_outlines SET data = $2::jsonb, updated_at = $3 WHERE stage_id = $1`,
+        [stageId, encodeJson(outline, `document outline ${stageId}`), stamp],
+      );
+      await queryable.query(`UPDATE document_stages SET updated_at = $2 WHERE id = $1`, [stageId, stamp]);
     });
   }
 

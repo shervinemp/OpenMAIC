@@ -5,11 +5,12 @@ import type {
   DocumentStore,
   DocumentSummary,
   MaicDocument,
+  SaveDocumentOptions,
   SceneLike,
   SceneValidator,
   StageValidator,
 } from './types.js';
-import { DocumentVersionError } from './types.js';
+import { DocumentLostUpdateError, DocumentVersionError } from './types.js';
 
 export interface HttpDocumentHeadersContext {
   method: string;
@@ -187,6 +188,23 @@ export class HttpDocumentStore<
           typeof details?.storedVersion === 'string' ? details.storedVersion : undefined;
         throw new DocumentVersionError(versionErrorStageId, 'future', storedVersion, message);
       }
+      if (response.status === 409 && code === 'STALE_WRITE' && versionErrorStageId !== undefined) {
+        const details = errorBody?.error?.details as
+          | { storedUpdatedAt?: unknown; incomingUpdatedAt?: unknown }
+          | undefined;
+        const storedUpdatedAt = typeof details?.storedUpdatedAt === 'number'
+          ? details.storedUpdatedAt
+          : NaN;
+        const incomingUpdatedAt = typeof details?.incomingUpdatedAt === 'number'
+          ? details.incomingUpdatedAt
+          : NaN;
+        throw new DocumentLostUpdateError(
+          versionErrorStageId,
+          storedUpdatedAt,
+          incomingUpdatedAt,
+          message,
+        );
+      }
       throw new HttpDocumentStoreError(response.status, code, message, errorBody?.error?.details);
     }
     if (response.status === 204) return undefined as T;
@@ -198,7 +216,10 @@ export class HttpDocumentStore<
     assertStorableScene(scene, stageId);
   }
 
-  async saveDocument(document: MaicDocument<TScene, TStage>): Promise<void> {
+  async saveDocument(
+    document: MaicDocument<TScene, TStage>,
+    options?: SaveDocumentOptions,
+  ): Promise<void> {
     // The server repeats these checks. Running the injected gates here matches
     // BrowserDocumentStore's fail-fast boundary and avoids avoidable wire calls.
     const normalized = migrateDocument(document);
@@ -215,9 +236,10 @@ export class HttpDocumentStore<
       seen.add(scene.id);
     }
     assertJsonValue(document, `document ${JSON.stringify(document.stage.id)}`);
+    const query = options?.allowOlderOverwrite ? '?allow-older-overwrite=1' : '';
     await this.request<void>(
       'PUT',
-      `/documents/${segment(document.stage.id)}`,
+      `/documents/${segment(document.stage.id)}${query}`,
       document,
       document.stage.id,
     );
@@ -268,6 +290,21 @@ export class HttpDocumentStore<
       `/documents/${segment(stageId)}/scenes/${segment(scene.id)}`,
       scene,
       stageId,
+    );
+  }
+
+  async putPhaseStates(
+    stageId: string,
+    entries: ReadonlyArray<{ outlineId: string; phase: string; status: string; attempts: number; updatedAt: number; error?: string }>,
+  ): Promise<void> {
+    // Job-envelope phase truth is a maintenance-tier concept on backends the
+    // HTTP document routes do not model; callers (the classroom pipelines)
+    // treat a refusal as non-fatal and keep going, so no silent drop — an
+    // explicit unsupported answer.
+    throw new HttpDocumentStoreError(
+      501,
+      'PHASE_STATES_UNSUPPORTED',
+      '@openmaic/storage: HttpDocumentStore cannot persist job-envelope phase states',
     );
   }
 

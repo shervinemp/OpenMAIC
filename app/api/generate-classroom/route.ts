@@ -44,6 +44,10 @@ export async function POST(req: NextRequest) {
     const body: GenerateClassroomInput = {
       requirement: rawBody.requirement || '',
       ...(pdfContent !== undefined ? { pdfContent } : {}),
+      // Document index handle (Phase 2 §16): an opaque string key.
+      ...(typeof rawBody.pdfHandle === 'string' && rawBody.pdfHandle
+        ? { pdfHandle: rawBody.pdfHandle }
+        : {}),
 
       ...(rawBody.enableWebSearch != null ? { enableWebSearch: rawBody.enableWebSearch } : {}),
       ...(rawBody.webSearchProviderId ? { webSearchProviderId: rawBody.webSearchProviderId } : {}),

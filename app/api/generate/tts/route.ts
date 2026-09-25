@@ -14,6 +14,7 @@ import {
   TTSInvalidResponseError,
   TTSRateLimitError,
 } from '@/lib/audio/tts-providers';
+import { getCachedTTS, setCachedTTS, ttsCacheKey } from '@/lib/audio/tts-cache';
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import {
@@ -150,6 +151,25 @@ export async function POST(req: NextRequest) {
         `registeredVoiceId=${voxcpmRegisteredVoiceId || 'none'}, audioId=${audioId}, textLen=${text.length}`,
     );
 
+    // Deterministic for a given tuple — reuse cached audio instead of paying the
+    // provider again (scene retries, voice previews, repeated speech actions).
+    // apiKey/baseUrl are part of the key: the cache is process-global, so a
+    // different tenant's provider key or self-hosted base URL must not collide.
+    const cacheKey = ttsCacheKey({
+      text,
+      providerId: ttsProviderId,
+      modelId: config.modelId,
+      voice: ttsVoice,
+      speed: ttsSpeed ?? 1.0,
+      apiKey,
+      baseUrl,
+      providerOptions: ttsProviderOptions,
+    });
+    const cached = getCachedTTS(cacheKey);
+    if (cached) {
+      return apiSuccess({ audioId, base64: cached.base64, format: cached.format });
+    }
+
     // Generate audio
     const { audio, format } = await generateTTS(config, text);
 
@@ -163,6 +183,7 @@ export async function POST(req: NextRequest) {
 
     // Convert to base64
     const base64 = Buffer.from(audio).toString('base64');
+    setCachedTTS(cacheKey, { base64, format });
 
     return apiSuccess({
       audioId,

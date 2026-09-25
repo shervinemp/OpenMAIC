@@ -21,6 +21,7 @@
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useStageStore } from '@/lib/store/stage';
+import { mediaProviderBudgets } from '@/lib/media/provider-budgets';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { db, mediaFileKey, type MediaFileRecord } from '@/lib/utils/database';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -54,6 +55,41 @@ import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persiste
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('MediaOrchestrator');
+
+// ==================== Recovery policy ====================
+//
+// A configured generation backend (local ComfyUI, a hosted provider, whatever)
+// is never abandoned because it failed a few requests. Two layers of recovery:
+//
+// 1. In-pass auto-retry: every failed request is re-attempted with exponential
+//    backoff (3s -> 48s, capped) before the serial queue moves on. Structured
+//    terminal errors (errorCode, e.g. CONTENT_SENSITIVE, a full store) skip
+//    intra-pass retries — a deterministic rejection will not fix itself.
+// 2. Pass-level recovery: transient failures are NOT permanently skipped; the
+//    next generation pass (resume, reload, or new scenes finishing) re-enqueues
+//    them. A backend failure pattern therefore recovers as soon as the cause
+//    is fixed, without any manual per-item retry click. Coded failures stay
+//    settled until the user retries them.
+
+/** Default intra-pass retry ceiling (initial attempt + retries). */
+export const MEDIA_AUTO_RETRY_LIMIT = 6;
+
+/**
+ * Test seam for the in-pass retry ceiling: suites that pin single-attempt
+ * semantics (Retry-button interplay) set `limit = 1`.
+ */
+export const mediaRetryPolicy: { limit: number } = { limit: MEDIA_AUTO_RETRY_LIMIT };
+/** First backoff delay; doubles each retry, capped at MEDIA_RETRY_MAX_DELAY_MS. */
+const MEDIA_RETRY_BASE_DELAY_MS = 3_000;
+const MEDIA_RETRY_MAX_DELAY_MS = 48_000;
+
+/**
+ * Test seam: the backoff sleep. Tests inject an instant resolver so the retry
+ * loop is deterministic without fake timers. Must be awaited (real timers).
+ */
+export const mediaRetrySleep: { wait: (ms: number) => Promise<void> } = {
+  wait: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+};
 
 /**
  * The pass currently running for a stage, if one is.
@@ -171,13 +207,25 @@ function throwIfAborted(signal?: AbortSignal): void {
  * Launch media generation for all mediaGenerations declared in outlines.
  * Runs in parallel with content/action generation — does not block.
  */
+export interface GenerateMediaOptions {
+  /**
+   * A repair pass (mount-time media repair, an outline's retry): transient
+   * failures (no structured code) are re-attempted instead of waiting for a
+   * Retry click, and — in browser-only mode — a task marked done whose
+   * persisted bytes vanished (manual delete, quota eviction, profile wipe) is
+   * re-generated under the same elementId. Ordinary passes trust the status.
+   */
+  readonly repair?: boolean;
+}
+
 export async function generateMediaForOutlines(
   outlines: SceneOutline[],
   stageId: string,
   abortSignal?: AbortSignal,
+  options: GenerateMediaOptions = {},
 ): Promise<void> {
   if (!isServerBackedMediaPersistence()) {
-    return collectAndGenerate(outlines, stageId, abortSignal, false);
+    return collectAndGenerate(outlines, stageId, abortSignal, false, options);
   }
   // Serial per stage. The caller aborts the previous pass before starting this
   // one; waiting for that pass to actually settle is what makes the handoff
@@ -185,7 +233,7 @@ export async function generateMediaForOutlines(
   // uncancellable — `putAsset` and the write-back run to completion — so
   // waiting is also what stops the replacement from paying for it twice.
   const pass = awaitCurrentPass(stageId).then(() =>
-    collectAndGenerate(outlines, stageId, abortSignal, true),
+    collectAndGenerate(outlines, stageId, abortSignal, true, options),
   );
   passesByStage.set(stageId, pass);
   try {
@@ -200,6 +248,7 @@ async function collectAndGenerate(
   stageId: string,
   abortSignal: AbortSignal | undefined,
   serverBacked: boolean,
+  options: GenerateMediaOptions = {},
 ): Promise<void> {
   // Everything below this point may be running long after the caller queued it:
   // a server-backed pass waits for its predecessor, and a predecessor's
@@ -244,6 +293,14 @@ async function collectAndGenerate(
   // reading it is exactly how every new browser re-ran (and re-billed) an
   // already-generated course.
 
+  // Per-outline phase recording (Pillar 2): each request maps back to its
+  // owning outline so the pass can drive the persisted `media` phase
+  // (running on first start, done/failed once the outline's batch settles).
+  const outlineByElement = new Map<string, string>();
+  for (const outline of outlines) {
+    for (const mg of outline.mediaGenerations ?? []) outlineByElement.set(mg.elementId, outline.id);
+  }
+
   // Collect all media requests
   const allRequests: MediaGenerationRequest[] = [];
   for (const outline of outlines) {
@@ -263,9 +320,11 @@ async function collectAndGenerate(
         // genuinely has nowhere to go yet; asking the provider again would pay
         // twice for bytes this session already holds.
         if (pendingMediaAllocation(stageId, mg.elementId)) continue;
-        // A permanently failed task (content policy, generation disabled) is a
-        // refusal to call the provider again, never a claim that media exists.
-        if (existing?.status === 'failed') continue;
+        // A permanently failed task (content policy, generation disabled, a
+        // full store) is a refusal to call the provider again, never a claim
+        // that media exists. A transient failure carries no code and is
+        // re-enqueued (pass-level recovery).
+        if (existing?.status === 'failed' && (existing.errorCode || !options.repair)) continue;
         // `generating` is the one status that means "something is working on
         // this right now". Passes are serial, so it can only be a single-element
         // retry running alongside this pass; letting the pass take it too would
@@ -275,8 +334,27 @@ async function collectAndGenerate(
         // as answered is what stranded elements in earlier designs.
         if (existing?.status === 'generating') continue;
       } else {
-        // Skip already completed or permanently failed (restored from DB)
-        if (existing?.status === 'done' || existing?.status === 'failed') continue;
+        // Coded failures are settled; transient ones re-enqueue (pass-level
+        // recovery). Passes are serial, so `generating` can only be a
+        // single-element retry running alongside this pass.
+        if (existing?.status === 'failed' && (existing.errorCode || !options.repair)) continue;
+        if (existing?.status === 'generating') continue;
+        if (existing?.status === 'done' && !options.repair) continue;
+        if (existing?.status === 'done') {
+          // Byte-aware completion (repair passes): "done" means bytes exist
+          // and are non-empty. A done-marked task whose persisted row vanished
+          // (manual delete, quota eviction, profile wipe) is repaired under
+          // the same elementId. A row carrying an errorCode is a settled
+          // refusal, not decay.
+          const persistedRow = await db.mediaFiles
+            .get(mediaFileKey(stageId, mg.elementId))
+            .catch(() => undefined);
+          if (persistedRow && ((persistedRow.size ?? 0) > 0 || persistedRow.errorCode)) continue;
+          log.info(
+            `Media bytes for ${JSON.stringify(mg.elementId)} are missing though marked done; re-queueing repair`,
+          );
+          useMediaGenerationStore.getState().markPendingForRetry(mg.elementId);
+        }
       }
       allRequests.push(mg);
     }
@@ -284,8 +362,34 @@ async function collectAndGenerate(
 
   if (allRequests.length === 0) return;
 
-  // Enqueue all as pending
-  useMediaGenerationStore.getState().enqueueTasks(stageId, allRequests);
+  // Budget-driven dispatch (provider-budgets.ts): each class carries its own
+  // requeue cap and cost weight — cheap jobs first so one heavy item (a video)
+  // cannot head-of-line-block the cheap backlog. Stable within each class; the
+  // per-class caps bound the provider backlog per pass (the rest wait for the
+  // next pass).
+  const budgets = mediaProviderBudgets();
+  const costRank = (type: MediaGenerationRequest['type']): number =>
+    type === 'video' ? budgets.video.costWeight : budgets.image.costWeight;
+  const classCap = (type: MediaGenerationRequest['type']): number =>
+    type === 'video' ? budgets.video.requeueCap : budgets.image.requeueCap;
+  const perClassTaken = new Map<MediaGenerationRequest['type'], number>();
+  const dispatchable = [...allRequests]
+    .sort((a, b) => costRank(a.type) - costRank(b.type))
+    .filter((req) => {
+      const taken = perClassTaken.get(req.type) ?? 0;
+      if (taken >= classCap(req.type)) return false;
+      perClassTaken.set(req.type, taken + 1);
+      return true;
+    });
+  if (dispatchable.length < allRequests.length) {
+    log.warn(
+      `Media requeue capped at ${dispatchable.length}/${allRequests.length} requests this pass ` +
+        '(the rest wait for the next pass)',
+    );
+  }
+
+  // Enqueue the dispatchable set as pending
+  useMediaGenerationStore.getState().enqueueTasks(stageId, dispatchable);
 
   // The store had no room the last time this browser tried. That is a property
   // of the deployment, not of any slide, so it is remembered once per course:
@@ -295,7 +399,7 @@ async function collectAndGenerate(
   // clears the marker and the next pass runs normally.
   if (serverBacked && (await isAssetStorageFull(stageId))) {
     log.info(`Asset storage was full for ${stageId}; standing down without generating.`);
-    markStorageFull(allRequests);
+    markStorageFull(dispatchable);
     return;
   }
 
@@ -304,9 +408,46 @@ async function collectAndGenerate(
   const scan = createCachedMediaScan();
 
   // Process requests serially — image/video APIs have limited concurrency
-  for (const [index, req] of allRequests.entries()) {
+  const mediaStats = new Map<string, { total: number; done: number; failed: number }>();
+  for (const req of dispatchable) {
+    const outlineId = outlineByElement.get(req.elementId);
+    if (!outlineId) continue;
+    const stats = mediaStats.get(outlineId) ?? { total: 0, done: 0, failed: 0 };
+    stats.total += 1;
+    mediaStats.set(outlineId, stats);
+  }
+  const phaseStarted = new Set<string>();
+  const recordOutcome = (req: MediaGenerationRequest) => {
+    const outlineId = outlineByElement.get(req.elementId);
+    const stats = outlineId ? mediaStats.get(outlineId) : undefined;
+    if (!outlineId || !stats) return;
+    const task = useMediaGenerationStore.getState().getTask(req.elementId);
+    if (task?.status === 'done') stats.done += 1;
+    else stats.failed += 1;
+    if (stats.done + stats.failed !== stats.total) return;
+    useStageStore
+      .getState()
+      .recordScenePhase(
+        outlineId,
+        'media',
+        stats.failed === 0
+          ? { status: 'done' }
+          : { status: 'failed', error: `${stats.failed}/${stats.total} media item(s) failed` },
+      );
+    // ONE QUEUE: the outline's media phase settled — its red card (if the fail
+    // hydration put it there) drops with the phase.
+    if (stats.failed === 0) useStageStore.getState().retryFailedOutline(outlineId);
+  };
+
+  for (const [index, req] of dispatchable.entries()) {
     if (abortSignal?.aborted) break;
+    const outlineId = outlineByElement.get(req.elementId);
+    if (outlineId && !phaseStarted.has(outlineId)) {
+      phaseStarted.add(outlineId);
+      useStageStore.getState().recordScenePhase(outlineId, 'media', { status: 'running' });
+    }
     const attempt = await generateSingleMedia(req, stageId, abortSignal, undefined, scan);
+    if (!abortSignal?.aborted) recordOutcome(req);
     if (!attempt.storageFull) continue;
     // The store checks each write against the headroom it has left, so a
     // refusal is evidence about one blob and only weak evidence about the next.
@@ -323,7 +464,7 @@ async function collectAndGenerate(
     // that is the condition they are waiting on.
     log.warn(`Asset storage is full; stopping the media pass for ${stageId}.`);
     await markAssetStorageFull(stageId);
-    markStorageFull(allRequests.slice(index + 1));
+    markStorageFull(dispatchable.slice(index + 1));
     break;
   }
 }
@@ -911,6 +1052,40 @@ const ATTEMPT_COMMITTED: MediaAttemptOutcome = { storageFull: false, committed: 
  * back after a full store kept the bytes, so the retry re-attempts the upload
  * rather than buying the media a second time.
  */
+/**
+ * In-pass recovery for the provider call (the recovery policy's first layer):
+ * a transient generation failure — a local backend restarting, a dropped
+ * connection, a 5xx — is re-attempted with exponential backoff before the
+ * element fails for this pass. A structured refusal (MediaApiError with a
+ * code: content policy, generation disabled) and an abort end it at once.
+ * Storage and write-back failures are outside this wrapper by construction:
+ * retrying the provider could only buy the same bytes twice.
+ */
+function withProviderRecovery<T>(
+  req: MediaGenerationRequest,
+  abortSignal: AbortSignal | undefined,
+  call: () => Promise<T>,
+  attempt = 0,
+): Promise<T> {
+  // No extra awaits on the success path: the provider call's own promise is
+  // handed back (a single .catch hop), so wrapping it does not delay when a
+  // pass reaches its commit.
+  if (mediaRetryPolicy.limit <= 1) return call();
+  return call().catch(async (error: unknown) => {
+    if (abortSignal?.aborted) throw error;
+    if (error instanceof MediaApiError && error.errorCode) throw error;
+    if (attempt >= mediaRetryPolicy.limit - 1) throw error;
+    const delay = Math.min(MEDIA_RETRY_BASE_DELAY_MS * 2 ** attempt, MEDIA_RETRY_MAX_DELAY_MS);
+    log.warn(
+      `${req.type} generation for ${req.elementId} failed (attempt ${attempt + 1}/${mediaRetryPolicy.limit}); retrying in ${Math.round(delay / 1000)}s:`,
+      error instanceof Error ? error.message : error,
+    );
+    await mediaRetrySleep.wait(delay);
+    throwIfAborted(abortSignal);
+    return withProviderRecovery(req, abortSignal, call, attempt + 1);
+  });
+}
+
 async function generateSingleMedia(
   req: MediaGenerationRequest,
   stageId: string,
@@ -951,7 +1126,9 @@ async function generateSingleMedia(
     }
 
     if (req.type === 'image') {
-      const result = await callImageApi(req, stageId, abortSignal);
+      const result = await withProviderRecovery(req, abortSignal, () =>
+        callImageApi(req, stageId, abortSignal),
+      );
 
       if (serverBacked) {
         // A hosted URL is the provider's address, not a durable reference the
@@ -1008,7 +1185,9 @@ async function generateSingleMedia(
       const objectUrl = URL.createObjectURL(blob);
       useMediaGenerationStore.getState().markDone(req.elementId, objectUrl);
     } else {
-      const result = await callVideoApi(req, abortSignal);
+      const result = await withProviderRecovery(req, abortSignal, () =>
+        callVideoApi(req, abortSignal),
+      );
 
       if (serverBacked) {
         throwIfAborted(abortSignal);

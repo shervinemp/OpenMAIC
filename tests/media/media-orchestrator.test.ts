@@ -26,12 +26,18 @@ vi.mock('@/lib/utils/database', () => ({
     mediaFiles: {
       put: mocks.mediaPut,
       delete: mocks.mediaDelete,
+      // Byte-aware completion predicate: rows with real bytes count as present.
+      get: async (key: string) => mockMediaRows.get(key) ?? undefined,
     },
   },
 }));
 
+/** Persisted media-row mirror the byte-aware skip predicate reads. */
+const mockMediaRows = new Map<string, { size: number; errorCode?: string }>();
+
 import {
   generateMediaForOutlines,
+  mediaRetrySleep,
   mediaRetryTarget,
   retryMediaTask,
 } from '@/lib/media/media-orchestrator';
@@ -76,6 +82,9 @@ describe('classic media orchestrator', () => {
 
   beforeEach(() => {
     resetProxyMediaFailureCache();
+    mockMediaRows.clear();
+    // In-pass recovery backs off between attempts; tests run it instantly.
+    mediaRetrySleep.wait = async () => {};
     mocks.mediaPut.mockReset().mockResolvedValue(undefined);
     mocks.mediaDelete.mockReset().mockResolvedValue(undefined);
     mocks.putAsset.mockReset().mockResolvedValue('ast_unexpected');
@@ -304,31 +313,98 @@ describe('classic media orchestrator', () => {
     expect(events).toEqual(['generate:first', 'proxy:first', 'generate:second', 'proxy:second']);
   });
 
-  it('skips already completed, permanently failed, and disabled requests', async () => {
+  it('a repair pass skips completed and disabled requests but re-runs a transiently failed task', async () => {
+    // The done task has real persisted bytes → byte-aware completion skips it.
+    mockMediaRows.set(`${stageId}:done`, { size: 2048 });
     useMediaGenerationStore.setState({
       tasks: {
         done: { ...failedTask('done'), status: 'done', objectUrl: 'blob:done', error: undefined },
         failed: failedTask('failed'),
+        refused: { ...failedTask('refused'), errorCode: 'CONTENT_SENSITIVE' },
       },
     });
     mocks.settings.mockReturnValue({
       ...mocks.settings(),
       videoGenerationEnabled: false,
     });
+    serveImage('recovered-image');
 
     await generateMediaForOutlines(
       [
         outlineWith(
           { type: 'image', prompt: 'done', elementId: 'done' },
           { type: 'image', prompt: 'failed', elementId: 'failed' },
+          { type: 'image', prompt: 'refused', elementId: 'refused' },
           { type: 'video', prompt: 'disabled', elementId: 'disabled' },
         ),
       ],
       stageId,
+      undefined,
+      { repair: true },
     );
 
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(mocks.mediaPut).not.toHaveBeenCalled();
+    // The transient failure is re-generated; the done task (bytes present), the
+    // coded refusal, and the disabled-type video never run.
+    const handled = new Set<string>();
+    fetchMock.mock.calls.forEach(([input, init]) => {
+      if (String(input) === '/api/generate/image') {
+        handled.add((JSON.parse(String(init?.body)) as { prompt: string }).prompt);
+      }
+    });
+    expect([...handled].sort()).toEqual(['failed']);
+    expect(useMediaGenerationStore.getState().tasks.failed).toMatchObject({ status: 'done' });
+  });
+
+  it('re-queues a done task whose persisted bytes vanished', async () => {
+    useMediaGenerationStore.setState({
+      tasks: {
+        [imageRef]: {
+          ...failedTask(imageRef),
+          status: 'done',
+          objectUrl: 'blob:stale',
+          error: undefined,
+        },
+      },
+    });
+    serveImage('repaired-image');
+
+    await generateMediaForOutlines(
+      [outlineWith({ type: 'image', prompt: 'repair', elementId: imageRef })],
+      stageId,
+      undefined,
+      { repair: true },
+    );
+
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/generate/image')).toBe(
+      true,
+    );
+    expect(useMediaGenerationStore.getState().tasks[imageRef]).toMatchObject({ status: 'done' });
+  });
+
+  it('auto-retries a transient failure with in-pass backoff before giving up for this pass', async () => {
+    let imageCalls = 0;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/generate/image') {
+        imageCalls += 1;
+        if (imageCalls <= 5) throw new Error('comfyui restarting');
+        return new Response(
+          JSON.stringify({ success: true, result: { url: 'https://media.test/recovered' } }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (String(input) === '/api/proxy-media') {
+        return new Response(new Blob(['recovered-image'], { type: 'image/png' }), { status: 200 });
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    });
+
+    await generateMediaForOutlines(
+      [outlineWith({ type: 'image', prompt: 'Recover', elementId: imageRef })],
+      stageId,
+    );
+
+    expect(imageCalls).toBe(6);
+    expect(useMediaGenerationStore.getState().tasks[imageRef]).toMatchObject({ status: 'done' });
   });
 
   it('retries a failed placeholder by deleting and replacing its classic row', async () => {
