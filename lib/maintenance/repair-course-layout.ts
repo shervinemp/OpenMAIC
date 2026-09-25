@@ -37,15 +37,24 @@ export interface CourseLayoutRepairReport {
 const appliedCourses = new Set<string>();
 
 /**
- * One structural-change reload per browser session. The deck changed
- * server-side (a split applied, empty parts pruned) and the loaded store no
- * longer matches what the document says — reload once so the user sees the
- * real deck. The sessionStorage flag guards against reload loops.
+ * One structural-change reload per course per browser session. The deck
+ * changed server-side (a split applied, empty parts pruned) and the loaded
+ * store no longer matches what the document says — reload once so the user
+ * sees the real deck. The sessionStorage flag guards against reload loops; it
+ * is keyed by course, or the first course to reload in a session left every
+ * later one showing its stale deck until a manual refresh.
  */
-function reloadOnceForStructuralChange(): void {
+function reloadOnceForStructuralChange(courseId: string): void {
   if (typeof window === 'undefined') return;
-  if (window.sessionStorage.getItem('__openmaicSplitReloaded')) return;
-  window.sessionStorage.setItem('__openmaicSplitReloaded', String(Date.now()));
+  const key = `__openmaicSplitReloaded:${courseId}`;
+  try {
+    if (window.sessionStorage.getItem(key)) return;
+    window.sessionStorage.setItem(key, String(Date.now()));
+  } catch {
+    // No session storage (private mode, blocked site data): without a loop
+    // guard, do not reload at all.
+    return;
+  }
   window.setTimeout(() => window.location.reload(), 50);
 }
 
@@ -100,7 +109,7 @@ export async function repairCourseLayout(
     // Empty parts were removed: the loaded store still holds them, so reload
     // once so the lesson list reflects the pruned deck.
     if (summary.pruned > 0) {
-      reloadOnceForStructuralChange();
+      reloadOnceForStructuralChange(courseId);
       return summary;
     }
 
@@ -205,7 +214,7 @@ export async function repairCourseLayout(
             'split apply was a no-op; deferring residual to the next pass (one-shot reload)',
           );
         }
-        reloadOnceForStructuralChange();
+        reloadOnceForStructuralChange(courseId);
       } else {
         log.warn(
           'split apply on load failed (non-fatal)',

@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => ({
   updateScene: vi.fn(),
   setRepairActive: vi.fn(),
   retryFailedOutline: vi.fn(),
+  recordScenePhase: vi.fn(),
+  settleFailedOutline: vi.fn(),
   settingsState: vi.fn(),
   fetch: vi.fn(),
 }));
@@ -34,8 +36,11 @@ vi.mock('@/lib/store/stage', () => ({
       updateScene: mocks.updateScene,
       setRepairActive: mocks.setRepairActive,
       retryFailedOutline: mocks.retryFailedOutline,
+      recordScenePhase: mocks.recordScenePhase,
+      settleFailedOutline: mocks.settleFailedOutline,
     }),
   },
+  completionBlockingFailures: () => [],
 }));
 
 vi.mock('@/lib/store/settings', () => ({
@@ -162,6 +167,8 @@ describe('drainPendingSceneTTS — byte-aware, per-clip repair', () => {
     ttsCalls.length = 0;
     failingTexts.clear();
     mocks.updateScene.mockReset();
+    mocks.recordScenePhase.mockReset();
+    mocks.settleFailedOutline.mockReset();
     mocks.settingsState.mockReset().mockReturnValue(baseSettings());
     globalThis.fetch = vi.fn(async (_url: string | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as {
@@ -230,6 +237,31 @@ describe('drainPendingSceneTTS — byte-aware, per-clip repair', () => {
     expect((scene.actions[1] as { audioId?: string }).audioId).toBe('tts_s1_dead_b');
     // Persisted even though one clip is still dead: the recovered half is real.
     expect(mocks.updateScene).toHaveBeenCalledWith(scene.id, { actions: scene.actions });
+  });
+
+  it('a partial recovery keeps the retry card for the clips still dead', async () => {
+    failingTexts.add('clip 1 for scene 1');
+    const scene = {
+      ...makeScene('s1', 1, [{ audioId: 'tts_s1_dead_a' }, { audioId: 'tts_s1_dead_b' }]),
+      outlineId: 'outline-1',
+    };
+
+    await drainPendingSceneTTS([scene as never]);
+
+    expect(mocks.settleFailedOutline).not.toHaveBeenCalled();
+    expect(mocks.recordScenePhase).not.toHaveBeenCalled();
+  });
+
+  it('a full recovery records the narration phase done and settles the card', async () => {
+    const scene = {
+      ...makeScene('s1', 1, [{ audioId: 'tts_s1_dead_a' }, { audioId: 'tts_s1_dead_b' }]),
+      outlineId: 'outline-1',
+    };
+
+    await drainPendingSceneTTS([scene as never]);
+
+    expect(mocks.recordScenePhase).toHaveBeenCalledWith('outline-1', 'tts', { status: 'done' });
+    expect(mocks.settleFailedOutline).toHaveBeenCalledWith('outline-1');
   });
 
   it('a scene with NO audioIds generates fresh ids for all its clips', async () => {

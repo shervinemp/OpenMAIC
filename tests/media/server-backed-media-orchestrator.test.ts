@@ -37,6 +37,7 @@ vi.mock('@/lib/store/stage', () => ({
     getState: () => ({
       recordScenePhase: () => undefined,
       retryFailedOutline: () => undefined,
+      settleFailedOutline: () => undefined,
       ...mocks.stageState(),
     }),
   },

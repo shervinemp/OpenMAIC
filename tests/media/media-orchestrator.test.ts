@@ -407,6 +407,47 @@ describe('classic media orchestrator', () => {
     expect(useMediaGenerationStore.getState().tasks[imageRef]).toMatchObject({ status: 'done' });
   });
 
+  describe('per-pass requeue cap', () => {
+    const second = 'gen_img_second';
+    const twoImages = () =>
+      outlineWith(
+        { type: 'image', prompt: 'first', elementId: imageRef, aspectRatio: '16:9' },
+        { type: 'image', prompt: 'second', elementId: second, aspectRatio: '16:9' },
+      );
+    const providerCalls = () =>
+      fetchMock.mock.calls.filter(([input]) => String(input) === '/api/generate/image').length;
+
+    beforeEach(() => {
+      vi.stubEnv('NEXT_PUBLIC_COURSE_MEDIA_IMAGE_REQUEUE_LIMIT', '1');
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('does not cap a generation pass: every image of the course is generated', async () => {
+      serveImage();
+
+      await generateMediaForOutlines([twoImages()], stageId);
+
+      expect(providerCalls()).toBe(2);
+      const tasks = useMediaGenerationStore.getState().tasks;
+      expect(tasks[imageRef]?.status).toBe('done');
+      expect(tasks[second]?.status).toBe('done');
+    });
+
+    it('caps a repair pass, leaving the rest for the next one', async () => {
+      serveImage();
+      useMediaGenerationStore.setState({
+        tasks: { [imageRef]: failedTask(imageRef), [second]: failedTask(second) },
+      });
+
+      await generateMediaForOutlines([twoImages()], stageId, undefined, { repair: true });
+
+      expect(providerCalls()).toBe(1);
+    });
+  });
+
   it('retries a failed placeholder by deleting and replacing its classic row', async () => {
     useMediaGenerationStore.setState({ tasks: { [imageRef]: failedTask(imageRef) } });
     serveImage('retried-image');
