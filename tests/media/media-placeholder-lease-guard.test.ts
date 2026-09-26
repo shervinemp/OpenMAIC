@@ -204,7 +204,7 @@ describe('every lease and probe entry point carries the guard', () => {
     // would be an entry point nobody thought to look for.
     const roots = ['app', 'components', 'lib', 'packages'];
     const hits = execSync(
-      `grep -rlE --exclude-dir=node_modules "${exported.join('|')}" ${roots.join(' ')} || true`,
+      `grep -rlE --exclude-dir=node_modules --exclude-dir=dist "${exported.join('|')}" ${roots.join(' ')} || true`,
       { cwd: process.cwd(), encoding: 'utf8' },
     )
       .split('\n')
@@ -221,5 +221,6 @@ describe('every lease and probe entry point carries the guard', () => {
       .sort();
 
     expect(hits).toEqual(GUARDED.slice().sort());
-  });
+    // A whole-tree grep: under a loaded full run it outlasts the 5s default.
+  }, 30_000);
 });

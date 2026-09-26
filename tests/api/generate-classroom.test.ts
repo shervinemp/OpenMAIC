@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   after: vi.fn(),
   buildRequestOrigin: vi.fn(),
   createClassroomGenerationJob: vi.fn(),
+  saveClassroomJobInput: vi.fn(),
   runClassroomGenerationJob: vi.fn(),
 }));
 
@@ -15,6 +16,7 @@ vi.mock('next/server', async (importOriginal) => {
 
 vi.mock('@/lib/server/classroom-job-store', () => ({
   createClassroomGenerationJob: mocks.createClassroomGenerationJob,
+  saveClassroomJobInput: mocks.saveClassroomJobInput,
 }));
 
 vi.mock('@/lib/server/classroom-job-runner', () => ({
@@ -50,6 +52,7 @@ describe('POST /api/generate-classroom', () => {
     mocks.after.mockReset();
     mocks.buildRequestOrigin.mockReset();
     mocks.createClassroomGenerationJob.mockReset();
+    mocks.saveClassroomJobInput.mockReset().mockResolvedValue(undefined);
     mocks.runClassroomGenerationJob.mockReset();
 
     mocks.buildRequestOrigin.mockReturnValue('http://localhost');
@@ -120,5 +123,12 @@ describe('POST /api/generate-classroom', () => {
       }),
     );
     expect(mocks.after).toHaveBeenCalledTimes(1);
+    // The input is kept for a restart of a run the process loses.
+    const [jobId] = mocks.createClassroomGenerationJob.mock.calls[0] ?? [];
+    expect(mocks.saveClassroomJobInput).toHaveBeenCalledWith(
+      jobId,
+      expect.objectContaining({ requirement: expect.any(String) }),
+      'http://localhost',
+    );
   });
 });
