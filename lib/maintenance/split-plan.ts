@@ -1,5 +1,7 @@
 import { sanitizeSlidePlacement, validateSlidePlacement } from '@openmaic/dsl';
 
+import { alignActionsToParts, plainText, type AlignableAction } from './narration-align';
+
 /**
  * Scene-split planning for mega-canvas slide scenes (token-free, content-
  * preserving). A debt scene whose rows cannot fit even after the lossless
@@ -149,7 +151,7 @@ export function computeSplitPlan(scene: {
   order?: number;
   type?: string;
   content?: unknown;
-  actions?: Array<{ id: string; type: string; elementId?: string }>;
+  actions?: Array<{ id: string; type: string; elementId?: string; text?: string }>;
 }): SplitPlan | null {
   if (scene.type !== 'slide') return null;
   const layout = computeRowLayout(scene.content);
@@ -203,8 +205,24 @@ export function computeSplitPlan(scene: {
     }
   });
   const chunkActions = chunksById.map(() => [] as string[]);
+  if (anchored.length === 0) {
+    // No anchor anywhere: interpolation has nothing to follow and used to put
+    // every action on chunk 0, leaving the other parts silent. Narration goes
+    // to the chunk whose text it is about instead (see narration-align).
+    const elementText = new Map(
+      sceneContentElements(scene.content).map((element) => [
+        String(element.id),
+        typeof element.content === 'string' ? plainText(element.content) : '',
+      ]),
+    );
+    const chunkTexts = chunksById.map((chunk) =>
+      [...chunk].map((id) => elementText.get(id) ?? '').join(' '),
+    );
+    const placement = alignActionsToParts(actions as AlignableAction[], chunkTexts);
+    actions.forEach((action, index) => chunkActions[placement[index] ?? 0]!.push(action.id));
+  }
   let anchorIndex = 0;
-  actions.forEach((action) => {
+  (anchored.length === 0 ? [] : actions).forEach((action) => {
     let chunk: number | undefined;
     if (typeof action.elementId === 'string') {
       chunk = idToChunk.get(action.elementId);

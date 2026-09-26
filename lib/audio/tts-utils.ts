@@ -104,3 +104,30 @@ export function splitLongSpeechActions(actions: Action[], providerId: TTSProvide
   });
   return didSplit ? nextActions : actions;
 }
+
+/**
+ * The words a narration line speaks. Stored narration is also the on-screen
+ * transcript, so markup a generator let slip (`code`, **emphasis**, list
+ * markers, headings, links) stays in the text — and a TTS provider reads the
+ * symbols aloud. Only markup goes; words, numbers and punctuation stay.
+ * Underscores are left alone: snake_case identifiers are real words here.
+ * Falls back to the original text if nothing speakable would remain.
+ */
+export function speakableText(text: string): string {
+  const spoken = text
+    // `code` spans, then any stray backtick
+    .replace(/`+([^`\n]*)`+/g, '$1')
+    .replace(/`/g, '')
+    // **bold**
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    // *emphasis* (whole words; a lone `*` in arithmetic is untouched)
+    .replace(/(^|[\s(])\*([^*\s][^*\n]*?)\*(?=[\s.,;:!?)]|$)/g, '$1$2')
+    // # headings and - / * / + list markers at line start
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, '')
+    .replace(/^[ \t]*[-*+][ \t]+/gm, '')
+    // [label](url) -> label
+    .replace(/\[([^\]\n]+)\]\([^)\s]+\)/g, '$1')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+  return spoken || text;
+}

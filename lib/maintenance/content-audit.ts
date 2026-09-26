@@ -181,6 +181,38 @@ export function stripDeadActionAnchors(scene: SlideSceneLike): number {
 }
 
 /**
+ * Deterministic cure for (1) duplicate element ids: every repeat after the
+ * first occurrence gets a fresh id (`<id>-dup<n>`, unique on the canvas).
+ * Actions keep naming the first occurrence, which is the element they were
+ * authored against in canvas order. Without this the finding is permanent:
+ * the semantics gate fails the scene, and a Retry reuses the same stored
+ * canvas, so its card could never clear. Returns the number of ids renamed.
+ */
+export function dedupeElementIds(scene: SlideSceneLike): number {
+  const elements = scene.content?.canvas?.elements;
+  if (!Array.isArray(elements)) return 0;
+  const taken = new Set(
+    elements.map((element) => element.id).filter((id): id is string => typeof id === 'string'),
+  );
+  const seen = new Set<string>();
+  let renamed = 0;
+  for (const element of elements as Array<{ id?: string }>) {
+    const id = element.id;
+    if (typeof id !== 'string') continue;
+    if (!seen.has(id)) {
+      seen.add(id);
+      continue;
+    }
+    let n = 2;
+    while (taken.has(`${id}-dup${n}`)) n += 1;
+    element.id = `${id}-dup${n}`;
+    taken.add(element.id);
+    renamed += 1;
+  }
+  return renamed;
+}
+
+/**
  * (4) Stale narration-order stamps — audioIds carry the scene order they were
  * generated for (`tts_s226_...`); a re-ordered deck leaves them behind. Warn:
  * cosmetic identity debt, but it blinds any tooling that keys audio by order.
