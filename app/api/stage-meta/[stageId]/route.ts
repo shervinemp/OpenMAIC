@@ -24,6 +24,8 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import { JsonFileDocumentStore } from '@openmaic/storage/server/file-document-store';
+
 import { isServerPersistenceConfigured } from '@/lib/config/feature-flags';
 import { resolveStageAccess } from '@/lib/server/stage-access';
 import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
@@ -35,7 +37,38 @@ export const runtime = 'nodejs';
 
 type Params = { params: Promise<{ stageId: string }> };
 
+/**
+ * File-backed persistence (PERSISTENCE_DIR) is single-user: its routes trust
+ * one dev token for every request, and there is no owner to compare against.
+ * The local user owns every course the store holds. Answering 404 here — the
+ * database path's "no such course" — closed the classroom's owner gate on
+ * every course, so a file-backed install never resumed generation, offered
+ * Retry, or ran a repair. Takes precedence over DATABASE_URL, as the
+ * persistence route does.
+ */
+async function fileModeStageMeta(dir: string, stageId: string): Promise<Response> {
+  const noStore = { 'cache-control': 'no-store' };
+  const document = await new JsonFileDocumentStore({ dir }).loadDocument(stageId).catch(() => null);
+  if (!document) {
+    return NextResponse.json({ error: 'not_found' }, { status: 404, headers: noStore });
+  }
+  const outline = document.outline as { generationComplete?: unknown } | undefined;
+  return NextResponse.json(
+    {
+      isOwner: true,
+      isPublic: false,
+      publishedAt: null,
+      generationComplete: outline?.generationComplete === true,
+      source: 'file',
+    },
+    { status: 200, headers: noStore },
+  );
+}
+
 export async function GET(req: NextRequest, { params }: Params) {
+  const fileDir = process.env.PERSISTENCE_DIR?.trim();
+  if (fileDir) return fileModeStageMeta(fileDir, (await params).stageId);
+
   // Gated on server persistence, NOT on the agent runtime. Ownership is
   // recorded by the persistence route (every request resolves an owner, and
   // the owner-bound document store writes a meta row for every course), so a
