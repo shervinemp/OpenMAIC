@@ -58,6 +58,16 @@ export async function register(): Promise<void> {
   const { validateServerConfig } = await import('@/lib/server/config-validation');
   validateServerConfig();
 
+  // Classroom generation jobs a previous process was running when it stopped
+  // start again instead of going stale. Not awaited: register() must not
+  // block on I/O.
+  void import('@/lib/server/classroom-job-runner')
+    .then(({ recoverInterruptedClassroomJobs }) => recoverInterruptedClassroomJobs())
+    .then((restarted) => {
+      if (restarted > 0) console.info(`[classroom-jobs] restarted ${restarted} interrupted job(s)`);
+    })
+    .catch((error) => console.warn('[classroom-jobs] startup recovery failed', error));
+
   let runner: import('@/lib/server/agent-runtime/runner').AgentRunnerHandle | undefined;
   let extractionRunner:
     | import('@/lib/server/material-extraction/runner').MaterialExtractionRunnerHandle

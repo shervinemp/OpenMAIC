@@ -4,6 +4,7 @@ import {
   isValidClassroomJobId,
   readClassroomGenerationJob,
 } from '@/lib/server/classroom-job-store';
+import { recoverInterruptedClassroomJob } from '@/lib/server/classroom-job-runner';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
 import { createLogger } from '@/lib/logger';
 
@@ -20,6 +21,12 @@ export async function GET(req: NextRequest, context: { params: Promise<{ jobId: 
     if (!isValidClassroomJobId(jobId)) {
       return apiError('INVALID_REQUEST', 400, 'Invalid classroom generation job id');
     }
+
+    // A job whose run this process lost (a restart mid-generation) starts
+    // again on the next poll instead of sitting "running" until it goes stale.
+    await recoverInterruptedClassroomJob(jobId).catch((error) =>
+      log.warn(`Classroom job recovery failed [jobId=${jobId}]:`, error),
+    );
 
     const job = await readClassroomGenerationJob(jobId);
     if (!job) {

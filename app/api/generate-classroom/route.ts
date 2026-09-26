@@ -3,7 +3,10 @@ import { nanoid } from 'nanoid';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { type GenerateClassroomInput } from '@/lib/server/classroom-generation';
 import { runClassroomGenerationJob } from '@/lib/server/classroom-job-runner';
-import { createClassroomGenerationJob } from '@/lib/server/classroom-job-store';
+import {
+  createClassroomGenerationJob,
+  saveClassroomJobInput,
+} from '@/lib/server/classroom-job-store';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
 import { createLogger } from '@/lib/logger';
 
@@ -72,6 +75,9 @@ export async function POST(req: NextRequest) {
     const baseUrl = buildRequestOrigin(req);
     const jobId = nanoid(10);
     const job = await createClassroomGenerationJob(jobId, body);
+    // Kept so a run the process loses can start again (see
+    // recoverInterruptedClassroomJob); removed once the job settles.
+    await saveClassroomJobInput(jobId, body, baseUrl);
     const pollUrl = `${baseUrl}/api/generate-classroom/${jobId}`;
 
     after(() => runClassroomGenerationJob(jobId, body, baseUrl));

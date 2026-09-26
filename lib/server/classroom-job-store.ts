@@ -32,6 +32,8 @@ export interface ClassroomGenerationJob {
   };
   scenesGenerated: number;
   totalScenes?: number;
+  /** Times an interrupted run was restarted (see recoverInterruptedClassroomJob). */
+  resumeCount?: number;
   result?: {
     classroomId: string;
     url: string;
@@ -44,6 +46,81 @@ export interface ClassroomGenerationJob {
 
 function jobFilePath(jobId: string) {
   return path.join(CLASSROOM_JOBS_DIR, `${jobId}.json`);
+}
+
+function jobInputFilePath(jobId: string) {
+  return path.join(CLASSROOM_JOBS_DIR, `${jobId}.input.json`);
+}
+
+/**
+ * What a restarted run needs: the job's input and the origin its result URL is
+ * built from. The job record keeps only a summary of the input, so without
+ * this a run the process lost could never run again.
+ */
+export interface ResumableClassroomJobInput {
+  input: GenerateClassroomInput;
+  baseUrl: string;
+}
+
+/**
+ * Keep the input beside the job for as long as the job may need to run again.
+ * A caller-supplied web-search key is not written to disk: a restarted run
+ * searches with the server's configured credentials, like any request that
+ * brings none.
+ */
+export async function saveClassroomJobInput(
+  jobId: string,
+  input: GenerateClassroomInput,
+  baseUrl: string,
+): Promise<void> {
+  const { webSearchApiKey: _secret, ...persistable } = input;
+  await writeJsonFileAtomic(jobInputFilePath(jobId), {
+    input: persistable,
+    baseUrl,
+  } satisfies ResumableClassroomJobInput);
+}
+
+export async function readClassroomJobInput(
+  jobId: string,
+): Promise<ResumableClassroomJobInput | null> {
+  try {
+    const parsed = JSON.parse(
+      await fs.readFile(jobInputFilePath(jobId), 'utf-8'),
+    ) as Partial<ResumableClassroomJobInput>;
+    if (!parsed?.input || typeof parsed.baseUrl !== 'string') return null;
+    return { input: parsed.input, baseUrl: parsed.baseUrl };
+  } catch {
+    return null;
+  }
+}
+
+/** A finished job (succeeded, or failed for good) will not run again. */
+export async function deleteClassroomJobInput(jobId: string): Promise<void> {
+  await fs.rm(jobInputFilePath(jobId), { force: true }).catch(() => undefined);
+}
+
+/**
+ * The job exactly as stored — without the read-side stale verdict, which is a
+ * view for pollers and would hide the interrupted run a recovery wants.
+ */
+export async function readClassroomGenerationJobRecord(
+  jobId: string,
+): Promise<ClassroomGenerationJob | null> {
+  try {
+    return JSON.parse(await fs.readFile(jobFilePath(jobId), 'utf-8')) as ClassroomGenerationJob;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+/** Ids of every stored job (input sidecars and temp files excluded). */
+export async function listClassroomGenerationJobIds(): Promise<string[]> {
+  const names = await fs.readdir(CLASSROOM_JOBS_DIR).catch(() => [] as string[]);
+  return names
+    .filter((name) => name.endsWith('.json') && !name.endsWith('.input.json'))
+    .map((name) => name.slice(0, -'.json'.length))
+    .filter(isValidClassroomJobId);
 }
 
 function buildInputSummary(input: GenerateClassroomInput): ClassroomGenerationJob['inputSummary'] {
