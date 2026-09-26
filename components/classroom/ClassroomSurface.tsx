@@ -412,7 +412,11 @@ export function ClassroomSurface({
     const { healCourseIntegrity } = await import('@/lib/maintenance/course-integrity');
     const state = useStageStore.getState();
     if (state.stage?.id !== classroomId || state.generationStatus === 'generating') return;
-    const heal = healCourseIntegrity(state.scenes);
+    // NEXT_PUBLIC_AUTO_SPOTLIGHT=0 turns the added spotlights off (default on).
+    const autoSpotlight = !['0', 'false', 'off'].includes(
+      (process.env.NEXT_PUBLIC_AUTO_SPOTLIGHT ?? '').trim().toLowerCase(),
+    );
+    const heal = healCourseIntegrity(state.scenes, { autoSpotlight });
     for (const { sceneId, patch } of heal.updates) state.updateScene(sceneId, patch);
     for (const widget of heal.brokenWidgets) {
       const scene = state.scenes.find((s) => s.id === widget.sceneId);

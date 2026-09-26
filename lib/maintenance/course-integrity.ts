@@ -15,7 +15,10 @@
  *  - quiz answer keys: rewritten to option values where the intent is certain
  *    (truncated or joined-label keys grade a correct choice as wrong);
  *  - broken widgets: reported — regenerating one costs tokens, so it becomes a
- *    retry card rather than a silent fix.
+ *    retry card rather than a silent fix;
+ *  - spotlights: a slide whose narration never points at anything gets one
+ *    where a line is unmistakably about one element (see auto-spotlight;
+ *    opt-out with `autoSpotlight: false`).
  *
  * Pure: scenes are never mutated; changes come back as patches.
  */
@@ -25,6 +28,7 @@ import type { Scene } from '@/lib/types/stage';
 import { findWidgetScriptFailure } from '@/lib/interactive/widget-script-check';
 import { healedAnswerKey } from '@/lib/quiz/answer-key-heal';
 import { dedupeElementIds, stripDeadActionAnchors } from './content-audit';
+import { withAutoSpotlights } from './auto-spotlight';
 import { alignActionsToParts, plainText } from './narration-align';
 
 export interface CourseIntegrityHeal {
@@ -37,7 +41,13 @@ export interface CourseIntegrityHeal {
     anchorsStripped: number;
     idsRenamed: number;
     quizKeysHealed: number;
+    spotlightsAdded: number;
   };
+}
+
+export interface CourseIntegrityOptions {
+  /** Add spotlights to slides whose narration points at nothing (default true). */
+  readonly autoSpotlight?: boolean;
 }
 
 /** Base id shared by a scene and its split parts (`__pN`, with any salt). */
@@ -52,8 +62,17 @@ function slideText(scene: Scene): string {
     .join(' ');
 }
 
-export function healCourseIntegrity(scenes: readonly Scene[]): CourseIntegrityHeal {
-  const report = { narrationFamilies: 0, anchorsStripped: 0, idsRenamed: 0, quizKeysHealed: 0 };
+export function healCourseIntegrity(
+  scenes: readonly Scene[],
+  options: CourseIntegrityOptions = {},
+): CourseIntegrityHeal {
+  const report = {
+    narrationFamilies: 0,
+    anchorsStripped: 0,
+    idsRenamed: 0,
+    quizKeysHealed: 0,
+    spotlightsAdded: 0,
+  };
   const brokenWidgets: CourseIntegrityHeal['brokenWidgets'] = [];
   const working = new Map<string, Scene>();
   const changed = new Map<string, Set<'actions' | 'content'>>();
@@ -134,6 +153,19 @@ export function healCourseIntegrity(scenes: readonly Scene[]): CourseIntegrityHe
       mark(part.id, 'actions');
     });
     report.narrationFamilies += 1;
+  }
+
+  // Spotlights last: they see the narration where it now plays.
+  if (options.autoSpotlight !== false) {
+    for (const scene of scenes) {
+      if (scene.type !== 'slide') continue;
+      const current = working.get(scene.id) ?? scene;
+      const next = withAutoSpotlights(current);
+      if (!next) continue;
+      report.spotlightsAdded += next.length - (current.actions ?? []).length;
+      editable(scene).actions = next;
+      mark(scene.id, 'actions');
+    }
   }
 
   const updates = scenes
