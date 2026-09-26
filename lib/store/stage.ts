@@ -281,6 +281,10 @@ function clearedStageState(state: Pick<StageState, 'generationEpoch'>) {
     skippedOutlineIds: [],
     repairActive: null,
     generatingOutlines: [],
+    // A cleared store belongs to no course: a server-job answer left behind
+    // would keep the next course's browser from ever resuming generation.
+    outlineProducer: null,
+    outlineProducerRef: null,
   };
 }
 
@@ -390,11 +394,14 @@ interface StageState {
 
   /**
    * Who produced the current outline ('client' absent / 'server-job'), written
-   * by the workbench stage-freshness sync's delegated initial read. Absent
-   * from the host's original store; the reference carries it so a server-owned
-   * course can be told apart from a client-authored one.
+   * by the workbench stage-freshness sync's delegated initial read and by the
+   * classroom load. Absent from the host's original store; the reference
+   * carries it so a server-owned course can be told apart from a
+   * client-authored one.
    */
   outlineProducer: DocumentProducer | null;
+  /** The producing job's handle (the agent session id) for a server-job course. */
+  outlineProducerRef: string | null;
 
   // Transient generation tracking (not persisted)
   generationEpoch: number;
@@ -661,6 +668,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   exams: {},
   examAttempts: {},
   outlineProducer: null,
+  outlineProducerRef: null,
   isOwner: true,
   readOnly: false,
   generationEpoch: 0,
@@ -1629,6 +1637,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           lessonGroups: recoveredLessonGroups,
           generationComplete,
           generationStatus,
+          // The classroom load reads producer ownership too (the workbench sync
+          // was its only writer): absent means a client-authored course, and a
+          // previous course's answer must not carry over through the singleton
+          // store.
+          outlineProducer: outlinesRecord?.producer ?? null,
+          outlineProducerRef: outlinesRecord?.producerRef ?? null,
           failedOutlines: finalFailedOutlines,
           skippedOutlineIds,
           exams: persistedExams.exams,

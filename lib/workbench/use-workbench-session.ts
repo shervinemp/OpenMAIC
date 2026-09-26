@@ -502,6 +502,7 @@ export function useStageFreshnessSync(
                 : (healedScenes[healedScenes.length - 1]?.id ?? null),
             generationComplete: record?.generationComplete ?? false,
             outlineProducer: record?.producer ?? state.outlineProducer,
+            outlineProducerRef: record?.producerRef ?? state.outlineProducerRef,
           }));
           if (healedDuplicate) {
             markStagePersistenceDirty([{ kind: 'structure' }]);
