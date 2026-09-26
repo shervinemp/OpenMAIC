@@ -98,6 +98,7 @@ import { isQwenCloneVoice, resolveTTSModelForVoice, TTS_PROVIDERS } from './cons
 import { downloadAudio, QwenVoiceCloneError, synthesizeQwenVoiceClone } from './qwen-voice-clone';
 import { evictQwenVoiceRegistrationMemo } from './qwen-voice-clone-registration';
 import { splitConcatenatedJsonObjects } from './json-stream';
+import { speakableText } from './tts-utils';
 import {
   VOXCPM_VLLM_MODEL_ID,
   VOXCPM_AUTO_VOICE_ID,
@@ -280,8 +281,11 @@ export function throwIfTtsRateLimited(
  */
 export async function generateTTS(
   config: TTSModelConfig,
-  text: string,
+  rawText: string,
 ): Promise<TTSGenerationResult> {
+  // Every narration path (browser route, server classroom jobs, agent
+  // sessions) synthesizes through here: markup is stripped once for all.
+  const text = speakableText(rawText);
   const provider = TTS_PROVIDERS[config.providerId as keyof typeof TTS_PROVIDERS];
 
   // Validate API key if required (only for built-in providers with known config)

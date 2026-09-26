@@ -397,6 +397,44 @@ export function ClassroomSurface({
     }
   }, [classroomId]);
 
+  // Zero-token integrity pass (see healCourseIntegrity): stored scenes get the
+  // cures that otherwise only run at generation/commit time — split narration
+  // spread across its parts, dead spotlights stripped, duplicate ids renamed,
+  // quiz keys that grade a right answer wrong rewritten — and a widget whose
+  // script cannot run gets a retry card. Runs FIRST in every repair pass, so
+  // the byte repair and the layout sweep snapshot healed scenes and nothing
+  // they write back can revert it.
+  const runCourseIntegrity = useCallback(async (): Promise<void> => {
+    const before = useStageStore.getState();
+    if (!before.stage || before.stage.id !== classroomId || before.scenes.length === 0) return;
+    if (before.generationStatus === 'generating') return;
+    if (await producingSessionBusy()) return;
+    const { healCourseIntegrity } = await import('@/lib/maintenance/course-integrity');
+    const state = useStageStore.getState();
+    if (state.stage?.id !== classroomId || state.generationStatus === 'generating') return;
+    const heal = healCourseIntegrity(state.scenes);
+    for (const { sceneId, patch } of heal.updates) state.updateScene(sceneId, patch);
+    for (const widget of heal.brokenWidgets) {
+      const scene = state.scenes.find((s) => s.id === widget.sceneId);
+      const outline = state.outlines.find((o) => o.id === scene?.outlineId);
+      if (!scene?.outlineId || !outline) continue;
+      state.recordScenePhase(scene.outlineId, 'semantics', {
+        status: 'failed',
+        error: widget.message,
+      });
+      state.addFailedOutline(outline);
+    }
+    if (heal.updates.length > 0) {
+      log.info(`[Classroom] Integrity pass healed ${heal.updates.length} scene(s)`, heal.report);
+      await useStageStore.getState().saveToStorage();
+    }
+  }, [classroomId]);
+
+  const runCourseRepairPass = useCallback(async (): Promise<void> => {
+    await runCourseIntegrity().catch((err) => log.warn('[Classroom] Integrity pass error:', err));
+    await runCourseMediaRepair();
+  }, [runCourseIntegrity, runCourseMediaRepair]);
+
   // Leaving the course (or switching to another) cancels a repair in flight:
   // its drain and requeue would otherwise keep calling providers for a course
   // nobody is looking at.
@@ -412,10 +450,10 @@ export function ClassroomSurface({
   // pass the moment it is back, instead of waiting for the next page open.
   useEffect(() => {
     if (loading || error || !mayGenerate) return;
-    const onOnline = () => void runCourseMediaRepair();
+    const onOnline = () => void runCourseRepairPass();
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
-  }, [loading, error, mayGenerate, runCourseMediaRepair]);
+  }, [loading, error, mayGenerate, runCourseRepairPass]);
 
   // Settled-course maintenance on open: the byte repair plus one
   // deterministic, tokenless layout sweep per course per session (clamps,
@@ -423,9 +461,14 @@ export function ClassroomSurface({
   // busy producing session.
   const runSettledCourseMaintenance = useCallback(
     (stageId: string) => {
-      void runCourseMediaRepair();
       void (async () => {
         if (await producingSessionBusy()) return;
+        // Integrity first, then the byte repair and the layout sweep on the
+        // healed scenes.
+        await runCourseIntegrity().catch((err) =>
+          log.warn('[Classroom] Integrity pass error:', err),
+        );
+        void runCourseMediaRepair();
         const { repairCourseLayout } = await import('@/lib/maintenance/repair-course-layout');
         await repairCourseLayout(stageId, [...useStageStore.getState().scenes]);
         // Split-terminal parts (and any other materially-present scene) get
@@ -434,7 +477,7 @@ export function ClassroomSurface({
         await stampCourseSceneHashes(stageId);
       })().catch((err) => log.warn('[Classroom] Layout repair error:', err));
     },
-    [runCourseMediaRepair],
+    [runCourseIntegrity, runCourseMediaRepair],
   );
 
   // Auto-resume generation for pending outlines (owner only). Two independent
@@ -753,7 +796,7 @@ export function ClassroomSurface({
               classroomId={classroomId}
               onRetryOutline={mayGenerate ? retrySingleOutline : undefined}
               onResumeGeneration={mayGenerate ? handleResumeGeneration : undefined}
-              onRepairCourse={mayGenerate ? () => void runCourseMediaRepair() : undefined}
+              onRepairCourse={mayGenerate ? () => void runCourseRepairPass() : undefined}
               courseRepairing={courseRepairing}
             />
           )}

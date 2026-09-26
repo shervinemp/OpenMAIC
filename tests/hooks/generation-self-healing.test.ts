@@ -436,3 +436,104 @@ describe('runOutlineJob on an edited deck', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });
+
+describe('regeneration cures what the integrity pass reports', () => {
+  const brokenHtml = '<script>state counts = new Array(10).fill(0);</script>';
+  const widget = (html: string): Scene =>
+    ({
+      ...scene(1),
+      type: 'interactive',
+      content: { type: 'interactive', html },
+      actionsSourceHash: computeActionsSourceHash({
+        content: { type: 'interactive', html },
+        agents: undefined,
+        userProfile: undefined,
+        languageDirective: undefined,
+      }),
+    }) as unknown as Scene;
+  const run = (target: SceneOutline, preComputed?: unknown) =>
+    runOutlineJob({
+      outline: target,
+      allOutlines: [target],
+      params: { stageInfo: { name: 'Course' } },
+      signal: new AbortController().signal,
+      mode: 'repair',
+      previousSpeeches: [],
+      ...(preComputed ? { preComputedContent: { success: true, content: preComputed } } : {}),
+    });
+
+  it('fails the semantics gate for a widget whose script cannot run', async () => {
+    const target = outline(1);
+    const broken = widget(brokenHtml);
+    landStage({ scenes: [], outlines: [target], blueprint: blueprintFor([target]) });
+    mockFetch.mockImplementation(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ success: true, scene: broken }),
+    }));
+
+    const result = await run(target, broken.content);
+
+    expect(result.failedPhase).toBe('semantics');
+    expect(result.error).toContain('widget script 1 cannot run');
+  });
+
+  it('regenerates a stored broken widget on retry instead of reusing it', async () => {
+    const target = outline(1);
+    landStage({
+      scenes: [widget(brokenHtml)],
+      outlines: [target],
+      blueprint: blueprintFor([target]),
+    });
+    const requested: string[] = [];
+    mockFetch.mockImplementation(async (url: string) => {
+      requested.push(url);
+      return { ok: false, status: 400, statusText: 'X', json: async () => ({ error: 'stop' }) };
+    });
+
+    await run(target);
+
+    expect(requested[0]).toBe('/api/generate/scene-content');
+  });
+
+  it('cures duplicate element ids instead of failing on them', async () => {
+    const target = outline(1);
+    const dup = {
+      ...scene(1),
+      content: {
+        type: 'slide',
+        canvas: {
+          id: 'canvas-dup',
+          elements: [
+            { id: 'x', type: 'text', left: 0, top: 0, width: 100, height: 40, content: '<p>a</p>' },
+            {
+              id: 'x',
+              type: 'text',
+              left: 0,
+              top: 60,
+              width: 100,
+              height: 40,
+              content: '<p>b</p>',
+            },
+          ],
+        },
+      },
+    } as unknown as Scene;
+    landStage({ scenes: [], outlines: [target], blueprint: blueprintFor([target]) });
+    mockFetch.mockImplementation(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ success: true, scene: dup }),
+    }));
+
+    const result = await run(target, dup.content);
+
+    expect(result.success).toBe(true);
+    const ids = (
+      result.scene?.content as { canvas: { elements: Array<{ id: string }> } }
+    ).canvas.elements.map((element) => element.id);
+    expect(ids).toEqual(['x', 'x-dup2']);
+  });
+});

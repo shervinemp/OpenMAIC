@@ -35,7 +35,9 @@ import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persiste
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { computeActionsSourceHash } from '@/lib/utils/content-hash';
 import { indexScenesByOutline } from '@/lib/utils/outline-scene-match';
+import { findWidgetScriptFailure } from '@/lib/interactive/widget-script-check';
 import {
+  dedupeElementIds,
   sceneContentFindings,
   stripSourceProvenance,
   stripDeadActionAnchors,
@@ -1047,6 +1049,15 @@ interface MaterialPhaseDescriptor {
   readonly queueOnFailure: boolean;
 }
 
+/** Why an interactive scene's widget cannot run, or null (non-widgets too). */
+function widgetScriptFailure(content: unknown): string | null {
+  const html = (content as { type?: unknown; html?: unknown } | undefined)?.html;
+  if ((content as { type?: unknown } | undefined)?.type !== 'interactive') return null;
+  if (typeof html !== 'string') return null;
+  const failure = findWidgetScriptFailure(html);
+  return failure ? `widget script ${failure.scriptIndex} cannot run: ${failure.message}` : null;
+}
+
 /** The outline's persisted media phase row, as the media pass left it. */
 function mediaPhaseStatus(outlineId: string): { status?: string; error?: string } | undefined {
   const job = useStageStore
@@ -1086,6 +1097,9 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
         );
         const reusableContent =
           persistedScene &&
+          // A widget that cannot run is not settled content: reusing it would
+          // hand the retry the same broken script.
+          widgetScriptFailure(persistedScene.content) === null &&
           // Settled iff the persisted scene's hash matches the CURRENT source
           // inputs (agents, profile, directive): a blueprint edit invalidates
           // the hash and re-pays content.
@@ -1323,6 +1337,12 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
       // fail the train — they ARE the fix.
       const provenanceFixed = stripSourceProvenance(scene as never);
       const deadAnchorsFixed = stripDeadActionAnchors(scene as never);
+      // Renaming repeats is a cure too: a duplicate id otherwise fails this
+      // gate forever, since a retry reuses the same stored canvas.
+      dedupeElementIds(scene as never);
+      // A widget whose script cannot parse is dead for every learner.
+      const widgetFailure = widgetScriptFailure(scene.content);
+      if (widgetFailure) return { status: 'failed', error: widgetFailure };
       const residual = sceneContentFindings(scene as never).filter(
         (finding) =>
           !(finding.kind === 'provenance/source-artifact' && provenanceFixed > 0) &&
