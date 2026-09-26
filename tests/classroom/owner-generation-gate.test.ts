@@ -184,7 +184,7 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     // on classroomId, which its params lookup is keyed by, and on the repair
     // routine its settled-deck branch runs.)
     expect(surface).toMatch(
-      /\}, \[loading, error, mayGenerate, generateRemaining(, classroomId)?(, runCourseMediaRepair)?\]\);/,
+      /\}, \[loading, error, mayGenerate, generateRemaining(, classroomId)?(, runSettledCourseMaintenance)?\]\);/,
     );
     // An unresolved answer is asked again rather than accepted for the load.
     expect(session).toContain('retryWhileOwnershipUnresolved');

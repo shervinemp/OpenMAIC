@@ -33,6 +33,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { claimStageSceneLoadToken, isCurrentStageSceneLoadToken } from '@/lib/store/stage';
 import { loadResumeImageMapping } from '@/lib/utils/image-storage';
 import { indexScenesByOutline } from '@/lib/utils/outline-scene-match';
+import { isProducingSessionActive } from '@/lib/classroom/producing-session';
 import {
   clearGenerationSessionForStage,
   loadGenerationParams,
@@ -66,6 +67,17 @@ const LOAD_UNAVAILABLE_ERROR = 'load-unavailable';
 // stage_link can become visible shortly before its document. Probe only that
 // explicit availability gap, with a small bounded backoff; media conversion
 // and ordinary failures never enter this schedule.
+/**
+ * A server-job course is the agent session's to write while it works; its
+ * repairs wait until that session is done (see isProducingSessionActive).
+ * Client-authored courses never wait here.
+ */
+async function producingSessionBusy(): Promise<boolean> {
+  const { outlineProducer, outlineProducerRef } = useStageStore.getState();
+  if (outlineProducer !== 'server-job') return false;
+  return isProducingSessionActive(outlineProducerRef);
+}
+
 export function ClassroomSurface({
   classroomId,
   variant = 'page',
@@ -321,7 +333,7 @@ export function ClassroomSurface({
     if (mediaRepairAbortRef.current) return; // one run at a time
     const storeState = useStageStore.getState();
     const { stage, outlines } = storeState;
-    if (!stage || stage.id !== classroomId || outlines.length === 0) return;
+    if (!stage || stage.id !== classroomId || storeState.scenes.length === 0) return;
     // A running batch owns the providers; repair waits for it to settle.
     if (storeState.generationStatus === 'generating') return;
     const controller = new AbortController();
@@ -345,6 +357,10 @@ export function ClassroomSurface({
       if (phases.size > 0) failedPhasesBySceneId.set(scene.id, phases);
     }
     try {
+      if (await producingSessionBusy()) {
+        log.info('[Classroom] The producing agent session is still at work; repair deferred.');
+        return;
+      }
       const { repairCourseMedia } = await import('@/lib/media/repair-course-media');
       await repairCourseMedia(scenes, {
         language: storeState.blueprint?.languageDirective,
@@ -401,6 +417,26 @@ export function ClassroomSurface({
     return () => window.removeEventListener('online', onOnline);
   }, [loading, error, mayGenerate, runCourseMediaRepair]);
 
+  // Settled-course maintenance on open: the byte repair plus one
+  // deterministic, tokenless layout sweep per course per session (clamps,
+  // move-restacks, the persisted debt ledger kept honest). Both wait for a
+  // busy producing session.
+  const runSettledCourseMaintenance = useCallback(
+    (stageId: string) => {
+      void runCourseMediaRepair();
+      void (async () => {
+        if (await producingSessionBusy()) return;
+        const { repairCourseLayout } = await import('@/lib/maintenance/repair-course-layout');
+        await repairCourseLayout(stageId, [...useStageStore.getState().scenes]);
+        // Split-terminal parts (and any other materially-present scene) get
+        // their content fingerprint in the same session.
+        const { stampCourseSceneHashes } = await import('@/lib/maintenance/stamp-scene-hashes');
+        await stampCourseSceneHashes(stageId);
+      })().catch((err) => log.warn('[Classroom] Layout repair error:', err));
+    },
+    [runCourseMediaRepair],
+  );
+
   // Auto-resume generation for pending outlines (owner only). Two independent
   // ownership facts gate it. The sidecar's per-viewer answer decides whether
   // this browser may spend the operator's provider budget at all, and fails
@@ -430,6 +466,9 @@ export function ClassroomSurface({
     if (state.outlineProducer === 'server-job') {
       generationStartedRef.current = true;
       log.info('[Classroom] A server-side job owns this course; the browser will not generate.');
+      // Generating is the job's; repairing what decayed is the owner's, once
+      // the producing session is done (each repair checks before it runs).
+      if (state.stage && state.scenes.length > 0) runSettledCourseMaintenance(state.stage.id);
       return;
     }
 
@@ -505,26 +544,15 @@ export function ClassroomSurface({
       // Nothing needs the generation session anymore — drop any record a
       // handoff left behind (single-slide course, refresh-after-completion).
       void clearGenerationSessionForStage(classroomId);
-      // Media recovery (same-train semantics): a fully materialized deck
-      // whose narration or image/video/poster bytes decayed gets an automatic
-      // repair run per mount (see runCourseMediaRepair).
-      void runCourseMediaRepair();
-      // Layout truth rides the SAME on-load pipeline: one deterministic,
-      // tokenless sweep per course per session clamps + move-restacks and
-      // keeps the persisted debt ledger honest (write-offs included).
-      void (async () => {
-        const { repairCourseLayout } = await import('@/lib/maintenance/repair-course-layout');
-        await repairCourseLayout(stage.id, [...useStageStore.getState().scenes]);
-        // Split-terminal parts (and any other materially-present scene) get
-        // their content fingerprint in the same session.
-        const { stampCourseSceneHashes } = await import('@/lib/maintenance/stamp-scene-hashes');
-        await stampCourseSceneHashes(stage.id);
-      })();
+      // Media and layout recovery: a fully materialized deck whose narration
+      // or image/video/poster bytes decayed, or whose layout carries debt,
+      // gets its maintenance run per mount.
+      runSettledCourseMaintenance(stage.id);
     }
     // classroomId: the params lookup and session cleanup are keyed by it. A
     // change re-runs this effect, but `generationStartedRef` still guards the
     // one-shot resume.
-  }, [loading, error, mayGenerate, generateRemaining, classroomId, runCourseMediaRepair]);
+  }, [loading, error, mayGenerate, generateRemaining, classroomId, runSettledCourseMaintenance]);
 
   // In-page resume after a provider-failure pause (quota exhaustion, flaky
   // free tier): re-kick the batch with the same handoff params the first
