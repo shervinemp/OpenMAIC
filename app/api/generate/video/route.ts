@@ -33,7 +33,7 @@ import type { VideoProviderId, VideoGenerationOptions } from '@/lib/media/types'
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateClientBaseUrl, validateUrlForSSRF } from '@/lib/server/ssrf-guard';
-import { withMediaProviderFetch } from '@/lib/server/media-provider-fetch';
+import { withVideoProviderFetch } from '@/lib/server/media-provider-fetch';
 
 const log = createLogger('VideoGeneration API');
 
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
     );
 
     const result = await generateVideo(
-      withMediaProviderFetch({ providerId, apiKey, baseUrl, model }, managed),
+      withVideoProviderFetch({ providerId, apiKey, baseUrl, model }, managed),
       options,
     );
 
