@@ -86,6 +86,24 @@ describe('JsonFileDocumentStore', () => {
     expect(after!.scenes.find((s) => s.id === 'scene-a')!.title).toBe('newer');
   });
 
+  // The stage clock only ever moves forward. A stage whose stored clock came
+  // from a client running ahead of this server must not be pulled BACK by the
+  // next incremental write, or the saveDocument fence stops seeing it as newer.
+  test('scene writes and deletes advance a future-dated stage clock', async () => {
+    await store.saveDocument(makeDocument());
+    const loaded = await store.loadDocument('stage-1');
+    const future = Date.now() + 3_600_000;
+    await store.putStage('stage-1', { ...loaded!.stage, updatedAt: future });
+
+    await store.putScene('stage-1', slideScene('stage-1', 'scene-new', 30));
+    const afterPut = await store.loadDocument('stage-1');
+    expect(afterPut!.stage.updatedAt).toBeGreaterThan(future);
+
+    await store.deleteScene('stage-1', 'scene-new');
+    const afterDelete = await store.loadDocument('stage-1');
+    expect(afterDelete!.stage.updatedAt).toBeGreaterThan(afterPut!.stage.updatedAt);
+  });
+
   // A tab that still holds a deleted scene must not resurrect it with a
   // stale full save: the deletion advances the stage clock like putScene.
   test('a stale full save cannot resurrect a deleted scene', async () => {

@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { isMaintenanceUnauthorized } from '@/lib/server/maintenance-auth';
 import { createCourseDocumentStore } from '@/lib/persistence/course-document-store';
 import { singleFlight } from '@/lib/server/single-flight';
 import { callLLM } from '@/lib/ai/llm';
@@ -50,15 +51,8 @@ type ReviewOutcome =
     }
   | { ok: false; code: ApiErrorCode; status: number; message: string };
 
-async function isUnauthorized(request: NextRequest): Promise<boolean> {
-  const token = process.env.PERSISTENCE_DEV_TOKEN;
-  const authorization = request.headers.get('authorization');
-  if (!token) return true;
-  return !authorization || authorization !== `Bearer ${token}`;
-}
-
 export async function POST(req: NextRequest) {
-  if (await isUnauthorized(req)) {
+  if (isMaintenanceUnauthorized(req)) {
     return apiError('UNAUTHENTICATED', 401, 'review route requires the dev persistence token');
   }
   const fileDir = process.env.PERSISTENCE_DIR;

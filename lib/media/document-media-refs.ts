@@ -38,6 +38,8 @@ function refIsMediaCandidate(value: string): boolean {
   }
   return (
     /^[A-Za-z0-9_.-]+$/.test(value) &&
+    // `.` and `..` fit the charset but name directories, not media.
+    !/^\.+$/.test(value) &&
     !value.startsWith('data:') &&
     !/^https?:/.test(value) &&
     !/^[A-Za-z]:[\\/]/.test(value)

@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { isMaintenanceUnauthorized } from '@/lib/server/maintenance-auth';
 import { createCourseDocumentStore } from '@/lib/persistence/course-document-store';
 import { layoutLedgerOf, residualFindings } from '@/lib/maintenance/layout-relayout';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -19,9 +20,7 @@ interface FlaggedScene {
  * debt list (red/green doctrine — findings, not fixes).
  */
 export async function GET(req: NextRequest) {
-  const token = process.env.PERSISTENCE_DEV_TOKEN;
-  const authorization = req.headers.get('authorization');
-  if (!token || !authorization || authorization !== `Bearer ${token}`) {
+  if (isMaintenanceUnauthorized(req)) {
     return apiError('UNAUTHENTICATED', 401, 'maintenance route requires the dev persistence token');
   }
   const fileDir = process.env.PERSISTENCE_DIR;

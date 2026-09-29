@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { isMaintenanceUnauthorized } from '@/lib/server/maintenance-auth';
 import { createCourseDocumentStore } from '@/lib/persistence/course-document-store';
 import { computeSplitPlan, planSummary, type SplitPlan } from '@/lib/maintenance/split-plan';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -12,9 +13,7 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
  * group jobs) is gated on the review of the plan itself.
  */
 export async function POST(req: NextRequest) {
-  const token = process.env.PERSISTENCE_DEV_TOKEN;
-  const authorization = req.headers.get('authorization');
-  if (!token || !authorization || authorization !== `Bearer ${token}`) {
+  if (isMaintenanceUnauthorized(req)) {
     return apiError('UNAUTHENTICATED', 401, 'maintenance route requires the dev persistence token');
   }
   const fileDir = process.env.PERSISTENCE_DIR;

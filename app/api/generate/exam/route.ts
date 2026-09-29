@@ -32,21 +32,32 @@ function coerceChoiceQuestion(raw: unknown, index: number): ExamChoiceQuestion |
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const options = Array.isArray(r.options) ? r.options : [];
-  const coercedOptions = options
-    .map((o) => {
-      if (!o || typeof o !== 'object') return null;
-      const opt = o as Record<string, unknown>;
-      const label = typeof opt.label === 'string' ? opt.label.trim() : '';
-      if (!label) return null;
-      return { label, value: String(opt.value ?? String.fromCharCode(65 + index)).slice(0, 1) };
-    })
-    .filter(Boolean) as Array<{ label: string; value: string }>;
+  const coercedOptions: Array<{ label: string; value: string }> = [];
+  options.forEach((o, optionIndex) => {
+    if (!o || typeof o !== 'object') return;
+    const opt = o as Record<string, unknown>;
+    const label = typeof opt.label === 'string' ? opt.label.trim() : '';
+    if (!label) return;
+    // A missing value falls back to the option's own letter; keyed by the
+    // question index it gave every option of the question the same value.
+    const value = String(opt.value ?? String.fromCharCode(65 + optionIndex))
+      .trim()
+      .slice(0, 1)
+      .toUpperCase();
+    if (!value) return;
+    coercedOptions.push({ label, value });
+  });
   if (coercedOptions.length < 2) return null;
+  // Two options sharing a value make the key ambiguous.
+  if (new Set(coercedOptions.map((o) => o.value)).size !== coercedOptions.length) return null;
   const answerValues = (Array.isArray(r.answer) ? r.answer : [r.answer])
     .map((v) => String(v).trim().slice(0, 1).toUpperCase())
     .filter(Boolean);
   if (answerValues.length !== 1) return null;
+  // A key that names no option can never be answered correctly.
+  if (!coercedOptions.some((o) => o.value === answerValues[0])) return null;
   const question = typeof r.question === 'string' ? r.question.trim() : '';
+  if (!question) return null;
   const analysis = typeof r.analysis === 'string' ? r.analysis.trim() : '';
   return {
     id: `mc_${index + 1}`,
@@ -141,7 +152,7 @@ export async function POST(req: NextRequest) {
       thinkingConfig,
     } = await resolveModelFromRequest(req, body, 'exam-generation');
 
-    const digest = coveredOutlines
+    const digest = (Array.isArray(coveredOutlines) ? coveredOutlines : [])
       .slice(0, 400)
       .map(
         (o) =>
@@ -175,7 +186,7 @@ ${languageDirective ? `- Language directive: ${languageDirective}` : '- Write al
 
     const userPrompt = `COVERED MATERIAL (outline titles, objectives, key points):\n${digest}\n\nWrite the exam now. Remember: at least ${MIN_MC_QUESTIONS} MC questions and ${MIN_FR_QUESTIONS} free-response questions, and conform to the JSON schema exactly.`;
 
-    const calllOnce = async (extra?: string) => {
+    const callOnce = async (extra?: string) => {
       const result = await callLLM(
         {
           model: languageModel,
@@ -226,14 +237,14 @@ ${languageDirective ? `- Language directive: ${languageDirective}` : '- Write al
       };
     };
 
-    let spec = buildSpec(await calllOnce());
+    let spec = buildSpec(await callOnce());
     if (!spec) {
       return apiError('GENERATION_FAILED', 500, 'Exam generation returned unparseable output');
     }
     const findings = findShortfalls(spec);
     if (findings.length) {
       log.warn(`Exam spec shortfall (${findings.join('; ')}); re-prompting once`);
-      spec = buildSpec(await calllOnce(findings.join(';\n')));
+      spec = buildSpec(await callOnce(findings.join(';\n')));
       if (!spec) {
         return apiError(
           'GENERATION_FAILED',

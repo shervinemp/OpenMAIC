@@ -242,12 +242,10 @@ export function ClassroomSurface({
 
     // Reset loading state on course switch to unmount Stage during transition,
     // preventing stale data from syncing back to the new course
-    /* eslint-disable react-hooks/set-state-in-effect -- Course switch must hide stale Stage before async load */
     setLoading(true);
     setError(null);
     setLoadUnavailable(false);
     setNotFound(false);
-    /* eslint-enable react-hooks/set-state-in-effect */
     generationStartedRef.current = false;
 
     let retryTimer: ReturnType<typeof setTimeout> | null = null;

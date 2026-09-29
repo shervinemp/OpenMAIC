@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 
 import { createLogger } from '@/lib/logger';
@@ -78,7 +78,18 @@ async function writeBindings(
 ): Promise<void> {
   await mkdir(join(persistenceDir, 'course-git'), { recursive: true });
   const payload: BindingFile = { version: 1, bindings };
-  await writeFile(bindingsPath(persistenceDir), JSON.stringify(payload, null, 2), 'utf8');
+  // Temp file + rename: a crash mid-write must leave the old file, never a
+  // truncated one. Every flush reads this file, and an unparseable copy would
+  // silently skip every course commit until someone repaired it by hand.
+  const target = bindingsPath(persistenceDir);
+  const temp = `${target}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    await writeFile(temp, JSON.stringify(payload, null, 2), 'utf8');
+    await rename(temp, target);
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export function listCourseBindings(persistenceDir: string): Promise<CourseRepositoryBinding[]> {

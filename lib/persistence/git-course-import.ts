@@ -22,7 +22,7 @@ const log = createLogger('CourseGitImport');
  * (git-course-sync.ts) commits the freshest persisted document into the repo;
  * the INBOUND side here never silently overwrites the persistence store.
  * Pull is always diff-first: an update lands only through an explicit apply
- * (or via the auto-apply env, which operators opt into, not into).
+ * (or via the auto-apply env, which operators must opt into).
  *
  * Design constraints:
  * - Document shape: repository snapshots are the same documents JSON the
@@ -125,9 +125,7 @@ function canonicalJson(value: unknown): string {
  * read is not an update).
  */
 function migratedCore(document: unknown): unknown {
-  const parsed = document as { outline?: unknown; [key: string]: unknown };
-  const { outline, ...core } = parsed as { outline?: unknown };
-  void parsed;
+  const { outline, ...core } = document as { outline?: unknown };
   const migrated = migrateCore(core);
   return outline === undefined ? migrated : { ...(migrated as object), outline };
 }

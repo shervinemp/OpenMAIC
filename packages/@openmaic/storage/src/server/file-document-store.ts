@@ -61,10 +61,7 @@ import {
   isStaleOverwrite,
 } from '../document/types.js';
 
-export interface JsonFileDocumentStoreOptions<
-  TScene extends SceneLike = Scene,
-  TStage extends Stage = Stage,
-> {
+export interface JsonFileDocumentStoreOptions {
   /** Root directory; the `documents/` subdirectory is created on demand. */
   dir: string;
   /** Scene validator at the write boundary. Defaults to the DSL `validateScene`. */
@@ -92,6 +89,16 @@ function withDocumentWriteLock<T>(path: string, task: () => Promise<T>): Promise
     if (documentWriteLocks.get(path) === tail) documentWriteLocks.delete(path);
   });
   return run;
+}
+
+/**
+ * The next stage revision: strictly newer than the stored one.
+ * `putStage` already keeps the stage clock monotonic; the other incremental
+ * writes stamped a bare `Date.now()`, which moves it BACKWARD whenever the
+ * stored value came from a client clock that runs ahead of this server's.
+ */
+function advancedStageClock(stored: { updatedAt?: unknown }): number {
+  return Math.max(Date.now(), (Number(stored.updatedAt) || 0) + 1);
 }
 
 function assertValid(result: ReturnType<StageValidator>, label: string): void {
@@ -147,7 +154,7 @@ export class JsonFileDocumentStore<
   private readonly validateSceneFn: SceneValidator;
   private readonly validateStageFn: StageValidator;
 
-  constructor(options: JsonFileDocumentStoreOptions<TScene, TStage>) {
+  constructor(options: JsonFileDocumentStoreOptions) {
     this.root = options.dir;
     this.validateSceneFn = options.validateScene ?? validateScene;
     this.validateStageFn = options.validateStage ?? validateStage;
@@ -448,7 +455,7 @@ export class JsonFileDocumentStore<
       // tab replaying an old snapshot) is not detected as stale and silently
       // clobbers this write — the demonic resurrection we traced in the SCD
       // lesson's canvases.
-      const stage = { ...stored.stage, updatedAt: Date.now() };
+      const stage = { ...stored.stage, updatedAt: advancedStageClock(stored.stage) };
       await this.writeAtomic(stageId, { ...stored, stage, scenes });
     });
   }
@@ -494,7 +501,7 @@ export class JsonFileDocumentStore<
       if (touched === 0) return;
       await this.writeAtomic(stageId, {
         ...stored,
-        stage: { ...stored.stage, updatedAt: Date.now() },
+        stage: { ...stored.stage, updatedAt: advancedStageClock(stored.stage) },
         outline,
       });
     });
@@ -515,7 +522,7 @@ export class JsonFileDocumentStore<
       // A deletion is a newer revision like any putScene: advance the stage
       // clock so a stale full-document save (a tab still holding the scene)
       // trips the lost-update fence instead of resurrecting it.
-      const stage = { ...stored.stage, updatedAt: Date.now() };
+      const stage = { ...stored.stage, updatedAt: advancedStageClock(stored.stage) };
       await this.writeAtomic(stageId, { ...stored, stage, scenes });
     });
   }

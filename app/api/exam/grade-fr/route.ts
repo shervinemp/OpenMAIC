@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
 Reply ONLY with JSON:
 {
   "score": <integer from 0 to ${maxPoints}>,
-  "comment": "<2-4 sentences of feedback: what was strong, what was missing, how to reach the standard>"${includeCriteria ? `,\n  "criteria": [{"id":"<rubric id>","met":<true|false|"partial">,"comment":"<one sentence>"}]` : ''}
+  "comment": "<2-4 sentences of feedback: what was strong, what was missing, how to reach the standard>"${includeCriteria ? `,\n  "criteria": [{"id":"<rubric id>","met":<true only when the criterion is fully satisfied, otherwise false>,"comment":"<one sentence>"}]` : ''}
 }`;
 
     const userPrompt = `RUBRIC:
@@ -122,9 +122,15 @@ ${userAnswer}`;
               .filter((c) => c.id)
           : undefined;
       const maybe = (parsed.comment ?? '') as string;
+      const rawScore = Number(parsed.score);
+      // A missing or non-numeric score is an unparseable grade, not a zero or
+      // a NaN that serializes to null and poisons the exam total.
+      if (parsed.score === null || parsed.score === undefined || !Number.isFinite(rawScore)) {
+        throw new Error('No numeric score');
+      }
       grade = {
         questionId: questionId ?? '',
-        score: Math.max(0, Math.min(maxPoints, Math.round(Number(parsed.score)))),
+        score: Math.max(0, Math.min(maxPoints, Math.round(rawScore))),
         maxPoints,
         comment: String(maybe),
         criteria: criteria?.length ? criteria : undefined,

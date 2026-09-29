@@ -57,7 +57,7 @@ export async function materializeStageAssets(
   stageId: string,
   document: unknown,
 ): Promise<StageAssetMaterials> {
-  const assetDir = join('assets', stageId);
+  const assetDir = stageAssetDir(stageId);
   const sources = {
     bytes: join(persistenceDir, 'assets'),
     meta: join(persistenceDir, 'assets', '.meta'),
@@ -170,9 +170,17 @@ export async function materializeStageAssets(
   };
 }
 
-/** Repo-side path of a stage's asset directory (for consumers/tests). */
+/**
+ * Repo-side path of a stage's asset directory (for consumers/tests). One path
+ * segment, always: the commit's removal flow deletes this directory
+ * recursively, so an id carrying separators or dot segments must never resolve
+ * outside `assets/`. Ordinary ids (nanoid, uuid) encode to themselves.
+ */
 export function stageAssetDir(stageId: string): string {
-  return join('assets', stageId);
+  const segment = encodeURIComponent(stageId).replace(/^\.+$/, (dots) =>
+    dots.replace(/\./g, '%2E'),
+  );
+  return join('assets', segment || '_');
 }
 
 /**

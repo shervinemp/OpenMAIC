@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { isMaintenanceUnauthorized } from '@/lib/server/maintenance-auth';
 import { createCourseDocumentStore } from '@/lib/persistence/course-document-store';
 import { singleFlight } from '@/lib/server/single-flight';
 import {
@@ -67,7 +68,7 @@ function mergeBudgetCrossed(checkpoint: { used: number }): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  const unauthorized = await isUnauthorized(req);
+  const unauthorized = isMaintenanceUnauthorized(req);
   if (unauthorized) {
     return apiError('UNAUTHENTICATED', 401, 'maintenance route requires the dev persistence token');
   }
@@ -769,11 +770,4 @@ async function runLayoutRepair(
       reports,
     },
   };
-}
-
-async function isUnauthorized(request: NextRequest): Promise<boolean> {
-  const token = process.env.PERSISTENCE_DEV_TOKEN;
-  const authorization = request.headers.get('authorization');
-  if (!token) return true;
-  return !authorization || authorization !== `Bearer ${token}`;
 }
