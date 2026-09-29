@@ -7,11 +7,15 @@
  *   pnpm serve kokoro              → start only Kokoro
  *   pnpm serve comfyui openmaic    → start only ComfyUI + OpenMAIC
  *
- * Ctrl+C stops the processes it started. Paths below are machine-specific
- * (see LOCAL-RUNBOOK.md — do not commit that file). Provider selection stays
- * in the app's Settings UI; this script only makes the servers reachable.
+ * Ctrl+C stops the processes it started. Install locations default to this
+ * machine's layout and are overridable: MAIC_KOKORO_DIR (a folder holding
+ * kokoro_server.py and a .venv) and MAIC_COMFYUI_DIR (a ComfyUI-Easy-Install
+ * folder). Provider selection stays in the app's Settings UI; this script
+ * only makes the servers reachable.
  */
 import { spawn } from 'node:child_process';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 
@@ -21,18 +25,22 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 // server squatting on a port can never be mistaken for OpenMAIC.
 const OPENMAIC_CANDIDATE_PORTS = [3000, 3001, 3002, 3003, 3004];
 
+const KOKORO_DIR = process.env.MAIC_KOKORO_DIR ?? join(homedir(), 'kokoro');
+const COMFYUI_DIR =
+  process.env.MAIC_COMFYUI_DIR ?? join(homedir(), 'Desktop', 'New folder', 'ComfyUI-Easy-Install');
+
 const SERVICES = {
   kokoro: {
     label: 'Kokoro TTS',
-    cmd: 'C:\\Users\\sherv\\kokoro\\.venv\\Scripts\\python.exe',
-    args: ['C:\\Users\\sherv\\kokoro\\kokoro_server.py'],
-    cwd: 'C:\\Users\\sherv\\kokoro',
+    cmd: join(KOKORO_DIR, '.venv', 'Scripts', 'python.exe'),
+    args: [join(KOKORO_DIR, 'kokoro_server.py')],
+    cwd: KOKORO_DIR,
     healthUrl: 'http://127.0.0.1:8080/health',
     timeoutMs: 30_000,
   },
   comfyui: {
     label: 'ComfyUI',
-    cmd: 'C:\\Users\\sherv\\Desktop\\New folder\\ComfyUI-Easy-Install\\python_embeded\\python.exe',
+    cmd: join(COMFYUI_DIR, 'python_embeded', 'python.exe'),
     args: [
       '-I',
       '-W',
@@ -41,7 +49,7 @@ const SERVICES = {
       '--windows-standalone-build',
       '--use-flash-attention',
     ],
-    cwd: 'C:\\Users\\sherv\\Desktop\\New folder\\ComfyUI-Easy-Install',
+    cwd: COMFYUI_DIR,
     healthUrl: 'http://localhost:8188/system_stats',
     timeoutMs: 120_000,
   },
