@@ -144,6 +144,55 @@ describe('repairCourseMedia — class-agnostic byte detection', () => {
     });
   });
 
+  it('detectOnly raises the failed phases but synthesizes and generates nothing', async () => {
+    mocks.resolveAudioBlob.mockResolvedValue(null);
+    oracleMocks.probeServerAssetPresence.mockImplementation(async (refs?: readonly string[]) => {
+      const map = new Map<string, boolean>();
+      for (const ref of refs ?? []) map.set(ref, false);
+      return map;
+    });
+    const failures: Array<[string, string]> = [];
+
+    const report = await repairCourseMedia(
+      [scene({ id: 's1', order: 1, audioIds: ['tts_s1_a0'], srcRefs: ['gen_img_1'] })],
+      {
+        outlines: [outline('o1', 1, ['gen_img_1'])],
+        stageId: 'stage-1',
+        detectOnly: true,
+        onScenePhaseFailure: (sceneId, phase) => failures.push([sceneId, phase]),
+      },
+    );
+
+    // The red cards exist (the owner will see them and press Retry)...
+    expect(failures).toEqual(
+      expect.arrayContaining([
+        ['s1', 'tts'],
+        ['s1', 'media'],
+      ]),
+    );
+    expect(report.narrationFailedSceneIds).toEqual(['s1']);
+    expect(report.mediaFailedSceneIds).toEqual(['s1']);
+    // ...and not one paid call was made on the owner's behalf.
+    expect(mocks.drainPendingSceneTTS).not.toHaveBeenCalled();
+    expect(mocks.generateMediaForOutlines).not.toHaveBeenCalled();
+    expect(report.mediaRequeued).toBe(0);
+    expect(report.audioRestored).toBe(0);
+  });
+
+  it('detectOnly still lifts a stale failed row whose bytes verify healthy', async () => {
+    mocks.resolveAudioBlob.mockResolvedValue(AUDIO_BYTES);
+    const resolved: Array<[string, string]> = [];
+
+    await repairCourseMedia([scene({ id: 's1', order: 1, audioIds: ['tts_s1_a0'] })], {
+      detectOnly: true,
+      persistedFailedPhases: new Map([['s1', new Set(['tts'] as const)]]),
+      onScenePhaseResolved: (sceneId, phase) => resolved.push([sceneId, phase]),
+    });
+
+    expect(resolved).toEqual([['s1', 'tts']]);
+    expect(mocks.drainPendingSceneTTS).not.toHaveBeenCalled();
+  });
+
   it('dead narration bytes drive the drain, which restores them (post-audit resolves)', async () => {
     mocks.resolveAudioBlob
       // Detection: dead. Post-audit: resolves — the drain fixed them.

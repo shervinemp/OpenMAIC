@@ -128,6 +128,15 @@ export interface MediaRepairOptions {
    * moment byte truth disproves them.
    */
   persistedFailedPhases?: ReadonlyMap<string, ReadonlySet<'tts' | 'media'>>;
+  /**
+   * Look, don't spend. Detection runs and the ONE QUEUE is brought in line
+   * with byte truth (dead narration/media raise their red retry cards, stale
+   * failed rows lift), but nothing is dispatched: no TTS synthesis, no
+   * image/video generation. The owner presses Retry on a card, or the repair
+   * button, to pay for the fixes. This is what a course does by itself when
+   * it is opened.
+   */
+  detectOnly?: boolean;
 }
 
 /** Narration refs carry the pipeline's stable-request-id shape (see walker). */
@@ -311,6 +320,46 @@ export async function repairCourseMedia(
   report.mediaPending = deadMediaRefs.size;
   report.mediaRequeued = deadMediaRefs.size;
 
+  // ---- Stale-failure reconciliation ----
+  const reconcileStaleFailures = (): void => {
+    // A phase row recorded failed by an earlier decay whose refs verify healthy
+    // right now would keep its red card forever: the resolution hook above only
+    // sees scenes that had dead refs THIS run. Byte truth is the predicate's
+    // only input, so lifting is always allowed and never invents health.
+    if (recordScenePhaseResolved && options.persistedFailedPhases) {
+      let lifted = 0;
+      for (const [sceneId, phases] of options.persistedFailedPhases) {
+        if (phases.has('tts') && healthyNarrationScenes.has(sceneId)) {
+          recordScenePhaseResolved(sceneId, 'tts');
+          lifted += 1;
+        }
+        if (phases.has('media') && healthyMediaScenes.has(sceneId)) {
+          recordScenePhaseResolved(sceneId, 'media');
+          lifted += 1;
+        }
+      }
+      if (lifted > 0) {
+        log.info(
+          `Reconciled ${lifted} stale failed phase row(s) against byte truth ` +
+            `(${options.persistedFailedPhases.size} persisted failed scene(s) audited)`,
+        );
+      }
+    }
+  };
+
+  if (options.detectOnly) {
+    // Detection truth only: what is dead is reported, none of it is requeued.
+    report.mediaRequeued = 0;
+    report.audioStillPending = deadNarrationRefs.size;
+    report.mediaUnrecoverable = 0;
+    reconcileStaleFailures();
+    log.info(
+      `Media repair (detect only): ${deadNarrationRefs.size} narration ref(s) and ` +
+        `${deadMediaRefs.size} image/video/poster ref(s) missing; nothing dispatched`,
+    );
+    return report;
+  }
+
   // ---- Image/video dispatch: byte-aware orchestrator requeue ----
   const canDispatchMedia = !!(options.outlines && options.stageId);
   if (canDispatchMedia && deadMediaRefs.size > 0) {
@@ -386,30 +435,7 @@ export async function repairCourseMedia(
     }
   }
 
-  // ---- Stale-failure reconciliation ----
-  // A phase row recorded failed by an earlier decay whose refs verify healthy
-  // right now would keep its red card forever: the resolution hook above only
-  // sees scenes that had dead refs THIS run. Byte truth is the predicate's
-  // only input, so lifting is always allowed and never invents health.
-  if (recordScenePhaseResolved && options.persistedFailedPhases) {
-    let lifted = 0;
-    for (const [sceneId, phases] of options.persistedFailedPhases) {
-      if (phases.has('tts') && healthyNarrationScenes.has(sceneId)) {
-        recordScenePhaseResolved(sceneId, 'tts');
-        lifted += 1;
-      }
-      if (phases.has('media') && healthyMediaScenes.has(sceneId)) {
-        recordScenePhaseResolved(sceneId, 'media');
-        lifted += 1;
-      }
-    }
-    if (lifted > 0) {
-      log.info(
-        `Reconciled ${lifted} stale failed phase row(s) against byte truth ` +
-          `(${options.persistedFailedPhases.size} persisted failed scene(s) audited)`,
-      );
-    }
-  }
+  reconcileStaleFailures();
 
   log.info(
     `Media repair complete: ${report.audioRestored} narration ref(s) restored across ` +

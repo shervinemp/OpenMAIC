@@ -327,73 +327,82 @@ export function ClassroomSurface({
   // heals across runs, never through an unbounded loop.
   const mediaRepairAbortRef = useRef<AbortController | null>(null);
   const [courseRepairing, setCourseRepairing] = useState(false);
-  const runCourseMediaRepair = useCallback(async (): Promise<void> => {
-    if (mediaRepairAbortRef.current) return; // one run at a time
-    const storeState = useStageStore.getState();
-    const { stage, outlines } = storeState;
-    if (!stage || stage.id !== classroomId || storeState.scenes.length === 0) return;
-    // A running batch owns the providers; repair waits for it to settle.
-    if (storeState.generationStatus === 'generating') return;
-    const controller = new AbortController();
-    mediaRepairAbortRef.current = controller;
-    setCourseRepairing(true);
-    const scenes = [...storeState.scenes];
-    // Stale-failure reconciliation input: persisted failed phase rows keyed by
-    // scene id (lessonGroups jobs are outline-keyed). The repair audit lifts
-    // these the moment byte truth disproves them.
-    const failedPhasesBySceneId = new Map<string, Set<'tts' | 'media'>>();
-    const jobByOutlineId = new Map(
-      storeState.lessonGroups.flatMap((group) =>
-        (group.jobs ?? []).map((job) => [job.outlineId, job] as const),
-      ),
-    );
-    for (const scene of scenes) {
-      const job = scene.outlineId ? jobByOutlineId.get(scene.outlineId) : undefined;
-      const phases = new Set<'tts' | 'media'>();
-      if (job?.phases?.tts?.status === 'failed') phases.add('tts');
-      if (job?.phases?.media?.status === 'failed') phases.add('media');
-      if (phases.size > 0) failedPhasesBySceneId.set(scene.id, phases);
-    }
-    try {
-      if (await producingSessionBusy()) {
-        log.info('[Classroom] The producing agent session is still at work; repair deferred.');
-        return;
+  //
+  // Spending is the owner's call. `spend: false` (what opening a course and
+  // reconnecting do) only detects: dead narration/media raise their red retry
+  // cards and stale ones lift, and nothing is synthesized or generated. Pressing
+  // Retry on a card, or the sidebar repair button (`spend: true`), pays for it.
+  const runCourseMediaRepair = useCallback(
+    async ({ spend }: { spend: boolean }): Promise<void> => {
+      if (mediaRepairAbortRef.current) return; // one run at a time
+      const storeState = useStageStore.getState();
+      const { stage, outlines } = storeState;
+      if (!stage || stage.id !== classroomId || storeState.scenes.length === 0) return;
+      // A running batch owns the providers; repair waits for it to settle.
+      if (storeState.generationStatus === 'generating') return;
+      const controller = new AbortController();
+      mediaRepairAbortRef.current = controller;
+      setCourseRepairing(true);
+      const scenes = [...storeState.scenes];
+      // Stale-failure reconciliation input: persisted failed phase rows keyed by
+      // scene id (lessonGroups jobs are outline-keyed). The repair audit lifts
+      // these the moment byte truth disproves them.
+      const failedPhasesBySceneId = new Map<string, Set<'tts' | 'media'>>();
+      const jobByOutlineId = new Map(
+        storeState.lessonGroups.flatMap((group) =>
+          (group.jobs ?? []).map((job) => [job.outlineId, job] as const),
+        ),
+      );
+      for (const scene of scenes) {
+        const job = scene.outlineId ? jobByOutlineId.get(scene.outlineId) : undefined;
+        const phases = new Set<'tts' | 'media'>();
+        if (job?.phases?.tts?.status === 'failed') phases.add('tts');
+        if (job?.phases?.media?.status === 'failed') phases.add('media');
+        if (phases.size > 0) failedPhasesBySceneId.set(scene.id, phases);
       }
-      const { repairCourseMedia } = await import('@/lib/media/repair-course-media');
-      await repairCourseMedia(scenes, {
-        language: storeState.blueprint?.languageDirective,
-        outlines,
-        stageId: stage.id,
-        signal: controller.signal,
-        persistedFailedPhases: failedPhasesBySceneId,
-        onScenePhaseFailure: (sceneId, phase) => {
-          const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
-          if (!scene?.outlineId) return;
-          useStageStore.getState().recordScenePhase(scene.outlineId, phase, {
-            status: 'failed',
-            error: phase === 'tts' ? 'Narration bytes missing' : 'Generated media bytes missing',
-          });
-          const outline = outlines.find((o) => o.id === scene.outlineId);
-          if (outline) useStageStore.getState().addFailedOutline(outline);
-        },
-        // The failure hook's symmetry: when the repair dispatch restores
-        // every ref a scene needs, the recorded failure must lift.
-        onScenePhaseResolved: (sceneId, phase) => {
-          const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
-          if (!scene?.outlineId) return;
-          useStageStore.getState().recordScenePhase(scene.outlineId, phase, { status: 'done' });
-          // The card the failure hook (or load hydration) raised drops with
-          // its phase — unless a sibling phase is still failed.
-          useStageStore.getState().settleFailedOutline(scene.outlineId);
-        },
-      });
-    } catch (err) {
-      if (!controller.signal.aborted) log.warn('[Classroom] Media repair error:', err);
-    } finally {
-      if (mediaRepairAbortRef.current === controller) mediaRepairAbortRef.current = null;
-      setCourseRepairing(false);
-    }
-  }, [classroomId]);
+      try {
+        if (await producingSessionBusy()) {
+          log.info('[Classroom] The producing agent session is still at work; repair deferred.');
+          return;
+        }
+        const { repairCourseMedia } = await import('@/lib/media/repair-course-media');
+        await repairCourseMedia(scenes, {
+          language: storeState.blueprint?.languageDirective,
+          outlines,
+          stageId: stage.id,
+          signal: controller.signal,
+          persistedFailedPhases: failedPhasesBySceneId,
+          detectOnly: !spend,
+          onScenePhaseFailure: (sceneId, phase) => {
+            const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
+            if (!scene?.outlineId) return;
+            useStageStore.getState().recordScenePhase(scene.outlineId, phase, {
+              status: 'failed',
+              error: phase === 'tts' ? 'Narration bytes missing' : 'Generated media bytes missing',
+            });
+            const outline = outlines.find((o) => o.id === scene.outlineId);
+            if (outline) useStageStore.getState().addFailedOutline(outline);
+          },
+          // The failure hook's symmetry: when the repair dispatch restores
+          // every ref a scene needs, the recorded failure must lift.
+          onScenePhaseResolved: (sceneId, phase) => {
+            const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
+            if (!scene?.outlineId) return;
+            useStageStore.getState().recordScenePhase(scene.outlineId, phase, { status: 'done' });
+            // The card the failure hook (or load hydration) raised drops with
+            // its phase — unless a sibling phase is still failed.
+            useStageStore.getState().settleFailedOutline(scene.outlineId);
+          },
+        });
+      } catch (err) {
+        if (!controller.signal.aborted) log.warn('[Classroom] Media repair error:', err);
+      } finally {
+        if (mediaRepairAbortRef.current === controller) mediaRepairAbortRef.current = null;
+        setCourseRepairing(false);
+      }
+    },
+    [classroomId],
+  );
 
   // Zero-token integrity pass (see healCourseIntegrity): stored scenes get the
   // cures that otherwise only run at generation/commit time — split narration
@@ -432,10 +441,13 @@ export function ClassroomSurface({
     }
   }, [classroomId]);
 
-  const runCourseRepairPass = useCallback(async (): Promise<void> => {
-    await runCourseIntegrity().catch((err) => log.warn('[Classroom] Integrity pass error:', err));
-    await runCourseMediaRepair();
-  }, [runCourseIntegrity, runCourseMediaRepair]);
+  const runCourseRepairPass = useCallback(
+    async ({ spend }: { spend: boolean }): Promise<void> => {
+      await runCourseIntegrity().catch((err) => log.warn('[Classroom] Integrity pass error:', err));
+      await runCourseMediaRepair({ spend });
+    },
+    [runCourseIntegrity, runCourseMediaRepair],
+  );
 
   // Leaving the course (or switching to another) cancels a repair in flight:
   // its drain and requeue would otherwise keep calling providers for a course
@@ -452,7 +464,7 @@ export function ClassroomSurface({
   // pass the moment it is back, instead of waiting for the next page open.
   useEffect(() => {
     if (loading || error || !mayGenerate) return;
-    const onOnline = () => void runCourseRepairPass();
+    const onOnline = () => void runCourseRepairPass({ spend: false });
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
   }, [loading, error, mayGenerate, runCourseRepairPass]);
@@ -470,7 +482,7 @@ export function ClassroomSurface({
         await runCourseIntegrity().catch((err) =>
           log.warn('[Classroom] Integrity pass error:', err),
         );
-        void runCourseMediaRepair();
+        void runCourseMediaRepair({ spend: false });
         const { repairCourseLayout } = await import('@/lib/maintenance/repair-course-layout');
         await repairCourseLayout(stageId, [...useStageStore.getState().scenes]);
         // Split-terminal parts (and any other materially-present scene) get
@@ -798,7 +810,9 @@ export function ClassroomSurface({
               classroomId={classroomId}
               onRetryOutline={mayGenerate ? retrySingleOutline : undefined}
               onResumeGeneration={mayGenerate ? handleResumeGeneration : undefined}
-              onRepairCourse={mayGenerate ? () => void runCourseRepairPass() : undefined}
+              onRepairCourse={
+                mayGenerate ? () => void runCourseRepairPass({ spend: true }) : undefined
+              }
               courseRepairing={courseRepairing}
             />
           )}
