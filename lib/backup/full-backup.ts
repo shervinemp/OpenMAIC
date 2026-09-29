@@ -379,10 +379,18 @@ export async function restoreFullBackup(
   for (const dir of sortedDirs) {
     const label = dir.replace(/^courses\//, '').replace(/\/$/, '');
     const backupCourse = courseDirOf(manifest.courses ?? [], dir);
-    const duplicate = backupCourse
-      ? (existingStages.find((stage) => stage.id === backupCourse.sourceId) ??
-        existingStages.find((stage) => stage.name === backupCourse.name))
+    // The source stage id is identity. A name match is only a hint that the
+    // course was re-imported under a new id, good enough to SKIP (nothing is
+    // lost) but not to REPLACE: deleting a same-named course the backup never
+    // contained destroys work, so replace mode matches by id alone.
+    const byId = backupCourse
+      ? existingStages.find((stage) => stage.id === backupCourse.sourceId)
       : undefined;
+    const duplicate =
+      byId ??
+      (backupCourse && mode === 'skip'
+        ? existingStages.find((stage) => stage.name === backupCourse.name)
+        : undefined);
 
     if (duplicate && mode === 'skip') {
       options.onCourse?.(label, 'skipping');

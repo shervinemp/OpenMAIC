@@ -184,6 +184,18 @@ describe('full backup restore policies', () => {
     expect(result.restored).toBe(1);
   });
 
+  it('never replaces a course that only shares a name with a backed-up one', async () => {
+    listStagesMock.mockResolvedValue([{ id: 'stage-unrelated', name: 'Intro Course' }]);
+    const blob = await buildBackupZip({
+      courses: [{ path: 'courses/001-intro', name: 'Intro Course', sourceId: 'stage-gone' }],
+    });
+
+    const result = await restoreFullBackup(blob, { mode: 'replace' });
+
+    expect(result).toMatchObject({ restored: 1, replaced: 0, failed: 0 });
+    expect(deleteStageDataMock).not.toHaveBeenCalled();
+  });
+
   it('replaces by importing first and deleting the old stage only after commit', async () => {
     listStagesMock.mockResolvedValue([{ id: 'stage-old', name: 'Intro Course' }]);
     const blob = await buildBackupZip({

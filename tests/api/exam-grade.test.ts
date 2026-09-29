@@ -88,12 +88,16 @@ describe('POST /api/exam/grade-fr', () => {
     expect(String(mocks.callLLM.mock.calls[0][0].prompt)).toContain('STUDENT ANSWER');
   });
 
-  it('falls back to half credit with a notice when the grade JSON is unparseable', async () => {
+  it('returns an error, not an invented score, when the grade JSON is unparseable', async () => {
     mocks.callLLM.mockResolvedValue({ text: 'not json at all' });
     const res = await POST(post(body()) as never);
-    expect(res.status).toBe(200);
-    const j = JSON.parse(await (res as unknown as Response).text()) as { score: number };
-    expect(j.score).toBe(5);
+    expect(res.status).toBe(502);
+  });
+
+  it('treats a reply without a numeric score as unparseable', async () => {
+    mocks.callLLM.mockResolvedValue({ text: JSON.stringify({ comment: 'no score here' }) });
+    const res = await POST(post(body()) as never);
+    expect(res.status).toBe(502);
   });
 
   it('asks for per-criterion verdicts by default (withCriteria omitted)', async () => {

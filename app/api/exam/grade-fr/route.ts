@@ -87,7 +87,12 @@ Reply ONLY with JSON:
   "comment": "<2-4 sentences of feedback: what was strong, what was missing, how to reach the standard>"${includeCriteria ? `,\n  "criteria": [{"id":"<rubric id>","met":<true only when the criterion is fully satisfied, otherwise false>,"comment":"<one sentence>"}]` : ''}
 }`;
 
-    const userPrompt = `RUBRIC:
+    const languageNote =
+      typeof language === 'string' && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(language)
+        ? `Write every comment in the language with locale code "${language}".\n\n`
+        : '';
+
+    const userPrompt = `${languageNote}RUBRIC:
 ${lines}
 ${sampleAnswer ? `\nSTRONG MODEL ANSWER (for calibration only — reward correct reasoning even in different words; do NOT penalize phrasing differences):\n${sampleAnswer}\n` : ''}
 GRADING GUIDANCE: ${commentPrompt ?? 'none'}
@@ -135,17 +140,19 @@ ${userAnswer}`;
         comment: String(maybe),
         criteria: criteria?.length ? criteria : undefined,
       };
-    } catch {
-      const fallback: ExamFrGrade = {
-        questionId: questionId ?? '',
-        score: Math.round(maxPoints * 0.5),
-        maxPoints,
-        comment:
-          language === 'zh-CN'
-            ? '已收到作答；评分未能解析，请参考标准答案自我评估。'
-            : 'Your answer was recorded, but automated grading could not be parsed. Compare with the model answer.',
-      };
-      grade = fallback;
+    } catch (parseError) {
+      // No grade is better than an invented one: a made-up half score would
+      // count toward the exam total. The client keeps the learner's answers
+      // and lets them submit again.
+      log.warn(
+        `Exam grade reply could not be parsed [question="${promptSnippet ?? 'unknown'}..."]:`,
+        parseError,
+      );
+      return apiError(
+        'GENERATION_FAILED',
+        502,
+        'Automated grading returned an unreadable result; please submit again',
+      );
     }
 
     return apiSuccess(grade as unknown as Record<string, unknown>);
