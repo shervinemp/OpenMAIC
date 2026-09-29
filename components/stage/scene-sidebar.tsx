@@ -884,6 +884,10 @@ export function SceneSidebar({
                                 }}
                                 disabled={
                                   isRetrying ||
+                                  // The retry takes the same single-flight claim as the
+                                  // batch and declines while one is running; a live button
+                                  // that does nothing is worse than a disabled one.
+                                  generationStatus === 'generating' ||
                                   repairActive === 'narration' ||
                                   repairActive === 'media'
                                 }

@@ -120,3 +120,123 @@ describe('Stage API persistence injection', () => {
     expect(composition).toContain('markStagePersistenceDirty(changes)');
   });
 });
+
+/**
+ * The invariant: a scene object that replaces a stored one is a new revision,
+ * and the server's stale-scene fence refuses any `putScene` older than the copy
+ * it holds. Three live paths in the app shipped without advancing the clock and
+ * the failure was silent — a 409 in a log, an autosave retry loop, and every
+ * dirty scene queued behind the refused one silently unwritten. No test caught
+ * any of them, so the clock is now owned by the injection boundary and this
+ * asserts it for every scene-writing module.
+ */
+describe('Stage API revision clock', () => {
+  // The suite runs on fake timers, so the clock only moves when a test moves
+  // it. Park the store's scene in the past and pin "now" ahead of it.
+  const NOW = 1_700_000_000_000;
+  const BEFORE = NOW - 60_000;
+  const parkSceneInThePast = () => {
+    vi.setSystemTime(NOW);
+    useStageStore.setState({ scenes: [{ ...scene, updatedAt: BEFORE }] });
+    return BEFORE;
+  };
+
+  it('advances updatedAt for scenes a raw setState replaced', () => {
+    const before = parkSceneInThePast();
+    const api = createStageAPI(useStageStore);
+
+    expect(
+      api.element.add('scene-1', {
+        type: 'text',
+        left: 0,
+        top: 0,
+        width: 100,
+        height: 40,
+        content: 'hello',
+      }).success,
+    ).toBe(true);
+
+    // No call site stamps the clock any more — the boundary owns it. If this
+    // regresses, the server's stale-scene fence starts refusing the scene's
+    // every later write, silently.
+    expect(useStageStore.getState().scenes[0]!.updatedAt).toBe(NOW);
+    expect(useStageStore.getState().scenes[0]!.updatedAt).toBeGreaterThan(before);
+  });
+
+  it('re-stamps a replacement scene a caller handed over with a stale clock', () => {
+    const before = parkSceneInThePast();
+    const api = createStageAPI(useStageStore);
+
+    // What a call site that forgot the convention looks like: a replacement
+    // scene object still carrying the revision it was loaded at.
+    useStageStore.setState({ scenes: [{ ...scene, updatedAt: before }] });
+    expect(useStageStore.getState().scenes[0]!.updatedAt).toBe(before);
+
+    expect(
+      api.element.add('scene-1', {
+        type: 'text',
+        left: 0,
+        top: 0,
+        width: 100,
+        height: 40,
+        content: 'stale fix',
+      }).success,
+    ).toBe(true);
+
+    expect(useStageStore.getState().scenes[0]!.updatedAt).toBe(NOW);
+  });
+
+  it('leaves scenes it did not replace on their own clock', () => {
+    parkSceneInThePast();
+    const api = createStageAPI(useStageStore);
+    useStageStore.setState({
+      scenes: [
+        { ...scene, id: 'scene-1' },
+        { ...scene, id: 'scene-2', order: 2, updatedAt: BEFORE },
+      ],
+    });
+
+    expect(api.scene.update('scene-1', { title: 'Renamed' }).success).toBe(true);
+
+    const scenes = useStageStore.getState().scenes;
+    expect(scenes.find((s) => s.id === 'scene-1')!.updatedAt).toBe(NOW);
+    // Position-keyed comparison would have stamped this one too, just for
+    // being array-stable behind an edit it never received.
+    expect(scenes.find((s) => s.id === 'scene-2')!.updatedAt).toBe(BEFORE);
+  });
+
+  it('applies the clock to a non-production store without marking it dirty', () => {
+    // The server's in-memory classroom generator runs the same modules, and the
+    // persisted document outlives the request — so the clock must not be gated
+    // on `store === useStageStore`, the way the dirty-marking is.
+    vi.setSystemTime(NOW);
+    let state = {
+      stage,
+      scenes: [{ ...scene, updatedAt: BEFORE }] as Scene[],
+      currentSceneId: 'scene-1' as string | null,
+    };
+    const memoryStore = {
+      getState: () => state,
+      setState: (partial: Partial<typeof state>) => {
+        state = { ...state, ...partial };
+      },
+      subscribe: () => () => undefined,
+    };
+
+    const api = createStageAPI(memoryStore as never);
+    expect(
+      api.element.add('scene-1', {
+        type: 'text',
+        left: 0,
+        top: 0,
+        width: 100,
+        height: 40,
+        content: 'server side',
+      }).success,
+    ).toBe(true);
+
+    expect(state.scenes[0]!.updatedAt).toBe(NOW);
+    // Non-production: nothing scheduled a flush of the live store.
+    expect(incrementalSave).not.toHaveBeenCalled();
+  });
+});

@@ -49,7 +49,6 @@ export function createCanvasAPI(store: StageStore) {
                   background,
                 },
               },
-              updatedAt: Date.now(),
             };
           }
           return s;
@@ -95,7 +94,6 @@ export function createCanvasAPI(store: StageStore) {
                   },
                 },
               },
-              updatedAt: Date.now(),
             };
           }
           return s;

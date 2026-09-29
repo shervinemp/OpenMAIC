@@ -1132,7 +1132,7 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
             };
           }
           if (layout.repaired || layout.clamped > 0) {
-            console.log(
+            log.info(
               `[layout-verify] scene ${outline.id} (reused content): clamped=${layout.clamped} repaired=${layout.repaired} residual=${layout.findings.length}`,
             );
           }
@@ -1172,7 +1172,7 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
         };
       }
       if (layout.repaired || layout.clamped > 0) {
-        console.log(
+        log.info(
           `[layout-verify] scene ${outline.id}: clamped=${layout.clamped} repaired=${layout.repaired} residual=${layout.findings.length}`,
         );
       }
@@ -1425,6 +1425,20 @@ export async function runOutlineJob(input: OutlineJobInput): Promise<{
 export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
   const abortRef = useRef(false);
   const generatingRef = useRef(false);
+  // A single-outline retry runs OUTSIDE the resume pass: different lease, no
+  // `generatingRef` claim, its own abort controller. Two refs, because they
+  // answer different questions — `generatingRef` is "is the batch running" (the
+  // single-flight guard both entry points take), `retryInFlightRef` is "is
+  // somebody else mid-regeneration right now", which the batch's own exit
+  // branches must consult before they touch the shared queue or the generation
+  // status. Without it the batch's completion branch clears the queue and marks
+  // the deck complete a few seconds into a retry that is still running: the
+  // lesson vanishes from the queue with a live job behind it, and the completed
+  // status re-opens the maintenance passes against a course mid-regeneration.
+  const retryInFlightRef = useRef(0);
+  // The outline ids THIS run put in the queue, so its exit branches retract
+  // exactly its own entries and leave a concurrent retry's alone.
+  const runQueueRef = useRef<Set<string>>(new Set());
   const mediaAbortRef = useRef<AbortController | null>(null);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const lastParamsRef = useRef<GenerationParams | null>(null);
@@ -1441,9 +1455,21 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       generatingRef.current = true;
       abortRef.current = false;
       const removeGeneratingOutline = (outlineId: string) => {
-        const current = store.getState().generatingOutlines;
-        if (!current.some((o) => o.id === outlineId)) return;
-        store.getState().setGeneratingOutlines(current.filter((o) => o.id !== outlineId));
+        runQueueRef.current.delete(outlineId);
+        store.getState().setGeneratingOutlines((current) => {
+          if (!current.some((o) => o.id === outlineId)) return current;
+          return current.filter((o) => o.id !== outlineId);
+        });
+      };
+      // Retract this run's own entries only. A retry that started while the
+      // batch was running added its lesson to the same array, and clearing the
+      // whole thing is what made a regeneration disappear seconds after it was
+      // pressed.
+      const retractRunQueue = () => {
+        const mine = runQueueRef.current;
+        if (mine.size === 0) return;
+        runQueueRef.current = new Set();
+        store.getState().setGeneratingOutlines((current) => current.filter((o) => !mine.has(o.id)));
       };
 
       // Create a new AbortController for this generation run
@@ -1467,7 +1493,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           `Another browser tab is already driving generation for ${stage.id}; skipping duplicate resume`,
         );
         store.getState().setGenerationStatus('idle');
-        store.getState().setGeneratingOutlines([]);
+        retractRunQueue();
         generatingRef.current = false;
         return;
       }
@@ -1496,7 +1522,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         // Only parked failures remain: the deck is not complete, it waits on
         // its retry cards.
         store.getState().setGenerationStatus('paused');
-        store.getState().setGeneratingOutlines([]);
+        retractRunQueue();
         generationLease();
         generatingRef.current = false;
         return;
@@ -1504,7 +1530,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
       if (pending.length === 0) {
         store.getState().setGenerationStatus('completed');
-        store.getState().setGeneratingOutlines([]);
+        retractRunQueue();
         store.getState().setGenerationComplete(true);
         options.onComplete?.();
         generationLease();
@@ -1512,7 +1538,11 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         return;
       }
 
-      store.getState().setGeneratingOutlines(pending);
+      runQueueRef.current = new Set(pending.map((o) => o.id));
+      store.getState().setGeneratingOutlines((current) => {
+        const seen = new Set(current.map((o) => o.id));
+        return [...current, ...pending.filter((o) => !seen.has(o.id))];
+      });
 
       // Launch media generation in parallel — does not block content/action generation.
       // Under server-backed persistence, abort whatever the ref held first:
@@ -1745,9 +1775,16 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             // Some outlines failed but the loop kept going; surface them for
             // retry/skip instead of signalling a clean completion.
             store.getState().setGenerationStatus('paused');
+          } else if (retryInFlightRef.current > 0) {
+            // A regeneration is still running. This batch is done, but the deck
+            // is not: marking it complete here is what let the settled-course
+            // maintenance passes start rewriting scenes a live regeneration is
+            // still assembling.
+            store.getState().setGenerationStatus('generating');
+            retractRunQueue();
           } else {
             store.getState().setGenerationStatus('completed');
-            store.getState().setGeneratingOutlines([]);
+            retractRunQueue();
             store.getState().setGenerationComplete(true);
             options.onComplete?.();
             // Fill-phase drain (Pillar 2 §4.6): scenes whose TTS failed
@@ -1876,19 +1913,47 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
          phases are skipped (content/actions via hash reuse, tts via dead-clip
          fill, media via byte-aware requeue); the recovery branch is a repair
          entry into the ONE queue, not a second train. */
+      // Claim the same single-flight state the batch takes. Two retries running
+      // at once meant two jobs assembling the same scene, and a retry racing the
+      // batch's own completion branch is what emptied the queue seconds after
+      // the user pressed regenerate.
+      if (generatingRef.current || retryInFlightRef.current > 0) {
+        log.info(
+          `Retry of outline ${JSON.stringify(outlineId)} ignored: a generation is in flight`,
+        );
+        return;
+      }
+      generatingRef.current = true;
+      retryInFlightRef.current += 1;
+      // Idempotent, and released BEFORE the handoff below: the walk and the
+      // batch resume both gate on the same single-flight claim this retry took,
+      // so holding it across the handoff turned "drain the rest of the queue"
+      // into a silent no-op.
+      let claimed = true;
+      const releaseClaim = () => {
+        if (!claimed) return;
+        claimed = false;
+        retryInFlightRef.current = Math.max(0, retryInFlightRef.current - 1);
+        generatingRef.current = false;
+      };
       const removeGeneratingOutline = () => {
-        const current = store.getState().generatingOutlines;
-        if (!current.some((o) => o.id === outlineId)) return;
-        store.getState().setGeneratingOutlines(current.filter((o) => o.id !== outlineId));
+        store.getState().setGeneratingOutlines((current) => {
+          if (!current.some((o) => o.id === outlineId)) return current;
+          return current.filter((o) => o.id !== outlineId);
+        });
       };
 
       // Remove from failed list and mark as generating
       store.getState().retryFailedOutline(outlineId);
       store.getState().setGenerationStatus('generating');
-      const currentGenerating = store.getState().generatingOutlines;
-      if (!currentGenerating.some((o) => o.id === outline.id)) {
-        store.getState().setGeneratingOutlines([...currentGenerating, outline]);
-      }
+      // Append, never replace: the batch's queue is in the same array and a
+      // replace from this snapshot would drop the lessons it is still working
+      // on (and vice versa — see `retractRunQueue`).
+      store
+        .getState()
+        .setGeneratingOutlines((current) =>
+          current.some((o) => o.id === outline.id) ? current : [...current, outline],
+        );
 
       const abortController = new AbortController();
       const signal = abortController.signal;
@@ -1931,6 +1996,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           store.getState().setGenerationPhase('idle');
           // Contained failure (scene kept): the walk may move on to the next
           // failed outline — a hard content/actions failure parks.
+          releaseClaim();
           if (sceneKept) {
             walkFailedQueueRef.current(outline.id);
           }
@@ -1947,6 +2013,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         store.getState().setGenerationPhase('idle');
 
         // Resume remaining generation if there are pending outlines
+        releaseClaim();
         if (store.getState().generatingOutlines.length > 0 && lastParamsRef.current) {
           generateRemainingRef.current?.(lastParamsRef.current);
         } else if (store.getState().failedOutlines.length > 0) {
@@ -1976,6 +2043,11 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         }
       } finally {
         retryAbortsRef.current.delete(abortController);
+        // Backstop: every exit path above releases explicitly (so the handoff
+        // can run), and a throw between claim and handoff releases here. A
+        // leaked claim would wedge the deck on "generation in flight" with
+        // nothing generating.
+        releaseClaim();
       }
     },
     [store],

@@ -436,7 +436,9 @@ interface StageState {
   setMode: (mode: StageMode) => void;
   setToolbarState: (state: ToolbarState) => void;
   setStageAgents: (configs: GeneratedAgentConfig[]) => void;
-  setGeneratingOutlines: (outlines: SceneOutline[]) => void;
+  setGeneratingOutlines: (
+    update: SceneOutline[] | ((current: SceneOutline[]) => SceneOutline[]),
+  ) => void;
   setOutlines: (outlines: SceneOutline[]) => void;
   setBlueprint: (blueprint: CourseBlueprint | undefined) => void;
   /**
@@ -987,7 +989,14 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     }
   },
 
-  setGeneratingOutlines: (generatingOutlines) => set({ generatingOutlines }),
+  // The queue is written by two independent runs (the resume pass and a
+  // single-outline retry), so the updater form exists for the ones that must
+  // read-modify-write: replacing the array from a snapshot taken before an
+  // await drops whatever the other run added in between.
+  setGeneratingOutlines: (update) =>
+    set((state) => ({
+      generatingOutlines: typeof update === 'function' ? update(state.generatingOutlines) : update,
+    })),
 
   setOutlines: (outlines) => {
     set({ outlines });

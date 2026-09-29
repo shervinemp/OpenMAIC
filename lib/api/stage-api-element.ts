@@ -58,7 +58,6 @@ export function createElementAPI(store: StageStore) {
                   elements: [...content.canvas.elements, newElement],
                 },
               },
-              updatedAt: Date.now(),
             };
           }
           return s;
@@ -118,7 +117,6 @@ export function createElementAPI(store: StageStore) {
                   elements: [...content.canvas.elements, ...newElements],
                 },
               },
-              updatedAt: Date.now(),
             };
           }
           return s;
@@ -165,7 +163,6 @@ export function createElementAPI(store: StageStore) {
                   elements: content.canvas.elements.filter((el) => el.id !== elementId),
                 },
               },
-              updatedAt: Date.now(),
             };
           }
           return s;
@@ -214,7 +211,6 @@ export function createElementAPI(store: StageStore) {
                   elements: content.canvas.elements.filter((el) => !elementIdSet.has(el.id)),
                 },
               },
-              updatedAt: Date.now(),
             };
           }
           return s;
@@ -264,7 +260,6 @@ export function createElementAPI(store: StageStore) {
                   ),
                 },
               },
-              updatedAt: Date.now(),
             };
           }
           return s;
@@ -382,7 +377,6 @@ export function createElementAPI(store: StageStore) {
                   }),
                 },
               },
-              updatedAt: Date.now(),
             };
           }
           return s;

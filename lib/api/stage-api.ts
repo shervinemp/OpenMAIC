@@ -98,13 +98,57 @@ function persistenceChangesForSetState(
   return changes;
 }
 
-function withProductionPersistence(store: StageStore): StageStore {
-  if (store !== useStageStore) return store;
+/**
+ * Advance the revision clock on every scene this boundary replaces.
+ *
+ * A scene object handed to `setState` is a new revision, and the server's
+ * stale-scene fence (`@openmaic/storage` `putScene`) refuses any write whose
+ * `updatedAt` is older than the stored copy. The refusal is silent — a 409 in a
+ * log — and the autosave turns it into an unbounded retry of a write that can
+ * never succeed, dropping every dirty scene queued behind it.
+ *
+ * This applies to EVERY store, not just the production one: the server's
+ * in-memory classroom generator runs the same modules, and the persisted
+ * document outlives the request. The per-call-site `updatedAt: Date.now()`
+ * this replaces was duplicated at nine sites and unenforced, which is how three
+ * other live paths in the app came to violate it.
+ */
+function withRevisionClock(store: StageStore): StageStore {
   return {
     ...store,
     setState(partial) {
       const before = store.getState();
       store.setState(partial);
+      const after = store.getState();
+      if (after.scenes === before.scenes) return;
+      // Keyed by id, not index: a reordered or inserted scene is not an edit,
+      // and position-keyed comparison would stamp every scene after the shift.
+      const previous = new Map(before.scenes.map((candidate) => [candidate.id, candidate]));
+      const now = Date.now();
+      let changed = false;
+      const stamped = after.scenes.map((candidate) => {
+        if (previous.get(candidate.id) === candidate) return candidate;
+        changed = true;
+        return { ...candidate, updatedAt: now };
+      });
+      if (!changed) return;
+      // `store` here is the raw store, not this wrapper, so this does not
+      // re-enter the clock.
+      store.setState({ scenes: stamped });
+    },
+  };
+}
+
+function withProductionPersistence(store: StageStore): StageStore {
+  const clocked = withRevisionClock(store);
+  // The revision clock above is for every store; the dirty-marking that
+  // schedules persistence is for the live one only.
+  if (store !== useStageStore) return clocked;
+  return {
+    ...clocked,
+    setState(partial) {
+      const before = store.getState();
+      clocked.setState(partial);
       const changes = persistenceChangesForSetState(before, store.getState());
       if (changes.length > 0) markStagePersistenceDirty(changes);
     },

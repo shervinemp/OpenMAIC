@@ -75,7 +75,6 @@ export function createSceneAPI(store: StageStore) {
             actions: params.actions,
             ...(params.outlineId !== undefined && { outlineId: params.outlineId }),
             createdAt: Date.now(),
-            updatedAt: Date.now(),
           },
           content,
         );

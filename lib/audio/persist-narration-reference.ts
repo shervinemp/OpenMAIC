@@ -61,6 +61,11 @@ function applyToLiveStage(stageId: string, derivedRef: string, assetId: string):
   if (state.stage?.id !== stageId) return false;
 
   const dirty: PendingChange[] = [];
+  // One revision for the whole rewrite, and the same contract the media funnel
+  // follows: the rewrite is an edit, so the dirty marks below become `putScene`
+  // writes that the server's stale-scene fence judges on `updatedAt`. Leaving
+  // the load-time stamp in place makes them permanently unwritable.
+  const now = Date.now();
   const scenes = state.scenes.map((scene) => {
     // Cloned only once the scene is known to carry the reference. Adoption runs
     // over every clip of a course on the load path, so cloning every scene per
@@ -68,6 +73,7 @@ function applyToLiveStage(stageId: string, derivedRef: string, assetId: string):
     if (!sceneCarriesNarrationReference(scene, derivedRef)) return scene;
     const next = structuredClone(scene);
     if (!rewriteSceneNarrationReference(next, derivedRef, assetId)) return scene;
+    next.updatedAt = now;
     dirty.push({ kind: 'scene', sceneId: next.id });
     return next;
   });

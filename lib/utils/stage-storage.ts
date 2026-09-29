@@ -39,7 +39,11 @@ import {
   withRuntimeStorageExclusiveLockUntilSettled,
   withRuntimeStorageSharedLock,
 } from './chat-storage-lock';
-import { DocumentVersionError, type DocumentSummary } from '@openmaic/storage';
+import {
+  DocumentLostUpdateError,
+  DocumentVersionError,
+  type DocumentSummary,
+} from '@openmaic/storage';
 import { isBrowserPersistenceEnabled } from '@/lib/persistence/bootstrap';
 import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
@@ -394,7 +398,29 @@ export async function saveStageDataIncremental(
                   dropped = true;
                   return;
                 }
-                await store.putScene(stageId, stampScene(stageId, scene, index, now));
+                try {
+                  await store.putScene(stageId, stampScene(stageId, scene, index, now));
+                } catch (error) {
+                  // A concurrent writer holds a strictly newer revision of this
+                  // one scene, so the snapshot in hand is out of date by the
+                  // store's own definition and re-stamping it would clobber
+                  // content the fence exists to protect. This is per-scene, not
+                  // per-batch: letting it propagate abandoned every dirty scene
+                  // after this one in the loop, and re-queuing it made the flush
+                  // retry a write that can never succeed — an unbounded loop
+                  // that also starved the scenes behind it.
+                  //
+                  // Dropping the change is not losing it. The live store still
+                  // holds the edit (it is the session's source of truth), and
+                  // the next write that scene wins — an edit, or a media/narration
+                  // rewrite, both of which now advance `updatedAt` — carries it
+                  // to the server in full.
+                  if (!(error instanceof DocumentLostUpdateError)) throw error;
+                  log.warn(
+                    `Skipping stale scene write ${scene.id} in ${stageId}: another writer ` +
+                      'holds a newer revision of this scene',
+                  );
+                }
               }
             }
             if (has('stage')) {

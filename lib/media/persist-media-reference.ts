@@ -106,10 +106,18 @@ function applyToLiveStage(stageId: string, rewrite: GeneratedMediaReferenceRewri
   if (state.stage?.id !== stageId) return false;
 
   const dirty: PendingChange[] = [];
+  // One revision for the whole rewrite: a rewrite is an edit, and the server's
+  // stale-scene fence refuses a `putScene` whose `updatedAt` is older than the
+  // stored copy. Carrying the load-time stamp here instead would make the
+  // corrective flush this mark schedules permanently unwritable — refused once
+  // the document write above advanced the stored copy, and refused again on
+  // every retry, because the store's own scene never moves its clock.
+  const now = Date.now();
   const scenes = state.scenes.map((scene) => {
     if (!sceneCarriesMediaReference(scene, rewrite.placeholderRef)) return scene;
     const next = cloneScene(scene);
     if (!rewriteSceneMediaReference(next, rewrite)) return scene;
+    next.updatedAt = now;
     dirty.push({ kind: 'scene', sceneId: next.id });
     return next;
   });
@@ -146,10 +154,15 @@ export function placePendingMediaAllocations(stageId: string): boolean {
   if (state.stage?.id !== stageId) return false;
 
   const dirty: PendingChange[] = [];
+  // Same revision-clock contract as `applyToLiveStage`: handing a parked
+  // allocation to a scene is an edit, and the dirty mark below turns it into a
+  // `putScene` the server's stale-scene fence judges on `updatedAt`.
+  const now = Date.now();
   const scenes = state.scenes.map((scene) => {
     if (!sceneHasPendingMediaAllocation(scene)) return scene;
     const next = cloneScene(scene);
     if (!applyPendingMediaAllocationsToScene(next)) return scene;
+    next.updatedAt = now;
     dirty.push({ kind: 'scene', sceneId: next.id });
     return next;
   });
