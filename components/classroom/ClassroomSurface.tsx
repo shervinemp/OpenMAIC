@@ -58,6 +58,7 @@ import {
   shouldResumeClassroomGeneration,
 } from '@/lib/classroom/progressive-load-policy';
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
+import { consumeAutoResume } from '@/lib/classroom/auto-resume-marker';
 
 const log = createLogger('Classroom');
 
@@ -568,6 +569,20 @@ export function ClassroomSurface({
 
     if (hasPending && stage) {
       generationStartedRef.current = true;
+
+      // Resuming spends the owner's provider budget, so a course that is only
+      // being opened waits behind its Resume button (the load already parked
+      // it as paused with the pending outlines queued). Only the hand-off from
+      // generation-preview, where the owner has just pressed Start or Resume,
+      // carries on by itself. See auto-resume-marker.
+      if (!consumeAutoResume(stage.id)) {
+        const live = useStageStore.getState();
+        if (live.generationStatus !== 'generating') live.setGenerationStatus('paused');
+        log.info(
+          `[Classroom] ${outlines.filter(outlineIsPending).length} unfinished outline(s); waiting for Resume`,
+        );
+        return;
+      }
 
       // Params persisted by generation-preview on the session record
       // (IndexedDB — see generation-session-store), looked up by the course

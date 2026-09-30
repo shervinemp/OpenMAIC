@@ -68,6 +68,7 @@ import {
   getActiveSteps,
   getGenerationStepText,
 } from './types';
+import { markAutoResume } from '@/lib/classroom/auto-resume-marker';
 import { StepVisualizer } from './components/visualizers';
 import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
 
@@ -356,6 +357,8 @@ function GenerationPreviewContent() {
     // the classroom page, which resumes generation for every pending
     // outline (including scene 1).
     if (generationSession.stageId) {
+      // The owner just pressed Start/Resume: the classroom may carry on by itself.
+      markAutoResume(generationSession.stageId);
       router.push(`/classroom/${generationSession.stageId}`);
       return;
     }
@@ -1356,6 +1359,8 @@ function GenerationPreviewContent() {
       // itself once consumed.
       clearGenerationSessionEnvelope();
       await store.saveToStorage();
+      // Hand-off of a generation the owner started: the classroom produces the rest.
+      markAutoResume(stage.id);
       router.push(`/classroom/${stage.id}`);
     } catch (err) {
       setIsOutlineStreaming(false);
