@@ -494,6 +494,16 @@ interface StageState {
    * many scenes were queued.
    */
   reconcilePlanStaleness: () => number;
+  /**
+   * Settle the media step of scenes that have no media to make. The step starts
+   * `pending` on every job and only the media pass ever moves it, so a lesson
+   * that never asked for an image (or asked for one its slide does not use)
+   * carried a `pending` row for good. Only a step that never ran (no attempts)
+   * on a scene that exists and does not reference any task ref its outline
+   * requested is settled; everything else is left to the media pass. One state
+   * change and one persistence mark however many rows move. Returns how many.
+   */
+  settleInapplicableMedia: () => number;
   /** Skip resolution (Pillar 2 §4.9): close a permanently failed outline so
       the deck can complete without it. Session-level (not persisted). */
   skippedOutlineIds: string[];
@@ -1183,6 +1193,42 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     const anyPhaseFailed = queuePhases.some((name) => phases[name]?.status === 'failed');
     if (anyPhaseFailed) return;
     set({ failedOutlines: failedOutlines.filter((o) => o.id !== outlineId) });
+  },
+
+  settleInapplicableMedia: () => {
+    const { lessonGroups, outlines, scenes, stage, generationStatus } = get();
+    // The media pass owns the step while a generation is running.
+    if (!stage || lessonGroups.length === 0 || generationStatus === 'generating') return 0;
+    const outlineById = new Map(outlines.map((outline) => [outline.id, outline]));
+    const sceneByOutline = new Map(
+      scenes.flatMap((scene) => (scene.outlineId ? [[scene.outlineId, scene] as const] : [])),
+    );
+    const now = Date.now();
+    let settled = 0;
+    const groups = lessonGroups.map((group) => ({
+      ...group,
+      jobs: group.jobs.map((job) => {
+        const media = job.phases?.media;
+        if (!media || media.status !== 'pending' || media.attempts > 0) return job;
+        const scene = sceneByOutline.get(job.outlineId);
+        if (!scene) return job;
+        const requested = outlineById.get(job.outlineId)?.mediaGenerations ?? [];
+        if (requested.length > 0) {
+          // Only the scenes that could use a requested image pay for a look.
+          const content = JSON.stringify(scene.content ?? {});
+          if (requested.some((request) => content.includes(request.elementId))) return job;
+        }
+        settled += 1;
+        return {
+          ...job,
+          phases: { ...job.phases, media: { ...media, status: 'done' as const, updatedAt: now } },
+        };
+      }),
+    }));
+    if (settled === 0) return 0;
+    set({ lessonGroups: groups });
+    markPendingChanges(stage.id, { kind: 'outline' });
+    return settled;
   },
 
   reconcilePlanStaleness: () => {

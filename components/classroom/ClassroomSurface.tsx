@@ -495,6 +495,8 @@ export function ClassroomSurface({
         if (planStale > 0) {
           log.info(`[Classroom] ${planStale} scene(s) queued: their lesson plan changed`);
         }
+        // A lesson with no media to make has nothing pending on its media step.
+        useStageStore.getState().settleInapplicableMedia();
         void runCourseMediaRepair({ spend: false });
         const { repairCourseLayout } = await import('@/lib/maintenance/repair-course-layout');
         await repairCourseLayout(stageId, [...useStageStore.getState().scenes]);

@@ -61,9 +61,31 @@ export function isNarrationRefShape(ref: string): boolean {
   return /^(tts_|audio_|speech_)/.test(ref);
 }
 
+/**
+ * A generation-time task ref (`gen_img_1`, `gen_vid_2`). These are the only
+ * `elementId` values that name media: every other `elementId` in a document is
+ * a canvas element (an action's spotlight or laser target), which has no bytes
+ * anywhere. Counting them made a thousand-scene course report thousands of
+ * "missing" media refs that were never media.
+ */
+export function isGenerationTaskRef(ref: string): boolean {
+  return /^gen_(?:img|vid)_/.test(ref);
+}
+
+/**
+ * The file names a ref may be stored under in the server asset pool. A task ref
+ * is stored scoped to its course (`<stageId>:gen_img_1`: the same elementId
+ * recurs across courses); everything else under its own name. Bare first, since
+ * that is what older pools hold.
+ */
+export function serverPoolNames(ref: string, stageId: string): string[] {
+  return isGenerationTaskRef(ref) ? [ref, `${stageId}:${ref}`] : [ref];
+}
+
 export interface CollectMediaRefsOptions {
   /**
-   * Include `elementId` refs (generation-time task refs). Default: true —
+   * Include `elementId` refs that are generation-time task refs (`gen_img_N`;
+   * canvas element ids never count). Default: true —
    * the snapshot/backfill contract. Byte-detection paths pass false.
    */
   readonly includeElementIdRefs?: boolean;
@@ -85,7 +107,11 @@ export function collectDocumentMediaRefs(
       for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
         visit(child);
         const isCandidateKey =
-          RENDERED_MEDIA_KEYS.has(key) || (includeElementIds && key === 'elementId');
+          RENDERED_MEDIA_KEYS.has(key) ||
+          (includeElementIds &&
+            key === 'elementId' &&
+            typeof child === 'string' &&
+            isGenerationTaskRef(child));
         if (isCandidateKey && typeof child === 'string' && refIsMediaCandidate(child)) {
           refs.add(normalizeRef(child));
         }

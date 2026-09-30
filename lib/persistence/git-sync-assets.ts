@@ -6,6 +6,7 @@ import { createLogger } from '@/lib/logger';
 import {
   collectDocumentMediaRefs as sharedCollectDocumentMediaRefs,
   isNarrationRefShape,
+  serverPoolNames,
 } from '@/lib/media/document-media-refs';
 
 const log = createLogger('GitSyncAssets');
@@ -78,14 +79,22 @@ export async function materializeStageAssets(
   const missing: string[] = [];
 
   for (const ref of refs) {
-    const encoded = encodeURIComponent(ref);
-    try {
-      await copyFile(join(sources.bytes, encoded), join(targets.bytes, ref));
-      (isNarrationRefShape(ref) ? narrationIncluded : mediaIncluded).push(ref);
-    } catch {
+    // Where the pool holds it: a task ref lives under its course-scoped name.
+    let encoded: string | null = null;
+    for (const name of serverPoolNames(ref, stageId)) {
+      try {
+        await copyFile(join(sources.bytes, encodeURIComponent(name)), join(targets.bytes, ref));
+        encoded = encodeURIComponent(name);
+        break;
+      } catch {
+        // try the next candidate
+      }
+    }
+    if (encoded === null) {
       missing.push(ref);
       continue;
     }
+    (isNarrationRefShape(ref) ? narrationIncluded : mediaIncluded).push(ref);
     try {
       await copyFile(join(sources.meta, `${encoded}.json`), join(targets.meta, `${ref}.json`));
     } catch {
@@ -219,7 +228,10 @@ export async function ingestRepoAssets(
   const missingRefs: string[] = [];
   for (const ref of refs) {
     const source = join(sources.bytes, ref);
-    const target = join(targets.bytes, encodeURIComponent(ref));
+    // Task refs are restored under their course-scoped pool name (the name the
+    // pool reads them by); the repo keeps the bare ref.
+    const poolName = serverPoolNames(ref, stageId).at(-1)!;
+    const target = join(targets.bytes, encodeURIComponent(poolName));
     if (existsSync(target) && statSync(target).size > 0) {
       alreadyPresent += 1;
       continue;
@@ -233,7 +245,7 @@ export async function ingestRepoAssets(
     const metaSource = join(sources.meta, `${ref}.json`);
     if (existsSync(metaSource)) {
       // Best-effort: a meta write failure never demotes the bytes copy.
-      await copyFile(metaSource, join(targets.meta, `${encodeURIComponent(ref)}.json`)).catch(
+      await copyFile(metaSource, join(targets.meta, `${encodeURIComponent(poolName)}.json`)).catch(
         () => undefined,
       );
     }

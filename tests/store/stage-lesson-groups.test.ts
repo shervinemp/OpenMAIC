@@ -480,3 +480,92 @@ describe('reconcilePlanStaleness', () => {
     expect(useStageStore.getState().reconcilePlanStaleness()).toBe(0);
   });
 });
+
+describe('settleInapplicableMedia', () => {
+  function seed(mediaByOutline: Record<string, Array<{ elementId: string }>>, content = '') {
+    const store = useStageStore.getState();
+    store.setStage(makeStage());
+    const blueprint = makeBlueprint();
+    store.setBlueprint(blueprint);
+    const outlines = blueprint.lessons
+      .flatMap((lesson) => lesson.outlines)
+      .map((outline) => ({
+        ...outline,
+        ...(mediaByOutline[outline.id]
+          ? {
+              mediaGenerations: mediaByOutline[outline.id].map((m) => ({
+                type: 'image' as const,
+                prompt: 'p',
+                ...m,
+              })),
+            }
+          : {}),
+      }));
+    useStageStore.setState({
+      outlines,
+      scenes: ['outline-a', 'outline-b'].map(
+        (outlineId, index) =>
+          ({
+            id: `scene-${outlineId}`,
+            stageId: 'stage-1',
+            type: 'slide',
+            title: outlineId,
+            order: index + 1,
+            outlineId,
+            content: { type: 'slide', canvas: { elements: [{ src: content }] } },
+          }) as never,
+      ),
+    });
+  }
+  const media = (id: string) =>
+    useStageStore
+      .getState()
+      .lessonGroups.flatMap((g) => g.jobs)
+      .find((j) => j.outlineId === id)!.phases.media;
+
+  it('settles the step of a scene whose lesson asked for no media', () => {
+    seed({});
+    expect(useStageStore.getState().settleInapplicableMedia()).toBe(2);
+    expect(media('outline-a').status).toBe('done');
+    // outline-c has no scene yet, so nothing is settled for it.
+    expect(media('outline-c').status).toBe('pending');
+  });
+
+  it('settles a request its slide never used, and keeps one it did', () => {
+    seed(
+      { 'outline-a': [{ elementId: 'gen_img_1' }], 'outline-b': [{ elementId: 'gen_img_2' }] },
+      'gen_img_2',
+    );
+    useStageStore.setState((s) => ({
+      scenes: s.scenes.map((scene) =>
+        scene.outlineId === 'outline-a'
+          ? ({
+              ...scene,
+              content: { type: 'slide', canvas: { elements: [{ src: 'other' }] } },
+            } as never)
+          : scene,
+      ),
+    }));
+
+    expect(useStageStore.getState().settleInapplicableMedia()).toBe(1);
+    expect(media('outline-a').status).toBe('done');
+    expect(media('outline-b').status).toBe('pending');
+  });
+
+  it('leaves a step that ran, and does nothing while generating', () => {
+    seed({});
+    useStageStore.getState().recordScenePhase('outline-a', 'media', { status: 'running' });
+    useStageStore.getState().recordScenePhase('outline-a', 'media', { status: 'pending' });
+    expect(useStageStore.getState().settleInapplicableMedia()).toBe(1);
+    expect(media('outline-a').status).toBe('pending');
+
+    useStageStore.setState({ generationStatus: 'generating' });
+    expect(useStageStore.getState().settleInapplicableMedia()).toBe(0);
+  });
+
+  it('a second pass settles nothing', () => {
+    seed({});
+    useStageStore.getState().settleInapplicableMedia();
+    expect(useStageStore.getState().settleInapplicableMedia()).toBe(0);
+  });
+});

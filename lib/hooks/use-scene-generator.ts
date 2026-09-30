@@ -1441,6 +1441,13 @@ export async function runOutlineJob(input: OutlineJobInput): Promise<{
     };
   }
 
+  // A job that made it through with no media to make has nothing pending on
+  // the media step: generation leaves it disabled (the orchestrator owns media),
+  // and nothing else would ever move a row for an outline that never asked.
+  if (!(input.outline.mediaGenerations?.length ?? 0) && input.mode === 'generate') {
+    useStageStore.getState().recordScenePhase(input.outline.id, 'media', { status: 'done' });
+  }
+
   return { success: true, scene: runState.scene };
 }
 

@@ -3,7 +3,11 @@ import { join } from 'node:path';
 
 import { authenticatePersistenceHeaders } from '@/lib/persistence/server-auth';
 import { getCourseBinding } from '@/lib/persistence/git-course-sync';
-import { collectDocumentMediaRefs, isNarrationRefShape } from '@/lib/media/document-media-refs';
+import {
+  collectDocumentMediaRefs,
+  isNarrationRefShape,
+  serverPoolNames,
+} from '@/lib/media/document-media-refs';
 
 /**
  * GET /api/course-git/report — live course materialization report.
@@ -65,7 +69,9 @@ export async function GET(request: Request): Promise<Response> {
   const narrationDeclared = refs.filter(isNarrationRefShape);
   const mediaDeclared = refs.filter((ref) => !isNarrationRefShape(ref));
   const hasBytes = (ref: string): boolean =>
-    existsSync(join(dir, 'assets', encodeURIComponent(ref)));
+    serverPoolNames(ref, stageId).some((name) =>
+      existsSync(join(dir, 'assets', encodeURIComponent(name))),
+    );
   const narrationOnServer = narrationDeclared.filter(hasBytes);
   const mediaOnServer = mediaDeclared.filter(hasBytes);
   const missing = refs.filter((ref) => !hasBytes(ref));
