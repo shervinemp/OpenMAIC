@@ -482,6 +482,11 @@ export function ClassroomSurface({
         await runCourseIntegrity().catch((err) =>
           log.warn('[Classroom] Integrity pass error:', err),
         );
+        // Record the plan each scene answers to BEFORE the slow sweeps: this is
+        // bookkeeping, and a layout pass that is long or fails must not leave
+        // the course without it.
+        const { stampCourseSceneHashes } = await import('@/lib/maintenance/stamp-scene-hashes');
+        await stampCourseSceneHashes(stageId);
         // A plan that changed under existing scenes queues those scenes (a
         // retry card each, nothing regenerated) so they are not mistaken for
         // finished work. Free, and idempotent.
@@ -494,8 +499,7 @@ export function ClassroomSurface({
         await repairCourseLayout(stageId, [...useStageStore.getState().scenes]);
         // Split-terminal parts (and any other materially-present scene) get
         // their content fingerprint in the same session.
-        const { stampCourseSceneHashes } = await import('@/lib/maintenance/stamp-scene-hashes');
-        await stampCourseSceneHashes(stageId);
+        await stampCourseSceneHashes(stageId, { again: true });
       })().catch((err) => log.warn('[Classroom] Layout repair error:', err));
     },
     [runCourseIntegrity, runCourseMediaRepair],
