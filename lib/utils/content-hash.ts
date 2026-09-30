@@ -34,10 +34,16 @@ export interface ActionsSourceInput {
 
 /** Compute the reusable-actions fingerprint for one content+params attempt. */
 export function computeActionsSourceHash(input: ActionsSourceInput): string {
-  const payload = `${ACTIONS_HASH_EPS}\u0000${stableStringify(input)}`;
-  // FNV-1a 32-bit + payload length: collision-safe enough for equality-guard
-  // reuse (worst case a skipped actions pass that is still content-correct),
-  // with no async crypto and no node-only imports.
+  return fingerprintPayload(`${ACTIONS_HASH_EPS}\u0000${stableStringify(input)}`);
+}
+
+/**
+ * The equality-guard hash shared by every fingerprint in the app: two FNV-1a
+ * style 32-bit lanes plus the payload length. Collision-safe enough for a "did
+ * this change" check (worst case a skipped pass that is still correct), with
+ * no async crypto and no node-only imports.
+ */
+export function fingerprintPayload(payload: string): string {
   let h1 = 0x811c9dc5;
   let h2 = 0x011c9dc5;
   for (let i = 0; i < payload.length; i += 1) {

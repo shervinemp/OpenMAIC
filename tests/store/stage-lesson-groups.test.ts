@@ -384,3 +384,99 @@ describe('lessonGroups job model (Pillar 2)', () => {
     expect(state.generationComplete).toBe(true);
   });
 });
+
+describe('reconcilePlanStaleness', () => {
+  const HASH = 'stale-plan-hash';
+
+  async function seed(options: { stamp?: string | undefined } = { stamp: HASH }) {
+    const { outlineFingerprint } = await import('@/lib/utils/outline-fingerprint');
+    const store = useStageStore.getState();
+    store.setStage(makeStage());
+    const blueprint = makeBlueprint();
+    store.setBlueprint(blueprint);
+    const outline = blueprint.lessons[0].outlines[0];
+    useStageStore.setState({
+      outlines: blueprint.lessons.flatMap((lesson) => lesson.outlines),
+      scenes: [
+        {
+          id: 'scene-a',
+          stageId: 'stage-1',
+          type: 'slide',
+          title: 'A',
+          order: 1,
+          outlineId: 'outline-a',
+          content: { type: 'slide', canvas: {} },
+          ...(options.stamp === undefined
+            ? {}
+            : {
+                outlineSourceHash: options.stamp === HASH ? HASH : outlineFingerprint(outline),
+              }),
+        } as never,
+      ],
+    });
+    for (const phase of ['content', 'actions', 'semantics', 'tts'] as const) {
+      useStageStore.getState().recordScenePhase('outline-a', phase, { status: 'done' });
+    }
+    return outline;
+  }
+
+  it('queues a scene whose plan changed: content failed, later steps pending, card raised', async () => {
+    await seed();
+    expect(useStageStore.getState().reconcilePlanStaleness()).toBe(1);
+
+    const state = useStageStore.getState();
+    const phases = state.lessonGroups[0].jobs[0].phases;
+    expect(phases.content.status).toBe('failed');
+    expect(phases.content.error).toContain('lesson plan');
+    expect(phases.actions.status).toBe('pending');
+    expect(phases.semantics.status).toBe('pending');
+    expect(phases.tts.status).toBe('pending');
+    expect(state.failedOutlines.map((o) => o.id)).toEqual(['outline-a']);
+  });
+
+  it('is idempotent: a second pass queues nothing and stacks nothing', async () => {
+    await seed();
+    useStageStore.getState().reconcilePlanStaleness();
+    expect(useStageStore.getState().reconcilePlanStaleness()).toBe(0);
+    expect(useStageStore.getState().failedOutlines).toHaveLength(1);
+  });
+
+  it('leaves a scene alone when its recorded plan still matches', async () => {
+    await seed({ stamp: 'match' });
+    expect(useStageStore.getState().reconcilePlanStaleness()).toBe(0);
+    expect(useStageStore.getState().failedOutlines).toHaveLength(0);
+    expect(useStageStore.getState().lessonGroups[0].jobs[0].phases.content.status).toBe('done');
+  });
+
+  it('leaves a scene with no recorded plan alone (it predates the stamp)', async () => {
+    await seed({ stamp: undefined });
+    expect(useStageStore.getState().reconcilePlanStaleness()).toBe(0);
+    expect(useStageStore.getState().failedOutlines).toHaveLength(0);
+  });
+
+  it('does nothing while a generation is in flight, or for a skipped outline', async () => {
+    await seed();
+    useStageStore.setState({ generationStatus: 'generating' });
+    expect(useStageStore.getState().reconcilePlanStaleness()).toBe(0);
+
+    useStageStore.setState({ generationStatus: 'idle', skippedOutlineIds: ['outline-a'] });
+    expect(useStageStore.getState().reconcilePlanStaleness()).toBe(0);
+  });
+
+  it('Skip keeps the scene as it is: plan adopted, finished steps restored, no re-queue', async () => {
+    await seed();
+    useStageStore.getState().reconcilePlanStaleness();
+    useStageStore.getState().skipFailedOutline('outline-a');
+
+    const state = useStageStore.getState();
+    const phases = state.lessonGroups[0].jobs[0].phases;
+    expect(phases.content.status).toBe('done');
+    expect(phases.actions.status).toBe('done');
+    expect(phases.tts.status).toBe('done');
+    expect(state.failedOutlines).toHaveLength(0);
+    expect(state.scenes[0].outlineSourceHash).not.toBe(HASH);
+    // Adopted: a later reconcile sees a match.
+    useStageStore.setState({ skippedOutlineIds: [] });
+    expect(useStageStore.getState().reconcilePlanStaleness()).toBe(0);
+  });
+});

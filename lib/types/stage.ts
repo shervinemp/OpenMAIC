@@ -125,6 +125,13 @@ export type AppScene = DslScene<Action, SceneContent> & {
    * pre-guard scenes, where the guard falls back to a fresh actions pass.
    */
   actionsSourceHash?: string;
+  /**
+   * Fingerprint of the outline substance this scene was generated from (see
+   * `outlineFingerprint`). A plan that changes under an existing scene shows up
+   * as a mismatch here. Absent on scenes that predate it; those adopt the
+   * current outline as their baseline instead of being treated as stale.
+   */
+  outlineSourceHash?: string;
 };
 export type Scene = AppScene;
 

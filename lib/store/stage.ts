@@ -27,6 +27,7 @@ import type { StageManifest } from '@/lib/workbench/stage-freshness';
 import { applyGeneratedAgentsToRegistry } from '@/lib/orchestration/registry/store';
 import { migrateScene } from '@/lib/edit/slide-schema';
 import { indexScenesByOutline } from '@/lib/utils/outline-scene-match';
+import { outlineFingerprint } from '@/lib/utils/outline-fingerprint';
 import { stripDeadActionAnchors } from '@/lib/maintenance/content-audit';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
@@ -481,6 +482,18 @@ interface StageState {
    * after narration healed, say) stays up.
    */
   settleFailedOutline: (outlineId: string) => void;
+  /**
+   * Queue every scene whose outline changed under it. A scene records the plan
+   * it was generated from (`outlineSourceHash`); when the outline's substance
+   * no longer matches, the scene's content is outdated and everything built on
+   * it is too. Its content step is failed with `PLAN_CHANGED_ERROR`, the steps
+   * after it go back to pending, and its retry card goes into the queue. That is
+   * all: nothing is regenerated until the owner presses Retry. Scenes without a
+   * recorded plan, skipped outlines, and outlines already being regenerated are
+   * left alone, and nothing runs while a generation is in flight. Returns how
+   * many scenes were queued.
+   */
+  reconcilePlanStaleness: () => number;
   /** Skip resolution (Pillar 2 §4.9): close a permanently failed outline so
       the deck can complete without it. Session-level (not persisted). */
   skippedOutlineIds: string[];
@@ -519,6 +532,14 @@ function isDeckComplete({
     outlines.every((o) => materialized.has(o) || skipped.has(o.id))
   );
 }
+
+/**
+ * The failure recorded on a scene whose outline changed after it was generated
+ * (see `reconcilePlanStaleness`). A stable string, so a second reconcile
+ * recognises its own queued entry and the card can say why it is there.
+ */
+export const PLAN_CHANGED_ERROR =
+  'The lesson plan for this scene changed after it was generated. Retry regenerates it (edits made to this slide since will be replaced); Skip keeps it as it is.';
 
 /**
  * Failed outlines that hold a deck open. The one queue also carries fill
@@ -1058,17 +1079,22 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           // missing row as attempts: 0 instead of crashing the caller — a
           // repair that resolved every ref must be able to record `done`.
           const attempts = previous?.attempts ?? 0;
+          const next = {
+            ...previous,
+            ...patch,
+            attempts: patch.status === 'running' ? attempts + 1 : attempts,
+            updatedAt: now,
+          };
+          // An error describes the failure it was recorded with. A step that
+          // moves on to running/done/pending must not carry the old message: a
+          // finished step still reading "generation failed" (or, worse, still
+          // reading the plan-changed marker) misleads every later check.
+          if (patch.status !== undefined && patch.status !== 'failed' && !('error' in patch)) {
+            delete next.error;
+          }
           return {
             ...job,
-            phases: {
-              ...job.phases,
-              [phase]: {
-                ...previous,
-                ...patch,
-                attempts: patch.status === 'running' ? attempts + 1 : attempts,
-                updatedAt: now,
-              },
-            },
+            phases: { ...job.phases, [phase]: next },
           };
         }),
       };
@@ -1159,7 +1185,79 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     set({ failedOutlines: failedOutlines.filter((o) => o.id !== outlineId) });
   },
 
+  reconcilePlanStaleness: () => {
+    const state = get();
+    if (state.generationStatus === 'generating') return 0;
+    const outlineById = new Map(state.outlines.map((outline) => [outline.id, outline]));
+    const skipped = new Set(state.skippedOutlineIds);
+    const regenerating = new Set(state.generatingOutlines.map((outline) => outline.id));
+    const jobs = new Map(
+      state.lessonGroups.flatMap((group) => group.jobs).map((job) => [job.outlineId, job] as const),
+    );
+    // The steps built on the content: back to pending once the content is
+    // outdated. Only a finished step is reset; a step that is running or has
+    // already failed says more than pending would.
+    const downstream = ['actions', 'semantics', 'tts', 'media', 'layout'] as const;
+    let queued = 0;
+    for (const scene of state.scenes) {
+      if (!scene.outlineId || scene.outlineSourceHash === undefined) continue;
+      const outline = outlineById.get(scene.outlineId);
+      if (!outline || skipped.has(outline.id) || regenerating.has(outline.id)) continue;
+      if (scene.outlineSourceHash === outlineFingerprint(outline)) continue;
+      const job = jobs.get(outline.id);
+      const content = job?.phases?.content;
+      if (content?.status === 'running') continue;
+      const alreadyQueued =
+        content?.status === 'failed' &&
+        content.error === PLAN_CHANGED_ERROR &&
+        state.failedOutlines.some((failed) => failed.id === outline.id);
+      if (alreadyQueued) continue;
+      get().recordScenePhase(outline.id, 'content', {
+        status: 'failed',
+        error: PLAN_CHANGED_ERROR,
+      });
+      for (const name of downstream) {
+        if (job?.phases?.[name]?.status === 'done') {
+          get().recordScenePhase(outline.id, name, {
+            status: 'pending',
+            error: PLAN_CHANGED_ERROR,
+          });
+        }
+      }
+      get().addFailedOutline(outline);
+      queued += 1;
+    }
+    return queued;
+  },
+
   skipFailedOutline: (outlineId) => {
+    // Skipping a scene queued because its plan changed means "keep it as it is":
+    // adopt the current plan as the one this scene answers to, and hand the
+    // steps that were reset back their finished state (a reset row carries the
+    // plan-changed marker; a step that is simply waiting does not).
+    const outline = get().outlines.find((candidate) => candidate.id === outlineId);
+    const job = get()
+      .lessonGroups.flatMap((group) => group.jobs)
+      .find((entry) => entry.outlineId === outlineId);
+    const scene = get().scenes.find((candidate) => candidate.outlineId === outlineId);
+    if (outline && scene && job?.phases?.content?.error === PLAN_CHANGED_ERROR) {
+      const stamp = outlineFingerprint(outline);
+      set({
+        scenes: get().scenes.map((candidate) =>
+          candidate.id === scene.id
+            ? { ...candidate, outlineSourceHash: stamp, updatedAt: Date.now() }
+            : candidate,
+        ),
+      });
+      markPendingChanges(get().stage?.id, { kind: 'scene', sceneId: scene.id });
+      get().recordScenePhase(outlineId, 'content', { status: 'done', error: undefined });
+      for (const name of ['actions', 'semantics', 'tts', 'media', 'layout'] as const) {
+        const row = job.phases[name];
+        if (row?.status === 'pending' && row.error === PLAN_CHANGED_ERROR) {
+          get().recordScenePhase(outlineId, name, { status: 'done' });
+        }
+      }
+    }
     const { generatingOutlines, skippedOutlineIds } = get();
     set({
       failedOutlines: get().failedOutlines.filter((o) => o.id !== outlineId),

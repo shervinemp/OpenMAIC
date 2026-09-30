@@ -482,6 +482,13 @@ export function ClassroomSurface({
         await runCourseIntegrity().catch((err) =>
           log.warn('[Classroom] Integrity pass error:', err),
         );
+        // A plan that changed under existing scenes queues those scenes (a
+        // retry card each, nothing regenerated) so they are not mistaken for
+        // finished work. Free, and idempotent.
+        const planStale = useStageStore.getState().reconcilePlanStaleness();
+        if (planStale > 0) {
+          log.info(`[Classroom] ${planStale} scene(s) queued: their lesson plan changed`);
+        }
         void runCourseMediaRepair({ spend: false });
         const { repairCourseLayout } = await import('@/lib/maintenance/repair-course-layout');
         await repairCourseLayout(stageId, [...useStageStore.getState().scenes]);

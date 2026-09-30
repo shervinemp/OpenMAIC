@@ -4,7 +4,7 @@ const log = createLogger('StampSceneHashes');
 
 /**
  * Hash-stamping for load-time scenes that carry materialized work but no
- * `actionsSourceHash` fingerprint (split-terminal part scenes, legacy rows).
+ * `actionsSourceHash` (or `outlineSourceHash`) fingerprint (split-terminal part scenes, legacy rows).
  * Extracted from the classroom's console-only `__openmaicStampSceneHashes`
  * so the same stamping runs unconditionally in the on-load pipeline — after
  * the split terminal creates parts, their re-verification debt closes in the
@@ -38,18 +38,32 @@ export async function stampCourseSceneHashes(stageId: string): Promise<StampRepo
       languageDirective = state.stage.languageDirective,
     } = restored ?? {};
     const { computeActionsSourceHash } = await import('@/lib/utils/content-hash');
+    const { outlineFingerprint } = await import('@/lib/utils/outline-fingerprint');
+    const outlineById = new Map(state.outlines.map((outline) => [outline.id, outline]));
     let stamped = 0;
     const scenes = state.scenes.map((scene) => {
-      if (scene.actionsSourceHash !== undefined) return scene;
+      const needsActionsHash = scene.actionsSourceHash === undefined;
+      // The plan the scene answers to. A scene that predates the stamp adopts
+      // the CURRENT outline as its baseline: what it was generated from is
+      // unknowable, and treating every old scene as stale would queue a whole
+      // course for regeneration on first open.
+      const outline = scene.outlineId ? outlineById.get(scene.outlineId) : undefined;
+      const needsOutlineHash = scene.outlineSourceHash === undefined && outline !== undefined;
+      if (!needsActionsHash && !needsOutlineHash) return scene;
       stamped += 1;
       return {
         ...scene,
-        actionsSourceHash: computeActionsSourceHash({
-          content: scene.content,
-          agents,
-          userProfile,
-          languageDirective,
-        }),
+        ...(needsActionsHash
+          ? {
+              actionsSourceHash: computeActionsSourceHash({
+                content: scene.content,
+                agents,
+                userProfile,
+                languageDirective,
+              }),
+            }
+          : {}),
+        ...(needsOutlineHash && outline ? { outlineSourceHash: outlineFingerprint(outline) } : {}),
       };
     });
     if (stamped === 0) return { stamped: 0, total: state.scenes.length };

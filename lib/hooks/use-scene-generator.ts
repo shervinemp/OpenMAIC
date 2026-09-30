@@ -34,6 +34,7 @@ import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { computeActionsSourceHash } from '@/lib/utils/content-hash';
+import { outlineFingerprint } from '@/lib/utils/outline-fingerprint';
 import { indexScenesByOutline } from '@/lib/utils/outline-scene-match';
 import { findWidgetScriptFailure } from '@/lib/interactive/widget-script-check';
 import {
@@ -1075,6 +1076,16 @@ function mediaPhaseStatus(outlineId: string): { status?: string; error?: string 
  */
 const SCENE_KEEPING_PHASES: ReadonlySet<MaterialPhaseKey> = new Set(['tts', 'media', 'semantics']);
 
+/**
+ * Phase order is cost order: everything deterministic and free comes before
+ * anything that spends. `semantics` is a token-free gate over the finished
+ * scene (dead anchors stripped, duplicate ids renamed, a widget whose script
+ * cannot parse refused), so it runs right after `actions` and BEFORE
+ * `tts` / `media`. A scene it refuses is regenerated anyway; running it last
+ * paid for narration and media that the regeneration then threw away, and
+ * voiced a scene it was about to edit. `tts` and `media` also read the cured
+ * scene this way.
+ */
 const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
   {
     key: 'content',
@@ -1100,6 +1111,12 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
           // A widget that cannot run is not settled content: reusing it would
           // hand the retry the same broken script.
           widgetScriptFailure(persistedScene.content) === null &&
+          // Content generated from an older version of this outline is not
+          // settled either: the plan moved under it, and the content hash below
+          // does not see the outline. A scene with no recorded plan (it
+          // predates the stamp) is taken as current.
+          (persistedScene.outlineSourceHash === undefined ||
+            persistedScene.outlineSourceHash === outlineFingerprint(outline)) &&
           // Settled iff the persisted scene's hash matches the CURRENT source
           // inputs (agents, profile, directive): a blueprint edit invalidates
           // the hash and re-pays content.
@@ -1228,7 +1245,52 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
       // voice-only one) re-pays the full content/actions LLM passes because
       // `findReusableActionsScene` requires a defined hash. Stamping here is
       // what makes the first full pass the ONLY full pass.
-      state.scene = attachActionsSourceHash(actionsResult.scene, contentResult.content, params);
+      state.scene = {
+        ...attachActionsSourceHash(actionsResult.scene, contentResult.content, params),
+        // The plan this scene now answers to. Stamped on every pass, reused
+        // scenes included, so a retry that settles a plan change also clears it.
+        outlineSourceHash: outlineFingerprint(input.outline),
+      };
+      return { status: 'done' };
+    },
+  },
+  {
+    // The train-time integrity gate, ordered BEFORE the paid fill phases. Deterministic only
+    // (zero tokens): the delete-only strips cure what they can and the
+    // residual decides the phase. The judge is NOT a descriptor — it stays a
+    // budgeted read-only maintenance pass; this phase marks the section's
+    // DETERMINISTIC truth.
+    key: 'semantics',
+    enabled: () => true,
+    queueOnFailure: false,
+    run: async (state) => {
+      const scene = state.scene;
+      if (!scene) return { status: 'done' }; // no canvas → nothing to judge
+      // The checks below are deterministic and token-free, so they always run.
+      // A cap on attempts used to fail this phase fast once an outline had
+      // been through it three times — and every narration or media repair
+      // passes through it — so a scene fixed since (edited, or regenerated
+      // through its card) could never pass again and its card never cleared.
+      // Nothing here can loop: a failure parks behind the card like any other.
+      // Delete-only auto-fixes: provenance artifacts and dead anchors never
+      // fail the train — they ARE the fix.
+      const provenanceFixed = stripSourceProvenance(scene as never);
+      const deadAnchorsFixed = stripDeadActionAnchors(scene as never);
+      // Renaming repeats is a cure too: a duplicate id otherwise fails this
+      // gate forever, since a retry reuses the same stored canvas.
+      dedupeElementIds(scene as never);
+      // A widget whose script cannot parse is dead for every learner.
+      const widgetFailure = widgetScriptFailure(scene.content);
+      if (widgetFailure) return { status: 'failed', error: widgetFailure };
+      const residual = sceneContentFindings(scene as never).filter(
+        (finding) =>
+          !(finding.kind === 'provenance/source-artifact' && provenanceFixed > 0) &&
+          !(finding.kind === 'action/dead-element-reference' && deadAnchorsFixed > 0),
+      );
+      const broken = residual.filter((finding) => finding.severity === 'error');
+      if (broken.length > 0) {
+        return { status: 'failed', error: broken.map((finding) => finding.message).join(' | ') };
+      }
       return { status: 'done' };
     },
   },
@@ -1311,46 +1373,6 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
       }
       if (settled?.status === 'pending') {
         return { status: 'failed', error: 'media repair deferred: per-pass repair cap reached' };
-      }
-      return { status: 'done' };
-    },
-  },
-  {
-    // Sixth material phase: the train-time integrity gate. Deterministic only
-    // (zero tokens): the delete-only strips cure what they can and the
-    // residual decides the phase. The judge is NOT a descriptor — it stays a
-    // budgeted read-only maintenance pass; this phase marks the section's
-    // DETERMINISTIC truth.
-    key: 'semantics',
-    enabled: () => true,
-    queueOnFailure: false,
-    run: async (state) => {
-      const scene = state.scene;
-      if (!scene) return { status: 'done' }; // no canvas → nothing to judge
-      // The checks below are deterministic and token-free, so they always run.
-      // A cap on attempts used to fail this phase fast once an outline had
-      // been through it three times — and every narration or media repair
-      // passes through it — so a scene fixed since (edited, or regenerated
-      // through its card) could never pass again and its card never cleared.
-      // Nothing here can loop: a failure parks behind the card like any other.
-      // Delete-only auto-fixes: provenance artifacts and dead anchors never
-      // fail the train — they ARE the fix.
-      const provenanceFixed = stripSourceProvenance(scene as never);
-      const deadAnchorsFixed = stripDeadActionAnchors(scene as never);
-      // Renaming repeats is a cure too: a duplicate id otherwise fails this
-      // gate forever, since a retry reuses the same stored canvas.
-      dedupeElementIds(scene as never);
-      // A widget whose script cannot parse is dead for every learner.
-      const widgetFailure = widgetScriptFailure(scene.content);
-      if (widgetFailure) return { status: 'failed', error: widgetFailure };
-      const residual = sceneContentFindings(scene as never).filter(
-        (finding) =>
-          !(finding.kind === 'provenance/source-artifact' && provenanceFixed > 0) &&
-          !(finding.kind === 'action/dead-element-reference' && deadAnchorsFixed > 0),
-      );
-      const broken = residual.filter((finding) => finding.severity === 'error');
-      if (broken.length > 0) {
-        return { status: 'failed', error: broken.map((finding) => finding.message).join(' | ') };
       }
       return { status: 'done' };
     },
