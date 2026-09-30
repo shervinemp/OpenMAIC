@@ -157,3 +157,64 @@ describe('prune-empty-parts', () => {
     expect(plan.sceneIds).toEqual([]);
   });
 });
+
+describe('prune-empty-parts carries narration', () => {
+  const speech = (id: string, text: string, audioId: string) => ({
+    id,
+    type: 'speech',
+    text,
+    audioId,
+  });
+
+  function narratedDocument(): PruneDocumentShape {
+    const document = makeDocument();
+    const base = document.scenes.find((s) => s.id === 'base-empty')!;
+    base.actions = [
+      speech('a1', 'Let us load the orders table first.', 'tts_a1'),
+      speech('a2', 'Then we join it to customers.', 'tts_a2'),
+    ];
+    const part2 = document.scenes.find((s) => s.id === 'base-part2')!;
+    part2.actions = [speech('b1', 'The result is a single row per order.', 'tts_b1')];
+    return document;
+  }
+
+  it("moves the removed scene's narration, audio references intact, onto the surviving part", () => {
+    const document = narratedDocument();
+    const result = applyEmptyPartPrune(document, findEmptyPartPrune(document));
+
+    expect(result.removedSceneIds).toEqual(['base-empty']);
+    expect(result.carriedActions).toBe(2);
+    const part2 = document.scenes.find((s) => s.id === 'base-part2')!;
+    const actions = part2.actions as Array<{ id: string; audioId?: string }>;
+    // The lesson's opening lines come first, what the part already said stays.
+    expect(actions.map((a) => a.id)).toEqual(['a1', 'a2', 'b1']);
+    expect(actions.map((a) => a.audioId)).toEqual(['tts_a1', 'tts_a2', 'tts_b1']);
+  });
+
+  it('places the lines across several surviving parts in order, never dropping one', () => {
+    const document = narratedDocument();
+    const part3 = {
+      ...(document.scenes.find((s) => s.id === 'base-part2') as Record<string, unknown>),
+      id: 'base-part3',
+      title: 'Worked Problem: Joins (part 3)',
+      order: 2,
+      outlineId: 'o-p3',
+      actions: [],
+    };
+    document.scenes.push(part3);
+    const result = applyEmptyPartPrune(document, findEmptyPartPrune(document));
+
+    expect(result.carriedActions).toBe(2);
+    const moved = document.scenes
+      .filter((s) => s.id === 'base-part2' || s.id === 'base-part3')
+      .flatMap((s) => (s.actions as Array<{ id: string }>).map((a) => a.id));
+    expect(moved).toEqual(expect.arrayContaining(['a1', 'a2', 'b1']));
+    expect(moved).toHaveLength(3);
+  });
+
+  it('a scene with no actions carries nothing', () => {
+    const document = makeDocument();
+    const result = applyEmptyPartPrune(document, findEmptyPartPrune(document));
+    expect(result.carriedActions).toBe(0);
+  });
+});

@@ -7,15 +7,23 @@
  * terminal can cure it — it simply parks as `layout: failed`, hidden from the
  * lesson list, forever.
  *
- * The prune is strictly delete-only and only fires when all of the following
- * hold, so a bit of genuinely empty authoring can never be lost:
+ * The prune only fires when all of the following hold, so a bit of genuinely
+ * empty authoring can never be lost:
  *   - the scene is a slide with ZERO canvas elements;
  *   - a sibling sharing its base title (the "…(part N)" stem stripped) has at
  *     least one canvas element — the content exists elsewhere;
  * then the scene, its outline entry (flat + blueprint lesson + blueprint
- * unit), and its lesson-group job are removed together. Nothing else — no
- * content, no other scene, no order — is touched.
+ * unit), and its lesson-group job are removed together.
+ *
+ * "Empty canvas" is not "empty scene". The old splitter left the narration of a
+ * whole lesson on that first, element-less chunk, and a prune that only counted
+ * elements deleted it: 32 scenes and 272 narration lines (audio already
+ * rendered) went with them. Narration is content, so before a scene goes its
+ * actions are carried onto the surviving siblings, placed by what each line is
+ * about (see narration-align), in front of what they already play.
  */
+
+import { alignActionsToParts, slideTextOf } from './narration-align';
 
 export interface EmptyPartPrunePlan {
   sceneIds: string[];
@@ -25,6 +33,8 @@ export interface EmptyPartPrunePlan {
 export interface EmptyPartPruneResult {
   removedSceneIds: string[];
   removedOutlineIds: string[];
+  /** Actions carried from a removed scene onto its siblings. */
+  carriedActions: number;
 }
 
 export interface PruneDocumentShape {
@@ -90,6 +100,7 @@ export function applyEmptyPartPrune(
   const sceneSet = new Set(plan.sceneIds);
   const outlineSet = new Set(plan.outlineIds);
 
+  const carriedActions = carryNarrationToSiblings(document, sceneSet);
   document.scenes = document.scenes.filter((scene) => !sceneSet.has(String(scene.id)));
 
   const outline = document.outline;
@@ -120,5 +131,50 @@ export function applyEmptyPartPrune(
     }
   }
 
-  return { removedSceneIds: plan.sceneIds, removedOutlineIds: plan.outlineIds };
+  return {
+    removedSceneIds: plan.sceneIds,
+    removedOutlineIds: plan.outlineIds,
+    carriedActions,
+  };
+}
+
+/**
+ * Move the actions of every scene about to be removed onto the surviving slide
+ * siblings that share its base title. A sibling is a part that keeps its
+ * canvas; with one sibling everything lands there, with several the lines are
+ * placed in order by overlap with each part's text. Returns how many actions
+ * moved.
+ */
+function carryNarrationToSiblings(document: PruneDocumentShape, removed: Set<string>): number {
+  let carried = 0;
+  for (const scene of document.scenes) {
+    if (!removed.has(String(scene.id))) continue;
+    const actions = Array.isArray(scene.actions)
+      ? (scene.actions as Array<Record<string, unknown>>)
+      : [];
+    if (actions.length === 0) continue;
+    const key = baseTitle(String(scene.title ?? ''));
+    const siblings = document.scenes
+      .filter(
+        (candidate) =>
+          candidate.type === 'slide' &&
+          !removed.has(String(candidate.id)) &&
+          elementCount(candidate) > 0 &&
+          baseTitle(String(candidate.title ?? '')) === key,
+      )
+      .sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0));
+    if (siblings.length === 0) continue;
+    const placement = alignActionsToParts(
+      actions as Array<{ type: string; text?: string }>,
+      siblings.map(slideTextOf),
+    );
+    siblings.forEach((sibling, index) => {
+      const mine = actions.filter((_, position) => placement[position] === index);
+      if (mine.length === 0) return;
+      const existing = Array.isArray(sibling.actions) ? (sibling.actions as unknown[]) : [];
+      sibling.actions = [...mine, ...existing];
+      carried += mine.length;
+    });
+  }
+  return carried;
 }

@@ -29,7 +29,7 @@ import { findWidgetScriptFailure } from '@/lib/interactive/widget-script-check';
 import { healedAnswerKey } from '@/lib/quiz/answer-key-heal';
 import { dedupeElementIds, stripDeadActionAnchors } from './content-audit';
 import { withAutoSpotlights } from './auto-spotlight';
-import { alignActionsToParts, plainText } from './narration-align';
+import { alignActionsToParts, slideTextOf } from './narration-align';
 
 export interface CourseIntegrityHeal {
   /** Scene patches to apply (updateScene), in scene order; only changed fields. */
@@ -53,13 +53,6 @@ export interface CourseIntegrityOptions {
 /** Base id shared by a scene and its split parts (`__pN`, with any salt). */
 function familyBase(sceneId: string): string {
   return sceneId.replace(/__p\d+(?:-[a-z0-9]+)?$/i, '');
-}
-
-function slideText(scene: Scene): string {
-  const content = scene.content as { canvas?: { elements?: Array<{ content?: unknown }> } };
-  return (content.canvas?.elements ?? [])
-    .map((element) => (typeof element.content === 'string' ? plainText(element.content) : ''))
-    .join(' ');
 }
 
 export function healCourseIntegrity(
@@ -144,7 +137,7 @@ export function healCourseIntegrity(
     if (!silentRest || !anchorFree || !speaks) continue;
     const placement = alignActionsToParts(
       actions as Array<{ type: string; text?: string }>,
-      parts.map(slideText),
+      parts.map(slideTextOf),
     );
     if (placement.every((part) => part === 0)) continue;
     parts.forEach((part, partIndex) => {

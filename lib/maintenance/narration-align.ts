@@ -65,6 +65,16 @@ export function plainText(html: string): string {
     .trim();
 }
 
+/** Plain text of every text element on a slide-shaped scene, joined. */
+export function slideTextOf(scene: { content?: unknown }): string {
+  const content = scene.content as
+    | { canvas?: { elements?: Array<{ content?: unknown }> } }
+    | undefined;
+  return (content?.canvas?.elements ?? [])
+    .map((element) => (typeof element.content === 'string' ? plainText(element.content) : ''))
+    .join(' ');
+}
+
 /**
  * The part index (0-based) each action plays on, given the parts' texts in
  * order. Actions are returned in their original order; only `speech` lines
