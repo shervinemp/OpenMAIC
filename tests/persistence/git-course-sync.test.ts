@@ -260,3 +260,39 @@ describe('CourseGitCommitScheduler', () => {
     // not flake this on the default 5s.
   }, 30_000);
 });
+
+describe('CourseGitCommitScheduler commit back-off', () => {
+  it('keeps the plain debounce until a slow commit has happened', () => {
+    const scheduler = new CourseGitCommitScheduler(makeTempDir('backoff-fresh'), {
+      debounceMs: 4_000,
+    });
+    expect(scheduler.nextDelayMs(1_000_000)).toBe(4_000);
+  });
+
+  it('waits longer after a slow commit, so a bulk edit cannot commit back to back', () => {
+    const scheduler = new CourseGitCommitScheduler(makeTempDir('backoff-slow'), {
+      debounceMs: 4_000,
+    });
+    const internals = scheduler as unknown as { lastFlushMs: number; lastFlushEndedAt: number };
+    internals.lastFlushMs = 20_000;
+    internals.lastFlushEndedAt = 1_000_000;
+    // Right after a 20 s commit: 4 x 20 s must pass before the next one.
+    expect(scheduler.nextDelayMs(1_000_000)).toBe(80_000);
+    // Part of that wait has already elapsed.
+    expect(scheduler.nextDelayMs(1_050_000)).toBe(30_000);
+    // Long after, back to the debounce.
+    expect(scheduler.nextDelayMs(2_000_000)).toBe(4_000);
+  });
+
+  it('never waits more than the cap, and a quick commit changes nothing', () => {
+    const scheduler = new CourseGitCommitScheduler(makeTempDir('backoff-cap'), {
+      debounceMs: 4_000,
+    });
+    const internals = scheduler as unknown as { lastFlushMs: number; lastFlushEndedAt: number };
+    internals.lastFlushMs = 60 * 60_000;
+    internals.lastFlushEndedAt = 5_000_000;
+    expect(scheduler.nextDelayMs(5_000_000)).toBe(10 * 60_000);
+    internals.lastFlushMs = 50;
+    expect(scheduler.nextDelayMs(5_000_000)).toBe(4_000);
+  });
+});

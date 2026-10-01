@@ -247,6 +247,9 @@
     "resumeGeneration": "Resume",
     "repairCourse": "Check & repair course media",
     "repairingCourse": "Repairing course media…",
+    "narrateSilent": "Narrate {{count}} silent slide(s)",
+    "narratingSilent": "Narrating… {{done}}/{{total}} (click to stop)",
+    "narrateSilentConfirm": "Write narration for {{count}} slide(s) that have none?\n\nThis calls your language model once per slide, and your voice provider for each line. Slide content is not changed. You can stop at any time; finished slides are kept.",
     "recoveryPending": "{{count}} page(s) not yet generated",
     "recoveryUmbrella": "Recovery — auto-continuing: {{items}}"
   },

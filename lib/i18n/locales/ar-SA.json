@@ -246,6 +246,9 @@
     "resumeGeneration": "استئناف",
     "repairCourse": "فحص وسائط الدورة وإصلاحها",
     "repairingCourse": "جارٍ إصلاح وسائط الدورة…",
+    "narrateSilent": "إضافة تعليق صوتي لـ {{count}} شريحة صامتة",
+    "narratingSilent": "جارٍ إنشاء التعليق… {{done}}/{{total}} (انقر للإيقاف)",
+    "narrateSilentConfirm": "هل تريد كتابة تعليق صوتي لـ {{count}} شريحة بلا تعليق؟\n\nسيستدعي ذلك نموذج اللغة مرة لكل شريحة ومزوّد الصوت لكل جملة. لن يتغير محتوى الشرائح. يمكنك الإيقاف في أي وقت، وتبقى الشرائح المكتملة.",
     "recoveryPending": "{\\\\\"count\\\\} صفحة/صفحات لم تُولَّد بعد",
     "recoveryUmbrella": "الاسترداد — يستمر تلقائياً: {{items}}",
     "ungroupedScenes": "Other scenes"

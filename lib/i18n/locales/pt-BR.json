@@ -659,6 +659,9 @@
     "resumeGeneration": "Retomar",
     "repairCourse": "Verificar e reparar a mídia do curso",
     "repairingCourse": "Reparando a mídia do curso…",
+    "narrateSilent": "Narrar {{count}} slide(s) sem áudio",
+    "narratingSilent": "Narrando… {{done}}/{{total}} (clique para parar)",
+    "narrateSilentConfirm": "Escrever a narração de {{count}} slide(s) que não têm?\n\nIsso chama seu modelo de linguagem uma vez por slide e seu provedor de voz para cada linha. O conteúdo dos slides não muda. Você pode parar a qualquer momento; os slides concluídos são mantidos.",
     "recoveryPending": "{{count}} página(s) ainda não geradas",
     "recoveryUmbrella": "Recuperação — continuando automaticamente: {{items}}",
     "ungroupedScenes": "Other scenes"

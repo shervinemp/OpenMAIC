@@ -38,7 +38,7 @@ import {
   clearGenerationSessionForStage,
   loadGenerationParams,
 } from '@/lib/utils/generation-session-store';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
 import { useNarrationAdoption } from '@/lib/audio/use-narration-adoption';
 import { createLogger } from '@/lib/logger';
@@ -59,6 +59,7 @@ import {
 } from '@/lib/classroom/progressive-load-policy';
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
 import { consumeAutoResume } from '@/lib/classroom/auto-resume-marker';
+import { findSilentSlides } from '@/lib/maintenance/silent-narration';
 
 const log = createLogger('Classroom');
 
@@ -470,6 +471,55 @@ export function ClassroomSurface({
     return () => window.removeEventListener('online', onOnline);
   }, [loading, error, mayGenerate, runCourseRepairPass]);
 
+  // Silent slides: substantial text on screen and no narration (the worked
+  // solutions of a split lesson, mostly). Counting them is free; writing the
+  // narration is a model call per slide plus the voice provider per line, so it
+  // is a button with a count and a confirmation, never part of opening a course.
+  const allScenes = useStageStore((state) => state.scenes);
+  const silentSlides = useMemo(() => findSilentSlides(allScenes), [allScenes]);
+  const [silentRun, setSilentRun] = useState<{ done: number; total: number } | null>(null);
+  const silentAbortRef = useRef<AbortController | null>(null);
+  const startSilentNarration = useCallback(async (): Promise<void> => {
+    if (silentAbortRef.current) return;
+    const stage = useStageStore.getState().stage;
+    if (!stage || stage.id !== classroomId) return;
+    const pending = findSilentSlides(useStageStore.getState().scenes);
+    if (pending.length === 0) return;
+    if (!window.confirm(t('stage.narrateSilentConfirm', { count: pending.length }))) return;
+    const controller = new AbortController();
+    silentAbortRef.current = controller;
+    setSilentRun({ done: 0, total: pending.length });
+    try {
+      const params = (await loadGenerationParams(classroomId)) ?? {};
+      const { narrateSilentScenes } = await import('@/lib/hooks/use-scene-generator');
+      const result = await narrateSilentScenes({
+        sceneIds: pending.map((scene) => scene.id),
+        params: {
+          agents: params.agents,
+          userProfile: params.userProfile,
+          languageDirective: params.languageDirective || stage.languageDirective,
+        },
+        language: params.languageDirective || stage.languageDirective,
+        signal: controller.signal,
+        onProgress: ({ done, total }) => setSilentRun({ done, total }),
+      });
+      log.info('[Classroom] Silent-slide narration finished', result);
+      await useStageStore.getState().saveToStorage();
+    } catch (err) {
+      if (!controller.signal.aborted) log.warn('[Classroom] Silent-slide narration error:', err);
+    } finally {
+      silentAbortRef.current = null;
+      setSilentRun(null);
+    }
+  }, [classroomId, t]);
+  const stopSilentNarration = useCallback(() => silentAbortRef.current?.abort(), []);
+  useEffect(
+    () => () => {
+      silentAbortRef.current?.abort();
+    },
+    [classroomId],
+  );
+
   // Settled-course maintenance on open: the byte repair plus one
   // deterministic, tokenless layout sweep per course per session (clamps,
   // move-restacks, the persisted debt ledger kept honest). Both wait for a
@@ -842,6 +892,18 @@ export function ClassroomSurface({
                 mayGenerate ? () => void runCourseRepairPass({ spend: true }) : undefined
               }
               courseRepairing={courseRepairing}
+              silentNarration={
+                mayGenerate
+                  ? {
+                      count: silentSlides.length,
+                      running: silentRun !== null,
+                      done: silentRun?.done ?? 0,
+                      total: silentRun?.total ?? 0,
+                      onStart: () => void startSilentNarration(),
+                      onStop: stopSilentNarration,
+                    }
+                  : undefined
+              }
             />
           )}
         </div>

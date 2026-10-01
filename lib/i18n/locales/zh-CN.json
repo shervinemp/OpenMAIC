@@ -246,6 +246,9 @@
     "resumeGeneration": "继续生成",
     "repairCourse": "检查并修复课程媒体",
     "repairingCourse": "正在修复课程媒体…",
+    "narrateSilent": "为 {{count}} 张无旁白的幻灯片生成旁白",
+    "narratingSilent": "正在生成旁白… {{done}}/{{total}}（点击停止）",
+    "narrateSilentConfirm": "为 {{count}} 张没有旁白的幻灯片生成旁白？\n\n每张幻灯片会调用一次语言模型，每句旁白会调用一次语音服务。幻灯片内容不会改变。可随时停止，已完成的会保留。",
     "recoveryPending": "尚有 {{count}} 页未生成",
     "recoveryUmbrella": "恢复 — 自动继续：{{items}}",
     "ungroupedScenes": "Other scenes"

@@ -248,7 +248,10 @@
     "ungroupedScenes": "Other scenes",
     "resumeGeneration": "Resume",
     "repairCourse": "Kursmedien prüfen und reparieren",
-    "repairingCourse": "Kursmedien werden repariert…"
+    "repairingCourse": "Kursmedien werden repariert…",
+    "narrateSilent": "{{count}} stumme Folie(n) vertonen",
+    "narratingSilent": "Vertonung läuft… {{done}}/{{total}} (zum Stoppen klicken)",
+    "narrateSilentConfirm": "Für {{count}} Folie(n) ohne Vertonung eine Vertonung erstellen?\n\nDas ruft pro Folie einmal Ihr Sprachmodell und pro Satz Ihren Sprachanbieter auf. Der Folieninhalt bleibt unverändert. Sie können jederzeit stoppen; fertige Folien bleiben erhalten."
   },
   "edit": {
     "proMode": "Pro",

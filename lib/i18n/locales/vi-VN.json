@@ -246,6 +246,9 @@
     "resumeGeneration": "Tiếp tục",
     "repairCourse": "Kiểm tra và sửa phương tiện của khóa học",
     "repairingCourse": "Đang sửa phương tiện của khóa học…",
+    "narrateSilent": "Thêm lời thuyết minh cho {{count}} slide im lặng",
+    "narratingSilent": "Đang thuyết minh… {{done}}/{{total}} (bấm để dừng)",
+    "narrateSilentConfirm": "Viết lời thuyết minh cho {{count}} slide chưa có?\n\nThao tác này gọi mô hình ngôn ngữ một lần cho mỗi slide và nhà cung cấp giọng nói cho từng câu. Nội dung slide không thay đổi. Bạn có thể dừng bất cứ lúc nào; các slide đã xong được giữ lại.",
     "recoveryPending": "{{count}} trang chưa được tạo",
     "recoveryUmbrella": "Khôi phục — đang tự động tiếp tục: {{items}}",
     "ungroupedScenes": "Other scenes"

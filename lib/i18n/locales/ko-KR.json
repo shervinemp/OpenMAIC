@@ -246,6 +246,9 @@
     "resumeGeneration": "재개",
     "repairCourse": "강의 미디어 확인 및 복구",
     "repairingCourse": "강의 미디어 복구 중…",
+    "narrateSilent": "무음 슬라이드 {{count}}장에 내레이션 생성",
+    "narratingSilent": "내레이션 생성 중… {{done}}/{{total}} (클릭하여 중지)",
+    "narrateSilentConfirm": "내레이션이 없는 슬라이드 {{count}}장에 내레이션을 생성할까요?\n\n슬라이드마다 언어 모델을 한 번, 문장마다 음성 제공자를 호출합니다. 슬라이드 내용은 변경되지 않습니다. 언제든 중지할 수 있으며 완료된 슬라이드는 유지됩니다.",
     "recoveryPending": "아직 생성되지 않은 페이지 {{count}}개",
     "recoveryUmbrella": "복구 — 자동 진행 중: {{items}}",
     "ungroupedScenes": "Other scenes"

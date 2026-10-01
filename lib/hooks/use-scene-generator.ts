@@ -35,6 +35,7 @@ import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persiste
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { computeActionsSourceHash } from '@/lib/utils/content-hash';
 import { outlineFingerprint } from '@/lib/utils/outline-fingerprint';
+import { hasNarration, precedingSpeeches } from '@/lib/maintenance/silent-narration';
 import { indexScenesByOutline } from '@/lib/utils/outline-scene-match';
 import { findWidgetScriptFailure } from '@/lib/interactive/widget-script-check';
 import {
@@ -957,6 +958,112 @@ export async function drainPendingSceneTTS(
     log.info(`TTS background drain restored audio for ${restored} scene(s)`);
   }
   return restored;
+}
+
+export interface NarrateSilentOptions {
+  /** The slides to narrate, in the order to do them (see findSilentSlides). */
+  sceneIds: readonly string[];
+  params: { agents?: AgentInfo[]; userProfile?: string; languageDirective?: string };
+  /** TTS language, as the generation passes derive it. */
+  language?: string;
+  signal: AbortSignal;
+  onProgress?: (progress: { done: number; total: number; failed: number }) => void;
+}
+
+export interface NarrateSilentResult {
+  /** Slides that now have narration. */
+  narrated: number;
+  /** Slides whose narration could not be generated (left as they were). */
+  failed: number;
+  /** Slides that no longer needed it, or have no outline to write it from. */
+  skipped: number;
+  /** Whether narration got audio (TTS enabled), or is text only. */
+  audio: boolean;
+}
+
+/**
+ * Write narration for slides that have none: the actions step alone, for the
+ * slide as it stands. Content is the owner's and is never regenerated; the
+ * model sees the slide, its outline, and what was said just before it, and
+ * answers with speech and the spotlights that go with it. Dead anchors are
+ * stripped as at commit, and the clips are voiced when TTS is on.
+ *
+ * One slide at a time, in play order, so each continues the thread of the one
+ * before. Every slide is written as soon as it is done, so stopping part-way
+ * keeps everything finished. Writes go scene by scene (never a whole-document
+ * save) and no phase row is touched: those are outline-level writes, and on a
+ * large course each one is a full-document save.
+ */
+export async function narrateSilentScenes(
+  options: NarrateSilentOptions,
+): Promise<NarrateSilentResult> {
+  const { sceneIds, params, language, signal, onProgress } = options;
+  const settings = useSettingsStore.getState();
+  const audio =
+    settings.ttsEnabled &&
+    settings.ttsProviderId !== 'browser-native-tts' &&
+    isTTSProviderEnabled(
+      settings.ttsProviderId,
+      settings.ttsProvidersConfig?.[settings.ttsProviderId],
+    );
+  const result: NarrateSilentResult = { narrated: 0, failed: 0, skipped: 0, audio };
+  let done = 0;
+
+  for (const sceneId of sceneIds) {
+    if (signal.aborted) break;
+    const state = useStageStore.getState();
+    const scene = state.scenes.find((candidate) => candidate.id === sceneId);
+    const outline = scene?.outlineId
+      ? state.outlines.find((candidate) => candidate.id === scene.outlineId)
+      : undefined;
+    if (!scene || !state.stage || !outline || hasNarration(scene)) {
+      result.skipped += 1;
+    } else {
+      try {
+        const generated = await fetchSceneActions(
+          {
+            outline,
+            allOutlines: state.outlines,
+            content: scene.content,
+            stageId: state.stage.id,
+            agents: params.agents,
+            previousSpeeches: precedingSpeeches(state.scenes, scene),
+            userProfile: params.userProfile,
+            languageDirective: params.languageDirective,
+          },
+          signal,
+        );
+        const written = generated.success ? (generated.scene?.actions ?? []) : [];
+        // Anchors that point at nothing on this slide are dropped, as at commit.
+        const candidate = structuredClone({ ...scene, actions: written }) as Scene;
+        stripDeadActionAnchors(candidate as never);
+        if (!hasNarration(candidate)) {
+          result.failed += 1;
+        } else {
+          // Whatever non-speech actions the slide already had stay, after the new ones.
+          const kept = (scene.actions ?? []).filter((action) => action.type !== 'speech');
+          useStageStore
+            .getState()
+            .updateScene(scene.id, { actions: [...(candidate.actions ?? []), ...kept] });
+          if (audio) {
+            const live = useStageStore.getState().scenes.find((entry) => entry.id === scene.id);
+            if (live) {
+              await generateTTSForScene(live, language, signal);
+              useStageStore.getState().updateScene(live.id, { actions: live.actions });
+            }
+          }
+          result.narrated += 1;
+        }
+      } catch (error) {
+        if (isAbortError(error)) break;
+        log.warn(`Silent-slide narration failed for "${scene.title}":`, error);
+        result.failed += 1;
+      }
+    }
+    done += 1;
+    onProgress?.({ done, total: sceneIds.length, failed: result.failed });
+  }
+  return result;
 }
 
 export interface UseSceneGeneratorOptions {

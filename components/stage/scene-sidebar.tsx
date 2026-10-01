@@ -35,7 +35,7 @@ import type { Scene, SlideContent, InteractiveContent } from '@/lib/types/stage'
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
 import { indexScenesByOutline } from '@/lib/utils/outline-scene-match';
 
-interface SceneSidebarProps {
+export interface SceneSidebarProps {
   readonly collapsed: boolean;
   readonly onCollapseChange: (collapsed: boolean) => void;
   readonly onSceneSelect?: (sceneId: string) => void;
@@ -48,6 +48,15 @@ interface SceneSidebarProps {
   readonly onRepairCourse?: () => void;
   /** Whether a course repair pass is running. */
   readonly courseRepairing?: boolean;
+  /** Slides that teach something and say nothing, and the action that narrates them. */
+  readonly silentNarration?: {
+    readonly count: number;
+    readonly running: boolean;
+    readonly done: number;
+    readonly total: number;
+    readonly onStart: () => void;
+    readonly onStop: () => void;
+  };
 }
 
 const DEFAULT_WIDTH = 220;
@@ -63,6 +72,7 @@ export function SceneSidebar({
   onResumeGeneration,
   onRepairCourse,
   courseRepairing = false,
+  silentNarration,
 }: SceneSidebarProps) {
   const { t } = useI18n();
   const router = useRouter();
@@ -589,6 +599,42 @@ export function SceneSidebar({
             <img src="/logo-horizontal.png" alt="OpenMAIC" className="h-6" />
           </button>
           <div className="flex items-center gap-1">
+            {silentNarration && (silentNarration.count > 0 || silentNarration.running) && (
+              <button
+                onClick={silentNarration.running ? silentNarration.onStop : silentNarration.onStart}
+                disabled={!silentNarration.running && generationStatus === 'generating'}
+                data-testid="narrate-silent"
+                aria-label={
+                  silentNarration.running
+                    ? t('stage.narratingSilent', {
+                        done: silentNarration.done,
+                        total: silentNarration.total,
+                      })
+                    : t('stage.narrateSilent', { count: silentNarration.count })
+                }
+                title={
+                  silentNarration.running
+                    ? t('stage.narratingSilent', {
+                        done: silentNarration.done,
+                        total: silentNarration.total,
+                      })
+                    : t('stage.narrateSilent', { count: silentNarration.count })
+                }
+                className="h-7 shrink-0 rounded-lg px-1.5 flex items-center justify-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 active:scale-90 transition-all duration-200 disabled:opacity-50 disabled:active:scale-100"
+              >
+                {silentNarration.running ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    {silentNarration.done}/{silentNarration.total}
+                  </>
+                ) : (
+                  <>
+                    <VolumeX className="w-3.5 h-3.5" />
+                    {silentNarration.count}
+                  </>
+                )}
+              </button>
+            )}
             {onRepairCourse && (
               <button
                 onClick={onRepairCourse}

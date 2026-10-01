@@ -246,6 +246,9 @@
     "resumeGeneration": "再開",
     "repairCourse": "コースのメディアを確認・修復",
     "repairingCourse": "コースのメディアを修復中…",
+    "narrateSilent": "無音声の {{count}} 枚のスライドにナレーションを生成",
+    "narratingSilent": "ナレーション生成中… {{done}}/{{total}}（クリックで停止）",
+    "narrateSilentConfirm": "ナレーションのない {{count}} 枚のスライドにナレーションを生成しますか？\n\nスライドごとに言語モデルを 1 回、各文ごとに音声プロバイダーを呼び出します。スライドの内容は変更されません。いつでも停止でき、完了分は保持されます。",
     "recoveryPending": "未生成のページ：{{count}}件",
     "recoveryUmbrella": "リカバリー — 自動で継続中：{{items}}",
     "ungroupedScenes": "Other scenes"

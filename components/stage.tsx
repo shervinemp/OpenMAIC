@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'motion/react';
 import { useStageStore } from '@/lib/store';
+import type { SceneSidebarProps } from '@/components/stage/scene-sidebar';
 import {
   isCurrentSceneEditable,
   isHostedSceneEditable,
@@ -65,6 +66,7 @@ export function Stage({
   onResumeGeneration,
   onRepairCourse,
   courseRepairing,
+  silentNarration,
 }: {
   classroomId?: string;
   onRetryOutline?: (outlineId: string) => Promise<void>;
@@ -74,6 +76,8 @@ export function Stage({
   onRepairCourse?: () => void;
   /** Whether a course repair pass is running. */
   courseRepairing?: boolean;
+  /** Silent-slide narration (see SceneSidebar). */
+  silentNarration?: SceneSidebarProps['silentNarration'];
 }) {
   const { mode, setMode, scenes, currentSceneId, generatingOutlines, stage } = useStageStore();
   const router = useRouter();
@@ -368,6 +372,7 @@ export function Stage({
             onResumeGeneration={onResumeGeneration}
             onRepairCourse={onRepairCourse}
             courseRepairing={courseRepairing}
+            silentNarration={silentNarration}
             canEnterProMode={workbenchPlayback || isEditable}
             onEnterProMode={chromeToggleHandler}
             proModeActive={hosted && workbenchPlayback}

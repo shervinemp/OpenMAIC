@@ -16,7 +16,7 @@ import { PENDING_SCENE_ID } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { SceneSidebar } from '@/components/stage/scene-sidebar';
+import { SceneSidebar, type SceneSidebarProps } from '@/components/stage/scene-sidebar';
 import { Header } from '@/components/header';
 import { CanvasArea } from '@/components/canvas/canvas-area';
 import { Roundtable } from '@/components/roundtable';
@@ -110,6 +110,8 @@ interface PlaybackChromeRootProps {
   readonly onRepairCourse?: () => void;
   /** Whether a course repair pass is running. */
   readonly courseRepairing?: boolean;
+  /** Silent-slide narration (see SceneSidebar). */
+  readonly silentNarration?: SceneSidebarProps['silentNarration'];
   /** Whether the Pro Switch in Header should be enabled. */
   readonly canEnterProMode?: boolean;
   /** Pro Switch click handler — parent coordinates teardown + mode flip. */
@@ -138,6 +140,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       onSkipOutline,
       onRepairCourse,
       courseRepairing,
+      silentNarration,
       canEnterProMode,
       onEnterProMode,
       proModeActive,
@@ -1742,6 +1745,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           onResumeGeneration={onResumeGeneration}
           onRepairCourse={onRepairCourse}
           courseRepairing={courseRepairing}
+          silentNarration={silentNarration}
           onSkipOutline={
             onSkipOutline ?? ((outlineId) => useStageStore.getState().skipFailedOutline(outlineId))
           }

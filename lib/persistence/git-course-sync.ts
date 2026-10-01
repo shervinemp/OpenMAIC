@@ -26,6 +26,17 @@ const log = createLogger('CourseGitSync');
  */
 
 const DEFAULT_DEBOUNCE_MS = 4_000;
+/**
+ * Commit duty cycle. A debounce alone bounds how soon after the LAST write a
+ * commit happens, not how often commits happen during a long run of writes: on
+ * a large course a snapshot takes tens of seconds, so a bulk edit queued the
+ * next one the moment the previous finished, and the repository grew by a full
+ * document every cycle. After a commit that took T ms the next waits at least
+ * T * COMMIT_BACKOFF_FACTOR, so the sync spends about a fifth of its time
+ * committing at most; a small course (a commit in tens of ms) is unaffected.
+ */
+const COMMIT_BACKOFF_FACTOR = 4;
+const COMMIT_BACKOFF_MAX_MS = 10 * 60_000;
 const BINDINGS_FILE = 'bindings.json';
 
 export interface CourseRepositoryBinding {
@@ -267,6 +278,9 @@ export class CourseGitCommitScheduler {
   private readonly push: boolean;
   private readonly includeMedia: boolean;
   private readonly disabled: boolean;
+  /** How long the last flush that committed took, and when it ended. */
+  private lastFlushMs = 0;
+  private lastFlushEndedAt = 0;
   /** Repos where git-lfs provisioning already ran (per process lifetime). */
   private readonly lfsReady = new Set<string>();
   /** Repos where the missing-git-lfs warning already fired (log once, not per commit). */
@@ -295,12 +309,7 @@ export class CourseGitCommitScheduler {
   schedule(stageId: string, reason: string, snapshot: () => Promise<unknown>): void {
     if (this.disabled) return;
     this.pending.set(stageId, { kind: 'upsert', stageId, reason, snapshot });
-    if (this.timer !== null) return;
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      void this.flush();
-    }, this.debounceMs);
-    this.timer.unref?.();
+    this.armTimer();
   }
 
   /** Queue a debounced REMOVAL commit: the repo drops the stage's snapshot. */
@@ -312,11 +321,25 @@ export class CourseGitCommitScheduler {
       reason,
       snapshot: async () => null,
     });
+    this.armTimer();
+  }
+
+  /**
+   * How long to wait before the next flush: the debounce, or the back-off after
+   * a slow commit if that is longer. Public so the policy is testable.
+   */
+  nextDelayMs(now: number = Date.now()): number {
+    const backoff = Math.min(this.lastFlushMs * COMMIT_BACKOFF_FACTOR, COMMIT_BACKOFF_MAX_MS);
+    const earliest = this.lastFlushEndedAt + backoff;
+    return Math.max(this.debounceMs, earliest - now);
+  }
+
+  private armTimer(): void {
     if (this.timer !== null) return;
     this.timer = setTimeout(() => {
       this.timer = null;
       void this.flush();
-    }, this.debounceMs);
+    }, this.nextDelayMs());
     this.timer.unref?.();
   }
 
@@ -377,6 +400,7 @@ export class CourseGitCommitScheduler {
     const jobs = [...this.pending.values()];
     this.pending.clear();
     const run = this.drain.then(async () => {
+      const startedAt = Date.now();
       // Resolve bindings up front and partition by repo: two stages in the
       // SAME repo must commit one after another (git is single-writer per
       // worktree — a parallel pair would collide on the index lock), while
@@ -387,6 +411,10 @@ export class CourseGitCommitScheduler {
           this.commitSequentially(repoPath, repoJobs),
         ),
       );
+      if (jobs.length > 0) {
+        this.lastFlushEndedAt = Date.now();
+        this.lastFlushMs = this.lastFlushEndedAt - startedAt;
+      }
     });
     // The drain chain must never hold a rejected promise: every later flush
     // chains on it, so one failed run (an unreadable bindings file, say)

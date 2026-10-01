@@ -246,6 +246,9 @@
     "resumeGeneration": "Reanudar",
     "repairCourse": "Revisar y reparar los medios del curso",
     "repairingCourse": "Reparando los medios del curso…",
+    "narrateSilent": "Narrar {{count}} diapositiva(s) sin audio",
+    "narratingSilent": "Narrando… {{done}}/{{total}} (clic para detener)",
+    "narrateSilentConfirm": "¿Escribir la narración de {{count}} diapositiva(s) que no la tienen?\n\nEsto llama a tu modelo de lenguaje una vez por diapositiva y a tu proveedor de voz por cada línea. El contenido de las diapositivas no cambia. Puedes detenerlo en cualquier momento; las terminadas se conservan.",
     "recoveryPending": "{{count}} página(s) aún sin generar",
     "recoveryUmbrella": "Recuperación — continuando automáticamente: {{items}}",
     "ungroupedScenes": "Other scenes"
