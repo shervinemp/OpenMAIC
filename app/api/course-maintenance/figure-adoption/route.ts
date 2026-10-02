@@ -4,6 +4,7 @@ import { createCourseDocumentStore } from '@/lib/persistence/course-document-sto
 import { singleFlight } from '@/lib/server/single-flight';
 import { apiError, apiSuccess, type ApiErrorCode } from '@/lib/server/api-response';
 import { validateSlidePlacement, sanitizeSlidePlacement } from '@openmaic/dsl';
+import { figureShapeToElement } from '@/lib/maintenance/figure-elements';
 
 /**
  * Figure adoption — the human-confirmed apply path for figure-gap proposals.
@@ -182,39 +183,7 @@ async function runAdoption(
     // healed later.
     const nextElements = [
       ...(canvasTouched.elements ?? []),
-      ...adoption.shapes.map((shape): Record<string, unknown> => {
-        if (shape.kind === 'line') {
-          const lineWidth = Math.max(2, Number(shape.width));
-          const lineHeight = Math.max(2, Number(shape.height));
-          return {
-            id: shape.id,
-            type: 'line',
-            left: shape.left,
-            top: shape.top,
-            width: lineWidth,
-            height: lineHeight,
-          };
-        }
-        const element: Record<string, unknown> = {
-          id: shape.id,
-          type: 'shape',
-          left: shape.left,
-          top: shape.top,
-          width: Number(shape.width),
-          height: Math.max(2, Number(shape.height)),
-          path: 'M 0 0 L 1 0 L 1 1 L 0 1 Z',
-          viewBox: [1, 1],
-          fixedRatio: false,
-          fill: '#e8edf4',
-          strokeWidth: 1,
-          strokeColor: '#1f3864',
-        };
-        if (typeof shape.label === 'string' && shape.label) {
-          element.text = shape.label;
-          element.textType = 'text';
-        }
-        return element;
-      }),
+      ...adoption.shapes.map((shape) => figureShapeToElement(shape)),
     ];
     const probe = {
       viewportSize: canvas.viewportSize ?? 1000,

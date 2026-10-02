@@ -6,6 +6,8 @@ import { getLineElementPath } from '@/lib/utils/element';
 import { useElementShadow } from '../hooks/useElementShadow';
 import { LinePointMarker } from './LinePointMarker';
 
+import { hasLinePoints } from './BaseLineElement';
+
 export { BaseLineElement } from './BaseLineElement';
 
 export interface LineElementProps {
@@ -17,7 +19,13 @@ export interface LineElementProps {
  * Line element component
  * Renders SVG lines with optional arrow/dot endpoints
  */
-export function LineElement({ elementInfo, selectElement }: LineElementProps) {
+export function LineElement(props: LineElementProps) {
+  // Same rule as the playback renderer: no usable points, nothing to draw.
+  if (!hasLinePoints(props.elementInfo)) return null;
+  return <EditableLineElement {...props} />;
+}
+
+function EditableLineElement({ elementInfo, selectElement }: LineElementProps) {
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
   const markerId = `${elementInfo.id}-${useId().replaceAll(':', '')}`;
 

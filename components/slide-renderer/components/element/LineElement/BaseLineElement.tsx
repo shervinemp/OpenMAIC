@@ -18,7 +18,26 @@ const DRAW_ANIMATION_MS = 600;
  * Base line element for read-only/playback mode.
  * When animate=true, plays a stroke-drawing animation on mount.
  */
-export function BaseLineElement({ elementInfo, animate }: BaseLineElementProps) {
+/** Whether a line carries the two points it is drawn between. */
+export function hasLinePoints(element: Pick<PPTLineElement, 'start' | 'end'>): boolean {
+  const finitePair = (point: unknown): boolean =>
+    Array.isArray(point) &&
+    point.length === 2 &&
+    point.every((value) => typeof value === 'number' && Number.isFinite(value));
+  return finitePair(element.start) && finitePair(element.end);
+}
+
+/**
+ * A line with no usable points is not drawn. One malformed element (a line
+ * written without `start`/`end`) used to throw inside a hook and take the
+ * whole slide down with it; a missing connector is the lesser failure.
+ */
+export function BaseLineElement(props: BaseLineElementProps) {
+  if (!hasLinePoints(props.elementInfo)) return null;
+  return <DrawnLineElement {...props} />;
+}
+
+function DrawnLineElement({ elementInfo, animate }: BaseLineElementProps) {
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
   const pathRef = useRef<SVGPathElement>(null);
   const [drawComplete, setDrawComplete] = useState(!animate);
