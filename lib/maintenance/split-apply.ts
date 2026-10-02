@@ -1,5 +1,6 @@
 import { validateSlidePlacement, sanitizeSlidePlacement } from '@openmaic/dsl';
 import { computeSplitPlan } from './split-plan';
+import { registerOrphanOutlines } from './lesson-membership';
 
 /**
  * Atomic split-apply for layout-debt scenes — the self-healing terminal:
@@ -336,6 +337,11 @@ export function applySplit(
       });
     }
   }
+
+  // The parts belong to the lesson the slide was in: the flat list and the job
+  // group above are not the table of contents, the blueprint is. Without this
+  // every part is listed under "Ungrouped scenes".
+  registerOrphanOutlines(document.outline as never);
 
   return {
     sceneId,

@@ -169,6 +169,12 @@ export function SceneSidebar({
     );
     let lessonCursor = 0;
     const usedIndices = new Set<number>();
+    // Which lesson entry holds each scene index, so a scene its outline never
+    // got registered for can still be shown beside the slide it follows.
+    const lessonEntryByIndex = new Map<
+      number,
+      { scenes: Scene[]; sceneIndices: number[]; done: number; total: number }
+    >();
     const sections = units.map((unit, unitIndex) => {
       const lessons = unit.lessons.map((lesson) => {
         const lessonIndex = lessonCursor;
@@ -192,7 +198,7 @@ export function SceneSidebar({
           failedOutlineIds.has(outline.id),
         ).length;
         const done = (p?.done ?? 0) - Math.min(p?.done ?? 0, pending);
-        return {
+        const entry = {
           key: `u${unitIndex}-l${lessonIndex}`,
           title: lesson.title,
           scenes: lessonScenes,
@@ -202,6 +208,8 @@ export function SceneSidebar({
           reworked: p?.reworked ?? 0,
           pending,
         };
+        for (const index of lessonIndices) lessonEntryByIndex.set(index, entry);
+        return entry;
       });
       return {
         key: `unit-${unitIndex}`,
@@ -215,6 +223,33 @@ export function SceneSidebar({
         lessonTotal: lessons.length,
       };
     });
+    // A scene whose outline is in no lesson (a split part registered nowhere,
+    // an outline the blueprint lost) belongs with the slide it follows, not in a
+    // list of its own at the end: it takes the lesson of the closest earlier
+    // scene that has one. Only scenes with no such neighbour stay ungrouped.
+    for (let index = 0; index < scenes.length; index += 1) {
+      const scene = scenes[index]!;
+      if (usedIndices.has(index) || scene.outlineId == null) continue;
+      let previous = index - 1;
+      while (previous >= 0 && !lessonEntryByIndex.has(previous)) previous -= 1;
+      const target = previous >= 0 ? lessonEntryByIndex.get(previous) : undefined;
+      if (!target) continue;
+      const position = target.sceneIndices.indexOf(previous) + 1;
+      target.scenes.splice(position, 0, scene);
+      target.sceneIndices.splice(position, 0, index);
+      target.done += 1;
+      target.total += 1;
+      usedIndices.add(index);
+      lessonEntryByIndex.set(index, target);
+    }
+    // The unit rows were totalled before the fallback ran; total them again.
+    for (const section of sections) {
+      section.sceneCount = section.lessons.reduce((sum, lesson) => sum + lesson.scenes.length, 0);
+      section.lessonDone = section.lessons.reduce(
+        (sum, lesson) => sum + (lesson.done === lesson.total ? 1 : 0),
+        0,
+      );
+    }
     const unmatched = scenes
       .map((scene, index) => ({ scene, index }))
       .filter(({ scene, index }) => !usedIndices.has(index) && scene.outlineId != null);

@@ -181,4 +181,37 @@ describe('split-apply', () => {
       expect((job.phases as Record<string, unknown>).media).toBeUndefined();
     }
   });
+
+  it('puts every new part in its lesson in the blueprint, beside the slide it came from', () => {
+    const doc = document();
+    const lessonOutline = (id: string) => ({ id, title: id });
+    (doc.outline as unknown as Record<string, unknown>).blueprint = {
+      lessons: [
+        { outlines: [] },
+        { outlines: [lessonOutline('scene_8'), lessonOutline('scene_9')] },
+      ],
+      units: [
+        { lessons: [{ outlines: [] }] },
+        { lessons: [{ outlines: [lessonOutline('scene_8'), lessonOutline('scene_9')] }] },
+      ],
+    };
+
+    const result = applySplit(doc, 'sceneA')!;
+
+    const blueprint = (
+      doc.outline as unknown as {
+        blueprint: {
+          lessons: Array<{ outlines: Array<{ id: string }> }>;
+          units: Array<{ lessons: Array<{ outlines: Array<{ id: string }> }> }>;
+        };
+      }
+    ).blueprint;
+    const partIds = result.parts.map((part) => part.outlineId);
+    const lessonIds = blueprint.lessons[1]!.outlines.map((entry) => entry.id);
+    // Every part is in the lesson, the following slide still last, nothing duplicated.
+    for (const id of partIds) expect(lessonIds).toContain(id);
+    expect(lessonIds[lessonIds.length - 1]).toBe('scene_9');
+    expect(new Set(lessonIds).size).toBe(lessonIds.length);
+    expect(blueprint.units[1]!.lessons[0]!.outlines.map((entry) => entry.id)).toEqual(lessonIds);
+  });
 });

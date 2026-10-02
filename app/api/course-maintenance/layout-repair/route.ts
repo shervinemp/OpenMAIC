@@ -26,7 +26,14 @@ import { callLLM } from '@/lib/ai/llm';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { apiError, apiSuccess, type ApiErrorCode } from '@/lib/server/api-response';
 import { applyLayoutPatch } from '@/lib/slides/slide-layout-verify';
-import { applyEmptyPartPrune, findEmptyPartPrune } from '@/lib/maintenance/prune-empty-parts';
+import {
+  applyEmptyPartPrune,
+  findEmptyPartPrune,
+  findTrivialPartPrune,
+  mergePrunePlans,
+} from '@/lib/maintenance/prune-empty-parts';
+import { registerOrphanOutlines } from '@/lib/maintenance/lesson-membership';
+import { normalizePartTitles } from '@/lib/maintenance/part-titles';
 import {
   sceneContentFindings,
   hasSourceProvenance,
@@ -114,6 +121,10 @@ type LayoutRepairOutcome =
         scenesScanned: number;
         scenesPlanned: number;
         pruned: number;
+        /** Split parts put back into their lesson (they were listed as ungrouped scenes). */
+        regrouped: number;
+        /** Part titles renumbered (nested or gapped "(part N)" suffixes). */
+        retitled: number;
         skippedFresh: number;
         reports: Array<
           RelayoutPlan & {
@@ -165,21 +176,37 @@ async function runLayoutRepair(
   // refresh must not mutate scenes outside its subset. Persisted with ONE
   // saveDocument BEFORE the per-scene loop: putScene re-adds unknown ids, so a
   // loop-write before the prune would resurrect what we removed.
+  // Structure of split slides, in the same full-pass, same single save: a
+  // stranded fragment (a lone heading or empty frame on a page of its own) is
+  // removed with an empty part; every part the splitter left outside the
+  // blueprint is put back into its lesson (without that the lesson list shows
+  // it under "Ungrouped scenes"); and part titles are renumbered by position.
   const prunePlan =
     requestedIds === null
-      ? findEmptyPartPrune(document as never)
+      ? mergePrunePlans(
+          findEmptyPartPrune(document as never),
+          findTrivialPartPrune(document as never),
+        )
       : { sceneIds: [] as string[], outlineIds: [] as string[] };
   let pruned = 0;
-  if (!body.dryRun && prunePlan.sceneIds.length > 0) {
+  let regrouped = 0;
+  let retitled = 0;
+  if (!body.dryRun && requestedIds === null) {
     const applied = applyEmptyPartPrune(document as never, prunePlan);
-    try {
-      await documentStore.saveDocument(document as never);
-      pruned = applied.removedSceneIds.length;
-    } catch (error) {
-      console.error(
-        '[layout-relayout] empty-part prune save failed (non-fatal)',
-        (error as Error).message.slice(0, 140),
-      );
+    regrouped = registerOrphanOutlines((document as never as { outline: never }).outline);
+    retitled = normalizePartTitles(document as never);
+    if (applied.removedSceneIds.length > 0 || regrouped > 0 || retitled > 0) {
+      try {
+        await documentStore.saveDocument(document as never);
+        pruned = applied.removedSceneIds.length;
+      } catch (error) {
+        regrouped = 0;
+        retitled = 0;
+        console.error(
+          '[layout-relayout] structure save failed (non-fatal)',
+          (error as Error).message.slice(0, 140),
+        );
+      }
     }
   }
   const prunedIds = new Set(prunePlan.sceneIds);
@@ -766,6 +793,8 @@ async function runLayoutRepair(
       scenesScanned: targets.length,
       scenesPlanned: reports.length,
       pruned,
+      regrouped,
+      retitled,
       skippedFresh,
       reports,
     },

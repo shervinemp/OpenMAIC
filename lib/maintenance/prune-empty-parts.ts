@@ -89,6 +89,76 @@ export function findEmptyPartPrune(document: PruneDocumentShape): EmptyPartPrune
   return { sceneIds, outlineIds };
 }
 
+/** Fewer words than this on a whole slide is a heading or a label, not teaching. */
+const TRIVIAL_PART_WORDS = 8;
+const FAMILY_SUFFIX = /(?:__p\d+(?:-[a-z0-9]+)?)+$/i;
+
+function slideElements(scene: Record<string, unknown>): Array<Record<string, unknown>> {
+  const content = scene.content as { type?: string; canvas?: { elements?: unknown[] } } | undefined;
+  if (!content || content.type !== 'slide' || !Array.isArray(content.canvas?.elements)) return [];
+  return content.canvas!.elements as Array<Record<string, unknown>>;
+}
+
+function wordCount(scene: Record<string, unknown>): number {
+  return slideTextOf(scene as { content?: unknown })
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+/**
+ * Stranded fragments: a split part with nothing on it that teaches. The
+ * splitter could leave a heading ("Problem 3 | Problem 4") or an empty frame
+ * behind on a page of its own, after the rows it introduced had moved on. A part
+ * is a fragment only when ALL of these hold, so a short but real slide is never
+ * lost:
+ *   - it is a split part (its id carries a part marker) of a slide;
+ *   - it plays nothing (no actions at all);
+ *   - it holds only text and plain shapes (no line, table, image, chart, code,
+ *     formula or video), under 8 words in total (TRIVIAL_PART_WORDS);
+ *   - another scene of the same split slide carries real content.
+ */
+export function findTrivialPartPrune(document: PruneDocumentShape): EmptyPartPrunePlan {
+  const families = new Map<string, Array<Record<string, unknown>>>();
+  for (const scene of document.scenes) {
+    if (scene.type !== 'slide') continue;
+    const key = String(scene.id).replace(FAMILY_SUFFIX, '');
+    const members = families.get(key);
+    if (members) members.push(scene);
+    else families.set(key, [scene]);
+  }
+  const sceneIds: string[] = [];
+  const outlineIds: string[] = [];
+  for (const members of families.values()) {
+    const isTrivial = (scene: Record<string, unknown>): boolean =>
+      /__p\d+/.test(String(scene.id)) &&
+      (!Array.isArray(scene.actions) || scene.actions.length === 0) &&
+      typeof scene.outlineId === 'string' &&
+      scene.outlineId.length > 0 &&
+      slideElements(scene).every(
+        (element) => element.type === 'text' || element.type === 'shape',
+      ) &&
+      wordCount(scene) < TRIVIAL_PART_WORDS;
+    const trivial = members.filter(isTrivial);
+    if (trivial.length === 0 || trivial.length === members.length) continue;
+    for (const scene of trivial) {
+      sceneIds.push(String(scene.id));
+      outlineIds.push(String(scene.outlineId));
+    }
+  }
+  return { sceneIds, outlineIds };
+}
+
+/** Both kinds of removable part, as one plan. */
+export function mergePrunePlans(...plans: EmptyPartPrunePlan[]): EmptyPartPrunePlan {
+  const sceneIds = new Set<string>();
+  const outlineIds = new Set<string>();
+  for (const plan of plans) {
+    plan.sceneIds.forEach((id) => sceneIds.add(id));
+    plan.outlineIds.forEach((id) => outlineIds.add(id));
+  }
+  return { sceneIds: [...sceneIds], outlineIds: [...outlineIds] };
+}
+
 /**
  * Apply a plan in memory. The caller persists with ONE `saveDocument`, so the
  * deck-completeness invariant never gaps mid-flight. Returns what was removed.
