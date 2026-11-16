@@ -17,6 +17,9 @@ import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { resolveQuizAnswerVerifier } from '@/lib/server/quiz-verifier';
+import { blindQuizQuestions, quizAnswerDisagreements } from '@openmaic/generation';
+import type { QuizQuestion } from '@openmaic/dsl';
 import { parseJsonResponse } from '@/lib/generation/json-repair';
 import type { CourseBlueprint, SceneOutline } from '@/lib/types/generation';
 import type { ExamChoiceQuestion, ExamFreeResponse, ExamKind, ExamSpec } from '@/lib/types/exam';
@@ -150,6 +153,7 @@ export async function POST(req: NextRequest) {
     const {
       model: languageModel,
       modelInfo,
+      modelString,
       thinkingConfig,
     } = await resolveModelFromRequest(req, body, 'exam-generation');
 
@@ -246,10 +250,48 @@ ${languageDirective ? `- Language directive: ${languageDirective}` : '- Write al
     if (!spec) {
       return apiError('GENERATION_FAILED', 500, 'Exam generation returned unparseable output');
     }
+
+    /**
+     * Blind MC verification is OPT-IN through the same `quiz-verify` route as
+     * scene quizzes. A wrong exam key is high-stakes, so a disagreement buys
+     * one corrective re-prompt; on the retry the generated key is kept (a
+     * cheap blind solve never rejects an otherwise valid exam).
+     */
+    const verifier = await resolveQuizAnswerVerifier({ req, modelString, log });
+    const verifyChoiceKeys = async (exam: ExamSpec): Promise<string[]> => {
+      if (!verifier) return [];
+      const questions: QuizQuestion[] = exam.mcQuestions.map((question) => ({
+        id: question.id,
+        type: 'single',
+        question: question.question,
+        options: question.options,
+        answer: question.answer,
+        hasAnswer: true,
+      }));
+      const blind = blindQuizQuestions(questions);
+      if (blind.length === 0) return [];
+      try {
+        const answers = await verifier(blind);
+        return quizAnswerDisagreements(questions, answers).map(
+          (finding) =>
+            `MC question ${finding.questionId} may have the wrong key: key says ${finding.marked.join(
+              ', ',
+            )}, blind solve chose ${finding.solved.join(', ')}. Re-check the question and fix the key.`,
+        );
+      } catch (error) {
+        log.warn('Exam MC answer verification failed; keeping the generated keys:', error);
+        return [];
+      }
+    };
+
     const findings = findShortfalls(spec);
-    if (findings.length) {
-      log.warn(`Exam spec shortfall (${findings.join('; ')}); re-prompting once`);
-      spec = buildSpec(await callOnce(findings.join(';\n')));
+    // No point blind-solving a structurally incomplete section: the retry
+    // rebuilds it and is verified afterwards.
+    const answerFindings = findings.length === 0 ? await verifyChoiceKeys(spec) : [];
+    if (findings.length || answerFindings.length) {
+      const feedback = [...findings, ...answerFindings].join(';\n');
+      log.warn(`Exam spec issues (${feedback}); re-prompting once`);
+      spec = buildSpec(await callOnce(feedback));
       if (!spec) {
         return apiError(
           'GENERATION_FAILED',
@@ -263,6 +305,12 @@ ${languageDirective ? `- Language directive: ${languageDirective}` : '- Write al
           'GENERATION_FAILED',
           502,
           `Exam spec incomplete: ${retryFindings.join('; ')}`,
+        );
+      }
+      const retryAnswerFindings = await verifyChoiceKeys(spec);
+      if (retryAnswerFindings.length) {
+        log.error(
+          `Exam MC answer verification still disagreed after the retry; keeping the generated keys: ${retryAnswerFindings.join('; ')}`,
         );
       }
     }
