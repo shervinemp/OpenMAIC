@@ -25,7 +25,18 @@ const mocks = vi.hoisted(() => ({
 }));
 
 /** Per-test narration byte store: what the provider put makes resolvable. */
-const audioBytes = new Map<string, Blob>();
+const audioBytes = vi.hoisted(() => new Map<string, Blob>());
+const allocated = vi.hoisted(() => ({ next: 0 }));
+
+// The merged narration path stores through the pool and gets its id back, then
+// mirrors the bytes locally. The pool is the identity source in this suite.
+vi.mock('@/lib/media/asset-pool', () => ({
+  putAsset: vi.fn(async (data: Blob) => {
+    const id = `ast_tts_${++allocated.next}`;
+    audioBytes.set(id, data);
+    return id;
+  }),
+}));
 const ttsCalls: Array<{ audioId: string; text: string; voice: string }> = [];
 /** Speech text bodies whose provider response should fail (per-test). */
 const failingTexts = new Set<string>();
@@ -74,7 +85,7 @@ vi.mock('@/lib/media/resolve-audio-bytes', () => ({
   }),
 }));
 
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: {
     audioFiles: {
       put: vi.fn(async (row: { id: string; blob: Blob }) => {
@@ -210,7 +221,7 @@ describe('drainPendingSceneTTS — byte-aware, per-clip repair', () => {
     expect(ttsCalls).toHaveLength(1);
     expect(ttsCalls[0].text).toBe('clip 1 for scene 1');
     expect((scene.actions[0] as { audioId?: string }).audioId).toBe('tts_s1_healthy');
-    expect((scene.actions[1] as { audioId?: string }).audioId).toMatch(/^tts_/);
+    expect((scene.actions[1] as { audioId?: string }).audioId).toMatch(/^(ast_)?tts_/);
     expect(mocks.updateScene).toHaveBeenCalledWith(scene.id, { actions: scene.actions });
   });
 
@@ -233,7 +244,7 @@ describe('drainPendingSceneTTS — byte-aware, per-clip repair', () => {
 
     expect(restored).toBe(1);
     expect(ttsCalls).toHaveLength(2);
-    expect((scene.actions[0] as { audioId?: string }).audioId).toMatch(/^tts_/);
+    expect((scene.actions[0] as { audioId?: string }).audioId).toMatch(/^(ast_)?tts_/);
     expect((scene.actions[1] as { audioId?: string }).audioId).toBe('tts_s1_dead_b');
     // Persisted even though one clip is still dead: the recovered half is real.
     expect(mocks.updateScene).toHaveBeenCalledWith(scene.id, { actions: scene.actions });
@@ -271,8 +282,8 @@ describe('drainPendingSceneTTS — byte-aware, per-clip repair', () => {
 
     expect(restored).toBe(1);
     expect(ttsCalls).toHaveLength(2);
-    expect((scene.actions[0] as { audioId?: string }).audioId).toMatch(/^tts_/);
-    expect((scene.actions[1] as { audioId?: string }).audioId).toMatch(/^tts_/);
+    expect((scene.actions[0] as { audioId?: string }).audioId).toMatch(/^(ast_)?tts_/);
+    expect((scene.actions[1] as { audioId?: string }).audioId).toMatch(/^(ast_)?tts_/);
   });
 
   it('TTS being disabled short-circuits: no probing, no provider calls', async () => {

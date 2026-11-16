@@ -282,6 +282,7 @@ export async function generateClassroom(
     providerId,
     apiKey,
     thinkingConfig: classroomThinking,
+    serverManaged,
   } = await resolveModel({ stage: 'generate-classroom' });
   log.info(`Using server-configured model: ${modelString}`);
 
@@ -300,6 +301,7 @@ export async function generateClassroom(
   // classroom generation, and skips the extra resolution when web search is off.
   let searchQueryModel = languageModel;
   let searchQueryThinking = classroomThinking;
+  let searchQueryServerManaged = serverManaged;
 
   const aiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
     const result = await callLLM(
@@ -314,6 +316,7 @@ export async function generateClassroom(
       'generate-classroom',
       undefined,
       classroomThinking,
+      { serverManaged },
     );
     return result.text;
   };
@@ -337,6 +340,7 @@ export async function generateClassroom(
       model: LanguageModel;
       outputWindow?: number;
       thinking: ThinkingConfig | undefined;
+      serverManaged: boolean;
     }
   >();
 
@@ -346,6 +350,7 @@ export async function generateClassroom(
     model: LanguageModel;
     outputWindow?: number;
     thinking: ThinkingConfig | undefined;
+    serverManaged: boolean;
   }> => {
     const cached = stageModelCache.get(stage);
     if (cached) return cached;
@@ -356,6 +361,7 @@ export async function generateClassroom(
         model: languageModel,
         outputWindow: modelInfo?.outputWindow,
         thinking: classroomThinking,
+        serverManaged,
       };
       stageModelCache.set(stage, fallback);
       return fallback;
@@ -367,6 +373,7 @@ export async function generateClassroom(
         model: resolved.model,
         outputWindow: resolved.modelInfo?.outputWindow,
         thinking: resolved.thinkingConfig,
+        serverManaged: resolved.serverManaged,
       };
       log.info(`Stage "${stage}" routed to model: ${resolved.modelString}`);
       stageModelCache.set(stage, entry);
@@ -381,6 +388,7 @@ export async function generateClassroom(
         model: languageModel,
         outputWindow: modelInfo?.outputWindow,
         thinking: classroomThinking,
+        serverManaged,
       };
       stageModelCache.set(stage, fallback);
       return fallback;
@@ -396,7 +404,7 @@ export async function generateClassroom(
   // aiCall closure, and consumes the route's thinking config separately.
   const resolveSceneContentCall = async (outlineType?: string) => {
     const stage = (outlineType ? `scene-content:${outlineType}` : 'scene-content') as LlmStage;
-    const { model, outputWindow, thinking } = await resolveStageModel(stage);
+    const { model, outputWindow, thinking, serverManaged } = await resolveStageModel(stage);
     const aiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
       const result = await callLLM(
         {
@@ -411,6 +419,7 @@ export async function generateClassroom(
         'generate-classroom-scene',
         undefined,
         thinking,
+        { serverManaged },
       );
       return result.text;
     };
@@ -422,7 +431,8 @@ export async function generateClassroom(
   let agentProfilesAiCall: AICallFn | undefined;
   const getAgentProfilesAiCall = async (): Promise<AICallFn> => {
     if (agentProfilesAiCall) return agentProfilesAiCall;
-    const { model, outputWindow, thinking } = await resolveStageModel('agent-profiles');
+    const { model, outputWindow, thinking, serverManaged } =
+      await resolveStageModel('agent-profiles');
     agentProfilesAiCall = async (systemPrompt, userPrompt, _images) => {
       const result = await callLLM(
         {
@@ -436,6 +446,7 @@ export async function generateClassroom(
         'generate-classroom',
         undefined,
         thinking,
+        { serverManaged },
       );
       return result.text;
     };
@@ -446,7 +457,8 @@ export async function generateClassroom(
   let sceneActionsAiCall: AICallFn | undefined;
   const getSceneActionsAiCall = async (): Promise<AICallFn> => {
     if (sceneActionsAiCall) return sceneActionsAiCall;
-    const { model, outputWindow, thinking } = await resolveStageModel('scene-actions');
+    const { model, outputWindow, thinking, serverManaged } =
+      await resolveStageModel('scene-actions');
     sceneActionsAiCall = async (systemPrompt, userPrompt, _images) => {
       const result = await callLLM(
         {
@@ -461,6 +473,7 @@ export async function generateClassroom(
         'generate-classroom-scene',
         undefined,
         thinking,
+        { serverManaged },
       );
       return result.text;
     };
@@ -480,6 +493,7 @@ export async function generateClassroom(
       'web-search-query-rewrite',
       undefined,
       searchQueryThinking,
+      { serverManaged: searchQueryServerManaged },
     );
     return result.text;
   };
@@ -524,6 +538,7 @@ export async function generateClassroom(
           const rewriteResolved = await resolveModel({ stage: 'web-search-query-rewrite' });
           searchQueryModel = rewriteResolved.model;
           searchQueryThinking = rewriteResolved.thinkingConfig;
+          searchQueryServerManaged = rewriteResolved.serverManaged;
         } catch (err) {
           log.warn(
             `web-search-query-rewrite route "${rewriteRoute}" unavailable; using classroom model for query rewrite`,

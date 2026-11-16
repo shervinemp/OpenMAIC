@@ -20,8 +20,10 @@ import {
   DocumentLostUpdateError,
   DocumentNotFoundError,
   DocumentVersionError,
+  isDocumentWriteRefusedError,
 } from '../document/types.js';
 import { assertMaxBodyBytes, DEFAULT_MAX_BODY_BYTES, readJsonObject } from './read-json.js';
+import { isStorageBusyError, storePolicyResponse } from '../store-errors.js';
 
 export interface DocumentHttpPrincipal {
   learnerKey?: string;
@@ -63,8 +65,13 @@ class DocumentHttpError extends Error {
   }
 }
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { 'content-type': 'application/json' });
+function sendJson(
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): void {
+  res.writeHead(status, { 'content-type': 'application/json', ...headers });
   res.end(JSON.stringify(body));
 }
 
@@ -241,6 +248,7 @@ function validateDocument<TScene extends SceneLike, TStage extends Stage>(
 }
 
 function classifyStoreError(error: unknown): never {
+  if (isStorageBusyError(error)) throw error;
   if (error instanceof DocumentNotFoundError) {
     throw new DocumentHttpError(404, 'DOCUMENT_NOT_FOUND', error.message);
   }
@@ -250,6 +258,9 @@ function classifyStoreError(error: unknown): never {
       storedUpdatedAt: error.storedUpdatedAt,
       incomingUpdatedAt: error.incomingUpdatedAt,
     });
+  }
+  if (isDocumentWriteRefusedError(error)) {
+    throw new DocumentHttpError(403, error.code, error.message);
   }
   if (error instanceof DocumentVersionError) {
     const details = { stageId: error.stageId, storedVersion: error.storedVersion };
@@ -296,7 +307,19 @@ function classifyStoreError(error: unknown): never {
   throw error;
 }
 
-function mappedError(error: unknown): { status: number; body: ErrorBody } {
+function mappedError(error: unknown): {
+  status: number;
+  body: ErrorBody;
+  headers?: Record<string, string>;
+} {
+  const policy = storePolicyResponse(error);
+  if (policy) {
+    return {
+      status: policy.status,
+      body: { error: { code: policy.code, message: policy.message } },
+      headers: policy.headers,
+    };
+  }
   if (error instanceof DocumentHttpError) {
     return {
       status: error.status,
@@ -468,7 +491,7 @@ export function createDocumentHttpHandler<
         console.error('@openmaic/storage: Document HTTP handler internal error', error);
       }
       const mapped = mappedError(error);
-      sendJson(res, mapped.status, mapped.body);
+      sendJson(res, mapped.status, mapped.body, mapped.headers);
     });
   };
 }

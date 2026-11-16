@@ -1,4 +1,4 @@
-import { db } from '@/lib/utils/database';
+import { db } from '@/lib/device-storage/database';
 import { createLogger } from '@/lib/logger';
 import { isConcreteMediaAddress } from './resolve-media-ref';
 import { mayNameAPoolAsset } from './media-placeholder';

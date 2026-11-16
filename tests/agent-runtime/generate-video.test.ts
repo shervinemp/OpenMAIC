@@ -60,6 +60,7 @@ function courseDeps(overrides: Record<string, unknown> = {}) {
     store: {} as never,
     onCheckpoint: () => undefined,
     sessionId: 'session-owner',
+    ownerId: 'user:test-owner',
     stageAccess: async () => ({ kind: 'owned' as const }),
     ...overrides,
   };
@@ -170,6 +171,7 @@ describe('generate_video tool', () => {
     const emitMediaReady = vi.fn();
     const tool = buildGenerateVideoTool({
       sessionId: 'session-owner',
+      ownerId: 'user:test-owner',
       getConfiguredVideoProviders: configured,
       resolveVideoProviderConfig: () => providerConfig,
       generateConfiguredVideo,
@@ -225,6 +227,7 @@ describe('generate_video tool', () => {
     expect(persistGeneratedVideo).toHaveBeenCalledWith({
       result: expect.objectContaining({ url: 'https://cdn.example.com/generated/lesson.webm' }),
       stageId: 'stage-owner',
+      ownerId: 'user:test-owner',
       signal: expect.any(AbortSignal),
     });
     // The completion event is provider-neutral, keyed by the placeholder ref.
@@ -281,6 +284,7 @@ describe('generate_video tool', () => {
     const emitMediaReady = vi.fn();
     const tool = buildGenerateVideoTool({
       sessionId: 'session-owner',
+      ownerId: 'user:test-owner',
       backgroundStore: fake.store,
       getConfiguredVideoProviders: configured,
       resolveVideoProviderConfig: () => providerConfig,
@@ -358,6 +362,7 @@ describe('generate_video tool', () => {
     const emitMediaReady = vi.fn();
     const tool = buildGenerateVideoTool({
       sessionId: 'session-owner',
+      ownerId: 'user:test-owner',
       backgroundStore: fake.store,
       getConfiguredVideoProviders: configured,
       resolveVideoProviderConfig: () => providerConfig,
@@ -416,6 +421,7 @@ describe('generate_video tool', () => {
     const emitMediaReady = vi.fn();
     const tool = buildGenerateVideoTool({
       sessionId: 'session-owner',
+      ownerId: 'user:test-owner',
       backgroundStore: fake.store,
       getConfiguredVideoProviders: configured,
       resolveVideoProviderConfig: () => providerConfig,
@@ -460,6 +466,7 @@ describe('generate_video tool', () => {
     const emitMediaReady = vi.fn();
     const tool = buildGenerateVideoTool({
       sessionId: 'session-owner',
+      ownerId: 'user:test-owner',
       getConfiguredVideoProviders: configured,
       resolveVideoProviderConfig: () => providerConfig,
       generateConfiguredVideo,
@@ -497,6 +504,7 @@ describe('generate_video tool', () => {
     const emitMediaReady = vi.fn();
     const tool = buildGenerateVideoTool({
       sessionId: 'session-owner',
+      ownerId: 'user:test-owner',
       getConfiguredVideoProviders: configured,
       resolveVideoProviderConfig: () => providerConfig,
       generateConfiguredVideo: () => new Promise(() => undefined),
@@ -531,6 +539,7 @@ describe('generate_video tool', () => {
     const controller = new AbortController();
     const tool = buildGenerateVideoTool({
       sessionId: 'session-owner',
+      ownerId: 'user:test-owner',
       getConfiguredVideoProviders: configured,
       resolveVideoProviderConfig: () => providerConfig,
       generateConfiguredVideo: vi.fn().mockReturnValue(providerCall.promise),
@@ -599,6 +608,7 @@ describe('generate_video tool', () => {
             height: 720,
           },
           stageId: 'stage-owner',
+          ownerId: 'user:test-owner',
           signal: new AbortController().signal,
         },
         pool.store,
@@ -606,7 +616,7 @@ describe('generate_video tool', () => {
     ).resolves.toEqual({ src: 'ast_fake_1', mime: 'video/quicktime' });
     expect(pool.puts).toEqual([
       {
-        principalKey: 'shared',
+        principalKey: 'owner:user:test-owner',
         bytes: Buffer.from('real-video-bytes'),
         type: 'video/quicktime',
         meta: { contentType: 'video/quicktime', stageId: 'stage-owner', kind: 'video' },
@@ -640,6 +650,7 @@ describe('generate_video tool', () => {
             height: 720,
           },
           stageId: 'stage-owner',
+          ownerId: 'user:test-owner',
           signal: new AbortController().signal,
         },
         pool.store,
@@ -676,6 +687,7 @@ describe('generate_video tool', () => {
             height: 720,
           },
           stageId: 'stage-owner',
+          ownerId: 'user:test-owner',
           signal: new AbortController().signal,
         },
         pool.store,
@@ -706,6 +718,7 @@ describe('generate_video tool', () => {
     const emitMediaReady = vi.fn();
     const tool = buildGenerateVideoTool({
       sessionId: 'session-owner',
+      ownerId: 'user:test-owner',
       backgroundStore: fake.store,
       getConfiguredVideoProviders: configured,
       resolveVideoProviderConfig: () => providerConfig,
@@ -776,6 +789,7 @@ describe('generate_video tool', () => {
           height: 720,
         },
         stageId: 'stage-owner',
+        ownerId: 'user:test-owner',
         signal: new AbortController().signal,
       }),
     ).rejects.toThrow(`Download exceeded the ${MAX_GENERATED_VIDEO_BYTES}-byte response limit`);
@@ -807,6 +821,7 @@ describe('generate_video tool', () => {
     const emitMediaReady = vi.fn();
     const tool = buildGenerateVideoTool({
       sessionId: 'session-owner',
+      ownerId: 'user:test-owner',
       // seedance is force-disabled; kling is the only enabled entry, so the
       // selector must pick kling (#665).
       getConfiguredVideoProviders: () => ({
@@ -844,6 +859,7 @@ describe('generate_video tool', () => {
     const emitMediaReady = vi.fn();
     const tool = buildGenerateVideoTool({
       sessionId: 'session-owner',
+      ownerId: 'user:test-owner',
       getConfiguredVideoProviders: configured,
       resolveVideoProviderConfig: () => providerConfig,
       generateConfiguredVideo,

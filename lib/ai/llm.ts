@@ -9,6 +9,7 @@ import type { GenerateTextResult, JSONValue, LanguageModel, StreamTextResult } f
 import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
+import { isEmptyLlmOutput, shouldFallbackFor, logFallbackFired } from '@/lib/server/llm-fallback';
 import { getModelMetadataKey } from './model-metadata';
 import { getCanonicalModelId } from './model-aliases';
 import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
@@ -300,53 +301,18 @@ function recordUsageSafe(
     try {
       const { normalizeUsage } = await import('@/lib/usage/normalize');
       const { recordUsage } = await import('@/lib/server/usage-storage');
-      const usage = normalizeUsage(rawUsage as never);
       await recordUsage({
         kind: 'llm',
         source: meta.source,
         providerId: meta.providerId,
         modelId: meta.modelId,
         modelString: meta.modelString,
-        usage,
+        usage: normalizeUsage(rawUsage as never),
       });
-      log.info(
-        `[${meta.source}][${meta.modelString}] tokens: input ${usage.inputTokens} (cached-read ${usage.cacheReadTokens}, cache-write ${usage.cacheCreationTokens}), output ${usage.outputTokens} (reasoning ${usage.reasoningTokens})`,
-      );
     } catch (err) {
       log.warn('Usage capture failed (ignored):', err);
     }
   })();
-}
-
-/**
- * Fallback model for provider failures (OPENMAIC_FALLBACK_MODEL).
- *
- * Free-tier models fail intermittently (quota exhaustion, "endpoint
- * unavailable"). When a fallback model is configured, a failed call retries
- * ONCE on the fallback so the run picks up where it failed instead of dying —
- * paid tokens are only spent on the calls the primary model could not do.
- * Resolved lazily and cached per process; never throws into the caller.
- */
-let cachedFallbackModel: GenerateTextParams['model'] | undefined;
-let fallbackModelString: string | undefined;
-
-async function getFallbackModel(): Promise<GenerateTextParams['model'] | undefined> {
-  const configured = process.env.OPENMAIC_FALLBACK_MODEL?.trim();
-  if (!configured) return undefined;
-  if (cachedFallbackModel && fallbackModelString === configured) return cachedFallbackModel;
-  try {
-    const { resolveModel } = await import('@/lib/server/resolve-model');
-    const resolved = await resolveModel({ modelString: configured });
-    cachedFallbackModel = resolved.model;
-    fallbackModelString = configured;
-    return cachedFallbackModel;
-  } catch (err) {
-    log.warn(
-      `[llm] OPENMAIC_FALLBACK_MODEL="${configured}" could not be resolved; fallback disabled:`,
-      err,
-    );
-    return undefined;
-  }
 }
 
 /** Pause before retrying a rate-limited call (free tiers meter per minute). */
@@ -378,21 +344,6 @@ function sleepUnlessAborted(ms: number, signal: AbortSignal | undefined): Promis
   });
 }
 
-function isProviderFailure(error: unknown): boolean {
-  const name = error instanceof Error ? error.name : undefined;
-  if (name === 'AbortError') return false;
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    /insufficient balance|quota|payment required|endpoint is unavailable|model is unavailable|overloaded|rate limit|timeout|timed out|fetch failed/i.test(
-      message,
-    ) ||
-    (typeof error === 'object' &&
-      error !== null &&
-      (error as { statusCode?: number }).statusCode !== undefined &&
-      (error as { statusCode?: number }).statusCode! >= 500)
-  );
-}
-
 /**
  * Unified wrapper around `generateText`.
  *
@@ -400,28 +351,52 @@ function isProviderFailure(error: unknown): boolean {
  * @param source - A short label for log grouping (e.g. 'scene-stream', 'pbl-chat')
  * @param retryOptions - Optional retry-on-validation-failure settings
  * @param thinking - Optional per-call thinking config (overrides global LLM_THINKING_DISABLED)
+ * @param fallbackOptions - Optional knobs. `{ enabled: false }` skips the
+ *   retryable-failure model fallback for this call (e.g. verify-model).
+ *   `serverManaged: true` must be passed (from resolveModel's stamp of the
+ *   same name) for the fallback to arm at all: it only protects primaries the
+ *   server resolved, never a client-supplied model.
  */
 export async function callLLM<T extends GenerateTextParams>(
   params: T,
   source: string,
   retryOptions?: LLMRetryOptions,
   thinking?: ThinkingConfig,
+  fallbackOptions?: { enabled?: boolean; serverManaged?: boolean },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<GenerateTextResult<any, any>> {
   const maxAttempts = (retryOptions?.retries ?? 0) + 1;
   const validate = retryOptions?.validate ?? (maxAttempts > 1 ? DEFAULT_VALIDATE : undefined);
+  // The fallback only protects primaries the SERVER resolved (a routed stage
+  // or a server-configured provider). resolveModel stamps `serverManaged` on
+  // its result and every production caller passes it through here; a
+  // client-supplied model (x-model with a garbage key) must never be allowed
+  // to burn the operator's fallback key, so an absent stamp means NOT armed.
+  // verify-model additionally probes the exact primary model, so it never
+  // falls back either.
+  const allowFallback =
+    fallbackOptions?.enabled !== false &&
+    fallbackOptions?.serverManaged === true &&
+    source !== 'verify-model';
+  // Resolve the fallback once up front. The empty-output safety net below only
+  // arms when a fallback model is actually configured; without this gate an
+  // empty result would flip from success to failure for operators who never
+  // set MODEL_FALLBACK or a MODEL_ROUTES fallback.
+  const fallback = allowFallback ? await resolveFallbackModelSafe(source) : null;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let lastResult: GenerateTextResult<any, any> | undefined;
-  let lastError: unknown;
-  // The fallback swap happens once per call: primary → fallback, not back.
-  let fallbackTried = false;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  /** One generateText round for the given params; validates when asked to. */
+  async function runRound(
+    roundParams: T,
+    attemptLabel: string,
+  ): Promise<
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    | { ok: true; result: GenerateTextResult<any, any> }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    | { ok: false; error: unknown; result?: GenerateTextResult<any, any>; finishReason?: string }
+  > {
     try {
-      // Resolve effective thinking config: per-call > global env > undefined
       const effectiveThinking = thinking ?? getGlobalThinkingConfig();
-      const injectedParams = injectProviderOptions(params, effectiveThinking);
+      const injectedParams = injectProviderOptions(roundParams, effectiveThinking);
 
       // Wrap in thinkingContext so the custom fetch wrapper in providers.ts
       // can read the config and inject vendor-specific body params for
@@ -439,65 +414,128 @@ export async function callLLM<T extends GenerateTextParams>(
       // every earlier step would go unaccounted. `totalUsage` aggregates across
       // steps and equals `usage` for a single-step call. Mirrors streamLLM,
       // which already prefers the aggregate.
-      recordUsageSafe(result.totalUsage ?? result.usage, buildUsageMeta(params, source));
+      recordUsageSafe(result.totalUsage ?? result.usage, buildUsageMeta(injectedParams, source));
 
-      // Validate result (only when retries are configured)
-      if (validate && !validate(result.text)) {
+      // A content-filter finish (e.g. a Gemini SAFETY block) is a refusal, not
+      // a transient failure: retrying it on another model reproduces the
+      // refusal, so it must never reach the fallback decision — even when the
+      // refusal comes back with empty text (which would otherwise look exactly
+      // like an empty output).
+      if (result.finishReason === 'content-filter') {
+        log.warn(`[${source}] Content-filter finish (${attemptLabel})`);
+        return { ok: false, error: undefined, result, finishReason: 'content-filter' };
+      }
+
+      // Empty-output detection arms by default when a fallback model is
+      // configured and no caller-supplied validator is in play: an empty
+      // result that used to return as success now gets one fallback attempt.
+      // Non-empty results still succeed exactly as before — "output quality
+      // is off" is never a fallback trigger.
+      const emptyAsFailure = fallback !== null && !validate && isEmptyLlmOutput(result.text);
+      if (emptyAsFailure || (validate && !validate(result.text))) {
         log.warn(
-          `[${source}] Validation failed (attempt ${attempt}/${maxAttempts}), ${attempt < maxAttempts ? 'retrying...' : 'giving up'}`,
+          `[${source}] ${emptyAsFailure ? 'Empty output' : 'Validation failed'} (${attemptLabel})`,
         );
-        lastResult = result;
-        continue;
+        return { ok: false, error: undefined, result };
       }
+      return { ok: true, result };
+    } catch (error) {
+      return { ok: false, error };
+    }
+  }
 
-      return result;
-    } catch (error: unknown) {
-      lastError = error;
-      const rateLimited = isRateLimitError(error);
+  // Phase 1 — primary model, up to maxAttempts times (existing behaviour).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let lastResult: GenerateTextResult<any, any> | undefined;
+  let lastError: unknown;
+  let triggerFallback = false;
 
-      // Provider failure (rate limits included — a different backend is not
-      // throttled by this one's quota) with a fallback configured: swap the
-      // model once and replay this attempt on it, without spending one of
-      // the call's retry attempts.
-      if (!fallbackTried && (rateLimited || isProviderFailure(error))) {
-        const fallback = await getFallbackModel();
-        const currentModel = (params as { model?: unknown }).model;
-        if (fallback && fallback !== currentModel) {
-          fallbackTried = true;
-          params = { ...params, model: fallback } as T;
-          log.warn(
-            `[${source}] Primary model failed (${error instanceof Error ? error.message : String(error)}); retrying once on fallback model`,
-          );
-          attempt--;
-          continue;
-        }
-      }
-
-      // Rate limited with attempts left: pause before the retry so a
-      // per-minute quota can refill. With no attempts left the error
-      // surfaces immediately — the caller's own retry policy owns it, and a
-      // pause before throwing would only delay that.
-      if (rateLimited && attempt < maxAttempts) {
-        log.warn(
-          `[${source}] Rate limit hit (attempt ${attempt}/${maxAttempts}); pausing ${RATE_LIMIT_PAUSE_MS / 1000}s before retrying`,
-        );
-        await sleepUnlessAborted(
-          RATE_LIMIT_PAUSE_MS,
-          (params as { abortSignal?: AbortSignal }).abortSignal,
-        );
-        continue;
-      }
-
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const round = await runRound(params, `attempt ${attempt}/${maxAttempts}`);
+    if (round.ok) return round.result;
+    if (round.error !== undefined) {
+      lastError = round.error;
       if (attempt < maxAttempts) {
-        log.warn(`[${source}] Call failed (attempt ${attempt}/${maxAttempts}), retrying...`, error);
+        // A 429 gets a pause before the retry so a per-minute quota can
+        // refill; the pause ends early (as an AbortError) when the call is
+        // aborted. With no attempts left the error surfaces immediately -
+        // the caller's own retry policy owns it.
+        if (isRateLimitError(round.error)) {
+          log.warn(
+            `[${source}] Rate limit hit (attempt ${attempt}/${maxAttempts}); pausing ${RATE_LIMIT_PAUSE_MS / 1000}s before retrying`,
+          );
+          await sleepUnlessAborted(
+            RATE_LIMIT_PAUSE_MS,
+            (params as { abortSignal?: AbortSignal }).abortSignal,
+          );
+        }
+        log.warn(
+          `[${source}] Call failed (attempt ${attempt}/${maxAttempts}), retrying...`,
+          round.error,
+        );
         continue;
+      }
+      if (allowFallback && shouldFallbackFor(round.error, undefined)) {
+        triggerFallback = true;
+      }
+    } else {
+      // Validation failure — keep the last billed result. The fallback is only
+      // considered for genuinely empty/whitespace-only output, never for a
+      // non-empty result that fails a caller-supplied validator (that would
+      // spend the fallback model's quota on "output quality is off").
+      lastResult = round.result;
+      // Content-filter refusals never reach the fallback decision — even when
+      // the refusal came back with empty text (a SAFETY block looks exactly
+      // like an empty output otherwise).
+      if (attempt >= maxAttempts && fallback !== null && round.finishReason !== 'content-filter') {
+        if (shouldFallbackFor(undefined, round.result?.text)) triggerFallback = true;
       }
     }
   }
 
+  // Phase 2 — fallback model, exactly one round (no further escalation).
+  if (triggerFallback) {
+    if (fallback) {
+      const primary = typeof params.model === 'string' ? params.model : getModelId(params);
+      logFallbackFired(
+        source,
+        lastError !== undefined ? 'retryable failure' : 'empty output',
+        primary || '?',
+        fallback.modelString,
+      );
+      // The fallback round is the LAST attempt: run it with no SDK-internal
+      // retries on top (a 503 on both models must not cost 3+3 upstream
+      // calls), and do not reuse the caller's abort signal — an
+      // AbortSignal.timeout that already fired would make the fallback round
+      // impossible to run.
+      const round = await runRound(
+        { ...params, model: fallback.model, maxRetries: 0, abortSignal: undefined } as T,
+        'fallback',
+      );
+      if (round.ok) return round.result;
+      if (round.error !== undefined) lastError = round.error;
+      else lastResult = round.result;
+    } else {
+      log.warn(`[${source}] fallback requested but none configured; giving up`);
+    }
+  }
+
   // All attempts exhausted — return last result or throw last error
-  if (lastResult) return lastResult;
+  if (lastResult !== undefined) return lastResult;
   throw lastError;
+}
+
+/** Lazily resolve the fallback model; never throws (fallback is best-effort). */
+async function resolveFallbackModelSafe(
+  source: string,
+): Promise<{ model: LanguageModel; modelString: string } | null> {
+  try {
+    const { resolveFallbackModel } = await import('@/lib/server/llm-fallback');
+    return await resolveFallbackModel(source);
+  } catch (err) {
+    log.warn(`[${source}] Fallback model resolution failed, skipping fallback:`, err);
+    return null;
+  }
 }
 
 /**

@@ -647,7 +647,6 @@ export async function generateWithComfyuiImage(
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     pollCount++;
     entry = await pollHistory(mediaFetchFor(config), baseUrl, promptId);
-
     // /history only returns an entry once execution starts; anchor the
     // execution budget to that moment and log how long the queue held us.
     if (entry && executionDeadline === Number.POSITIVE_INFINITY) {

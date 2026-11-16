@@ -16,7 +16,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Loader2, Trash2, AlertTriangle } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { clearDatabase } from '@/lib/utils/database';
+import {
+  clearLocalCache,
+  clearLocalStorageKeepingImportState,
+} from '@/lib/device-storage/clear-local-cache';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore } from '@/lib/store/user-profile';
 import { BackupSettingsCard } from '@/components/backup/backup-settings-card';
@@ -24,8 +27,7 @@ import { GitCourseSettingsCard } from '@/components/settings/git-course-settings
 import { BACKUP_UI_ENABLED } from '@/lib/backup/config';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
-import { clearCacheErrorMessage } from './clear-cache-error-message';
-import { runClearCache, shouldReloadAfterClear } from './clear-cache-workflow';
+import { runClearCache } from './clear-cache-workflow';
 
 const log = createLogger('GeneralSettings');
 
@@ -66,9 +68,9 @@ export function GeneralSettings() {
     if (!isConfirmValid) return;
     setClearing(true);
     try {
-      const result = await runClearCache({
-        clearDatabase,
-        clearLocalStorage: () => localStorage.clear(),
+      await runClearCache({
+        clearLocalCache,
+        clearLocalStorage: () => clearLocalStorageKeepingImportState(),
         clearSessionStorage: () => sessionStorage.clear(),
         clearPersistedStores: async () => {
           // The blanket clear only reaches these stores while their KV backend
@@ -79,19 +81,7 @@ export function GeneralSettings() {
           ]);
         },
       });
-
-      if (result.status === 'asset-pool-deferred') {
-        log.warn('Asset pool deletion deferred; remaining cache cleanup completed.');
-        toast.error(clearCacheErrorMessage(result.error, t));
-      } else {
-        toast.success(t('settings.clearCacheSuccess'));
-      }
-
-      if (!shouldReloadAfterClear(result)) {
-        // The retry stays actionable on this page; see shouldReloadAfterClear.
-        setClearing(false);
-        return;
-      }
+      toast.success(t('settings.clearCacheSuccess'));
 
       // Reload without waiting. The stores are still live in memory, so the
       // longer this page stays up the more chances a `set()` has to persist
@@ -102,7 +92,7 @@ export function GeneralSettings() {
       window.location.reload();
     } catch (error) {
       log.error('Failed to clear cache:', error);
-      toast.error(clearCacheErrorMessage(error, t));
+      toast.error(t('settings.clearCacheFailed'));
       setClearing(false);
     }
   }, [isConfirmValid, t]);

@@ -1,163 +1,375 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const generateTextMock = vi.hoisted(() => vi.fn());
-const resolveModelMock = vi.hoisted(() => vi.fn());
+const aiMock = vi.hoisted(() => ({
+  generateText: vi.fn(),
+  streamText: vi.fn(),
+}));
+
+const usageMock = vi.hoisted(() => ({
+  normalizeUsage: vi.fn((usage: unknown) => usage),
+  recordUsage: vi.fn(async () => undefined),
+}));
+
+const fallbackMock = vi.hoisted(() => ({
+  resolveFallbackModel: vi.fn(),
+  isRetryableLlmError: vi.fn(),
+  shouldFallbackFor: vi.fn(),
+  logFallbackFired: vi.fn(),
+  isEmptyLlmOutput: vi.fn((text: string | null | undefined) => !text || text.trim().length === 0),
+}));
 
 vi.mock('ai', () => ({
-  generateText: generateTextMock,
+  generateText: aiMock.generateText,
+  streamText: aiMock.streamText,
 }));
 
-vi.mock('@/lib/server/resolve-model', () => ({
-  resolveModel: resolveModelMock,
+vi.mock('@/lib/usage/normalize', () => ({
+  normalizeUsage: usageMock.normalizeUsage,
 }));
+
+vi.mock('@/lib/server/usage-storage', () => ({
+  recordUsage: usageMock.recordUsage,
+}));
+
+vi.mock('@/lib/server/llm-fallback', () => fallbackMock);
 
 import { callLLM } from '@/lib/ai/llm';
-import type { LanguageModel } from 'ai';
+import type { GenerateTextResult } from 'ai';
 
-const asModel = (m: unknown) => m as LanguageModel;
+function okResult(): GenerateTextResult<never, never> {
+  return { text: 'ok', usage: {}, totalUsage: {}, sources: [], steps: [] } as never;
+}
 
-describe('callLLM provider fallback', () => {
+describe('callLLM retryable-failure fallback', () => {
   beforeEach(() => {
-    generateTextMock.mockReset();
-    resolveModelMock.mockReset();
-    vi.stubEnv('OPENMAIC_FALLBACK_MODEL', 'deepseek:deepseek-v4-flash');
-    const fallbackModel = { provider: 'deepseek', modelId: 'deepseek-v4-flash' };
-    resolveModelMock.mockResolvedValue({ model: fallbackModel });
+    aiMock.generateText.mockReset();
+    fallbackMock.resolveFallbackModel.mockReset();
+    fallbackMock.isRetryableLlmError.mockReset();
+    fallbackMock.shouldFallbackFor.mockReset();
+    fallbackMock.logFallbackFired.mockReset();
+    fallbackMock.isEmptyLlmOutput.mockClear();
+    aiMock.generateText.mockResolvedValue(okResult());
+  });
+
+  it('does not fall back when resolveFallbackModel returns null', async () => {
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    fallbackMock.resolveFallbackModel.mockResolvedValue(null);
+    aiMock.generateText.mockRejectedValueOnce(
+      Object.assign(new Error('upstream timeout'), { statusCode: 408 }),
+    );
+
+    await expect(
+      callLLM(
+        {
+          model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+          prompt: 'hi',
+        } as never,
+        'scene-content',
+      ),
+    ).rejects.toMatchObject({ statusCode: 408 });
+    // Exactly one call: no retry on the primary either (retries=0), no fallback.
+    expect(aiMock.generateText).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back once on a retryable error and returns the fallback result', async () => {
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    fallbackMock.resolveFallbackModel.mockResolvedValue({
+      model: 'fallback-model' as never,
+      modelString: 'qwen:deepseek-v4-pro',
+    });
+    aiMock.generateText
+      .mockRejectedValueOnce(Object.assign(new Error('quota exceeded'), { statusCode: 429 }))
+      .mockResolvedValueOnce(okResult());
+
+    const result = await callLLM(
+      {
+        model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+        prompt: 'hi',
+      } as never,
+      'scene-content',
+      undefined,
+      undefined,
+      { serverManaged: true },
+    );
+
+    expect(result.text).toBe('ok');
+    expect(aiMock.generateText).toHaveBeenCalledTimes(2);
+    // Second round carries the fallback model.
+    const secondParams = aiMock.generateText.mock.calls[1][0] as { model: unknown };
+    expect(secondParams.model).toBe('fallback-model');
+  });
+
+  it('only runs the fallback once when it also fails', async () => {
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    fallbackMock.resolveFallbackModel.mockResolvedValue({
+      model: 'fallback-model' as never,
+      modelString: 'qwen:deepseek-v4-pro',
+    });
+    const primary = Object.assign(new Error('timeout'), { statusCode: 408 });
+    const fallbackFail = Object.assign(new Error('still down'), { statusCode: 503 });
+    aiMock.generateText.mockRejectedValueOnce(primary).mockRejectedValueOnce(fallbackFail);
+
+    await expect(
+      callLLM(
+        {
+          model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+          prompt: 'hi',
+        } as never,
+        'scene-content',
+        undefined,
+        undefined,
+        { serverManaged: true },
+      ),
+    ).rejects.toBe(fallbackFail);
+    expect(aiMock.generateText).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not fall back when fallback is disabled for the call', async () => {
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    fallbackMock.resolveFallbackModel.mockResolvedValue({
+      model: 'fallback-model' as never,
+      modelString: 'qwen:deepseek-v4-pro',
+    });
+    aiMock.generateText.mockRejectedValueOnce(
+      Object.assign(new Error('timeout'), { statusCode: 408 }),
+    );
+
+    await expect(
+      callLLM(
+        {
+          model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+          prompt: 'hi',
+        } as never,
+        'verify-model',
+        undefined,
+        undefined,
+        { enabled: false },
+      ),
+    ).rejects.toMatchObject({ statusCode: 408 });
+    expect(aiMock.generateText).toHaveBeenCalledTimes(1);
+    expect(fallbackMock.resolveFallbackModel).not.toHaveBeenCalled();
+  });
+
+  it('falls back on an empty-output validation failure when retries are set and exhausted', async () => {
+    // The whitespace-only text is classified as a retryable empty output.
+    fallbackMock.shouldFallbackFor.mockImplementation(
+      (error: unknown, text: string | null | undefined) =>
+        error !== undefined ? false : !text || text.trim().length === 0,
+    );
+    fallbackMock.resolveFallbackModel.mockResolvedValue({
+      model: 'fallback-model' as never,
+      modelString: 'qwen:deepseek-v4-pro',
+    });
+    aiMock.generateText
+      .mockResolvedValueOnce({ ...okResult(), text: '   ' })
+      .mockResolvedValueOnce({ ...okResult(), text: '   ' })
+      .mockResolvedValueOnce(okResult());
+
+    const result = await callLLM(
+      {
+        model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+        prompt: 'hi',
+      } as never,
+      'scene-content',
+      { retries: 1 },
+      undefined,
+      { serverManaged: true },
+    );
+
+    expect(result.text).toBe('ok');
+    // Primary round (empty) + same-model retry + fallback round.
+    expect(aiMock.generateText).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not arm the fallback when the primary is not server-managed', async () => {
+    // resolveModel stamps serverManaged on its result; a caller that does not
+    // pass it through (a client-supplied x-model) must never reach the
+    // operator's fallback key, even when the primary fails retryably.
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    aiMock.generateText.mockRejectedValueOnce(
+      Object.assign(new Error('quota exceeded'), { statusCode: 429 }),
+    );
+
+    await expect(
+      callLLM(
+        {
+          model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+          prompt: 'hi',
+        } as never,
+        'scene-content',
+      ),
+    ).rejects.toMatchObject({ statusCode: 429 });
+    expect(aiMock.generateText).toHaveBeenCalledTimes(1);
+    expect(fallbackMock.resolveFallbackModel).not.toHaveBeenCalled();
+    expect(fallbackMock.logFallbackFired).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back on a content-filter finish', async () => {
+    // A SAFETY block that returns empty text looks exactly like an empty
+    // output — but it is a refusal, so the fallback must stay untouched.
+    fallbackMock.shouldFallbackFor.mockImplementation(
+      (error: unknown, text: string | null | undefined) =>
+        error !== undefined ? false : !text || text.trim().length === 0,
+    );
+    fallbackMock.resolveFallbackModel.mockResolvedValue({
+      model: 'fallback-model' as never,
+      modelString: 'qwen:deepseek-v4-pro',
+    });
+    aiMock.generateText.mockResolvedValue({
+      ...okResult(),
+      text: '',
+      finishReason: 'content-filter',
+    });
+
+    const result = await callLLM(
+      {
+        model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+        prompt: 'hi',
+      } as never,
+      'scene-content',
+      { retries: 1 },
+      undefined,
+      { serverManaged: true },
+    );
+
+    expect(result.finishReason).toBe('content-filter');
+    // Primary + same-model retry only; no fallback round, no fallback log.
+    expect(aiMock.generateText).toHaveBeenCalledTimes(2);
+    const calledModels = aiMock.generateText.mock.calls.map(
+      (c) => (c[0] as { model: unknown }).model,
+    );
+    expect(calledModels.every((m) => m !== 'fallback-model')).toBe(true);
+    expect(fallbackMock.logFallbackFired).not.toHaveBeenCalled();
+  });
+
+  it('keeps existing behaviour when no fallback configured', async () => {
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    fallbackMock.resolveFallbackModel.mockResolvedValue(null);
+    aiMock.generateText
+      .mockRejectedValueOnce(Object.assign(new Error('timeout'), { statusCode: 408 }))
+      .mockResolvedValueOnce(okResult());
+
+    // retries=1 means the same-model retry is used; fallback is absent.
+    const result = await callLLM(
+      {
+        model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+        prompt: 'hi',
+      } as never,
+      'scene-content',
+      { retries: 1 },
+    );
+    expect(result.text).toBe('ok');
+    expect(aiMock.generateText).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not fall back when a non-empty result fails a custom validator', async () => {
+    // A non-empty output that fails a caller-supplied validator (format/JSON
+    // check) is "output quality is off", not an empty output — the fallback
+    // model's quota must not be spent on it.
+    fallbackMock.shouldFallbackFor.mockImplementation(
+      (error: unknown, text: string | null | undefined) =>
+        error !== undefined ? false : !text || text.trim().length === 0,
+    );
+    fallbackMock.resolveFallbackModel.mockResolvedValue({
+      model: 'fallback-model' as never,
+      modelString: 'qwen:deepseek-v4-pro',
+    });
+    const badOutput = { ...okResult(), text: '[not valid json]' };
+    aiMock.generateText.mockResolvedValue(badOutput);
+
+    const result = await callLLM(
+      {
+        model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+        prompt: 'hi',
+      } as never,
+      'scene-content',
+      { retries: 1, validate: () => false },
+    );
+
+    expect(result.text).toBe('[not valid json]');
+    // Primary + same-model retry only. The up-front resolveFallbackModel call
+    // is a config probe (it also arms the empty-output gate), but no fallback
+    // round runs and no fallback log fires.
+    expect(aiMock.generateText).toHaveBeenCalledTimes(2);
+    expect(fallbackMock.logFallbackFired).not.toHaveBeenCalled();
+    const calledModels = aiMock.generateText.mock.calls.map(
+      (c) => (c[0] as { model: unknown }).model,
+    );
+    expect(calledModels.every((m) => m !== 'fallback-model')).toBe(true);
+  });
+});
+
+describe('callLLM rate-limit pacing', () => {
+  beforeEach(() => {
+    aiMock.generateText.mockReset();
+    fallbackMock.resolveFallbackModel.mockReset().mockResolvedValue(null);
+    fallbackMock.shouldFallbackFor.mockReset().mockReturnValue(false);
+    fallbackMock.isEmptyLlmOutput.mockClear();
+    fallbackMock.logFallbackFired.mockReset();
   });
 
   afterEach(() => {
-    vi.unstubAllEnvs();
-    vi.resetModules();
+    vi.useRealTimers();
   });
 
-  test('retries once on the fallback model when the primary fails with a provider error', async () => {
-    const primaryModel = { provider: 'openrouter', modelId: 'x-preview-f-free' };
-    generateTextMock
-      .mockRejectedValueOnce(new Error('Error from provider: Endpoint is unavailable'))
-      .mockResolvedValueOnce({ text: 'fallback ok', usage: {} });
-
-    const result = await callLLM({ model: asModel(primaryModel), prompt: 'hi' }, 'fallback-test');
-
-    expect(result.text).toBe('fallback ok');
-    expect(generateTextMock).toHaveBeenCalledTimes(2);
-    // The second call swapped in the resolved fallback model.
-    const secondCall = generateTextMock.mock.calls[1][0] as { model?: unknown };
-    expect(secondCall.model).toEqual({ provider: 'deepseek', modelId: 'deepseek-v4-flash' });
-    expect(resolveModelMock).toHaveBeenCalledWith({
-      modelString: 'deepseek:deepseek-v4-flash',
-    });
-  });
-
-  test('does not fall back on abort errors', async () => {
-    const abort = new DOMException('Aborted', 'AbortError');
-    generateTextMock.mockRejectedValue(abort);
-
-    await expect(
-      callLLM({ model: asModel({ provider: 'x' }), prompt: 'hi' }, 'fallback-test'),
-    ).rejects.toThrow('Aborted');
-    expect(generateTextMock).toHaveBeenCalledTimes(1);
-    expect(resolveModelMock).not.toHaveBeenCalled();
-  });
-
-  test('does not fall back when no fallback model is configured', async () => {
-    vi.stubEnv('OPENMAIC_FALLBACK_MODEL', '');
-    generateTextMock.mockRejectedValue(new Error('Insufficient Balance'));
-
-    await expect(
-      callLLM({ model: asModel({ provider: 'x' }), prompt: 'hi' }, 'fallback-test'),
-    ).rejects.toThrow('Insufficient Balance');
-    expect(generateTextMock).toHaveBeenCalledTimes(1);
-  });
-
-  test('non-provider errors exhaust the normal budget without swapping', async () => {
-    generateTextMock.mockRejectedValue(new Error('Invalid schema'));
-
-    await expect(
-      callLLM({ model: asModel({ provider: 'x' }), prompt: 'hi' }, 'fallback-test', { retries: 1 }),
-    ).rejects.toThrow('Invalid schema');
-    // 2 attempts (retries=1), both on the primary model.
-    expect(generateTextMock).toHaveBeenCalledTimes(2);
-    expect(resolveModelMock).not.toHaveBeenCalled();
-  });
-
-  test('a rate-limited primary swaps to the fallback model instead of pausing', async () => {
-    generateTextMock
-      .mockRejectedValueOnce(Object.assign(new Error('Too Many Requests'), { statusCode: 429 }))
-      .mockResolvedValueOnce({ text: 'fallback ok', usage: {} });
-
-    const result = await callLLM(
-      { model: asModel({ provider: 'openrouter', modelId: 'free' }), prompt: 'hi' },
-      'fallback-test',
+  it('surfaces a rate limit immediately when no attempt is left', async () => {
+    vi.useFakeTimers();
+    aiMock.generateText.mockRejectedValue(
+      Object.assign(new Error('Too Many Requests'), { statusCode: 429 }),
     );
 
-    expect(result.text).toBe('fallback ok');
-    expect(generateTextMock).toHaveBeenCalledTimes(2);
-  });
-
-  test('a rate limit on the last attempt surfaces immediately instead of sleeping first', async () => {
-    vi.stubEnv('OPENMAIC_FALLBACK_MODEL', '');
-    vi.useFakeTimers();
-    try {
-      generateTextMock.mockRejectedValue(
-        Object.assign(new Error('Too Many Requests'), { statusCode: 429 }),
-      );
-      // No timers are advanced: a pre-throw pause would hang this await.
-      await expect(
-        callLLM({ model: asModel({ provider: 'x' }), prompt: 'hi' }, 'fallback-test'),
-      ).rejects.toThrow('Too Many Requests');
-      expect(generateTextMock).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  test('a rate limit with attempts left pauses, then retries; abort cuts the pause short', async () => {
-    vi.stubEnv('OPENMAIC_FALLBACK_MODEL', '');
-    vi.useFakeTimers();
-    try {
-      generateTextMock
-        .mockRejectedValueOnce(Object.assign(new Error('rate limited'), { statusCode: 429 }))
-        .mockResolvedValueOnce({ text: 'second try', usage: {} });
-      const pending = callLLM(
-        { model: asModel({ provider: 'x' }), prompt: 'hi' },
-        'fallback-test',
-        {
-          retries: 1,
-          validate: () => true,
-        },
-      );
-      await vi.advanceTimersByTimeAsync(20_000);
-      await expect(pending).resolves.toMatchObject({ text: 'second try' });
-      expect(generateTextMock).toHaveBeenCalledTimes(2);
-
-      generateTextMock.mockReset();
-      generateTextMock.mockRejectedValue(
-        Object.assign(new Error('rate limited'), { statusCode: 429 }),
-      );
-      const controller = new AbortController();
-      const aborted = callLLM(
-        { model: asModel({ provider: 'x' }), prompt: 'hi', abortSignal: controller.signal },
-        'fallback-test',
-        { retries: 1, validate: () => true },
-      );
-      const assertion = expect(aborted).rejects.toThrow();
-      await vi.advanceTimersByTimeAsync(1_000);
-      controller.abort();
-      await assertion;
-      expect(generateTextMock).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  test('fallback failure propagates after the single swap', async () => {
-    const primaryModel = { provider: 'openrouter', modelId: 'x-preview-f-free' };
-    generateTextMock.mockRejectedValue(new Error('Insufficient Balance'));
-
+    // No timer is advanced: a pre-throw pause would hang this await.
     await expect(
-      callLLM({ model: asModel(primaryModel), prompt: 'hi' }, 'fallback-test'),
-    ).rejects.toThrow('Insufficient Balance');
-    // Primary attempt + one fallback attempt, then the error propagates.
-    expect(generateTextMock).toHaveBeenCalledTimes(2);
+      callLLM({ model: 'primary' as never, prompt: 'hi' }, 'rate-limit-test'),
+    ).rejects.toThrow('Too Many Requests');
+    expect(aiMock.generateText).toHaveBeenCalledTimes(1);
+  });
+
+  it('pauses 20s before a retry when an attempt is left', async () => {
+    vi.useFakeTimers();
+    aiMock.generateText
+      .mockRejectedValueOnce(Object.assign(new Error('rate limited'), { statusCode: 429 }))
+      .mockResolvedValueOnce(okResult());
+
+    const pending = callLLM({ model: 'primary' as never, prompt: 'hi' }, 'rate-limit-test', {
+      retries: 1,
+      validate: () => true,
+    });
+    await vi.advanceTimersByTimeAsync(20_000);
+    await expect(pending).resolves.toMatchObject({ text: 'ok' });
+    expect(aiMock.generateText).toHaveBeenCalledTimes(2);
+  });
+
+  it('abort cuts the rate-limit pause short', async () => {
+    vi.useFakeTimers();
+    aiMock.generateText.mockRejectedValue(
+      Object.assign(new Error('rate limited'), { statusCode: 429 }),
+    );
+    const controller = new AbortController();
+    const aborted = callLLM(
+      { model: 'primary' as never, prompt: 'hi', abortSignal: controller.signal },
+      'rate-limit-test',
+      { retries: 1, validate: () => true },
+    );
+    const assertion = expect(aborted).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(1_000);
+    controller.abort();
+    await assertion;
+    expect(aiMock.generateText).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not treat unrelated digits as a rate limit', async () => {
+    vi.useFakeTimers();
+    aiMock.generateText
+      .mockRejectedValueOnce(new Error('request id 14290 failed'))
+      .mockResolvedValueOnce(okResult());
+
+    const pending = callLLM({ model: 'primary' as never, prompt: 'hi' }, 'rate-limit-test', {
+      retries: 1,
+      validate: () => true,
+    });
+    // A normal retry resolves without any 20s advance.
+    await expect(pending).resolves.toMatchObject({ text: 'ok' });
+    expect(aiMock.generateText).toHaveBeenCalledTimes(2);
   });
 });

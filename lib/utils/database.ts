@@ -875,62 +875,7 @@ export async function importDatabase(
             if (data.playbackState) await db.playbackState.bulkPut(data.playbackState);
           },
         );
-      if (data.chatSessions !== undefined) {
-        // RuntimeStore cannot join Dexie's transaction. Keep a rollback image
-        // until durable restore markers have been created for every affected
-        // runtime partition; marker creation failure must not commit half an
-        // imported backup.
-        const rollbackImage = await db.transaction(
-          'r',
-          [db.stages, db.scenes, db.chatSessions, db.chatRestoreStaging, db.playbackState],
-          async () => ({
-            chatSessions: (
-              await Promise.all(
-                restoredChatStageIds.map((stageId) =>
-                  db.chatSessions.where('stageId').equals(stageId).toArray(),
-                ),
-              )
-            ).flat(),
-            chatRestoreStaging: (
-              await Promise.all(
-                restoredChatStageIds.map((stageId) =>
-                  db.chatRestoreStaging.where('stageId').equals(stageId).toArray(),
-                ),
-              )
-            ).flat(),
-            playbackState: (
-              await db.playbackState.bulkGet(
-                (data.playbackState ?? []).map((playback) => playback.stageId),
-              )
-            ).filter((playback): playback is PlaybackStateRecord => playback !== undefined),
-          }),
-        );
-        const rollbackRows = () =>
-          db.transaction(
-            'rw',
-            [db.stages, db.scenes, db.chatSessions, db.chatRestoreStaging, db.playbackState],
-            async () => {
-              for (const stageId of restoredChatStageIds) {
-                await db.chatSessions.where('stageId').equals(stageId).delete();
-                await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
-              }
-              await db.playbackState.bulkDelete(
-                (data.playbackState ?? []).map((playback) => playback.stageId),
-              );
-              await db.chatSessions.bulkPut(rollbackImage.chatSessions);
-              await db.chatRestoreStaging.bulkPut(rollbackImage.chatRestoreStaging);
-              await db.playbackState.bulkPut(rollbackImage.playbackState);
-            },
-          );
-        const { restoreChatSessionsFromBackup } = await import('./chat-storage');
-        await restoreChatSessionsFromBackup(restoredChatStageIds, restoreRows, {
-          ...chatOptions,
-          globalLockHeld: true,
-          rollbackLegacyRows: rollbackRows,
-        });
-      } else {
-        await restoreRows();
-      }
+      await restoreRows();
       log.info('Database imported successfully');
     });
   } catch (error) {

@@ -1,5 +1,4 @@
 import {
-  BrowserKVStore,
   HttpAssetStore,
   HttpDocumentStore,
   type HttpAssetHeadersHook,
@@ -18,69 +17,126 @@ import {
   type AssetPoolStorageOptions,
 } from '@/lib/media/asset-pool-config';
 import { assertRuntimeStorageConfigurable, configureRuntimeStorage } from '@/lib/runtime/config';
-import { getLearnerKey } from '@/lib/runtime/learner-key';
 
-let deviceKv: BrowserKVStore | undefined;
+/**
+ * Where the browser learns its runtime learner key under server persistence.
+ *
+ * The server derives the key from the request owner (the owner identity seam),
+ * and the runtime contract names it in paths and bodies, so the browser has to
+ * use exactly that value: any other key is refused with 403
+ * FORBIDDEN_LEARNER. The browser therefore asks instead of minting one.
+ * Requests carry no credential of their own; the owner cookie rides them.
+ */
+export const PERSISTENCE_LEARNER_KEY_URL = '/api/persistence/learner-key';
+
 let learnerKeyPromise: Promise<string> | undefined;
 
-export function isBrowserPersistenceEnabled(): boolean {
-  return typeof window !== 'undefined' && process.env.NEXT_PUBLIC_PERSISTENCE === '1';
-}
-
-export function getPersistenceLearnerKey(): Promise<string> {
-  if (!isBrowserPersistenceEnabled()) {
-    return Promise.reject(new Error('Browser persistence is not enabled'));
+async function fetchServerLearnerKey(): Promise<string> {
+  const response = await fetch(PERSISTENCE_LEARNER_KEY_URL, {
+    method: 'GET',
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    throw new Error(`Runtime learner key request failed: ${response.status}`);
   }
-  return (learnerKeyPromise ??= getLearnerKey((deviceKv ??= new BrowserKVStore())).catch(
-    (error) => {
-      learnerKeyPromise = undefined;
-      throw error;
-    },
-  ));
+  const body = (await response.json()) as { learnerKey?: unknown } | null;
+  const learnerKey = body?.learnerKey;
+  if (typeof learnerKey !== 'string' || learnerKey === '') {
+    throw new Error('Runtime learner key response is malformed');
+  }
+  return learnerKey;
 }
 
+/**
+ * The server-derived runtime learner key, fetched once per page. A failure is
+ * not cached, so a transient error does not pin every later call.
+ */
+export function getPersistenceLearnerKey(): Promise<string> {
+  if (typeof window === 'undefined') {
+    return Promise.reject(new Error('The runtime learner key is requested by the browser only'));
+  }
+  return (learnerKeyPromise ??= fetchServerLearnerKey().catch((error) => {
+    learnerKeyPromise = undefined;
+    throw error;
+  }));
+}
+
+/**
+ * The fork's browser probes, kept for its modules: server persistence is now
+ * the only browser backend, so it is always enabled in the browser.
+ */
+export function isBrowserPersistenceEnabled(): boolean {
+  return typeof window !== 'undefined';
+}
+
+/**
+ * Headers for the persistence endpoint.
+ *
+ * Under owner identity the request authenticates with the owner cookie, which
+ * same-origin fetch carries by itself. A file-backed install (`PERSISTENCE_DIR`)
+ * still authenticates with the development token, so the header is included
+ * when the operator compiled one in. The learner key rides along for the file
+ * backend, whose single-user runtime partitions by it.
+ */
 export async function getPersistenceRequestHeaders(): Promise<Record<string, string>> {
   if (!isBrowserPersistenceEnabled()) return {};
-  const resolvedLearnerKey = await getPersistenceLearnerKey();
   const token = process.env.NEXT_PUBLIC_PERSISTENCE_TOKEN;
+  let learnerKey: string | undefined;
+  try {
+    learnerKey = await getPersistenceLearnerKey();
+  } catch {
+    // Owner-backed servers derive the key themselves; a failed probe must not
+    // break the document or asset request that only needed the cookie.
+    learnerKey = undefined;
+  }
   return {
-    'x-learner-key': resolvedLearnerKey,
+    ...(learnerKey ? { 'x-learner-key': learnerKey } : {}),
     ...(token ? { authorization: `Bearer ${token}` } : {}),
   };
 }
 
-if (isBrowserPersistenceEnabled()) {
-  const learnerKey = getPersistenceLearnerKey;
-  const headers = getPersistenceRequestHeaders;
-
+/**
+ * Every durable read and write in the browser goes through these seams: course
+ * documents, learner runtime (chat, quiz attempts, PBL, playback) and asset
+ * bytes all live on the server, behind the embedded endpoint. There is no
+ * browser-storage backend to fall back to. Server code never reaches this
+ * branch; it constructs its own stores.
+ */
+if (typeof window !== 'undefined') {
+  // The development token is the file-backed backend's credential. Owner-backed
+  // deployments need no header at all: the same-origin cookie is the identity.
+  const headers = process.env.NEXT_PUBLIC_PERSISTENCE_TOKEN
+    ? getPersistenceRequestHeaders
+    : undefined;
   const runtimeOptions = {
     store: () =>
       new HttpRuntimeStore({
         baseUrl: '/api/persistence',
-        headers: headers satisfies HttpRuntimeHeadersHook,
+        ...(headers ? { headers: headers satisfies HttpRuntimeHeadersHook } : {}),
       }),
-    learnerKey,
+    learnerKey: getPersistenceLearnerKey,
   };
   const documentOptions: DocumentStorageOptions = {
     store: ({ validateScene, validateStage }) =>
       new HttpDocumentStore({
         baseUrl: '/api/persistence',
-        headers: headers satisfies HttpDocumentHeadersHook,
+        ...(headers ? { headers: headers satisfies HttpDocumentHeadersHook } : {}),
         validateScene,
         validateStage,
       }),
   };
   // The document outlives the browser that produced it, so the media it
   // references must too: generated bytes go to the same endpoint under the
-  // same credentials, and the document holds the id the pool allocated.
-  // `serverBacked` is what tells local-cache cleanup that these refs are not
-  // this browser's to delete.
+  // same owner, and the document holds the id the pool allocated.
   const assetOptions: AssetPoolStorageOptions = {
     store: () =>
       new HttpAssetStore({
         baseUrl: '/api/persistence',
-        headers: headers satisfies HttpAssetHeadersHook,
+        ...(headers ? { headers: headers satisfies HttpAssetHeadersHook } : {}),
       }),
+    // The document outlives this browser under server persistence, so
+    // ownership proofs must not treat a local-only address as durable.
     serverBacked: true,
   };
   try {
@@ -98,4 +154,10 @@ if (isBrowserPersistenceEnabled()) {
       error,
     );
   }
+
+  // One-way import of what earlier builds stored in this browser. Temporary;
+  // loaded on demand after the page is idle. See lib/legacy-browser-import.
+  void import('@/lib/legacy-browser-import')
+    .then(({ scheduleLegacyBrowserImport }) => scheduleLegacyBrowserImport())
+    .catch((error: unknown) => console.warn('[legacy-browser-import] Could not load:', error));
 }

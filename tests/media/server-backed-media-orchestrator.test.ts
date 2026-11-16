@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   putAsset: vi.fn(),
   removeAsset: vi.fn(),
   persistReference: vi.fn(),
-  serverBacked: vi.fn(),
   stageState: vi.fn(),
   pendingAllocation: vi.fn(),
   forgetAllocation: vi.fn(),
@@ -43,7 +42,7 @@ vi.mock('@/lib/store/stage', () => ({
   },
 }));
 
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
   db: {
     mediaFiles: {
@@ -90,10 +89,6 @@ vi.mock('@/lib/media/pending-media-allocations', () => ({
   pendingMediaAllocation: mocks.pendingAllocation,
   forgetMediaAllocation: mocks.forgetAllocation,
   takePendingMediaAllocations: mocks.takeAllocations,
-}));
-
-vi.mock('@/lib/persistence/media-persistence', () => ({
-  isServerBackedMediaPersistence: mocks.serverBacked,
 }));
 
 import {
@@ -208,7 +203,6 @@ describe('server-backed classic media orchestrator', () => {
       }),
     }));
     mocks.placeAllocations.mockReset().mockReturnValue(false);
-    mocks.serverBacked.mockReset().mockReturnValue(true);
     mocks.stageState.mockReset().mockReturnValue({
       stage: { id: stageId },
       scenes: [sceneWithImage(1, imageRef)],
