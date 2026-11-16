@@ -728,6 +728,7 @@
     "needsReview": "Noch etwas üben",
     "correct": "richtig",
     "incorrect": "falsch",
+    "ungraded": "Nicht bewertet",
     "answering": "In Bearbeitung",
     "submitAnswers": "Antworten abgeben",
     "aiGrading": "Die KI wertet aus...",

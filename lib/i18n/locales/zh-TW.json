@@ -705,6 +705,7 @@
     "needsReview": "需要複習",
     "correct": "正確",
     "incorrect": "錯誤",
+    "ungraded": "未評分",
     "answering": "答題中",
     "submitAnswers": "提交答案",
     "aiGrading": "AI 正在批改中...",

@@ -728,6 +728,7 @@
     "needsReview": "À revoir",
     "correct": "correcte",
     "incorrect": "incorrecte",
+    "ungraded": "Non noté",
     "answering": "En cours",
     "submitAnswers": "Valider mes réponses",
     "aiGrading": "Correction par l’IA…",

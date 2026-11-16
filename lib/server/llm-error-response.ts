@@ -64,11 +64,15 @@ function messageForStatus(status: number): string {
 /**
  * Preserve a provider's HTTP semantics for client retry classification without
  * exposing provider response bodies, URLs, or credential-adjacent details.
+ * `fallbackMessage` is used when the error carries no upstream status.
  */
-export function llmApiError(error: unknown) {
+export function llmApiError(
+  error: unknown,
+  fallbackMessage = 'Scene generation failed. Please try again.',
+) {
   const status = statusFromError(error);
   if (status === undefined) {
-    return apiError('INTERNAL_ERROR', 500, 'Scene generation failed. Please try again.');
+    return apiError('INTERNAL_ERROR', 500, fallbackMessage);
   }
 
   return apiError(

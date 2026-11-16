@@ -728,6 +728,7 @@
     "needsReview": "복습이 필요해요",
     "correct": "정답",
     "incorrect": "오답",
+    "ungraded": "채점 안 됨",
     "answering": "진행 중",
     "submitAnswers": "답변 제출",
     "aiGrading": "AI가 채점 중...",

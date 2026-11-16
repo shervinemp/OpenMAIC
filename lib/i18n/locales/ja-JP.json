@@ -728,6 +728,7 @@
     "needsReview": "復習が必要です",
     "correct": "正解",
     "incorrect": "不正解",
+    "ungraded": "未採点",
     "answering": "回答中",
     "submitAnswers": "回答を提出",
     "aiGrading": "AIが採点中...",

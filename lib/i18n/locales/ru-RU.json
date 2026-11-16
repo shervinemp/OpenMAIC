@@ -728,6 +728,7 @@
     "needsReview": "Требует повторения",
     "correct": "верно",
     "incorrect": "неверно",
+    "ungraded": "Без оценки",
     "answering": "В процессе",
     "submitAnswers": "Отправить ответы",
     "aiGrading": "AI проверяет...",

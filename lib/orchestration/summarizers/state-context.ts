@@ -191,23 +191,35 @@ export function buildStateContext(storeState: StatelessChatRequest['storeState']
             const studentAnswer = Array.isArray(ans) ? ans.join(', ') : (ans ?? '');
             const correctAnswer =
               Array.isArray(q.answer) && q.answer.length > 0 ? q.answer.join(', ') : '(open-ended)';
-            const verdict = r ? r.status.toUpperCase() : 'UNGRADED';
+            const ungraded = r?.status === 'ungraded';
+            const verdict = ungraded ? 'UNGRADED' : r ? r.status.toUpperCase() : 'UNGRADED';
             const points = q.points ?? 1;
-            const earned = r?.earned ?? 0;
+            const earned = ungraded ? 0 : (r?.earned ?? 0);
             const entry: string[] = [
               `  ${i + 1}. [${q.type}] ${q.question}`,
               `     Student answer: ${studentAnswer || '(empty)'}`,
               `     Correct answer: ${correctAnswer}`,
-              `     Verdict: ${verdict} (${earned}/${points} pts)`,
+              `     Verdict: ${verdict}${ungraded ? ' (not counted)' : ` (${earned}/${points} pts)`}`,
             ];
             if (q.analysis) entry.push(`     Reference analysis: ${q.analysis}`);
             if (r?.aiComment) entry.push(`     AI grader comment: ${r.aiComment}`);
             return entry.join('\n');
           });
-          const score = quizResults.results.reduce((acc, r) => acc + (r.earned ?? 0), 0);
-          const total = questions.reduce((acc, q) => acc + (q.points ?? 1), 0);
+          const score = quizResults.results.reduce(
+            (acc, r) => acc + (r.status === 'ungraded' ? 0 : (r.earned ?? 0)),
+            0,
+          );
+          const total = questions.reduce((acc, q) => {
+            const r = resultsById.get(q.id);
+            return acc + (r?.status === 'ungraded' ? 0 : (q.points ?? 1));
+          }, 0);
+          const ungradedCount = quizResults.results.filter((r) => r.status === 'ungraded').length;
+          const ungradedNote =
+            ungradedCount > 0
+              ? `; ${ungradedCount} answer(s) could not be graded and are excluded from the total`
+              : '';
           lines.push(
-            `Quiz results — the student JUST submitted (${score}/${total} pts). Use these to address THIS student's specific mistakes; do not re-teach what they already got right. Walk through wrong answers, acknowledge correct ones briefly, and tie feedback back to the underlying concept.\n${lineEntries.join('\n')}`,
+            `Quiz results — the student JUST submitted (${score}/${total} pts${ungradedNote}). Use these to address THIS student's specific mistakes; do not re-teach what they already got right. Walk through wrong answers, acknowledge correct ones briefly, and tie feedback back to the underlying concept.\n${lineEntries.join('\n')}`,
           );
         } else {
           // Student has NOT submitted yet. Surface the questions in full so the

@@ -1,11 +1,32 @@
 import type { QuizQuestion } from '@/lib/types/stage';
 
+export type QuestionResultStatus = 'correct' | 'incorrect' | 'ungraded';
+
 export interface QuestionResult {
   questionId: string;
   correct: boolean | null;
-  status: 'correct' | 'incorrect';
+  status: QuestionResultStatus;
   earned: number;
   aiComment?: string;
+}
+
+const UNGRADED_COMMENT_EN =
+  'Not graded: the grading service could not score this answer. Your other answers still count.';
+const UNGRADED_COMMENT_ZH = '本题未评分：评分服务暂时无法给出结果。其他题目的成绩不受影响。';
+
+/**
+ * The grader could not produce a usable score. Never invent one: the result
+ * is explicitly ungraded, earns no points, and the review UI excludes it from
+ * the displayed total instead of counting it as a wrong answer.
+ */
+export function ungradedResult(questionId: string, language?: string): QuestionResult {
+  return {
+    questionId,
+    correct: null,
+    status: 'ungraded',
+    earned: 0,
+    aiComment: language?.toLowerCase().startsWith('zh') ? UNGRADED_COMMENT_ZH : UNGRADED_COMMENT_EN,
+  };
 }
 
 export function arraysEqual(a: string[], b: string[]): boolean {

@@ -8,8 +8,10 @@
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
 import { QUIZ_GRADE_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
+import { parseJsonResponse } from '@/lib/generation/json-repair';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 const log = createLogger('Quiz Grade');
 
@@ -24,6 +26,50 @@ interface GradeRequest {
 interface GradeResponse {
   score: number;
   comment: string;
+}
+
+/**
+ * Read a grade from the model's reply. JSON is preferred (and repaired by the
+ * shared parser); a prose reply is accepted only when it states an explicit
+ * score. Anything else is unreadable — the caller re-prompts once and then
+ * reports the question as ungraded instead of inventing a half score.
+ */
+function parseGrade(text: string, points: number): GradeResponse | null {
+  // Only invoke the JSON parser when the reply contains an object; a prose
+  // reply is a expected shape here and should not be logged as a parse error.
+  const parsed = text.includes('{')
+    ? parseJsonResponse<{ score?: unknown; comment?: unknown }>(text)
+    : null;
+  if (parsed && typeof parsed === 'object') {
+    // Number(null) and Number('') are 0: only a present, non-empty value is a
+    // score. A missing score is an unreadable grade, not a zero.
+    if (parsed.score !== null && parsed.score !== undefined && parsed.score !== '') {
+      const raw = Number(parsed.score);
+      if (Number.isFinite(raw)) {
+        return {
+          score: Math.max(0, Math.min(points, Math.round(raw))),
+          comment: String(parsed.comment ?? ''),
+        };
+      }
+    }
+  }
+
+  const labelled = text.match(
+    /\bscore\s*(?:is|of|:|=)\s*(\d+(?:\.\d+)?)\s*(?:(?:\/|of)\s*(\d+(?:\.\d+)?))?/i,
+  );
+  if (labelled) {
+    const raw = Number(labelled[1]);
+    const denominator = labelled[2] === undefined ? undefined : Number(labelled[2]);
+    // A stated denominator must be this question's maximum; "2 of 3 criteria"
+    // is not a score out of 5.
+    if (Number.isFinite(raw) && (denominator === undefined || denominator === points)) {
+      return {
+        score: Math.max(0, Math.min(points, Math.round(raw))),
+        comment: text.trim().slice(0, 300),
+      };
+    }
+  }
+  return null;
 }
 
 /**
@@ -108,50 +154,54 @@ ${commentPrompt ? `评分要点：${commentPrompt}\n` : ''}学生答案：${user
 Full marks: ${points} points
 ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${userAnswer}`;
 
-    const result = await callLLM(
-      {
-        model: languageModel,
-        system: systemPrompt,
-        prompt: userPrompt,
-        // One score + one or two sentences of feedback + any explicit
-        // reasoning headroom; the full model window is never useful here.
-        maxOutputTokens: clampOutputBudget(QUIZ_GRADE_OUTPUT_CAP, undefined, thinkingConfig),
-      },
-      'quiz-grade',
-      undefined,
-      thinkingConfig,
-      { serverManaged },
-    );
+    const requestGrade = (prompt: string) =>
+      callLLM(
+        {
+          model: languageModel,
+          system: systemPrompt,
+          prompt,
+          // One score + one or two sentences of feedback + any explicit
+          // reasoning headroom; the full model window is never useful here.
+          maxOutputTokens: clampOutputBudget(QUIZ_GRADE_OUTPUT_CAP, undefined, thinkingConfig),
+        },
+        'quiz-grade',
+        undefined,
+        thinkingConfig,
+        { serverManaged },
+      );
 
-    // Parse the LLM response as JSON
-    const text = result.text.trim();
-    let gradeResult: GradeResponse;
+    let grade = parseGrade((await requestGrade(userPrompt)).text, points);
 
-    try {
-      // Try to extract JSON from the response
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON found');
-      const parsed = JSON.parse(jsonMatch[0]);
-      gradeResult = {
-        score: Math.max(0, Math.min(points, Math.round(Number(parsed.score)))),
-        comment: String(parsed.comment || ''),
-      };
-    } catch {
-      // Fallback: give partial credit with a generic comment
-      gradeResult = {
-        score: Math.round(points * 0.5),
-        comment: isZh
-          ? '已作答，请参考标准答案。'
-          : 'Answer received. Please refer to the standard answer.',
-      };
+    if (!grade) {
+      // One corrective re-prompt is cheaper than a lost question, and a
+      // stricter "JSON only" instruction often fixes a prose reply. It is
+      // still bounded: after this, the question is ungraded, never invented.
+      log.warn(
+        `Quiz grade reply could not be parsed [question="${questionSnippet ?? 'unknown'}..."], re-prompting once`,
+      );
+      const retryInstruction = isZh
+        ? `\n\n你上一条回复无法解析。请只回复以下 JSON 对象，不要包含其他内容：{"score": <0 到 ${points} 的整数>, "comment": "<一两句反馈>"}`
+        : `\n\nYour previous reply could not be parsed. Reply again with ONLY this JSON object and nothing else: {"score": <integer from 0 to ${points}>, "comment": "<one or two sentences of feedback>"}`;
+      grade = parseGrade((await requestGrade(userPrompt + retryInstruction)).text, points);
     }
 
-    return apiSuccess({ ...gradeResult });
+    if (!grade) {
+      log.error(
+        `Quiz grade reply was unreadable after the retry [question="${questionSnippet ?? 'unknown'}..."]`,
+      );
+      return apiError(
+        'GENERATION_FAILED',
+        502,
+        'Automated grading returned an unreadable result; please try again',
+      );
+    }
+
+    return apiSuccess({ ...grade });
   } catch (error) {
     log.error(
       `Quiz grading failed [question="${questionSnippet ?? 'unknown'}...", points=${resolvedPoints ?? 'unknown'}]:`,
       error,
     );
-    return apiError('INTERNAL_ERROR', 500, 'Failed to grade answer');
+    return llmApiError(error, 'Failed to grade answer');
   }
 }

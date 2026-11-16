@@ -728,6 +728,7 @@
     "needsReview": "需要复习",
     "correct": "正确",
     "incorrect": "错误",
+    "ungraded": "未评分",
     "answering": "答题中",
     "submitAnswers": "提交答案",
     "aiGrading": "AI 正在批改中...",

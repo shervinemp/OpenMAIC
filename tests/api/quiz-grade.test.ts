@@ -67,4 +67,80 @@ describe('POST /api/quiz-grade', () => {
     expect(res.status).toBe(200);
     expect(mocks.callLLM.mock.calls[0]![0]).toMatchObject({ maxOutputTokens: 2_000 });
   });
+
+  it('repairs a fenced JSON reply with a trailing comma', async () => {
+    mocks.callLLM.mockResolvedValueOnce({
+      text: '```json\n{"score": 4, "comment": "Good answer.",}\n```',
+    });
+    const res = await POST(post(validBody) as never);
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.score).toBe(4);
+    expect(mocks.callLLM).toHaveBeenCalledTimes(1);
+  });
+
+  it('salvages an explicit prose score instead of inventing half credit', async () => {
+    mocks.callLLM.mockResolvedValueOnce({
+      text: 'This is mostly right. Score: 4 of 5.',
+    });
+    const res = await POST(post(validBody) as never);
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.score).toBe(4);
+    expect(mocks.callLLM).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a ratio whose denominator is not this question maximum', async () => {
+    // "2 of 3 criteria" is not a score out of 5; the reply is unreadable.
+    mocks.callLLM.mockResolvedValue({ text: 'The answer met 2 of 3 criteria.' });
+    const res = await POST(post(validBody) as never);
+    expect(res.status).toBe(502);
+  });
+
+  it('re-prompts once when the reply is unreadable, then accepts the corrected grade', async () => {
+    mocks.callLLM
+      .mockResolvedValueOnce({ text: 'I think this deserves a good mark.' })
+      .mockResolvedValueOnce({ text: JSON.stringify({ score: 3, comment: 'Partially right.' }) });
+
+    const res = await POST(post(validBody) as never);
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.score).toBe(3);
+    expect(mocks.callLLM).toHaveBeenCalledTimes(2);
+    const retryPrompt = mocks.callLLM.mock.calls[1]![0] as { prompt?: string };
+    expect(retryPrompt.prompt).toContain('could not be parsed');
+    expect(retryPrompt.prompt).toContain('JSON');
+  });
+
+  it('returns 502 instead of fabricating a score after the retry is unreadable too', async () => {
+    mocks.callLLM.mockResolvedValue({ text: 'A thoughtful but unscored reply.' });
+    const res = await POST(post(validBody) as never);
+    const body = await res.json();
+    expect(res.status).toBe(502);
+    expect(body.success).toBe(false);
+    expect(body.error).toContain('unreadable');
+    expect(mocks.callLLM).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not turn a missing JSON score into zero', async () => {
+    mocks.callLLM.mockResolvedValue({ text: JSON.stringify({ comment: 'Nice work.' }) });
+    const res = await POST(post(validBody) as never);
+    expect(res.status).toBe(502);
+    expect(mocks.callLLM).toHaveBeenCalledTimes(2);
+  });
+
+  it('clamps a score above the question maximum', async () => {
+    mocks.callLLM.mockResolvedValueOnce({ text: JSON.stringify({ score: 99, comment: 'Great.' }) });
+    const res = await POST(post(validBody) as never);
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.score).toBe(5);
+  });
+
+  it('preserves an upstream provider status', async () => {
+    mocks.callLLM.mockRejectedValueOnce(Object.assign(new Error('down'), { statusCode: 503 }));
+    const res = await POST(post(validBody) as never);
+    expect(res.status).toBe(503);
+    expect((await res.json()).success).toBe(false);
+  });
 });

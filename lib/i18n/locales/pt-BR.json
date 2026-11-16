@@ -728,6 +728,7 @@
     "needsReview": "Precisa revisar",
     "correct": "correta",
     "incorrect": "incorreta",
+    "ungraded": "Não avaliado",
     "answering": "Em andamento",
     "submitAnswers": "Enviar Respostas",
     "aiGrading": "A IA está corrigindo...",

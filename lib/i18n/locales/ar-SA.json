@@ -728,6 +728,7 @@
     "needsReview": "يحتاج مراجعة",
     "correct": "صحيح",
     "incorrect": "خطأ",
+    "ungraded": "لم يتم التصحيح",
     "answering": "قيد الإجابة",
     "submitAnswers": "إرسال الإجابات",
     "aiGrading": "الذكاء الاصطناعي يصحح...",

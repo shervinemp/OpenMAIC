@@ -728,6 +728,7 @@
     "needsReview": "Needs review",
     "correct": "correct",
     "incorrect": "incorrect",
+    "ungraded": "Not graded",
     "answering": "In Progress",
     "submitAnswers": "Submit Answers",
     "aiGrading": "AI is grading...",

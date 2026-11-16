@@ -13,6 +13,7 @@ import {
   BookOpenText,
   Loader2,
   Sparkles,
+  HelpCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -22,7 +23,12 @@ import { createLogger } from '@/lib/logger';
 const log = createLogger('QuizView');
 import type { QuizQuestion } from '@/lib/types/stage';
 import { SpeechButton } from '@/components/audio/speech-button';
-import { gradeChoiceQuestions, isShortAnswer, type QuestionResult } from '@/lib/quiz/grading';
+import {
+  gradeChoiceQuestions,
+  isShortAnswer,
+  ungradedResult,
+  type QuestionResult,
+} from '@/lib/quiz/grading';
 import { renderQuizMathText } from '@/lib/quiz/math-text';
 import { writeDraftRecovery } from '@/lib/quiz/persistence';
 import {
@@ -133,17 +139,9 @@ async function gradeShortAnswerQuestion(
     };
   } catch (err) {
     log.error('[quiz-view] AI grading failed for', q.id, err);
-    // Fallback: give half credit
-    return {
-      questionId: q.id,
-      correct: null,
-      status: 'incorrect',
-      earned: Math.round(pts * 0.5),
-      aiComment:
-        language === 'zh-CN'
-          ? '评分服务暂时不可用，已给予基础分。'
-          : 'Grading service unavailable. Base score given.',
-    };
+    // No grade is better than an invented one: the question is marked
+    // ungraded and excluded from the displayed total.
+    return ungradedResult(q.id, language);
   }
 }
 
@@ -485,19 +483,57 @@ function ShortAnswerQuestion({
             )}
           </div>
           {result.aiComment && (
-            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-violet-50 dark:bg-violet-900/30 border border-violet-100 dark:border-violet-800">
-              <Sparkles className="w-4 h-4 text-violet-500 shrink-0 mt-0.5" />
+            <div
+              className={cn(
+                'flex items-start gap-2 px-3 py-2 rounded-lg border',
+                result.status === 'ungraded'
+                  ? 'bg-amber-50 dark:bg-amber-900/30 border-amber-100 dark:border-amber-800'
+                  : 'bg-violet-50 dark:bg-violet-900/30 border-violet-100 dark:border-violet-800',
+              )}
+            >
+              {result.status === 'ungraded' ? (
+                <HelpCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              ) : (
+                <Sparkles className="w-4 h-4 text-violet-500 shrink-0 mt-0.5" />
+              )}
               <div>
-                <p className="text-xs font-medium text-violet-600 dark:text-violet-400 mb-0.5">
-                  {t('quiz.aiComment')}
+                <p
+                  className={cn(
+                    'text-xs font-medium mb-0.5',
+                    result.status === 'ungraded'
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-violet-600 dark:text-violet-400',
+                  )}
+                >
+                  {result.status === 'ungraded' ? t('quiz.ungraded') : t('quiz.aiComment')}
                 </p>
-                <p className="text-xs text-violet-600/80 dark:text-violet-400/80">
+                <p
+                  className={cn(
+                    'text-xs',
+                    result.status === 'ungraded'
+                      ? 'text-amber-600/80 dark:text-amber-400/80'
+                      : 'text-violet-600/80 dark:text-violet-400/80',
+                  )}
+                >
                   <QuizMathText text={result.aiComment} />
                 </p>
               </div>
-              <span className="ml-auto text-xs font-bold text-violet-600 dark:text-violet-400 shrink-0">
-                {result.earned}/{question.points ?? 1}
-                {t('quiz.pointsSuffix')}
+              <span
+                className={cn(
+                  'ml-auto text-xs font-bold shrink-0',
+                  result.status === 'ungraded'
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-violet-600 dark:text-violet-400',
+                )}
+              >
+                {result.status === 'ungraded' ? (
+                  t('quiz.ungraded')
+                ) : (
+                  <>
+                    {result.earned}/{question.points ?? 1}
+                    {t('quiz.pointsSuffix')}
+                  </>
+                )}
               </span>
             </div>
           )}
@@ -536,6 +572,9 @@ function QuestionCard({
         isReview &&
           result.status === 'incorrect' &&
           'border-red-200 dark:border-red-800 shadow-sm shadow-red-50 dark:shadow-red-900/20',
+        isReview &&
+          result.status === 'ungraded' &&
+          'border-amber-200 dark:border-amber-800 shadow-sm shadow-amber-50 dark:shadow-amber-900/20',
       )}
     >
       {/* Left accent */}
@@ -545,6 +584,7 @@ function QuestionCard({
           !isReview && 'bg-violet-400',
           isReview && result.status === 'correct' && 'bg-emerald-400',
           isReview && result.status === 'incorrect' && 'bg-red-400',
+          isReview && result.status === 'ungraded' && 'bg-amber-400',
         )}
       />
 
@@ -562,6 +602,9 @@ function QuestionCard({
               isReview &&
                 result.status === 'incorrect' &&
                 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
+              isReview &&
+                result.status === 'ungraded' &&
+                'bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400',
             )}
           >
             {index + 1}
@@ -585,6 +628,7 @@ function QuestionCard({
           <div className="shrink-0 ml-2">
             {result.status === 'correct' && <CheckCircle2 className="w-6 h-6 text-emerald-500" />}
             {result.status === 'incorrect' && <XCircle className="w-6 h-6 text-red-400" />}
+            {result.status === 'ungraded' && <HelpCircle className="w-6 h-6 text-amber-500" />}
           </div>
         )}
       </div>
@@ -613,11 +657,14 @@ function ScoreBanner({
   results: QuestionResult[];
 }) {
   const { t } = useI18n();
+  // total excludes ungraded questions; zero means nothing could be graded.
+  const allUngraded = total <= 0;
   const pct = total > 0 ? Math.round((score / total) * 100) : 0;
   const correctCount = results.filter((r) => r.status === 'correct').length;
   const incorrectCount = results.filter((r) => r.status === 'incorrect').length;
+  const ungradedCount = results.filter((r) => r.status === 'ungraded').length;
 
-  const color = pct >= 80 ? 'emerald' : pct >= 60 ? 'amber' : 'red';
+  const color = allUngraded ? 'slate' : pct >= 80 ? 'emerald' : pct >= 60 ? 'amber' : 'red';
   const colorMap = {
     emerald: {
       bg: 'from-emerald-500 to-teal-500',
@@ -637,6 +684,12 @@ function ScoreBanner({
       ring: 'bg-red-400/30',
       text: t('quiz.needsReview'),
     },
+    slate: {
+      bg: 'from-slate-500 to-slate-600',
+      shadow: 'shadow-slate-200/50 dark:shadow-slate-800/50',
+      ring: 'bg-slate-400/30',
+      text: t('quiz.ungraded'),
+    },
   };
   const c = colorMap[color];
 
@@ -650,48 +703,61 @@ function ScoreBanner({
         <div>
           <p className="text-white/80 text-sm font-medium">{c.text}</p>
           <div className="flex items-baseline gap-1 mt-1">
-            <span className="text-4xl font-black">{score}</span>
-            <span className="text-white/60 text-lg">/ {total}</span>
+            {allUngraded ? (
+              <span className="text-4xl font-black">—</span>
+            ) : (
+              <>
+                <span className="text-4xl font-black">{score}</span>
+                <span className="text-white/60 text-lg">/ {total}</span>
+              </>
+            )}
           </div>
-          <div className="flex gap-3 mt-3 text-xs">
+          <div className="flex flex-wrap gap-3 mt-3 text-xs">
             <span className="flex items-center gap-1">
               <CheckCircle2 className="w-3.5 h-3.5" /> {correctCount} {t('quiz.correct')}
             </span>
             <span className="flex items-center gap-1">
               <XCircle className="w-3.5 h-3.5" /> {incorrectCount} {t('quiz.incorrect')}
             </span>
+            {ungradedCount > 0 && (
+              <span className="flex items-center gap-1">
+                <HelpCircle className="w-3.5 h-3.5" /> {ungradedCount} {t('quiz.ungraded')}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Percentage ring */}
-        <div className="relative w-20 h-20">
-          <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
-            <circle
-              cx="40"
-              cy="40"
-              r="34"
-              fill="none"
-              stroke="rgba(255,255,255,0.2)"
-              strokeWidth="6"
-            />
-            <motion.circle
-              cx="40"
-              cy="40"
-              r="34"
-              fill="none"
-              stroke="white"
-              strokeWidth="6"
-              strokeLinecap="round"
-              strokeDasharray={`${2 * Math.PI * 34}`}
-              initial={{ strokeDashoffset: 2 * Math.PI * 34 }}
-              animate={{ strokeDashoffset: 2 * Math.PI * 34 * (1 - pct / 100) }}
-              transition={{ duration: 1, ease: 'easeOut', delay: 0.3 }}
-            />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-lg font-black">{pct}%</span>
+        {/* Percentage ring (hidden when nothing could be graded) */}
+        {!allUngraded && (
+          <div className="relative w-20 h-20">
+            <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
+              <circle
+                cx="40"
+                cy="40"
+                r="34"
+                fill="none"
+                stroke="rgba(255,255,255,0.2)"
+                strokeWidth="6"
+              />
+              <motion.circle
+                cx="40"
+                cy="40"
+                r="34"
+                fill="none"
+                stroke="white"
+                strokeWidth="6"
+                strokeLinecap="round"
+                strokeDasharray={`${2 * Math.PI * 34}`}
+                initial={{ strokeDashoffset: 2 * Math.PI * 34 }}
+                animate={{ strokeDashoffset: 2 * Math.PI * 34 * (1 - pct / 100) }}
+                transition={{ duration: 1, ease: 'easeOut', delay: 0.3 }}
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-lg font-black">{pct}%</span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </motion.div>
   );
@@ -881,6 +947,17 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
     return map;
   }, [results]);
 
+  // Ungraded questions are excluded from the displayed total: a learner should
+  // not lose points because the grading service had an outage.
+  const gradedTotal = useMemo(
+    () =>
+      questions.reduce((sum, q) => {
+        const result = resultMap[q.id];
+        return sum + (result?.status === 'ungraded' ? 0 : (q.points ?? 1));
+      }, 0),
+    [questions, resultMap],
+  );
+
   if (runtimeGate.status === 'error') {
     return (
       <div className="flex h-full w-full items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -1068,7 +1145,7 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
 
             {/* Results */}
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-              <ScoreBanner score={earnedScore} total={totalPoints} results={results} />
+              <ScoreBanner score={earnedScore} total={gradedTotal} results={results} />
 
               {questions.map((q, i) => {
                 const r = resultMap[q.id];

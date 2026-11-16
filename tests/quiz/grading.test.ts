@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { gradeChoiceQuestions, isShortAnswer } from '@/lib/quiz/grading';
+import { gradeChoiceQuestions, isShortAnswer, ungradedResult } from '@/lib/quiz/grading';
 import type { QuizQuestion } from '@/lib/types/stage';
 
 function q(overrides: Partial<QuizQuestion>): QuizQuestion {
@@ -50,6 +50,24 @@ describe('gradeChoiceQuestions', () => {
   it('honors custom point values', () => {
     const results = gradeChoiceQuestions([q({ points: 5 })], { q1: 'a' });
     expect(results[0].earned).toBe(5);
+  });
+});
+
+describe('ungradedResult', () => {
+  it('marks the question ungraded without inventing a score', () => {
+    const result = ungradedResult('s1', 'en-US');
+    expect(result).toMatchObject({
+      questionId: 's1',
+      correct: null,
+      status: 'ungraded',
+      earned: 0,
+    });
+    expect(result.aiComment).toContain('Not graded');
+  });
+
+  it('uses Chinese copy for any Chinese locale', () => {
+    expect(ungradedResult('s1', 'zh-CN').aiComment).toContain('未评分');
+    expect(ungradedResult('s1', 'zh-TW').aiComment).toContain('未评分');
   });
 });
 
