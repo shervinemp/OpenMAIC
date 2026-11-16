@@ -65,6 +65,13 @@ import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator.js';
 import { isSlideLikeOutline } from './outline-type.js';
 import { postProcessInteractiveHtml } from './interactive-post-processor.js';
 import { findInteractiveScriptSyntaxFailure } from './interactive-script-validator.js';
+import {
+  blindQuizQuestions,
+  quizAnswerDisagreements,
+  summarizeQuizAnswerDisagreements,
+  type QuizAnswerDisagreement,
+  type QuizAnswerVerifier,
+} from './quiz-verification.js';
 import { parseActionsFromStructuredOutput } from './action-parser.js';
 import { parseJsonResponse } from './json-repair.js';
 import {
@@ -179,6 +186,13 @@ export interface SceneContentOptions {
    * scenes build on earlier material instead of repeating it.
    */
   unitContext?: string;
+  /**
+   * Blind quiz-answer verifier. Receives stems/options only (never the key)
+   * and returns the option values it chose. A well-formed disagreement drives
+   * one corrective re-prompt inside the quiz generation loop; failures and
+   * missing verdicts are ignored. Absent = no verification, no extra calls.
+   */
+  verifyQuizAnswers?: QuizAnswerVerifier;
 }
 
 export interface SceneActionsOptions {
@@ -372,6 +386,7 @@ export async function generateSceneContent(
         unitContext,
         log,
         options.onFailure,
+        options.verifyQuizAnswers,
       );
     case 'freeResponse':
       return generateFreeResponseContent(
@@ -1053,6 +1068,29 @@ async function generateSlideContent(
 }
 
 /**
+ * Run the host's blind solver without ever turning its failure into a quiz
+ * rejection. Aborts are the caller's business (the request is gone); every
+ * other error leaves the generated keys untouched.
+ */
+async function verifyQuizAnswersSafely(
+  verifier: QuizAnswerVerifier | undefined,
+  questions: readonly QuizQuestion[],
+  title: string,
+  log: GenerationLogger,
+): Promise<QuizAnswerDisagreement[]> {
+  if (!verifier) return [];
+  const blind = blindQuizQuestions(questions);
+  if (blind.length === 0) return [];
+  try {
+    const answers = await verifier(blind);
+    return quizAnswerDisagreements(questions, answers);
+  } catch (error) {
+    log.warn(`Quiz answer verifier failed for "${title}"; keeping the generated keys:`, error);
+    return [];
+  }
+}
+
+/**
  * Generate quiz content
  */
 async function generateQuizContent(
@@ -1063,6 +1101,7 @@ async function generateQuizContent(
   unitContext?: string,
   log: GenerationLogger = noopGenerationLogger,
   onFailure?: (failure: SceneContentFailure) => void,
+  verifyQuizAnswers?: QuizAnswerVerifier,
 ): Promise<GeneratedQuizContent | null> {
   const quizConfig = outline.quizConfig || {
     questionCount: 3,
@@ -1160,6 +1199,36 @@ async function generateQuizContent(
 
     const depthReport = validateQuizDepth(outline, questions, retrievalContext);
     if (depthReport.adequate) {
+      // Blind answer verification runs only after the quiz is otherwise
+      // acceptable: a structurally rejected deck is re-prompted for its own
+      // findings first, and there is no point paying a verifier twice.
+      const disagreements = await verifyQuizAnswersSafely(
+        verifyQuizAnswers,
+        questions,
+        outline.title,
+        log,
+      );
+      if (disagreements.length > 0) {
+        if (attempt < maxAttempts) {
+          depthFeedback = summarizeQuizAnswerDisagreements(disagreements);
+          log.warn(
+            `Quiz answer verification disagreed for "${outline.title}" (attempt ${attempt}/${maxAttempts}); re-prompting with ${disagreements.length} key finding(s)`,
+          );
+          continue;
+        }
+        // The quiz met every structural/depth contract; a cheap blind solve is
+        // not grounds to reject it. Keep the generated keys and record the
+        // disagreement in the depth summary for the caller to surface.
+        const findings = disagreements.map(
+          (finding) =>
+            `answer key for question ${finding.questionId} may be wrong: key says ${finding.marked.join(', ')}, blind solve chose ${finding.solved.join(', ')}`,
+        );
+        recordSceneDepthSummary(outline.id, { reworked: true, attempts: attempt, findings });
+        log.error(
+          `Quiz answer verification still disagreed for "${outline.title}" after ${maxAttempts} attempt(s); keeping the generated keys: ${findings.join('; ')}`,
+        );
+        return { questions };
+      }
       if (attempt > 1) {
         recordSceneDepthSummary(outline.id, { reworked: true, attempts: attempt, findings: [] });
       }

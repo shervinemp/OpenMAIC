@@ -8,13 +8,18 @@
 
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
-import { SCENE_CONTENT_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
+import {
+  QUIZ_VERIFY_OUTPUT_CAP,
+  SCENE_CONTENT_OUTPUT_CAP,
+  clampOutputBudget,
+} from '@/lib/ai/output-budget';
 import {
   applyOutlineFallbacks,
   generateSceneContent,
   buildVisionUserContent,
   partitionImagesForVision,
   type AgentInfo,
+  type QuizVerificationQuestion,
 } from '@openmaic/generation';
 import type {
   SceneOutline,
@@ -26,7 +31,8 @@ import type { ThinkingConfig } from '@/lib/types/provider';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
-import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { resolveModel, resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { getStageModel, parseUserStageRoutes } from '@/lib/server/model-routes';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
@@ -35,6 +41,10 @@ import {
   type VisionPromptImage,
 } from '@/lib/persistence/resolve-vision-images';
 import { takeSceneDepthReport, takeSceneDepthSummary } from '@/lib/generation/content-depth';
+import {
+  buildQuizVerifierPrompt,
+  parseQuizVerifierResponse,
+} from '@/lib/generation/quiz-answer-verifier';
 import { buildUnitContext } from '@/lib/generation/unit-context';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import {
@@ -404,6 +414,56 @@ export async function POST(req: NextRequest) {
 
     const userLocale = req.headers?.get('x-user-locale') ?? '';
 
+    /**
+     * Blind quiz-answer verification is OPT-IN: it runs only when the
+     * `quiz-verify` stage is routed (operator MODEL_ROUTES or the UI's
+     * scene-content station). No route = no extra call, identical behavior.
+     * The verifier sees stems/options only; the package compares its answer
+     * with the key and feeds a disagreement back into the bounded quiz loop.
+     */
+    const quizVerifyRoute = getStageModel('quiz-verify');
+    const quizUserRoutes = parseUserStageRoutes(req.headers?.get('x-model-routes') ?? null);
+    const quizVerifier =
+      effectiveOutline.type === 'quiz' && Boolean(quizVerifyRoute || quizUserRoutes['quiz-verify'])
+        ? await resolveModel({
+            stage: 'quiz-verify',
+            modelString,
+            userRoutes: quizUserRoutes,
+          }).catch((error: unknown) => {
+            log.warn(
+              'Quiz verifier route could not be resolved; generating without answer verification:',
+              error,
+            );
+            return null;
+          })
+        : null;
+    const verifyQuizAnswers = quizVerifier
+      ? async (questions: readonly QuizVerificationQuestion[]) => {
+          const prompt = buildQuizVerifierPrompt(questions);
+          const result = await callLLM(
+            {
+              model: quizVerifier.model,
+              system: prompt.system,
+              prompt: prompt.user,
+              maxOutputTokens: clampOutputBudget(
+                QUIZ_VERIFY_OUTPUT_CAP,
+                quizVerifier.modelInfo?.outputWindow,
+                quizVerifier.thinkingConfig,
+              ),
+              // The quiz loop may re-verify after a correction; one SDK retry
+              // covers a transient 429 without making the verifier costly.
+              maxRetries: 1,
+              abortSignal: req.signal,
+            },
+            'quiz-verify',
+            undefined,
+            quizVerifier.thinkingConfig,
+            { serverManaged: quizVerifier.serverManaged },
+          );
+          return parseQuizVerifierResponse(result.text, questions);
+        }
+      : undefined;
+
     const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
       imageMapping: visionImageMapping,
@@ -421,6 +481,7 @@ export async function POST(req: NextRequest) {
       // Phase 2 §15.5: prerequisite coherence — thread what the unit has
       // already taught so this scene builds on it instead of repeating it.
       unitContext: buildUnitContext(effectiveOutline, allOutlines),
+      ...(verifyQuizAnswers ? { verifyQuizAnswers } : {}),
       // The multi-step planner runs when the single-call PBL planner fails
       // on a non-provider error (same wiring as the server generation paths).
       ...(effectiveOutline.type === 'pbl'

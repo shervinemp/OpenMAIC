@@ -15,6 +15,7 @@
  *   headroom.
  * - outlines: a lesson with 12 scenes lands well under 16k.
  * - review verdicts: a small JSON object; 2k is already generous.
+ * - quiz answer verification: a small answers array; 2k is already generous.
  * - document index batches: section cards/captions per batch; 8k is generous.
  *
  * Providers count reasoning inside the output budget. When the resolved
@@ -31,6 +32,7 @@ export const SCENE_CONTENT_OUTPUT_CAP = 16_000;
 export const SCENE_ACTIONS_OUTPUT_CAP = 8_000;
 export const OUTLINE_OUTPUT_CAP = 16_000;
 export const OUTLINE_REVIEW_OUTPUT_CAP = 2_000;
+export const QUIZ_VERIFY_OUTPUT_CAP = 2_000;
 export const DOCUMENT_INDEX_OUTPUT_CAP = 8_000;
 export const AGENT_PROFILES_OUTPUT_CAP = 4_000;
 

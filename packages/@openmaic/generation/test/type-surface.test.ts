@@ -35,6 +35,7 @@ type _SceneContentKeys = Assert<
     | 'logger'
     | 'retrievalContext'
     | 'unitContext'
+    | 'verifyQuizAnswers'
   >
 >;
 type _SceneActionKeys = Assert<
