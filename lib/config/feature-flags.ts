@@ -179,6 +179,28 @@ export function resolveOutlineReviewMode(): OutlineReviewMode {
   return 'tolerant';
 }
 
+/**
+ * Rollout mode for the token-free prefilter in front of the outline review
+ * judge (see `lib/generation/outline-review-prefilter.ts`).
+ *
+ * - `on` (default): a deck the prefilter can clear skips the judge call.
+ * - `shadow`: the judge still runs, but the prefilter's decision is attached to
+ *   the review event so acceptance can be calibrated before trusting it.
+ * - `off`: the prefilter is not consulted; every review goes to the judge.
+ *
+ * The prefilter is ACCEPT-ONLY, so `on` can make the gate cheaper but can never
+ * turn a deck the judge would have rejected into a deterministic rejection.
+ */
+export type OutlinePrefilterMode = 'on' | 'shadow' | 'off';
+
+export function resolveOutlinePrefilterMode(): OutlinePrefilterMode {
+  return process.env.OPENMAIC_OUTLINE_PREFILTER === 'off'
+    ? 'off'
+    : process.env.OPENMAIC_OUTLINE_PREFILTER === 'shadow'
+      ? 'shadow'
+      : 'on';
+}
+
 /** Experimental PPTX import entry point. Default OFF. */
 export function isPptxImportEnabled(): boolean {
   return readBoolean(process.env.NEXT_PUBLIC_ENABLE_PPTX_IMPORT);

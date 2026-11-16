@@ -16,6 +16,11 @@
 import { NextRequest } from 'next/server';
 import { streamLLM, callLLM } from '@/lib/ai/llm';
 import {
+  OUTLINE_OUTPUT_CAP,
+  OUTLINE_REVIEW_OUTPUT_CAP,
+  clampOutputBudget,
+} from '@/lib/ai/output-budget';
+import {
   resolveFallbackModel,
   shouldFallbackFor,
   logFallbackFired,
@@ -47,7 +52,11 @@ import { createLogger } from '@/lib/logger';
 import { resolveModel, resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVisionImagesForPrompt } from '@/lib/persistence/resolve-vision-images';
-import { resolveOutlineReviewMode, resolveVocationalActive } from '@/lib/config/feature-flags';
+import {
+  resolveOutlinePrefilterMode,
+  resolveOutlineReviewMode,
+  resolveVocationalActive,
+} from '@/lib/config/feature-flags';
 import {
   buildCourseBlueprint,
   clampDurationMinutes,
@@ -92,6 +101,7 @@ import {
   validateUnitReviewVerdict,
   type UnitReviewVerdict,
 } from '@/lib/generation/unit-review';
+import { prefilterOutlineReview } from '@/lib/generation/outline-review-prefilter';
 import type { CourseBlueprint } from '@/lib/types/generation';
 const log = createLogger('Outlines Stream');
 
@@ -385,9 +395,16 @@ interface MultiUnitOutlineRun {
   /**
    * Optional judge model for the review gate. When set, the review deck is
    * judged by this model instead of the generator (which would otherwise
-   * grade its own output — a systematic blind spot).
+   * grade its own output - a systematic blind spot).
    */
   reviewCallModel?: (params: { system: string; user: string }) => Promise<string>;
+  /**
+   * Whether `reviewCallModel` resolves to a different model than the
+   * generator. Only a distinct judge's rejection is worth confirming with the
+   * generator before paying for a regeneration; re-asking the same model is
+   * just sampling noise.
+   */
+  reviewJudgeIsDistinct?: boolean;
   signal: AbortSignal | undefined;
   controller: ReadableStreamDefaultController<Uint8Array>;
   encoder: TextEncoder;
@@ -419,16 +436,28 @@ interface PendingLesson {
 }
 
 /**
- * Phase 2 §15.5 — the outline review gate. Runs an LLM-as-judge verdict on a
+ * One-line form of the prefilter's escalation reasons for the route log.
+ * Keeps a degenerately off-topic deck from flooding the log with one reason
+ * per scene.
+ */
+function summarizePrefilterReasons(reasons: readonly string[]): string {
+  if (reasons.length === 0) return 'none';
+  const shown = reasons.slice(0, 3).join('; ');
+  return reasons.length > 3 ? `${shown} (+${reasons.length - 3} more)` : shown;
+}
+
+/**
+ * Phase 2 §15.5 - the outline review gate. Runs an LLM-as-judge verdict on a
  * deck (a unit or — since the per-lesson rework — a single lesson) against
  * that deck's objectives.
  *
- * Returns null when the deck is ACCEPTED: the verdict was adequate, the judge
- * infrastructure failed, or the verdict was unparseable (a judge schema
- * failure, not a quality signal). All three are best-effort — mirroring the
- * per-unit web-research fallback — so a semester run never dies on the
- * reviewer. Returns corrective feedback to feed the deck's bounded retry loop
- * ONLY for a parseable `adequate: false` verdict with concrete findings.
+ * Returns null when the deck is ACCEPTED: the token-free prefilter cleared it,
+ * the verdict was adequate, the judge infrastructure failed, or the verdict
+ * was unparseable (a judge schema failure, not a quality signal). All of these
+ * are best-effort - mirroring the per-unit web-research fallback - so a
+ * semester run never dies on the reviewer. Returns corrective feedback to feed
+ * the deck's bounded retry loop ONLY for a parseable `adequate: false` verdict
+ * with concrete findings.
  */
 async function reviewOutlineDeck(
   deck: { title?: string; objectives?: string[]; lessons?: Array<{ title?: string }> },
@@ -437,10 +466,35 @@ async function reviewOutlineDeck(
   run: MultiUnitOutlineRun,
   enqueue: (event: Record<string, unknown>) => void,
 ): Promise<string | null> {
+  const deckTitle = deck.title ?? `Deck ${deckIndex + 1}`;
+  const prefilterMode = resolveOutlinePrefilterMode();
+  const prefilter =
+    prefilterMode === 'off'
+      ? null
+      : prefilterOutlineReview({ title: deckTitle, objectives: deck.objectives ?? [] }, outlines);
+
+  // The free checks clear the deck: skip the paid judge entirely. Acceptance
+  // is the only outcome the prefilter can produce, so a deck it cannot clear
+  // is reviewed exactly as before.
+  if (prefilterMode === 'on' && prefilter?.accept) {
+    log.info(
+      `Review prefilter accepted deck ${deckIndex + 1} without a judge call (${outlines.length} scenes)`,
+    );
+    enqueue({
+      type: 'unitReview',
+      index: deckIndex,
+      unit: deckTitle,
+      adequate: true,
+      findings: [],
+      prefilter: 'accepted',
+    });
+    return null;
+  }
+
   const reviewPrompt = buildPrompt(PROMPT_IDS.UNIT_REVIEW, {
     unitSummary: buildUnitReviewSummary(
       {
-        title: deck.title ?? `Deck ${deckIndex + 1}`,
+        title: deckTitle,
         objectives: deck.objectives ?? [],
         lessons: (deck.lessons ?? []).map((lesson, index) => ({
           title: lesson.title ?? `Lesson ${index + 1}`,
@@ -458,23 +512,72 @@ async function reviewOutlineDeck(
     return null;
   }
 
+  const prefilterEvent =
+    prefilterMode === 'shadow'
+      ? { prefilter: prefilter?.accept ? 'would-accept' : 'would-escalate' }
+      : prefilter && !prefilter.accept
+        ? { prefilter: 'escalated' }
+        : {};
+  if (prefilter) {
+    if (prefilterMode === 'shadow') {
+      log.info(
+        `Review prefilter would ${prefilter.accept ? 'accept' : 'escalate'} deck ${deckIndex + 1}: ${summarizePrefilterReasons(prefilter.reasons)}`,
+      );
+    } else if (!prefilter.accept) {
+      log.info(
+        `Review prefilter escalated deck ${deckIndex + 1}: ${summarizePrefilterReasons(prefilter.reasons)}`,
+      );
+    }
+  }
+
+  const judgeVerdict = (text: string) => {
+    const parsed = parseJsonResponse<UnitReviewVerdict>(text);
+    return validateUnitReviewVerdict(parsed);
+  };
+
   try {
     const judgeCallModel = run.reviewCallModel ?? run.callModel;
     const text = await judgeCallModel({ system: reviewPrompt.system, user: reviewPrompt.user });
-    const parsed = parseJsonResponse<UnitReviewVerdict>(text);
-    const { verdict, errors } = validateUnitReviewVerdict(parsed);
+    let { verdict, errors } = judgeVerdict(text);
+
+    // A distinct (typically cheaper) judge rejected. A rejection buys a whole
+    // lesson regeneration, so confirm it with the generator before spending
+    // that pass: the frontier model is only paid on the branch that costs real
+    // money. An unparseable confirmation keeps the primary rejection.
+    let confirmedByGenerator = false;
+    if (verdict && !verdict.adequate && run.reviewJudgeIsDistinct && run.reviewCallModel) {
+      try {
+        const confirmation = judgeVerdict(
+          await run.callModel({ system: reviewPrompt.system, user: reviewPrompt.user }),
+        );
+        if (confirmation.verdict) {
+          verdict = confirmation.verdict;
+          errors = confirmation.errors;
+          confirmedByGenerator = !confirmation.verdict.adequate;
+        }
+      } catch (error) {
+        if (run.signal?.aborted) throw error;
+        log.warn(
+          `Review rejection confirmation failed for deck ${deckIndex + 1}; keeping the judge's verdict:`,
+          error,
+        );
+      }
+    }
+
     enqueue({
       type: 'unitReview',
       index: deckIndex,
-      unit: deck.title ?? `Deck ${deckIndex + 1}`,
+      unit: deckTitle,
       adequate: verdict?.adequate ?? false,
       findings: verdict ? verdict.findings : errors,
+      ...prefilterEvent,
+      ...(confirmedByGenerator ? { confirmedByGenerator: true } : {}),
     });
     if (verdict?.adequate) {
       return null;
     }
-    // An unparseable verdict (null) is a judge SCHEMA failure — the model did
-    // not return the required {adequate, findings} shape — not a quality
+    // An unparseable verdict (null) is a judge SCHEMA failure - the model did
+    // not return the required {adequate, findings} shape - not a quality
     // signal. Accept the deck rather than feeding a spurious corrective loop
     // that, after MAX_BLUEPRINT_ATTEMPTS, would kill the whole run. Only a
     // parseable `adequate: false` verdict with concrete findings drives a retry.
@@ -970,6 +1073,8 @@ export async function POST(req: NextRequest) {
       model: languageModel,
       modelInfo,
       modelString,
+      providerId: generatorProviderId,
+      modelId: generatorModelId,
       thinkingConfig,
       serverManaged: serverManagedPrimary,
     } = await resolveModelFromRequest(req, body, 'scene-outlines-stream');
@@ -1216,6 +1321,13 @@ export async function POST(req: NextRequest) {
 
         // Retryable-failure fallback: after the same-model retries are
         // exhausted, retry once on the stage's configured fallback model.
+        // The outer loop owns retries (and the fallback), so the SDK must not
+        // add its own on top of it.
+        const outlineOutputBudget = clampOutputBudget(
+          OUTLINE_OUTPUT_CAP,
+          modelInfo?.outputWindow,
+          thinkingConfig,
+        );
         let streamParams = visionImages?.length
           ? {
               model: languageModel,
@@ -1226,7 +1338,8 @@ export async function POST(req: NextRequest) {
                   content: buildVisionUserContent(prompts.user, visionImages),
                 },
               ],
-              maxOutputTokens: modelInfo?.outputWindow,
+              maxOutputTokens: outlineOutputBudget,
+              maxRetries: 0,
               // Tear down the upstream LLM request when the client disconnects,
               // instead of letting it run to completion for a dead connection.
               abortSignal: req.signal,
@@ -1235,7 +1348,8 @@ export async function POST(req: NextRequest) {
               model: languageModel,
               system: prompts.system,
               prompt: prompts.user,
-              maxOutputTokens: modelInfo?.outputWindow,
+              maxOutputTokens: outlineOutputBudget,
+              maxRetries: 0,
               abortSignal: req.signal,
             };
         let fellBack = false;
@@ -1299,11 +1413,21 @@ export async function POST(req: NextRequest) {
                     model: languageModel,
                     system,
                     prompt: user,
-                    maxOutputTokens: modelInfo?.outputWindow,
+                    maxOutputTokens: clampOutputBudget(
+                      OUTLINE_OUTPUT_CAP,
+                      modelInfo?.outputWindow,
+                      thinkingConfig,
+                    ),
+                    maxRetries: 0,
+                    abortSignal: req.signal,
                   },
                   'scene-outlines-stream-multi-unit',
                   undefined,
                   thinkingConfig,
+                  {
+                    serverManaged: serverManagedPrimary,
+                    fallbackStage: 'scene-outlines-stream',
+                  },
                 );
                 return result.text;
               };
@@ -1314,6 +1438,7 @@ export async function POST(req: NextRequest) {
               let reviewCallModel:
                 | ((params: { system: string; user: string }) => Promise<string>)
                 | undefined;
+              let reviewJudgeIsDistinct = false;
               const reviewModelString = process.env.OPENMAIC_OUTLINE_REVIEW_MODEL;
               if (reviewModelString) {
                 // Fail the run rather than degrade silently: an unresolvable
@@ -1331,17 +1456,32 @@ export async function POST(req: NextRequest) {
                     `OPENMAIC_OUTLINE_REVIEW_MODEL="${reviewModelString}" resolved to no model`,
                   );
                 }
+                reviewJudgeIsDistinct =
+                  judge.providerId !== generatorProviderId || judge.modelId !== generatorModelId;
                 reviewCallModel = async ({ system, user }) => {
                   const result = await callLLM(
                     {
                       model: judge.model,
                       system,
                       prompt: user,
-                      maxOutputTokens: judge.modelInfo?.outputWindow,
+                      maxOutputTokens: clampOutputBudget(
+                        OUTLINE_REVIEW_OUTPUT_CAP,
+                        judge.modelInfo?.outputWindow,
+                        judge.thinkingConfig,
+                      ),
+                      // The judge is best-effort and has no outer retry loop;
+                      // one SDK retry is cheap insurance against a transient
+                      // 429 silently accepting the deck.
+                      maxRetries: 1,
+                      abortSignal: req.signal,
                     },
                     'scene-outlines-stream-review',
                     undefined,
                     judge.thinkingConfig,
+                    {
+                      serverManaged: true,
+                      fallbackStage: 'scene-outlines-stream',
+                    },
                   );
                   return result.text;
                 };
@@ -1356,6 +1496,7 @@ export async function POST(req: NextRequest) {
                 courseType,
                 callModel,
                 reviewCallModel,
+                reviewJudgeIsDistinct,
                 signal: req.signal,
                 controller,
                 encoder,

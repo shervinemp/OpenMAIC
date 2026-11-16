@@ -12,6 +12,7 @@ import {
   isPptxImportEnabled,
   isVideoExportEnabled,
   isVocationalTaskEngineEnabled,
+  resolveOutlinePrefilterMode,
   resolveOutlineReviewMode,
   resolveVocationalActive,
   shouldShowVocationalTestUi,
@@ -440,6 +441,34 @@ describe('resolveOutlineReviewMode', () => {
     expect(resolveOutlineReviewMode()).toBe('strict');
     process.env[flag] = 'off';
     expect(resolveOutlineReviewMode()).toBe('off');
+  });
+});
+
+describe('resolveOutlinePrefilterMode', () => {
+  const flag = 'OPENMAIC_OUTLINE_PREFILTER';
+  let original: string | undefined;
+
+  beforeEach(() => {
+    original = process.env[flag];
+  });
+
+  afterEach(() => {
+    if (original === undefined) delete process.env[flag];
+    else process.env[flag] = original;
+  });
+
+  it('defaults to on when unset or unrecognized', () => {
+    delete process.env[flag];
+    expect(resolveOutlinePrefilterMode()).toBe('on');
+    process.env[flag] = 'yes';
+    expect(resolveOutlinePrefilterMode()).toBe('on');
+  });
+
+  it('honors off and shadow', () => {
+    process.env[flag] = 'off';
+    expect(resolveOutlinePrefilterMode()).toBe('off');
+    process.env[flag] = 'shadow';
+    expect(resolveOutlinePrefilterMode()).toBe('shadow');
   });
 });
 

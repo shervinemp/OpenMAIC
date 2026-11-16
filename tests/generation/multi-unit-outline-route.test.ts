@@ -46,12 +46,16 @@ function parseSseEvents(text: string) {
     .map((line) => JSON.parse(line.slice(6)));
 }
 
-function mockRequest(body: Record<string, unknown>) {
+function mockRequest(
+  body: Record<string, unknown>,
+  signal: AbortSignal = new AbortController().signal,
+) {
   return {
     json: async () => body,
     headers: {
       get: () => null,
     },
+    signal,
   };
 }
 
@@ -114,6 +118,26 @@ function lessonOutlines(lessonIndex: number) {
   const outlines = [];
   for (let order = 1; order <= SCENES_PER_LESSON; order++) {
     outlines.push(sceneOutline(`l${lessonIndex}_s${order}`, order));
+  }
+  return { outlines };
+}
+
+/**
+ * A deck the token-free review prefilter can clear: every scene names the
+ * lesson's subject, carries a real description and two distinct key points.
+ */
+function concreteLessonOutlines(topic: string) {
+  const outlines = [];
+  for (let order = 1; order <= SCENES_PER_LESSON; order++) {
+    outlines.push({
+      id: `clean_${order}`,
+      type: 'slide',
+      title: `${topic} mechanism ${order}`,
+      description: `Explain ${topic} mechanism ${order} with a concrete worked example.`,
+      keyPoints: [`${topic} detail ${order}a`, `${topic} detail ${order}b`],
+      order,
+      teachingObjective: `Define a ${topic}`,
+    });
   }
   return { outlines };
 }
@@ -285,6 +309,66 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     expect(done.blueprint.sizePreset).toBe('standard');
   });
 
+  test('bounds output, forwards server-managed fallback, and aborts with the request', async () => {
+    vi.stubEnv('OPENMAIC_OUTLINE_REVIEW_MODEL', 'openai:gpt-review');
+    resolveModelFromRequestMock.mockResolvedValue({
+      model: { provider: 'openai', modelId: 'gpt-test' },
+      modelInfo: { outputWindow: 64_000, capabilities: {} },
+      modelString: 'openai:gpt-test',
+      providerId: 'openai',
+      modelId: 'gpt-test',
+      thinkingConfig: undefined,
+      serverManaged: true,
+    });
+    resolveModelMock.mockResolvedValue({
+      model: { provider: 'openai', modelId: 'gpt-review' },
+      modelInfo: { outputWindow: 64_000, capabilities: {} },
+      modelString: 'openai:gpt-review',
+      providerId: 'openai',
+      modelId: 'gpt-review',
+      thinkingConfig: undefined,
+    });
+    setupMultiUnitFlow();
+
+    const controller = new AbortController();
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest(
+        {
+          requirements: REQUIREMENTS,
+          sizePreset: 'standard',
+          pdfText: '',
+          pdfImages: [],
+          imageMapping: {},
+          researchContext: '',
+        },
+        controller.signal,
+      ) as unknown as Parameters<typeof POST>[0],
+    );
+    await readStreamBody(response);
+
+    const syllabusCall = callLLMMock.mock.calls[0];
+    expect(syllabusCall[0]).toMatchObject({
+      maxOutputTokens: 16_000,
+      maxRetries: 0,
+      abortSignal: controller.signal,
+    });
+    expect(syllabusCall[4]).toEqual({
+      serverManaged: true,
+      fallbackStage: 'scene-outlines-stream',
+    });
+
+    const reviewCall = callLLMMock.mock.calls.find(
+      (call) => call[1] === 'scene-outlines-stream-review',
+    );
+    expect(reviewCall).toBeDefined();
+    expect(reviewCall?.[0]).toMatchObject({
+      maxOutputTokens: 2_000,
+      maxRetries: 1,
+      abortSignal: controller.signal,
+    });
+  });
+
   test('media element ids are course-unique although every lesson numbers from gen_img_1', async () => {
     // Every lesson call independently emits gen_img_1 on its first scene —
     // the media store keys tasks by elementId, so the route must rewrite them.
@@ -448,6 +532,118 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     for (const call of generationCalls) {
       expect(call.model).toEqual({ provider: 'openai', modelId: 'gpt-test' });
     }
+  });
+
+  test('OPENMAIC_OUTLINE_PREFILTER=on skips the judge for a deck the free checks clear', async () => {
+    const clean = concreteLessonOutlines('process');
+    const flow = setupMultiUnitFlow({ outline: { 0: () => clean } });
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        requirements: REQUIREMENTS,
+        sizePreset: 'standard',
+        pdfText: '',
+        pdfImages: [],
+        imageMapping: {},
+        researchContext: '',
+      }) as unknown as Parameters<typeof POST>[0],
+    );
+
+    const text = await readStreamBody(response);
+    const events = parseSseEvents(text);
+    expect(events.find((e) => e.type === 'done')).toBeDefined();
+
+    // Lesson 0 never reached the judge; the other lessons' generic decks did.
+    expect(flow.reviewAttempt.has(0)).toBe(false);
+    const lesson0 = events.find((e) => e.type === 'unitReview' && e.index === 0);
+    expect(lesson0).toMatchObject({ adequate: true, prefilter: 'accepted' });
+  });
+
+  test('OPENMAIC_OUTLINE_PREFILTER=shadow still judges, but records the prefilter decision', async () => {
+    vi.stubEnv('OPENMAIC_OUTLINE_PREFILTER', 'shadow');
+    const clean = concreteLessonOutlines('process');
+    const flow = setupMultiUnitFlow({ outline: { 0: () => clean } });
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        requirements: REQUIREMENTS,
+        sizePreset: 'standard',
+        pdfText: '',
+        pdfImages: [],
+        imageMapping: {},
+        researchContext: '',
+      }) as unknown as Parameters<typeof POST>[0],
+    );
+
+    const text = await readStreamBody(response);
+    const events = parseSseEvents(text);
+
+    expect(flow.reviewAttempt.has(0)).toBe(true);
+    const lesson0 = events.find((e) => e.type === 'unitReview' && e.index === 0);
+    expect(lesson0).toMatchObject({ adequate: true, prefilter: 'would-accept' });
+  });
+
+  test('a distinct judge rejection is confirmed by the generator before regenerating', async () => {
+    vi.stubEnv('OPENMAIC_OUTLINE_REVIEW_MODEL', 'openai/gpt-review');
+    resolveModelMock.mockResolvedValue({
+      model: { provider: 'openai', modelId: 'gpt-review' },
+      modelInfo: { outputWindow: 4096, capabilities: {} },
+      modelString: 'openai/gpt-review',
+      providerId: 'openai',
+      modelId: 'gpt-review',
+      thinkingConfig: undefined,
+    });
+    const rejectVerdict = {
+      adequate: false,
+      findings: ['Scene 1 does not define a process'],
+    };
+    const flow = setupMultiUnitFlow({ review: { 0: () => rejectVerdict } });
+
+    // The generator overrules its distinct judge on the confirmation call.
+    const base = callLLMMock.getMockImplementation();
+    callLLMMock.mockImplementation(
+      async (params: { system?: string; model?: { modelId?: string } }) => {
+        if (
+          (params.system ?? '').includes('Unit Review Gate') &&
+          params.model?.modelId === 'gpt-test'
+        ) {
+          return { text: JSON.stringify(unitReviewPass()), usage: {} };
+        }
+        return base!(params);
+      },
+    );
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        requirements: REQUIREMENTS,
+        sizePreset: 'standard',
+        pdfText: '',
+        pdfImages: [],
+        imageMapping: {},
+        researchContext: '',
+      }) as unknown as Parameters<typeof POST>[0],
+    );
+
+    const text = await readStreamBody(response);
+    const events = parseSseEvents(text);
+
+    const reviewEvents = events.filter((e) => e.type === 'unitReview');
+    expect(reviewEvents).toHaveLength(6);
+    expect(reviewEvents.every((e) => e.adequate)).toBe(true);
+    // The rejection never bought a regeneration.
+    expect(flow.outlineAttempt.get(0)).toBe(1);
+
+    const reviewCalls = callLLMMock.mock.calls
+      .map((call) => call[0] as { system?: string; model?: { modelId?: string } })
+      .filter((call) => (call.system ?? '').includes('Unit Review Gate'));
+    // Six judge calls (one per lesson) plus one confirmation.
+    expect(reviewCalls).toHaveLength(7);
+    expect(reviewCalls.filter((call) => call.model?.modelId === 'gpt-test')).toHaveLength(1);
+    const lesson0 = reviewEvents.find((e) => e.index === 0);
+    expect(lesson0?.prefilter).toBe('escalated');
   });
 
   test('syllabus corrective loop fixes the structure on retry', async () => {
