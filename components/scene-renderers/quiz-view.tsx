@@ -14,6 +14,7 @@ import {
   Loader2,
   Sparkles,
   HelpCircle,
+  Target,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -30,6 +31,7 @@ import {
   type QuestionResult,
 } from '@/lib/quiz/grading';
 import { renderQuizMathText } from '@/lib/quiz/math-text';
+import { hasPracticeAnswer, summarizePractice } from '@/lib/quiz/practice';
 import { writeDraftRecovery } from '@/lib/quiz/persistence';
 import {
   createQuizAttemptWriter,
@@ -151,10 +153,12 @@ function QuizCover({
   questionCount,
   totalPoints,
   onStart,
+  onPractice,
 }: {
   questionCount: number;
   totalPoints: number;
   onStart: () => void;
+  onPractice?: () => void;
 }) {
   const { t } = useI18n();
 
@@ -223,6 +227,20 @@ function QuizCover({
         {t('quiz.startQuiz')}
         <ChevronRight className="w-4 h-4" />
       </motion.button>
+
+      {onPractice && (
+        <motion.button
+          initial={{ y: 10, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.35 }}
+          whileTap={{ scale: 0.96 }}
+          onClick={onPractice}
+          className="flex items-center gap-1.5 text-sm font-medium text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 transition-colors z-10"
+        >
+          <Target className="w-4 h-4" />
+          {t('quiz.practice')}
+        </motion.button>
+      )}
     </div>
   );
 }
@@ -765,6 +783,229 @@ function ScoreBanner({
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
+/**
+ * Ephemeral practice run: one question at a time with instant feedback and a
+ * missed-question retry. Deliberately independent of the graded attempt
+ * runtime - practice answers never enter the persisted quiz result, so a
+ * learner can drill without touching their score.
+ */
+export function QuizPractice({
+  questions,
+  locale,
+  initialIds,
+  onExit,
+}: {
+  questions: QuizQuestion[];
+  locale: string;
+  initialIds?: string[];
+  onExit: () => void;
+}) {
+  const { t } = useI18n();
+  const byId = useMemo(
+    () => new Map(questions.map((question) => [question.id, question])),
+    [questions],
+  );
+  const pointsByQuestion = useMemo(
+    () => Object.fromEntries(questions.map((question) => [question.id, question.points ?? 1])),
+    [questions],
+  );
+  const allIds = useMemo(() => questions.map((question) => question.id), [questions]);
+  const [ids, setIds] = useState<string[]>(() => {
+    const requested = (initialIds ?? []).filter((id) => byId.has(id));
+    return requested.length > 0 ? requested : allIds;
+  });
+  const [index, setIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
+  const [results, setResults] = useState<QuestionResult[]>([]);
+  const [currentResult, setCurrentResult] = useState<QuestionResult | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const finished = index >= ids.length;
+  const question = finished ? undefined : byId.get(ids[index]);
+  const answer = question ? answers[question.id] : undefined;
+  const answered = hasPracticeAnswer(answer);
+
+  const start = useCallback(
+    (nextIds: string[]) => {
+      setIds(nextIds.length > 0 ? nextIds : allIds);
+      setIndex(0);
+      setAnswers({});
+      setResults([]);
+      setCurrentResult(null);
+      setChecking(false);
+    },
+    [allIds],
+  );
+
+  const check = useCallback(async () => {
+    if (!question || !answered || checking || currentResult) return;
+    setChecking(true);
+    try {
+      const result =
+        question.type === 'short_answer'
+          ? await gradeShortAnswerQuestion(question, String(answer ?? ''), locale)
+          : gradeChoiceQuestions([question], answers)[0];
+      if (!result) return;
+      setResults((previous) => [
+        ...previous.filter((entry) => entry.questionId !== question.id),
+        result,
+      ]);
+      setCurrentResult(result);
+    } finally {
+      setChecking(false);
+    }
+  }, [answer, answers, answered, checking, currentResult, locale, question]);
+
+  const next = useCallback(() => {
+    setCurrentResult(null);
+    setIndex((value) => value + 1);
+  }, []);
+
+  const header = (right: React.ReactNode) => (
+    <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur shrink-0">
+      <div className="flex items-center gap-2">
+        <Target className="w-4 h-4 text-violet-500" />
+        <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+          {t('quiz.practice')}
+        </span>
+        {!finished && (
+          <span className="text-xs text-gray-400 ml-1">
+            {index + 1} / {ids.length}
+          </span>
+        )}
+      </div>
+      {right}
+    </div>
+  );
+
+  if (finished) {
+    const summary = summarizePractice(results, pointsByQuestion);
+    const exitButton = () => (
+      <button
+        type="button"
+        onClick={onExit}
+        className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+      >
+        {t('quiz.backToQuiz')}
+      </button>
+    );
+
+    return (
+      <div className="w-full h-full bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900 overflow-hidden flex flex-col">
+        {header(exitButton())}
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+          <div className="text-center">
+            <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
+            <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">
+              {t('quiz.practiceComplete')}
+            </h2>
+          </div>
+
+          <ScoreBanner score={summary.earned} total={summary.gradedTotal} results={results} />
+
+          <div className="flex flex-wrap justify-center gap-3">
+            {summary.missed.length > 0 && (
+              <button
+                type="button"
+                onClick={() => start(summary.missed)}
+                className="flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-500 to-purple-500 px-5 py-2 text-sm font-medium text-white shadow-sm hover:shadow-md transition-shadow"
+              >
+                <RotateCcw className="w-4 h-4" />
+                {t('quiz.practiceMissed')} ({summary.missed.length})
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => start(allIds)}
+              className="flex items-center gap-2 rounded-full border border-gray-200 dark:border-gray-700 px-5 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:border-violet-300 hover:text-violet-600 dark:hover:border-violet-700 dark:hover:text-violet-400 transition-colors"
+            >
+              {t('quiz.practiceAgain')}
+            </button>
+            {exitButton()}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const nextButton = currentResult ? (
+    <button
+      type="button"
+      onClick={next}
+      className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 px-4 py-1.5 text-xs font-medium text-white shadow-sm hover:shadow-md transition-shadow"
+    >
+      {t('quiz.next')}
+      <ChevronRight className="w-3.5 h-3.5" />
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={() => void check()}
+      disabled={!answered || checking}
+      className={cn(
+        'flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium transition-all',
+        answered && !checking
+          ? 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-sm hover:shadow-md active:scale-[0.97]'
+          : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed',
+      )}
+    >
+      {checking && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+      {t('quiz.check')}
+    </button>
+  );
+
+  return (
+    <div className="w-full h-full bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900 overflow-hidden flex flex-col">
+      {header(
+        <button
+          type="button"
+          onClick={onExit}
+          className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+        >
+          {t('quiz.backToQuiz')}
+        </button>,
+      )}
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        {question?.type === 'single' && (
+          <SingleChoiceQuestion
+            question={question}
+            index={index}
+            value={answer as string | undefined}
+            onChange={(value) => setAnswers((previous) => ({ ...previous, [question.id]: value }))}
+            disabled={!!currentResult}
+            result={currentResult ?? undefined}
+          />
+        )}
+        {question?.type === 'multiple' && (
+          <MultipleChoiceQuestion
+            question={question}
+            index={index}
+            value={answer as string[] | undefined}
+            onChange={(value) => setAnswers((previous) => ({ ...previous, [question.id]: value }))}
+            disabled={!!currentResult}
+            result={currentResult ?? undefined}
+          />
+        )}
+        {question?.type === 'short_answer' && (
+          <ShortAnswerQuestion
+            question={question}
+            index={index}
+            value={answer as string | undefined}
+            onChange={(value) => setAnswers((previous) => ({ ...previous, [question.id]: value }))}
+            disabled={!!currentResult}
+            result={currentResult ?? undefined}
+          />
+        )}
+
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <p className="text-xs text-gray-400 dark:text-gray-500">{t('quiz.practiceNote')}</p>
+          {nextButton}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
   const { t, locale } = useI18n();
 
@@ -774,6 +1015,7 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
   const [runtimeGate, setRuntimeGate] = useState<QuizRuntimeGate>({ status: 'loading' });
   const [hydrationVersion, setHydrationVersion] = useState(0);
   const [retrying, setRetrying] = useState(false);
+  const [practiceRun, setPracticeRun] = useState<{ ids?: string[] } | null>(null);
   const viewLifetimeRef = useRef<QuizViewLifetime | null>(null);
   viewLifetimeRef.current ??= createQuizViewLifetime();
   const viewLifetime = viewLifetimeRef.current;
@@ -958,6 +1200,12 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
     [questions, resultMap],
   );
 
+  const missedIds = useMemo(
+    () =>
+      results.filter((result) => result.status !== 'correct').map((result) => result.questionId),
+    [results],
+  );
+
   if (runtimeGate.status === 'error') {
     return (
       <div className="flex h-full w-full items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -981,6 +1229,17 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
     );
   }
 
+  if (practiceRun) {
+    return (
+      <QuizPractice
+        questions={questions}
+        locale={locale}
+        initialIds={practiceRun.ids}
+        onExit={() => setPracticeRun(null)}
+      />
+    );
+  }
+
   return (
     <div className="w-full h-full bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900 overflow-hidden flex flex-col">
       <AnimatePresence mode="wait">
@@ -996,6 +1255,7 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
               questionCount={questions.length}
               totalPoints={totalPoints}
               onStart={() => setPhase('answering')}
+              onPractice={questions.length > 0 ? () => setPracticeRun({}) : undefined}
             />
           </motion.div>
         )}
@@ -1132,15 +1392,27 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                   {t('quiz.quizReport')}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => void handleRetry()}
-                disabled={retrying}
-                className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                {t('quiz.retry')}
-              </button>
+              <div className="flex items-center gap-3">
+                {missedIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPracticeRun({ ids: missedIds })}
+                    className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+                  >
+                    <Target className="w-3.5 h-3.5" />
+                    {t('quiz.practiceMissed')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleRetry()}
+                  disabled={retrying}
+                  className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  {t('quiz.retry')}
+                </button>
+              </div>
             </div>
 
             {/* Results */}
