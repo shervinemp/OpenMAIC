@@ -216,7 +216,7 @@ export function GenerationToolbar({
               </span>
             </button>
           ) : (
-            <button className={pillMuted}>
+            <button className={pillMuted} aria-label={t('toolbar.courseMaterialUpload')}>
               <Paperclip className="size-3.5" />
             </button>
           )}

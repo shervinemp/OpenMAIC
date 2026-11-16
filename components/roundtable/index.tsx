@@ -1166,7 +1166,7 @@ export function Roundtable({
         {/* Left: Teacher identity */}
         <div
           className={cn(
-            'w-[90px] shrink-0 flex flex-col border-r border-gray-100/50 dark:border-gray-700/50 bg-white/40 dark:bg-gray-900/40 overflow-visible relative transition-opacity duration-300',
+            'w-[90px] shrink-0 flex flex-col border-r border-gray-100/50 dark:border-gray-700/50 bg-white/40 dark:bg-gray-900/40 overflow-visible relative transition-opacity duration-300 max-sm:hidden',
             isPresenting && !controlsVisible && 'opacity-0 pointer-events-none',
           )}
         >
@@ -1350,7 +1350,7 @@ export function Roundtable({
                 >
                   <div
                     data-testid="roundtable-non-presentation-input-panel"
-                    className="relative w-fit max-w-[85%] sm:max-w-[65%] min-w-[200px] sm:min-w-[300px] bg-white/90 dark:bg-gray-800/90 backdrop-blur-md p-2 pr-2 rounded-2xl rounded-br-none shadow-2xl border border-purple-200 dark:border-purple-700 flex items-end gap-2 ring-1 ring-purple-100/50 dark:ring-purple-800/50"
+                    className="relative w-full sm:w-fit max-w-full sm:max-w-[65%] min-w-0 sm:min-w-[300px] bg-white/90 dark:bg-gray-800/90 backdrop-blur-md p-2 pr-2 rounded-2xl rounded-br-none shadow-2xl border border-purple-200 dark:border-purple-700 flex items-end gap-2 ring-1 ring-purple-100/50 dark:ring-purple-800/50"
                   >
                     <div className="pl-4 flex-1 py-1 min-w-0">
                       <textarea
@@ -1374,6 +1374,7 @@ export function Roundtable({
                     <button
                       onClick={handleSendMessage}
                       disabled={isSendCooldown}
+                      aria-label={t('pbl.v2.chat.send')}
                       className={cn(
                         'p-2.5 text-white rounded-xl transition shadow-md mb-0.5 shrink-0',
                         isSendCooldown
@@ -1870,12 +1871,12 @@ export function Roundtable({
         {/* Right: Participants area */}
         <div
           className={cn(
-            'w-[140px] shrink-0 flex flex-col py-3 border-l border-gray-100/50 dark:border-gray-700/50 bg-gray-50/30 dark:bg-gray-900/30 overflow-visible transition-opacity duration-300',
+            'w-[140px] shrink-0 flex flex-col py-3 border-l border-gray-100/50 dark:border-gray-700/50 bg-gray-50/30 dark:bg-gray-900/30 overflow-visible transition-opacity duration-300 max-sm:w-[74px]',
             isPresenting && !controlsVisible && 'opacity-0 pointer-events-none',
           )}
         >
           {/* Companion agent avatars — horizontal row, scrollable on overflow, arrows on hover */}
-          <div className="flex-none relative group/scroll">
+          <div className="flex-none relative group/scroll max-sm:hidden">
             {/* Left arrow */}
             <button
               onClick={() => {
@@ -2101,6 +2102,10 @@ export function Roundtable({
                       if (asrEnabled) handleToggleVoice();
                     }}
                     disabled={!asrEnabled}
+                    aria-label={
+                      asrEnabled ? t('roundtable.voiceInput') : t('roundtable.voiceInputDisabled')
+                    }
+                    aria-pressed={isVoiceOpen}
                     className={cn(
                       'w-8 h-8 rounded-full border flex items-center justify-center transition-all active:scale-95 shadow-sm',
                       !asrEnabled
@@ -2121,6 +2126,8 @@ export function Roundtable({
                       e.stopPropagation();
                       handleToggleInput();
                     }}
+                    aria-label={t('roundtable.textInput')}
+                    aria-pressed={isInputOpen}
                     className={cn(
                       'w-8 h-8 rounded-full border flex items-center justify-center transition-all active:scale-95 shadow-sm',
                       isInputOpen
@@ -2136,7 +2143,7 @@ export function Roundtable({
 
             {/* User avatar (big, clickable to open input) */}
             <div
-              className="relative group cursor-pointer shrink-0"
+              className="relative group cursor-pointer shrink-0 max-sm:hidden"
               onClick={(e) => {
                 e.stopPropagation();
                 handleToggleInput();

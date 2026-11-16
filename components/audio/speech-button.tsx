@@ -90,6 +90,13 @@ export function SpeechButton({
         <button
           type="button"
           disabled={isDisabled || isProcessing}
+          aria-label={
+            isProcessing
+              ? t('roundtable.processing')
+              : isRecording
+                ? t('voice.stopListening')
+                : t('voice.startListening')
+          }
           onClick={handleClick}
           className={cn(
             'relative flex items-center justify-center rounded-lg transition-all duration-200 shrink-0 cursor-pointer',

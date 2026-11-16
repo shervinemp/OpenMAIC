@@ -529,7 +529,7 @@ function QuestionCard({
       transition={{ delay: index * 0.05 }}
       className={cn(
         'bg-white dark:bg-gray-800 rounded-2xl border p-5 relative overflow-hidden',
-        !isReview && 'border-gray-150 dark:border-gray-700 shadow-sm',
+        !isReview && 'border-gray-200 dark:border-gray-700 shadow-sm',
         isReview &&
           result.status === 'correct' &&
           'border-emerald-200 dark:border-emerald-800 shadow-sm shadow-emerald-50 dark:shadow-emerald-900/20',

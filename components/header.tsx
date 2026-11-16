@@ -49,8 +49,8 @@ export function Header({
 
   return (
     <>
-      <header className="h-20 px-8 flex items-center justify-between z-10 bg-transparent gap-4">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+      <header className="h-16 lg:h-20 px-3 sm:px-6 lg:px-8 flex items-center justify-between z-10 bg-transparent gap-2 sm:gap-4">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
           {hideBackControl
             ? null
             : (backControl ?? (
@@ -74,11 +74,11 @@ export function Header({
               CommandBar title during the cross-fade. */}
           {mode !== 'edit' && (
             <div className="flex flex-col min-w-0">
-              <span className="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 mb-0.5">
+              <span className="hidden sm:block text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 mb-0.5">
                 {t('stage.currentScene')}
               </span>
               <h1
-                className="text-xl font-bold text-gray-800 dark:text-gray-200 tracking-tight truncate"
+                className="text-base sm:text-xl font-bold text-gray-800 dark:text-gray-200 tracking-tight truncate"
                 suppressHydrationWarning
               >
                 {currentSceneTitle || t('common.loading')}
@@ -89,14 +89,16 @@ export function Header({
 
         {/* Standalone classroom keeps the full cluster. Workbench-attached
             classrooms omit both the global capsule and course share/export. */}
-        <HeaderControls
-          mode={mode}
-          proModeActive={proModeActive}
-          canEdit={canEdit}
-          onToggleEditMode={onToggleEditMode}
-          showGlobalControls={!hideGlobalControls}
-          showCourseActions={!hideCourseActions}
-        />
+        <div className="hidden sm:block shrink-0">
+          <HeaderControls
+            mode={mode}
+            proModeActive={proModeActive}
+            canEdit={canEdit}
+            onToggleEditMode={onToggleEditMode}
+            showGlobalControls={!hideGlobalControls}
+            showCourseActions={!hideCourseActions}
+          />
+        </div>
       </header>
     </>
   );

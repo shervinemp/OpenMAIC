@@ -16,6 +16,7 @@ import { PENDING_SCENE_ID } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useMediaQuery } from '@/lib/hooks/use-media-query';
 import { SceneSidebar, type SceneSidebarProps } from '@/components/stage/scene-sidebar';
 import { Header } from '@/components/header';
 import { CanvasArea } from '@/components/canvas/canvas-area';
@@ -197,6 +198,29 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     // Layout state from settings store (persisted via localStorage)
     const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
     const setSidebarCollapsed = useSettingsStore((s) => s.setSidebarCollapsed);
+    // Below the desktop layout the scene list becomes an overlay drawer rather
+    // than a flex sibling: at 390–1023px the inline sidebar left the stage and
+    // chat with unusably little width. The drawer is closed by default, so the
+    // first paint on a phone is the course itself, and the canvas toolbar's
+    // existing sidebar button opens it.
+    const compactViewport = useMediaQuery('(max-width: 1023px)');
+    const [compactSidebarOpen, setCompactSidebarOpen] = useState(false);
+    useEffect(() => {
+      if (!compactViewport) setCompactSidebarOpen(false);
+    }, [compactViewport]);
+    useEffect(() => {
+      if (!compactSidebarOpen) return;
+      const closeOnEscape = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') setCompactSidebarOpen(false);
+      };
+      document.addEventListener('keydown', closeOnEscape);
+      return () => document.removeEventListener('keydown', closeOnEscape);
+    }, [compactSidebarOpen]);
+    const effectiveSidebarCollapsed = compactViewport ? !compactSidebarOpen : sidebarCollapsed;
+    const toggleSidebar = useCallback(() => {
+      if (compactViewport) setCompactSidebarOpen((open) => !open);
+      else setSidebarCollapsed(!sidebarCollapsed);
+    }, [compactViewport, setSidebarCollapsed, sidebarCollapsed]);
     const chatAreaWidth = useSettingsStore((s) => s.chatAreaWidth);
     const setChatAreaWidth = useSettingsStore((s) => s.setChatAreaWidth);
     const chatAreaCollapsed = useSettingsStore((s) => s.chatAreaCollapsed);
@@ -1724,7 +1748,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     // non-'edit' here since the parent Stage unmounts this component
     // when entering Pro mode.
     const sceneViewerHeight = (() => {
-      const headerHeight = isPresenting || hideHeader ? 0 : 80;
+      // The header is h-16 below lg and h-20 above it; using the wrong one
+      // clips the rounded stage or leaves a strip of dead space under it.
+      const headerHeight = isPresenting || hideHeader ? 0 : compactViewport ? 64 : 80;
       const roundtableHeight = mode === 'playback' && !isPresenting ? 192 : 0;
       return `calc(100% - ${headerHeight + roundtableHeight}px)`;
     })();
@@ -1733,23 +1759,56 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       <div
         ref={stageRef}
         className={cn(
-          'flex-1 flex overflow-hidden bg-gray-50 dark:bg-gray-900',
+          'relative flex-1 flex overflow-hidden bg-gray-50 dark:bg-gray-900',
           isPresenting && !controlsVisible && 'cursor-none',
         )}
       >
-        <SceneSidebar
-          collapsed={sidebarCollapsed}
-          onCollapseChange={setSidebarCollapsed}
-          onSceneSelect={gatedSceneSwitch}
-          onRetryOutline={onRetryOutline}
-          onResumeGeneration={onResumeGeneration}
-          onRepairCourse={onRepairCourse}
-          courseRepairing={courseRepairing}
-          silentNarration={silentNarration}
-          onSkipOutline={
-            onSkipOutline ?? ((outlineId) => useStageStore.getState().skipFailedOutline(outlineId))
-          }
-        />
+        {compactViewport ? (
+          compactSidebarOpen && (
+            <>
+              <button
+                type="button"
+                aria-label={t('common.close')}
+                onClick={() => setCompactSidebarOpen(false)}
+                className="absolute inset-0 z-30 bg-black/35 backdrop-blur-[1px]"
+              />
+              <div className="absolute inset-y-0 left-0 z-40 shadow-2xl">
+                <SceneSidebar
+                  collapsed={false}
+                  onCollapseChange={() => setCompactSidebarOpen(false)}
+                  onSceneSelect={(sceneId) => {
+                    void gatedSceneSwitch(sceneId);
+                    setCompactSidebarOpen(false);
+                  }}
+                  onRetryOutline={onRetryOutline}
+                  onResumeGeneration={onResumeGeneration}
+                  onRepairCourse={onRepairCourse}
+                  courseRepairing={courseRepairing}
+                  silentNarration={silentNarration}
+                  onSkipOutline={
+                    onSkipOutline ??
+                    ((outlineId) => useStageStore.getState().skipFailedOutline(outlineId))
+                  }
+                />
+              </div>
+            </>
+          )
+        ) : (
+          <SceneSidebar
+            collapsed={sidebarCollapsed}
+            onCollapseChange={setSidebarCollapsed}
+            onSceneSelect={gatedSceneSwitch}
+            onRetryOutline={onRetryOutline}
+            onResumeGeneration={onResumeGeneration}
+            onRepairCourse={onRepairCourse}
+            courseRepairing={courseRepairing}
+            silentNarration={silentNarration}
+            onSkipOutline={
+              onSkipOutline ??
+              ((outlineId) => useStageStore.getState().skipFailedOutline(outlineId))
+            }
+          />
+        )}
 
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
@@ -1799,9 +1858,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               isSoftClosing={chatIsSoftClosing}
               softCloseDeadline={softCloseDeadline}
               whiteboardOpen={whiteboardOpen}
-              sidebarCollapsed={sidebarCollapsed}
+              sidebarCollapsed={effectiveSidebarCollapsed}
               chatCollapsed={chatAreaCollapsed}
-              onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+              onToggleSidebar={toggleSidebar}
               onToggleChat={() => setChatAreaCollapsed(!chatAreaCollapsed)}
               onPrevSlide={handlePreviousScene}
               onNextSlide={handleNextScene}
@@ -1988,9 +2047,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 currentSceneIndex={currentSceneIndex}
                 scenesCount={totalScenesCount}
                 whiteboardOpen={whiteboardOpen}
-                sidebarCollapsed={sidebarCollapsed}
+                sidebarCollapsed={effectiveSidebarCollapsed}
                 chatCollapsed={chatAreaCollapsed}
-                onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+                onToggleSidebar={toggleSidebar}
                 onToggleChat={() => setChatAreaCollapsed(!chatAreaCollapsed)}
                 onPrevSlide={handlePreviousScene}
                 onNextSlide={handleNextScene}

@@ -198,7 +198,7 @@ export function CanvasToolbar({
           {onToggleMute && (
             <div
               ref={volumeContainerRef}
-              className="relative flex items-center"
+              className="relative flex items-center max-sm:hidden"
               onMouseEnter={handleVolumeEnter}
               onMouseLeave={handleVolumeLeave}
             >
@@ -269,7 +269,7 @@ export function CanvasToolbar({
                   <button
                     onClick={onCycleSpeed}
                     className={cn(
-                      'w-8 h-5 rounded flex items-center justify-center',
+                      'w-8 h-5 rounded flex items-center justify-center max-sm:hidden',
                       'transition-all duration-150 outline-none cursor-pointer',
                       'text-[11px] font-semibold tabular-nums leading-none',
                       'active:scale-90',
@@ -389,7 +389,7 @@ export function CanvasToolbar({
                     onClick={onToggleAutoPlay}
                     className={cn(
                       ctrlBtn,
-                      'w-8 h-6',
+                      'w-8 h-6 max-sm:hidden',
                       autoPlayLecture
                         ? 'text-violet-600 dark:text-violet-400'
                         : 'text-gray-500 dark:text-gray-400',
@@ -436,7 +436,7 @@ export function CanvasToolbar({
               }}
               disabled={!canPickSlideElement}
               className={cn(
-                'relative flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-all',
+                'relative flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-all max-sm:hidden',
                 elementPickActive
                   ? 'bg-violet-500/15 text-violet-700 ring-1 ring-violet-400/40 dark:text-violet-300'
                   : 'text-gray-500 hover:bg-gray-500/[0.08] dark:text-gray-400',

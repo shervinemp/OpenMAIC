@@ -286,7 +286,7 @@ function HomePage() {
     window.setTimeout(() => revokeThumbnailSlideMediaUrls(previous), 0);
   };
 
-  // Close dropdowns when clicking outside
+  // Close dropdowns when clicking outside or pressing Escape
   useEffect(() => {
     if (!themeOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
@@ -294,8 +294,15 @@ function HomePage() {
         setThemeOpen(false);
       }
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setThemeOpen(false);
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [themeOpen]);
 
   const loadClassrooms = async () => {
@@ -514,6 +521,16 @@ function HomePage() {
     () => (currentFolderId ? classrooms.filter((c) => c.folderId === currentFolderId) : []),
     [classrooms, currentFolderId],
   );
+  const showFolderTiles = !isSearching && currentFolderId === undefined;
+  const libraryTileCount = visibleClassrooms.length + (showFolderTiles ? folders.length : 0);
+  // With three or fewer tiles a four-column grid leaves a conspicuous empty
+  // quarter at desktop widths; match the column count to what is on screen.
+  const libraryGridCols =
+    libraryTileCount <= 2
+      ? 'grid-cols-1 sm:grid-cols-2'
+      : libraryTileCount === 3
+        ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+        : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4';
   const courseCountByFolder = useMemo(() => {
     const counts = new Map<string, number>();
     for (const c of classrooms) {
@@ -814,6 +831,8 @@ function HomePage() {
             onClick={() => {
               setThemeOpen(!themeOpen);
             }}
+            aria-label={t('settings.theme')}
+            aria-expanded={themeOpen}
             className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
           >
             {theme === 'light' && <Sun className="w-4 h-4" />}
@@ -874,6 +893,7 @@ function HomePage() {
         <div className="relative">
           <button
             onClick={() => setSettingsOpen(true)}
+            aria-label={t('settings.title')}
             className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
           >
             <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
@@ -1417,7 +1437,11 @@ function HomePage() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
                         transition={{ duration: 0.2 }}
-                        className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-8"
+                        className={cn(
+                          'grid gap-x-5 gap-y-8',
+                          libraryGridCols,
+                          libraryTileCount <= 2 && 'mx-auto max-w-[600px]',
+                        )}
                       >
                         {/* Root + non-search: render folder tiles first. */}
                         {!isSearching &&
@@ -1937,6 +1961,7 @@ function ClassroomCard({
               <Button
                 size="icon"
                 variant="ghost"
+                aria-label={t('classroom.delete')}
                 className="absolute top-2 right-2 size-7 opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 hover:bg-destructive/80 text-white hover:text-white backdrop-blur-sm rounded-full"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1948,6 +1973,7 @@ function ClassroomCard({
               <Button
                 size="icon"
                 variant="ghost"
+                aria-label={t('classroom.rename')}
                 className="absolute top-2 right-11 size-7 opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 hover:bg-black/50 text-white hover:text-white backdrop-blur-sm rounded-full"
                 onClick={startRename}
               >
@@ -1991,13 +2017,12 @@ function ClassroomCard({
         </AnimatePresence>
       </div>
 
-      {/* Info — outside the thumbnail */}
-      <div className="mt-2.5 px-1 flex items-center gap-2">
-        <span className="shrink-0 inline-flex items-center rounded-full bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:text-violet-400">
-          {classroom.sceneCount} {t('classroom.slides')} · {formatDate(classroom.updatedAt)}
-        </span>
+      {/* Info — outside the thumbnail. The title owns the full card width;
+          the count/date pill sits underneath so two similar course names
+          never both truncate to the same prefix. */}
+      <div className="mt-2.5 px-1 flex flex-col items-start gap-1">
         {editing ? (
-          <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full min-w-0" onClick={(e) => e.stopPropagation()}>
             <input
               ref={nameInputRef}
               value={nameDraft}
@@ -2016,7 +2041,7 @@ function ClassroomCard({
           <Tooltip>
             <TooltipTrigger asChild>
               <p
-                className="font-medium text-[15px] truncate text-foreground/90 min-w-0 cursor-text"
+                className="w-full font-medium text-[15px] truncate text-foreground/90 min-w-0 cursor-text"
                 onDoubleClick={startRename}
               >
                 {classroom.name}
@@ -2031,6 +2056,7 @@ function ClassroomCard({
                 <span className="break-all">{classroom.name}</span>
                 <button
                   className="shrink-0 p-0.5 rounded hover:bg-foreground/10 transition-colors"
+                  aria-label={t('classroom.copyName')}
                   onClick={(e) => {
                     e.stopPropagation();
                     navigator.clipboard.writeText(classroom.name);
@@ -2043,6 +2069,9 @@ function ClassroomCard({
             </TooltipContent>
           </Tooltip>
         )}
+        <span className="inline-flex items-center rounded-full bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:text-violet-400">
+          {classroom.sceneCount} {t('classroom.slides')} · {formatDate(classroom.updatedAt)}
+        </span>
       </div>
     </div>
   );

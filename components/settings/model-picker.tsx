@@ -376,7 +376,7 @@ export function ModelPicker({
             <>
               <span className="min-w-0 flex-1 truncate text-left font-mono">{selectedLabel}</span>
               {thinkingBadge && (
-                <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-violet-700 dark:bg-violet-900/40 dark:text-violet-200">
+                <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-violet-700 dark:bg-violet-900/40 dark:text-violet-200">
                   {thinkingBadge}
                 </span>
               )}
