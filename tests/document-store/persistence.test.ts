@@ -243,6 +243,32 @@ describe('app document validators', () => {
     expect(validateAppScene(scene)).toEqual({ valid: true });
   });
 
+  test('warns once for the same placement-clamp defect', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const scene = slideScene({
+      id: 'dedupe-clamp-scene',
+      content: {
+        type: 'slide',
+        canvas: {
+          id: 'canvas-dedupe',
+          viewportSize: 1000,
+          viewportRatio: 0.5625,
+          elements: [{ id: 'text-oob', type: 'text', left: -80, top: 40, width: 200, height: 40 }],
+        },
+      },
+    });
+    try {
+      validateAppScene(structuredClone(scene));
+      validateAppScene(structuredClone(scene));
+      const clampWarnings = warn.mock.calls.filter(([message]) =>
+        String(message).includes('[placement-clamp]'),
+      );
+      expect(clampWarnings).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test('rejects projectV2 without the renderer-required containers', () => {
     const scene = {
       ...pblScene(),

@@ -25,6 +25,18 @@ function requiredString(
   }
 }
 
+/**
+ * Placement clamping is an in-memory correction: the validator does not
+ * rewrite the stored aggregate, so every load of the same legacy scene would
+ * otherwise emit the same warning again. Log each distinct defect once per
+ * session; a geometry change produces a new signature and logs again.
+ */
+const warnedPlacementClamps = new Set<string>();
+
+function placementSignature(sceneId: string, changes: ReadonlyArray<unknown>): string {
+  return `${sceneId}|${JSON.stringify(changes)}`;
+}
+
 /** Validate the app's four-way scene union at the document write boundary. */
 export const validateAppScene: SceneValidator = (scene) => {
   const value = objectValue(scene);
@@ -45,9 +57,13 @@ export const validateAppScene: SceneValidator = (scene) => {
           },
         );
         if (changes.length > 0) {
-          console.warn(
-            `[placement-clamp] scene ${String(value.id ?? '?')}: clamped ${changes.length} out-of-bounds element(s)`,
-          );
+          const signature = placementSignature(String(value.id ?? '?'), changes);
+          if (!warnedPlacementClamps.has(signature)) {
+            warnedPlacementClamps.add(signature);
+            console.warn(
+              `[placement-clamp] scene ${String(value.id ?? '?')}: clamped ${changes.length} out-of-bounds element(s)`,
+            );
+          }
         }
       }
     }

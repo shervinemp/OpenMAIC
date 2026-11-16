@@ -461,7 +461,7 @@ describe('legacy document migration', () => {
     ).rejects.toThrow('verification failed');
   });
 
-  test('serializes concurrent migrations from two stores over one IndexedDB', async () => {
+  test('coalesces concurrent reads of one document instead of double-loading it', async () => {
     const idb = new IDBFactory();
     const locks = lockManager();
     const source = legacy(snapshot());
@@ -470,8 +470,11 @@ describe('legacy document migration', () => {
       accessDocument('stage-1', { store: store(idb), kv, legacyStore: source, lockManager: locks }),
       accessDocument('stage-1', { store: store(idb), kv, legacyStore: source, lockManager: locks }),
     ]);
+    expect(first).toBe(second);
     expect(first.document).toEqual(second.document);
-    expect(locks.request).toHaveBeenCalledTimes(2);
+    // The second caller joins the first access promise: one migration under
+    // one lock, not two serialized reads of the full aggregate.
+    expect(locks.request).toHaveBeenCalledTimes(1);
   });
 
   test('does not clobber a newer current-scene KV value', async () => {

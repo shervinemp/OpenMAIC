@@ -620,10 +620,41 @@ function generationGuardedStore(
   });
 }
 
+/**
+ * Concurrent reads of the same course coalesce. React StrictMode's
+ * mount→cleanup→mount cycle fires two loads for the same route; the second
+ * used to queue behind the first document lock and then re-fetch and
+ * re-parse the entire aggregate (31 MB / 1,600 scenes in the large-course
+ * case). The returned document is shared, so callers must treat it as
+ * read-only; the store's load path migrates into fresh scene objects before
+ * it lands in state.
+ */
+const inFlightDocumentAccess = new Map<string, Promise<DocumentAccessResult>>();
+
+/** Test helper: let a suite start from a cold access map. */
+export function resetDocumentAccessInFlight(): void {
+  inFlightDocumentAccess.clear();
+}
+
 /** Load the authoritative destination, lazily migrating one coherent legacy snapshot. */
 export async function accessDocument(
   stageId: string,
   deps: DocumentMigrationDeps = {},
+): Promise<DocumentAccessResult> {
+  const existing = inFlightDocumentAccess.get(stageId);
+  if (existing) return existing;
+  const request = accessDocumentInner(stageId, deps).finally(() => {
+    if (inFlightDocumentAccess.get(stageId) === request) {
+      inFlightDocumentAccess.delete(stageId);
+    }
+  });
+  inFlightDocumentAccess.set(stageId, request);
+  return request;
+}
+
+async function accessDocumentInner(
+  stageId: string,
+  deps: DocumentMigrationDeps,
 ): Promise<DocumentAccessResult> {
   try {
     return await withDocumentLock(stageId, async () => migrateLocked(stageId, deps), deps);
