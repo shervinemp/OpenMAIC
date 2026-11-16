@@ -1,4 +1,11 @@
 import { callLLM } from '@/lib/ai/llm';
+import {
+  AGENT_PROFILES_OUTPUT_CAP,
+  OUTLINE_OUTPUT_CAP,
+  SCENE_ACTIONS_OUTPUT_CAP,
+  SCENE_CONTENT_OUTPUT_CAP,
+  clampOutputBudget,
+} from '@/lib/ai/output-budget';
 import { createStageAPI } from '@/lib/api/stage-api';
 import type { StageStore } from '@/lib/api/stage-api-types';
 import {
@@ -307,11 +314,17 @@ export async function generateClassroom(
     const result = await callLLM(
       {
         model: languageModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        maxOutputTokens: modelInfo?.outputWindow,
+        // Keep the system prompt in its own field so provider-side prompt
+        // caching can tag it; a system message inside `messages` is invisible
+        // to the Anthropic cache adapter.
+        system: systemPrompt,
+        prompt: userPrompt,
+        maxOutputTokens: clampOutputBudget(
+          OUTLINE_OUTPUT_CAP,
+          modelInfo?.outputWindow,
+          classroomThinking,
+        ),
+        maxRetries: 0,
       },
       'generate-classroom',
       undefined,
@@ -409,11 +422,9 @@ export async function generateClassroom(
       const result = await callLLM(
         {
           model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          maxOutputTokens: outputWindow,
+          system: systemPrompt,
+          prompt: userPrompt,
+          maxOutputTokens: clampOutputBudget(SCENE_CONTENT_OUTPUT_CAP, outputWindow, thinking),
           maxRetries: 0,
         },
         'generate-classroom-scene',
@@ -437,11 +448,10 @@ export async function generateClassroom(
       const result = await callLLM(
         {
           model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          maxOutputTokens: outputWindow,
+          system: systemPrompt,
+          prompt: userPrompt,
+          maxOutputTokens: clampOutputBudget(AGENT_PROFILES_OUTPUT_CAP, outputWindow, thinking),
+          maxRetries: 0,
         },
         'generate-classroom',
         undefined,
@@ -463,11 +473,9 @@ export async function generateClassroom(
       const result = await callLLM(
         {
           model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          maxOutputTokens: outputWindow,
+          system: systemPrompt,
+          prompt: userPrompt,
+          maxOutputTokens: clampOutputBudget(SCENE_ACTIONS_OUTPUT_CAP, outputWindow, thinking),
           maxRetries: 0,
         },
         'generate-classroom-scene',
@@ -484,11 +492,10 @@ export async function generateClassroom(
     const result = await callLLM(
       {
         model: searchQueryModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
+        system: systemPrompt,
+        prompt: userPrompt,
         maxOutputTokens: 256,
+        maxRetries: 0,
       },
       'web-search-query-rewrite',
       undefined,

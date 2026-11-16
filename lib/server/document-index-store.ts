@@ -22,10 +22,77 @@ import type { DocumentDigest } from '@/lib/generation/document-digest';
 import type { ImageCaption } from '@/lib/generation/image-captioning';
 import type { PdfChunk } from '@openmaic/generation';
 
+/**
+ * Bumped whenever the index prompt/schema changes in a way that makes an old
+ * digest or caption set stale. It is part of the handle, so old entries are
+ * left untouched and a new request builds a new variant.
+ */
+export const DOCUMENT_INDEX_KEY_VERSION = 2;
+
+export interface DocumentIndexImageIdentity {
+  id?: string;
+  pageNumber?: number;
+  width?: number;
+  height?: number;
+  description?: string;
+  src?: string;
+}
+
+export interface DocumentIndexIdentity {
+  text: string;
+  language?: string;
+  modelString?: string;
+  images?: readonly DocumentIndexImageIdentity[];
+}
+
+/**
+ * Stable handle for one index VARIANT.
+ *
+ * The old key was `sha256(text)` only, so the same document re-used an index
+ * built in another language, with another model, or with a different image
+ * set. The digest and captions are all language/model/image dependent, so the
+ * handle must be too. The text itself is still part of the hash; the other
+ * fields only distinguish variants that must not share an entry.
+ */
+export function buildDocumentIndexHandle(identity: DocumentIndexIdentity): string {
+  const hash = createHash('sha256');
+  hash.update(`openmaic-doc-index:v${DOCUMENT_INDEX_KEY_VERSION}\n`);
+  hash.update(`language:${identity.language ?? 'English'}\n`);
+  hash.update(`model:${identity.modelString ?? ''}\n`);
+  const images = [...(identity.images ?? [])].sort((left, right) =>
+    String(left.id ?? '').localeCompare(String(right.id ?? '')),
+  );
+  hash.update(`images:${images.length}\n`);
+  for (const image of images) {
+    // `src` is what the captioner actually sees, so a different byte stream
+    // with the same id/metadata must not share captions.
+    hash.update(
+      JSON.stringify([
+        image.id ?? '',
+        image.pageNumber ?? 0,
+        image.width ?? 0,
+        image.height ?? 0,
+        image.description ?? '',
+        image.src ?? '',
+      ]),
+    );
+    hash.update('\n');
+  }
+  hash.update('text:\n');
+  hash.update(identity.text);
+  return hash.digest('hex');
+}
+
 export interface StoredDocumentIndex {
   version: 1;
-  /** sha256 of the raw extracted text — the handle clients keep. */
+  /** Variant hash (text + language + model + images) - the handle clients keep. */
   handle: string;
+  /** Language used for the digest/captions (absent on legacy entries). */
+  language?: string;
+  /** Model string used to build the digest/captions (absent on legacy entries). */
+  modelString?: string;
+  /** Key derivation version (absent on legacy entries). */
+  keyVersion?: number;
   /** Full extracted text, unmodified (noise stripping happens on load). */
   text: string;
   /** Chunks of the noise-stripped text (the retrieval index). */

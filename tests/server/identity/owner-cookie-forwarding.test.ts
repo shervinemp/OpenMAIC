@@ -142,12 +142,14 @@ describe('the Pi routes renew the anonymous owner', () => {
     expect(unknown.headers.getSetCookie()).toEqual([expect.stringMatching(RENEWAL)]);
   });
 
+  // The assertion is fast; importing the full Pi route graph is not. Keep the
+  // default 5s budget for the rest of the suite and give this cold import room.
   it('on Pi chat answers, errors included', async () => {
     const { POST } = await import('@/app/api/chat/pi/route');
     const invalid = await POST(post('http://localhost/api/chat/pi', { storeState: {} }));
     expect(invalid.status).toBe(400);
     expect(invalid.headers.getSetCookie()).toEqual([expect.stringMatching(RENEWAL)]);
-  });
+  }, 15_000);
 
   it('puts the cookies on a streaming answer before its body is read', async () => {
     const { attachOwnerCookies } = await import('@/lib/server/identity/with-owner');

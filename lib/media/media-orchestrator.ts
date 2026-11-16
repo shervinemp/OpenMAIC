@@ -15,7 +15,7 @@
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useStageStore } from '@/lib/store/stage';
-import { mediaProviderBudgets } from '@/lib/media/provider-budgets';
+import { mediaProviderBudgets, takeWithinMediaCaps } from '@/lib/media/provider-budgets';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { db, mediaFileKey, type MediaFileRecord } from '@/lib/device-storage/database';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -197,18 +197,29 @@ function throwIfAborted(signal?: AbortSignal): void {
 }
 
 /**
- * Launch media generation for all mediaGenerations declared in outlines.
- * Runs in parallel with content/action generation — does not block.
+ * Launch media generation for the mediaGenerations declared in outlines.
+ *
+ * Callers should pass `wantedRefs` (the placeholders the generated content
+ * actually carries) on a first pass; an outline declaration the model dropped
+ * is then never bought. Runs alongside the remaining scene phases and does not
+ * block them.
  */
 export interface GenerateMediaOptions {
   /**
    * A repair pass (mount-time media repair, an outline's retry): transient
    * failures (no structured code) are re-attempted instead of waiting for a
-   * Retry click, and — in browser-only mode — a task marked done whose
+   * Retry click, and - in browser-only mode - a task marked done whose
    * persisted bytes vanished (manual delete, quota eviction, profile wipe) is
    * re-generated under the same elementId. Ordinary passes trust the status.
    */
   readonly repair?: boolean;
+  /**
+   * Only these placeholders are wanted this pass. Absent = every request the
+   * caller handed over. A content-stage pass passes the refs the generated
+   * slide actually carries, so an outline-declared image/video the model
+   * dropped is never bought.
+   */
+  readonly wantedRefs?: ReadonlySet<string>;
 }
 
 export async function generateMediaForOutlines(
@@ -291,6 +302,9 @@ async function collectAndGenerate(
   for (const outline of outlines) {
     if (!outline.mediaGenerations) continue;
     for (const mg of outline.mediaGenerations) {
+      // The content stage knows which declared media the model actually put on
+      // the slide; everything else is a dangling declaration, not a purchase.
+      if (options.wantedRefs && !options.wantedRefs.has(mg.elementId)) continue;
       // Filter by enabled flags
       if (mg.type === 'image' && !settings.imageGenerationEnabled) continue;
       if (mg.type === 'video' && !settings.videoGenerationEnabled) continue;
@@ -348,29 +362,25 @@ async function collectAndGenerate(
   if (allRequests.length === 0) return;
 
   // Budget-driven dispatch (provider-budgets.ts): each class carries its own
-  // requeue cap and cost weight — cheap jobs first so one heavy item (a video)
-  // cannot head-of-line-block the cheap backlog. Stable within each class. The
-  // per-class caps are the on-load REPAIR spend guard (the rest wait for the
-  // next repair pass); a generation pass takes every request, or a course with
-  // more generated images than the cap kept placeholders until later reloads.
+  // generation/requeue caps and cost weight - cheap jobs first so one heavy
+  // item (a video) cannot head-of-line-block the cheap backlog. Stable within
+  // each class. Both passes are capped: the first pass must not buy every
+  // outline-declared image and video in one click, and a repair pass must not
+  // re-buy a whole backlog. Capped work waits for the next pass.
   const budgets = mediaProviderBudgets();
   const costRank = (type: MediaGenerationRequest['type']): number =>
     type === 'video' ? budgets.video.costWeight : budgets.image.costWeight;
-  const classCap = (type: MediaGenerationRequest['type']): number =>
-    type === 'video' ? budgets.video.requeueCap : budgets.image.requeueCap;
-  const perClassTaken = new Map<MediaGenerationRequest['type'], number>();
-  const dispatchable = [...allRequests]
-    .sort((a, b) => costRank(a.type) - costRank(b.type))
-    .filter((req) => {
-      if (!options.repair) return true;
-      const taken = perClassTaken.get(req.type) ?? 0;
-      if (taken >= classCap(req.type)) return false;
-      perClassTaken.set(req.type, taken + 1);
-      return true;
-    });
+  const dispatchCaps = options.repair
+    ? { image: budgets.image.requeueCap, video: budgets.video.requeueCap }
+    : { image: budgets.image.generationCap, video: budgets.video.generationCap };
+  const dispatchable = takeWithinMediaCaps(
+    [...allRequests].sort((a, b) => costRank(a.type) - costRank(b.type)),
+    dispatchCaps,
+  );
   if (dispatchable.length < allRequests.length) {
     log.warn(
-      `Media requeue capped at ${dispatchable.length}/${allRequests.length} requests this pass ` +
+      `Media ${options.repair ? 'repair' : 'generation'} capped at ` +
+        `${dispatchable.length}/${allRequests.length} requests this pass ` +
         '(the rest wait for the next pass)',
     );
   }
@@ -458,12 +468,18 @@ async function collectAndGenerate(
     break;
   }
 
-  // Outlines this pass started but could not finish (capped repair items,
-  // a storage-full stop) are not done: a failure among what ran fails the
-  // phase, otherwise the rest is still owed and the phase stays pending.
+  // Outlines this pass started but could not finish (capped items, a
+  // storage-full stop) are not done: a failure among what ran fails the
+  // phase, otherwise the rest is still owed and the phase stays pending. An
+  // outline that was entirely capped before its first request has nothing to
+  // report yet, but saying "pending" is the honest state - its media is still
+  // owed to a later pass, not silently complete.
   if (abortSignal?.aborted) return;
   for (const [outlineId, stats] of mediaStats) {
-    if (!phaseStarted.has(outlineId)) continue;
+    if (!phaseStarted.has(outlineId)) {
+      useStageStore.getState().recordScenePhase(outlineId, 'media', { status: 'pending' });
+      continue;
+    }
     if (stats.done + stats.failed === stats.total) continue;
     useStageStore
       .getState()

@@ -192,6 +192,24 @@ describe('media that finishes before its scene exists', () => {
     expect(mocks.putAsset).toHaveBeenCalledTimes(1);
   });
 
+  it('never buys an outline-declared item the content did not carry', async () => {
+    const droppedRef = 'gen_img_dropped';
+    const twoDeclarations: SceneOutline = {
+      ...outline(),
+      mediaGenerations: [
+        { type: 'image', prompt: 'A kept diagram', elementId: imageRef },
+        { type: 'image', prompt: 'A dropped diagram', elementId: droppedRef },
+      ],
+    };
+
+    await generateMediaForOutlines([twoDeclarations], stageId, undefined, {
+      wantedRefs: new Set([imageRef]),
+    });
+
+    expect(providerCalls()).toBe(1);
+    expect(useMediaGenerationStore.getState().tasks[droppedRef]).toBeUndefined();
+  });
+
   it('rewrites the scene when it is committed, before its first save', async () => {
     await generateMediaForOutlines([outline()], stageId);
 

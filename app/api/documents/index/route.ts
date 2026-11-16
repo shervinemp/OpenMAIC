@@ -16,6 +16,7 @@
 
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
+import { DOCUMENT_INDEX_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import { buildVisionUserContent } from '@/lib/generation/generation-pipeline';
 import {
   buildDocumentDigest,
@@ -29,9 +30,10 @@ import { createLogger } from '@/lib/logger';
 import { apiError } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import {
+  buildDocumentIndexHandle,
+  DOCUMENT_INDEX_KEY_VERSION,
   loadDocumentIndex,
   saveDocumentIndex,
-  sha256Text,
 } from '@/lib/server/document-index-store';
 
 const log = createLogger('Documents Index API');
@@ -73,9 +75,18 @@ export async function POST(req: NextRequest) {
     const {
       model: languageModel,
       modelInfo,
+      modelString,
       thinkingConfig,
+      serverManaged,
     } = await resolveModelFromRequest(req, body, 'documents-index');
     const hasVision = !!modelInfo?.capabilities?.vision;
+    // Digest cards and caption batches are small structured outputs. Bound the
+    // call so an unbounded reasoning loop cannot bill a full model window.
+    const indexOutputBudget = clampOutputBudget(
+      DOCUMENT_INDEX_OUTPUT_CAP,
+      modelInfo?.outputWindow,
+      thinkingConfig,
+    );
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -105,7 +116,12 @@ export async function POST(req: NextRequest) {
         }, 15_000);
 
         try {
-          const handle = sha256Text(text);
+          const handle = buildDocumentIndexHandle({
+            text,
+            language,
+            modelString,
+            images,
+          });
 
           // Cached index: reply straight from the store, zero LLM calls.
           const existing = await loadDocumentIndex(handle);
@@ -141,12 +157,13 @@ export async function POST(req: NextRequest) {
                   messages: [
                     { role: 'user' as const, content: buildVisionUserContent(user, visionImages) },
                   ],
-                  maxOutputTokens: modelInfo?.outputWindow,
+                  maxOutputTokens: indexOutputBudget,
                   maxRetries: 1,
                 },
                 'documents-index',
                 undefined,
                 thinkingConfig,
+                { serverManaged },
               );
               return result.text;
             }
@@ -155,12 +172,13 @@ export async function POST(req: NextRequest) {
                 model: languageModel,
                 system,
                 prompt: user,
-                maxOutputTokens: modelInfo?.outputWindow,
+                maxOutputTokens: indexOutputBudget,
                 maxRetries: 1,
               },
               'documents-index',
               undefined,
               thinkingConfig,
+              { serverManaged },
             );
             return result.text;
           };
@@ -228,6 +246,9 @@ export async function POST(req: NextRequest) {
           await saveDocumentIndex({
             version: 1,
             handle,
+            language,
+            modelString,
+            keyVersion: DOCUMENT_INDEX_KEY_VERSION,
             text,
             chunks,
             digest,

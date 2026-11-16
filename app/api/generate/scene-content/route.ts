@@ -8,6 +8,7 @@
 
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
+import { SCENE_CONTENT_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import {
   applyOutlineFallbacks,
   generateSceneContent,
@@ -45,46 +46,6 @@ import {
 const log = createLogger('Scene Content API');
 
 export const maxDuration = 300;
-
-/**
- * Hard ceiling on OUTPUT tokens for one scene-content call. Valid scene JSON is
- * small (a successful generation in the wild lands in ~3.5–11.5k output tokens
- * regardless of kind); a run far past this is a reasoning loop burning budget
- * without finishing — clipping clobbers no real output and turns a minutes-long
- * 500 into a fast, retryable failure. `budgetTokens` remains the SOFT lever
- * (OPENMAIC_THINKING_PRESET / MODEL_ROUTES); this cap only bounds the worst
- * pathological case while keeping a ~2x margin over any observed success.
- *
- * Providers count reasoning inside the output budget, so a thinking-enabled
- * judgment stage (interactive/derivation/exercise/freeResponse) would otherwise
- * crowd its own JSON payload out of the same 16k envelope. When the resolved
- * ThinkingConfig carries an EXPLICIT reasoning budget, that budget is added as
- * headroom above the base cap — the tripwire still catches unbounded reasoning
- * loops, but anticipated reasoning can never starve the payload. Mindful of the
- * same failure anatomy, an `enabled` config with NO explicit budget keeps the
- * base cap: unbounded provider-default reasoning is exactly the pathological
- * case this cap exists to fail fast on.
- */
-const SCENE_CONTENT_OUTPUT_CAP = 16_000;
-
-/** Explicit reasoning budget to shield from the output cap, if any. */
-function sceneReasoningHeadroom(thinking: ThinkingConfig | undefined): number {
-  if (!thinking || thinking.enabled === false) return 0;
-  const budget = thinking.budgetTokens;
-  return typeof budget === 'number' && Number.isFinite(budget) && budget > 0 ? budget : 0;
-}
-
-/** Never exceed the model's real output window; use the cap when it is smaller. */
-function clampSceneContentOutputBudget(
-  outputWindow: number | undefined,
-  thinking?: ThinkingConfig,
-): number | undefined {
-  const headroom = sceneReasoningHeadroom(thinking);
-  if (typeof outputWindow !== 'number' || !Number.isFinite(outputWindow) || outputWindow <= 0) {
-    return SCENE_CONTENT_OUTPUT_CAP + headroom;
-  }
-  return Math.min(outputWindow, SCENE_CONTENT_OUTPUT_CAP + headroom);
-}
 
 /**
  * Aggregate budget for the WHOLE resolve-with-refill phase, reused from the
@@ -167,8 +128,9 @@ export async function POST(req: NextRequest) {
     resolvedModelString = modelString;
 
     // One precomputed output budget for every scene-content call below: the
-    // 16k tripwire plus any explicit reasoning headroom (see the cap comment).
-    const sceneOutputBudget = clampSceneContentOutputBudget(
+    // 16k tripwire plus any explicit reasoning headroom.
+    const sceneOutputBudget = clampOutputBudget(
+      SCENE_CONTENT_OUTPUT_CAP,
       modelInfo?.outputWindow,
       thinkingConfig,
     );
@@ -208,7 +170,9 @@ export async function POST(req: NextRequest) {
         `Reasoning-collapse detected (near-empty payload with thinking on) for "${outlineTitle ?? 'unknown'}"; one salvage retry with thinking disabled at the base cap.`,
       );
       const result = await callLLM(
-        buildParams(clampSceneContentOutputBudget(modelInfo?.outputWindow, disabledThinking)),
+        buildParams(
+          clampOutputBudget(SCENE_CONTENT_OUTPUT_CAP, modelInfo?.outputWindow, disabledThinking),
+        ),
         'scene-content',
         undefined,
         disabledThinking,
@@ -255,6 +219,7 @@ export async function POST(req: NextRequest) {
             ],
             maxOutputTokens: maxTokens ?? sceneOutputBudget,
             maxRetries: 0,
+            abortSignal: req.signal,
           }) as Parameters<typeof callLLM>[0];
         const first = await callLLM(
           callParams(sceneOutputBudget),
@@ -275,6 +240,7 @@ export async function POST(req: NextRequest) {
             prompt: userPrompt,
             maxOutputTokens: maxTokens ?? sceneOutputBudget,
             maxRetries: 0,
+            abortSignal: req.signal,
           }) as Parameters<typeof callLLM>[0];
         const first = await callLLM(
           callParams(sceneOutputBudget),

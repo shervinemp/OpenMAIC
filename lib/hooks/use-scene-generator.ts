@@ -29,6 +29,11 @@ import {
 import { resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
+import {
+  contentMediaPlaceholders,
+  sceneMediaPlaceholders,
+  stageMediaPlaceholders,
+} from '@/lib/media/generated-media-references';
 import { commitToPool } from '@/lib/media/commit-to-pool';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
@@ -1185,6 +1190,7 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
       // Bypass paths (pre-warmed batch content / repair hash reuse).
       if (preComputedContent) {
         state.contentResult = preComputedContent;
+        input.onContentReady?.(outline, preComputedContent.content);
         return { status: 'done' };
       }
       if (mode === 'repair') {
@@ -1284,6 +1290,7 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
         useStageStore.getState().recordSceneDepth(outline.order, contentResult.depth);
       }
       state.contentResult = contentResult;
+      input.onContentReady?.(outline, contentResult.content);
       return { status: 'done' };
     },
   },
@@ -1481,6 +1488,13 @@ export interface OutlineJobInput {
    * fetches (generate) or reuses the persisted hash (repair).
    */
   preComputedContent?: SceneContentResult;
+  /**
+   * Fires as soon as the content phase has a payload, before actions/TTS run.
+   * The batch uses it to launch media for the refs the slide actually carries,
+   * overlapping media with the remaining phases without buying every
+   * outline-declared request.
+   */
+  onContentReady?: (outline: SceneOutline, content: unknown) => void;
 }
 
 /**
@@ -1660,18 +1674,37 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         return [...current, ...pending.filter((o) => !seen.has(o.id))];
       });
 
-      // Launch media generation in parallel — does not block content/action generation.
+      // Media is launched per scene as soon as CONTENT is ready, gated on the
+      // refs the generated slide actually carries. Previously the whole deck's
+      // media was launched before any slide existed, so every outline-declared
+      // image/video was bought even when the model dropped the element. The
+      // pass still overlaps the remaining actions/TTS phases.
+      //
       // Abort whatever the ref held first: replacing it would orphan that loop
       // with a signal nothing can ever fire, leaving it calling providers and
-      // storing assets — real spend and real storage — for a course the user
+      // storing assets - real spend and real storage - for a course the user
       // may already have left, and leaving `stop()` able to reach only the
-      // newest pass. The orchestrator then waits for the aborted pass to
-      // settle before collecting, so the two never overlap.
+      // newest pass. The orchestrator serializes passes per stage, so the
+      // per-scene launches queue rather than overlap.
       mediaAbortRef.current?.abort();
       mediaAbortRef.current = new AbortController();
-      generateMediaForOutlines(outlines, stage.id, mediaAbortRef.current.signal).catch((err) => {
-        log.warn('Media generation error:', err);
-      });
+      const mediaController = mediaAbortRef.current;
+      const launchMediaForContentOutline = (outline: SceneOutline, content: unknown): void => {
+        const wantedRefs = contentMediaPlaceholders(content);
+        const stageNow = useStageStore.getState().stage;
+        for (const ref of stageMediaPlaceholders(stageNow)) wantedRefs.add(ref);
+        if (wantedRefs.size === 0) {
+          // The model dropped every declared media element. There is nothing
+          // to buy, so settle the phase instead of leaving it pending forever.
+          useStageStore.getState().recordScenePhase(outline.id, 'media', { status: 'done' });
+          return;
+        }
+        generateMediaForOutlines([outline], stage.id, mediaController.signal, {
+          wantedRefs,
+        }).catch((err) => {
+          log.warn('Media generation error:', err);
+        });
+      };
 
       // Get previousSpeeches from last completed scene
       let previousSpeeches: string[] = [];
@@ -1821,6 +1854,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             mode: 'generate',
             previousSpeeches,
             preComputedContent: contentResult,
+            onContentReady: launchMediaForContentOutline,
           });
           if (!jobResult.success) {
             if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
@@ -2072,6 +2106,27 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       const abortController = new AbortController();
       const signal = abortController.signal;
       retryAbortsRef.current.add(abortController);
+      // The repair-mode `media` phase runs before the rebuilt scene lands, so
+      // it can only see the PREVIOUS scene's references. Re-scan after the new
+      // scene is added, gated on the refs the rebuilt scene actually carries:
+      // references the rebuild introduced are generated, and references it
+      // dropped are not.
+      const launchMediaRepair = (scene?: Scene): void => {
+        const wantedRefs = scene ? sceneMediaPlaceholders(scene) : new Set<string>();
+        for (const ref of stageMediaPlaceholders(useStageStore.getState().stage)) {
+          wantedRefs.add(ref);
+        }
+        if (wantedRefs.size === 0) {
+          useStageStore.getState().recordScenePhase(outline.id, 'media', { status: 'done' });
+          return;
+        }
+        generateMediaForOutlines([outline], state.stage!.id, signal, {
+          repair: true,
+          wantedRefs,
+        }).catch((err) => {
+          log.warn('Media repair error:', err);
+        });
+      };
 
       try {
         const sortedScenes = [...store.getState().scenes].sort((a, b) => a.order - b.order);
@@ -2104,6 +2159,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           if (sceneKept && jobResult.scene && store.getState().generationEpoch === retryEpoch) {
             removeGeneratingOutline();
             useStageStore.getState().addScene(jobResult.scene);
+            launchMediaRepair(jobResult.scene);
           }
           store.getState().addFailedOutline(outline);
           store.getState().setGenerationStatus('paused');
@@ -2124,6 +2180,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
         removeGeneratingOutline();
         useStageStore.getState().addScene(jobResult.scene!);
+        launchMediaRepair(jobResult.scene);
         store.getState().setGenerationPhase('idle');
 
         // Resume remaining generation if there are pending outlines

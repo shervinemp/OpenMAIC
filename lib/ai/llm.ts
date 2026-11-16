@@ -10,6 +10,7 @@ import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
 import { isEmptyLlmOutput, shouldFallbackFor, logFallbackFired } from '@/lib/server/llm-fallback';
+import type { LlmStage } from '@/lib/server/model-routes';
 import { getModelMetadataKey } from './model-metadata';
 import { getCanonicalModelId } from './model-aliases';
 import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
@@ -355,14 +356,16 @@ function sleepUnlessAborted(ms: number, signal: AbortSignal | undefined): Promis
  *   retryable-failure model fallback for this call (e.g. verify-model).
  *   `serverManaged: true` must be passed (from resolveModel's stamp of the
  *   same name) for the fallback to arm at all: it only protects primaries the
- *   server resolved, never a client-supplied model.
+ *   server resolved, never a client-supplied model. `fallbackStage` names the
+ *   routable stage whose `MODEL_ROUTES.<stage>.fallback` should apply when the
+ *   call's `source` is a sub-stage label (e.g. the multi-unit outline path).
  */
 export async function callLLM<T extends GenerateTextParams>(
   params: T,
   source: string,
   retryOptions?: LLMRetryOptions,
   thinking?: ThinkingConfig,
-  fallbackOptions?: { enabled?: boolean; serverManaged?: boolean },
+  fallbackOptions?: { enabled?: boolean; serverManaged?: boolean; fallbackStage?: LlmStage },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<GenerateTextResult<any, any>> {
   const maxAttempts = (retryOptions?.retries ?? 0) + 1;
@@ -382,7 +385,9 @@ export async function callLLM<T extends GenerateTextParams>(
   // arms when a fallback model is actually configured; without this gate an
   // empty result would flip from success to failure for operators who never
   // set MODEL_FALLBACK or a MODEL_ROUTES fallback.
-  const fallback = allowFallback ? await resolveFallbackModelSafe(source) : null;
+  const fallback = allowFallback
+    ? await resolveFallbackModelSafe(source, fallbackOptions?.fallbackStage)
+    : null;
 
   /** One generateText round for the given params; validates when asked to. */
   async function runRound(
@@ -528,10 +533,11 @@ export async function callLLM<T extends GenerateTextParams>(
 /** Lazily resolve the fallback model; never throws (fallback is best-effort). */
 async function resolveFallbackModelSafe(
   source: string,
+  fallbackStage?: LlmStage,
 ): Promise<{ model: LanguageModel; modelString: string } | null> {
   try {
     const { resolveFallbackModel } = await import('@/lib/server/llm-fallback');
-    return await resolveFallbackModel(source);
+    return await resolveFallbackModel(fallbackStage ?? source);
   } catch (err) {
     log.warn(`[${source}] Fallback model resolution failed, skipping fallback:`, err);
     return null;

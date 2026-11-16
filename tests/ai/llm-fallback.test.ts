@@ -99,6 +99,24 @@ describe('callLLM retryable-failure fallback', () => {
     expect(secondParams.model).toBe('fallback-model');
   });
 
+  it('resolves the fallback for the named stage when the source is a sub-stage label', async () => {
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    fallbackMock.resolveFallbackModel.mockResolvedValue(null);
+
+    await callLLM(
+      {
+        model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+        prompt: 'hi',
+      } as never,
+      'scene-outlines-stream-multi-unit',
+      undefined,
+      undefined,
+      { serverManaged: true, fallbackStage: 'scene-outlines-stream' },
+    ).catch(() => undefined);
+
+    expect(fallbackMock.resolveFallbackModel).toHaveBeenCalledWith('scene-outlines-stream');
+  });
+
   it('only runs the fallback once when it also fails', async () => {
     fallbackMock.shouldFallbackFor.mockReturnValue(true);
     fallbackMock.resolveFallbackModel.mockResolvedValue({

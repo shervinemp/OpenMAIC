@@ -103,6 +103,29 @@ export function rewriteStageMediaReference(
   return changed;
 }
 
+/**
+ * Every generation placeholder a generated slide payload carries.
+ *
+ * This is the content-stage counterpart of {@link sceneMediaPlaceholders}:
+ * the content phase knows which outline-declared media the model actually put
+ * on the slide before the scene exists, so the media pass can be gated on that
+ * set instead of buying every declaration the outline made.
+ */
+export function contentMediaPlaceholders(content: unknown): Set<string> {
+  const refs = new Set<string>();
+  if (!content || typeof content !== 'object') return refs;
+  const slide = content as { elements?: unknown; background?: unknown };
+  if (!Array.isArray(slide.elements)) return refs;
+  for (const slot of slideMediaReferenceSlots({
+    elements: slide.elements as Slide['elements'],
+    background: slide.background as Slide['background'],
+  })) {
+    const ref = slot.read();
+    if (ref && isGeneratedMediaPlaceholder(ref)) refs.add(ref);
+  }
+  return refs;
+}
+
 /** Every generation placeholder a scene currently carries. */
 export function sceneMediaPlaceholders(scene: Scene): Set<string> {
   const refs = new Set<string>();

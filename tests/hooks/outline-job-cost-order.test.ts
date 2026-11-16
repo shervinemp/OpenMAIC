@@ -129,6 +129,28 @@ describe('runOutlineJob cost order', () => {
     expect(spent).toHaveLength(0);
   });
 
+  it('announces content-ready before paying for actions', async () => {
+    const { runOutlineJob } = await import('@/lib/hooks/use-scene-generator');
+    const events: string[] = [];
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url === '/api/generate/scene-actions') {
+        events.push('actions');
+        return ok({ success: true, scene: okSlideScene });
+      }
+      return ok({ success: true, base64: 'AAAA', format: 'mp3' });
+    });
+
+    const result = await runOutlineJob(
+      input({
+        preComputedContent: { success: true, content: okSlideScene.content },
+        onContentReady: () => events.push('content'),
+      }),
+    );
+
+    expect(result.success).toBe(true);
+    expect(events).toEqual(['content', 'actions']);
+  });
+
   it('stamps the plan the scene was generated from', async () => {
     const { runOutlineJob } = await import('@/lib/hooks/use-scene-generator');
     const { outlineFingerprint } = await import('@/lib/utils/outline-fingerprint');

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  contentMediaPlaceholders,
   indexGeneratedMediaReferences,
   isGeneratedMediaSatisfied,
   rewriteSlideMediaReference,
@@ -33,6 +34,25 @@ function slideScene(order: number, elements: unknown[]): Scene {
 }
 
 describe('generated media references', () => {
+  it('collects the placeholders a generated slide payload actually carries', () => {
+    const refs = contentMediaPlaceholders({
+      elements: [
+        imageElement('a', 'gen_img_1'),
+        imageElement('b', 'https://example.test/kept.png'),
+        videoElement('c', 'gen_vid_1', { mediaRef: 'gen_vid_1' }),
+      ],
+      background: { type: 'image', image: { src: 'gen_img_bg' } },
+    });
+
+    expect([...refs].sort()).toEqual(['gen_img_1', 'gen_img_bg', 'gen_vid_1']);
+  });
+
+  it('returns no refs for non-slide or malformed content', () => {
+    expect(contentMediaPlaceholders({ questions: [] })).toEqual(new Set());
+    expect(contentMediaPlaceholders(null)).toEqual(new Set());
+    expect(contentMediaPlaceholders({ elements: 'not-an-array' })).toEqual(new Set());
+  });
+
   it('rewrites every slot that carries the placeholder', () => {
     const target = slide([
       imageElement('a', 'gen_img_1'),

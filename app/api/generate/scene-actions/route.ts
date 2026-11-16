@@ -8,6 +8,7 @@
 
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
+import { SCENE_ACTIONS_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import {
   generateSceneActions,
   buildCompleteScene,
@@ -93,6 +94,15 @@ export async function POST(req: NextRequest) {
     outlineTitle = outline?.title;
     resolvedModelString = modelString;
 
+    // Actions JSON is small; a full output window here only lets a reasoning
+    // loop burn minutes without finishing. Explicit reasoning budgets still get
+    // their headroom (see lib/ai/output-budget.ts).
+    const actionsOutputBudget = clampOutputBudget(
+      SCENE_ACTIONS_OUTPUT_CAP,
+      modelInfo?.outputWindow,
+      thinkingConfig,
+    );
+
     // Detect vision capability
     const hasVision = !!modelInfo?.capabilities?.vision;
 
@@ -113,8 +123,9 @@ export async function POST(req: NextRequest) {
                 content: buildVisionUserContent(userPrompt, images),
               },
             ],
-            maxOutputTokens: modelInfo?.outputWindow,
+            maxOutputTokens: actionsOutputBudget,
             maxRetries: 0,
+            abortSignal: req.signal,
           },
           'scene-actions',
           undefined,
@@ -128,8 +139,9 @@ export async function POST(req: NextRequest) {
           model: languageModel,
           system: systemPrompt,
           prompt: userPrompt,
-          maxOutputTokens: modelInfo?.outputWindow,
+          maxOutputTokens: actionsOutputBudget,
           maxRetries: 0,
+          abortSignal: req.signal,
         },
         'scene-actions',
         undefined,
