@@ -130,20 +130,20 @@ describe('POST /api/exam/grade-fr', () => {
 
   it('413s oversized inputs before calling the model', async () => {
     mocks.callLLM.mockClear();
-    const longPrompt = await POST(post(body({ prompt: 'P'.repeat(8_001) })) as never);
+    const longPrompt = await POST(post(body({ prompt: 'P'.repeat(12_001) })) as never);
     expect(longPrompt.status).toBe(413);
-    const longAnswer = await POST(post(body({ userAnswer: 'A'.repeat(24_001) })) as never);
+    const longAnswer = await POST(post(body({ userAnswer: 'A'.repeat(48_001) })) as never);
     expect(longAnswer.status).toBe(413);
-    const longSample = await POST(post(body({ sampleAnswer: 'S'.repeat(16_001) })) as never);
+    const longSample = await POST(post(body({ sampleAnswer: 'S'.repeat(24_001) })) as never);
     expect(longSample.status).toBe(413);
     const manyCriteria = await POST(
-      post(body({ rubric: Array.from({ length: 41 }, () => rubric[0]) })) as never,
+      post(body({ rubric: Array.from({ length: 61 }, () => rubric[0]) })) as never,
     );
     expect(manyCriteria.status).toBe(413);
     const longCriterion = await POST(
       post(
         body({
-          rubric: [{ ...rubric[0], criterion: 'C'.repeat(2_001) }],
+          rubric: [{ ...rubric[0], criterion: 'C'.repeat(4_001) }],
         }),
       ) as never,
     );

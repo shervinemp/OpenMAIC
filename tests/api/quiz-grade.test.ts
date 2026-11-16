@@ -47,10 +47,10 @@ describe('POST /api/quiz-grade', () => {
   });
 
   it('rejects an oversized question or answer before calling the model', async () => {
-    const longQuestion = await POST(post({ ...validBody, question: 'Q'.repeat(8_001) }) as never);
+    const longQuestion = await POST(post({ ...validBody, question: 'Q'.repeat(12_001) }) as never);
     expect(longQuestion.status).toBe(413);
 
-    const longAnswer = await POST(post({ ...validBody, userAnswer: 'A'.repeat(16_001) }) as never);
+    const longAnswer = await POST(post({ ...validBody, userAnswer: 'A'.repeat(24_001) }) as never);
     expect(longAnswer.status).toBe(413);
 
     expect(mocks.callLLM).not.toHaveBeenCalled();
@@ -65,6 +65,6 @@ describe('POST /api/quiz-grade', () => {
   it('caps the grading output budget', async () => {
     const res = await POST(post(validBody) as never);
     expect(res.status).toBe(200);
-    expect(mocks.callLLM.mock.calls[0]![0]).toMatchObject({ maxOutputTokens: 512 });
+    expect(mocks.callLLM.mock.calls[0]![0]).toMatchObject({ maxOutputTokens: 2_000 });
   });
 });

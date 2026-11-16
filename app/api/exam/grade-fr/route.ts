@@ -37,12 +37,12 @@ interface GradeFrRequest {
  * Input tripwires. A free-response answer can legitimately be long, but not
  * unbounded: a pasted book chapter must not become one grading prompt.
  */
-const MAX_PROMPT_CHARS = 8_000;
-const MAX_ANSWER_CHARS = 24_000;
-const MAX_SAMPLE_ANSWER_CHARS = 16_000;
-const MAX_GUIDANCE_CHARS = 4_000;
-const MAX_RUBRIC_CRITERIA = 40;
-const MAX_RUBRIC_FIELD_CHARS = 2_000;
+const MAX_PROMPT_CHARS = 12_000;
+const MAX_ANSWER_CHARS = 48_000;
+const MAX_SAMPLE_ANSWER_CHARS = 24_000;
+const MAX_GUIDANCE_CHARS = 8_000;
+const MAX_RUBRIC_CRITERIA = 60;
+const MAX_RUBRIC_FIELD_CHARS = 4_000;
 
 export async function POST(req: NextRequest) {
   let promptSnippet: string | undefined;

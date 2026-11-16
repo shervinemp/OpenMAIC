@@ -349,7 +349,7 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
 
     const syllabusCall = callLLMMock.mock.calls[0];
     expect(syllabusCall[0]).toMatchObject({
-      maxOutputTokens: 16_000,
+      maxOutputTokens: 24_000,
       maxRetries: 0,
       abortSignal: controller.signal,
     });
@@ -363,7 +363,7 @@ describe('multi-unit outline route (Phase 2 §15.8)', () => {
     );
     expect(reviewCall).toBeDefined();
     expect(reviewCall?.[0]).toMatchObject({
-      maxOutputTokens: 2_000,
+      maxOutputTokens: 4_000,
       maxRetries: 1,
       abortSignal: controller.signal,
     });

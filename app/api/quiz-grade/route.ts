@@ -31,9 +31,9 @@ interface GradeResponse {
  * a pasted document (or a hostile request) from turning one grading call into
  * an unbounded prompt.
  */
-const MAX_QUESTION_CHARS = 8_000;
-const MAX_ANSWER_CHARS = 16_000;
-const MAX_GUIDANCE_CHARS = 4_000;
+const MAX_QUESTION_CHARS = 12_000;
+const MAX_ANSWER_CHARS = 24_000;
+const MAX_GUIDANCE_CHARS = 8_000;
 
 export async function POST(req: NextRequest) {
   let questionSnippet: string | undefined;

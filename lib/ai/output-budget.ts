@@ -1,28 +1,28 @@
 /**
  * Shared output-token budgets for generation stages.
  *
- * A stage's model advertises an output window, but almost no generation stage
- * should be allowed to use all of it: valid scene/outline/action JSON is small,
- * and a runaway reasoning loop is a minutes-long, fully-billed failure rather
- * than useful output. The browser routes and the one-shot classroom path used
- * to disagree about this (only scene-content had a cap), so a model that
- * looped burned unbounded tokens on every other path.
+ * A runaway generation loop is a minutes-long, fully-billed failure, so every
+ * stage needs a ceiling somewhere below the model's advertised output window.
+ * But a ceiling that truncates a legitimate answer is WORSE than no ceiling:
+ * the first call is billed, the JSON fails to parse (or the answer is cut
+ * mid-sentence), and the retry pays for the same work again.
  *
- * The caps here are deliberately generous relative to observed successful
- * outputs. They are tripwires, not target lengths:
- * - scene content: ~3.5-11.5k output tokens observed; 16k leaves a ~2x margin.
- * - actions: a few thousand tokens; 8k covers a dense slide plus a reasoning
- *   headroom.
- * - outlines: a lesson with 12 scenes lands well under 16k.
- * - review verdicts: a small JSON object; 2k is already generous.
- * - quiz answer verification: a small answers array; 2k is already generous.
- * - quiz grading: one score + one comment; 512 leaves ample margin.
- * - exam grading: per-criterion verdicts + feedback; 2k is generous.
- * - exam generation: a full exam JSON; 16k is a runaway tripwire.
- * - PBL narrator turns: one or two visible beats; 1k is generous.
- * - PBL planner steps: tool calls, not prose; 8k bounds a runaway step while
- *   leaving a typical tool call an order of magnitude of headroom.
- * - document index batches: section cards/captions per batch; 8k is generous.
+ * The caps below are therefore loose tripwires, not target lengths. Normal
+ * outputs sit far below them; they only stop a looping/degenerate generation
+ * from billing a full window. When in doubt between a cap and a truncation,
+ * prefer the higher cap.
+ *
+ * - scene content: ~3.5-11.5k output tokens observed; 24k leaves >2x margin.
+ * - actions: a few thousand tokens; 12k covers a dense slide plus reasoning.
+ * - outlines: a lesson with 12 scenes lands well under 24k.
+ * - review/quiz verdicts: small JSON objects; 4k is already generous.
+ * - quiz grading: one score + one comment; 2k is ~20x the payload.
+ * - exam grading: per-criterion verdicts + feedback; 6k is generous.
+ * - exam generation: a 12+ MC / 3 FR exam with analyses; 32k avoids a costly
+ *   cut-off on a high-stakes artifact.
+ * - PBL narrator turns: one or two visible beats; 4k is generous.
+ * - document index batches: section cards/captions per batch; 12k is generous.
+ * - agent profiles: 3-5 profiles + voice designs; 8k is generous.
  *
  * Providers count reasoning inside the output budget. When the resolved
  * ThinkingConfig carries an EXPLICIT reasoning budget, that budget is added as
@@ -34,18 +34,17 @@
 
 import type { ThinkingConfig } from '@/lib/types/provider';
 
-export const SCENE_CONTENT_OUTPUT_CAP = 16_000;
-export const SCENE_ACTIONS_OUTPUT_CAP = 8_000;
-export const OUTLINE_OUTPUT_CAP = 16_000;
-export const OUTLINE_REVIEW_OUTPUT_CAP = 2_000;
-export const QUIZ_VERIFY_OUTPUT_CAP = 2_000;
-export const QUIZ_GRADE_OUTPUT_CAP = 512;
-export const EXAM_GENERATION_OUTPUT_CAP = 16_000;
-export const EXAM_GRADING_OUTPUT_CAP = 2_000;
-export const PBL_NARRATOR_OUTPUT_CAP = 1_000;
-export const PBL_PLANNER_OUTPUT_CAP = 8_000;
-export const DOCUMENT_INDEX_OUTPUT_CAP = 8_000;
-export const AGENT_PROFILES_OUTPUT_CAP = 4_000;
+export const SCENE_CONTENT_OUTPUT_CAP = 24_000;
+export const SCENE_ACTIONS_OUTPUT_CAP = 12_000;
+export const OUTLINE_OUTPUT_CAP = 24_000;
+export const OUTLINE_REVIEW_OUTPUT_CAP = 4_000;
+export const QUIZ_VERIFY_OUTPUT_CAP = 4_000;
+export const QUIZ_GRADE_OUTPUT_CAP = 2_000;
+export const EXAM_GENERATION_OUTPUT_CAP = 32_000;
+export const EXAM_GRADING_OUTPUT_CAP = 6_000;
+export const PBL_NARRATOR_OUTPUT_CAP = 4_000;
+export const DOCUMENT_INDEX_OUTPUT_CAP = 12_000;
+export const AGENT_PROFILES_OUTPUT_CAP = 8_000;
 
 /** Explicit reasoning budget to shield from the output cap, if any. */
 export function explicitReasoningBudget(thinking: ThinkingConfig | undefined): number {
