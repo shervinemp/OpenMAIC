@@ -27,6 +27,12 @@ export interface PdfChunk {
   citation: string;
 }
 
+/** One chunk recovered from a rendered retrieval context. */
+export interface RetrievedChunkText {
+  citation: string;
+  text: string;
+}
+
 export interface ChunkOptions {
   /** Soft maximum chunk size in characters (paragraphs are never split). */
   maxChunkChars?: number;
@@ -205,6 +211,32 @@ export function formatRetrievalContext(chunks: PdfChunk[]): string {
 
 // ==================== Citation ground-truth ====================
 
+// Header rendered by formatRetrievalContext: `--- [source p.412] (page 412) ---`.
+// The optional page hint (and any other parenthetical) is ignored.
+const RETRIEVAL_HEADER_RE = /^---\s*\[source\s+(p\.\d+|ch\.\d+|\d+)\][^\n]*---\s*$/gim;
+
+/**
+ * Recover the per-chunk text from a rendered retrieval context, so a
+ * deterministic check can compare a cited claim against the chunk it names
+ * without the generator or the caller keeping a parallel chunk array.
+ */
+export function parseRetrievalChunks(retrievalContext: string): RetrievedChunkText[] {
+  if (!retrievalContext.includes('[source')) return [];
+  const headers = [...retrievalContext.matchAll(RETRIEVAL_HEADER_RE)];
+  const chunks: RetrievedChunkText[] = [];
+  for (let i = 0; i < headers.length; i++) {
+    const header = headers[i];
+    const start = (header.index ?? 0) + header[0].length;
+    const end =
+      i + 1 < headers.length
+        ? (headers[i + 1].index ?? retrievalContext.length)
+        : retrievalContext.length;
+    const text = retrievalContext.slice(start, end).trim();
+    if (text) chunks.push({ citation: header[1].toLowerCase(), text });
+  }
+  return chunks;
+}
+
 // PDF chunks cite pages/chapters ("p.412", "ch.7"); web chunks cite source
 // indices ("1", "2", ...) — see lib/generation/web-retrieval.ts (§15.2).
 const CITATION_RE = /\[source\s+(p\.\d+|ch\.\d+|\d+)\]/gi;
@@ -216,6 +248,11 @@ export function extractCitationMarkers(text: string): string[] {
     markers.add(match[1].toLowerCase());
   }
   return [...markers];
+}
+
+/** Remove citation markers so they never count as a claim's vocabulary. */
+export function stripCitationMarkers(text: string): string {
+  return text.replace(CITATION_RE, ' ');
 }
 
 /**

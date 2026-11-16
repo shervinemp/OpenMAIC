@@ -29,7 +29,11 @@ import {
   type SpecialtyDepthFloor,
 } from './constants.js';
 import { readGenerationProfile, scaleDepthFloor } from './profile.js';
-import { extractCitationMarkers } from './pdf-retrieval.js';
+import {
+  extractCitationMarkers,
+  parseRetrievalChunks,
+  stripCitationMarkers,
+} from './pdf-retrieval.js';
 import type { SceneOutline } from './outline-types.js';
 import type {
   ExerciseProblem,
@@ -95,6 +99,336 @@ function citationFindings(
     findings.push(
       `content cites source markers not present in the retrieved material: ${invalid.join(', ')} — only cite markers listed in the retrieval context`,
     );
+  }
+  findings.push(...citationSupportFindings(combinedText, retrievalContext));
+  return findings;
+}
+
+// ==================== Deterministic claim/source support ====================
+// A valid marker is not a supported claim: the sentence carrying it may
+// describe something its source never says. Lexical overlap is a weak signal,
+// so the check only reports two high-confidence shapes:
+//
+// 1. MIS-CITED — the claim shares no content term with the chunk it cites but
+//    does share one with another retrieved chunk. The wording is demonstrably
+//    in the material, just not where the marker points.
+// 2. UNSUPPORTED — a long claim (8+ content terms) that shares no content
+//    term with ANY retrieved chunk. Short claims are skipped because a
+//    legitimate paraphrase can be lexically disjoint; a long one that reuses
+//    none of the source's vocabulary is almost always invented.
+//
+// Both cost no model call and feed the existing bounded depth re-prompt.
+// Matching uses a 5-character prefix (evaporation/evaporate agree) and CJK
+// character bigrams, and at most two claims are reported per scene so the
+// re-prompt cannot balloon.
+
+const SUPPORT_STOP_WORDS = new Set([
+  'a',
+  'about',
+  'above',
+  'after',
+  'again',
+  'against',
+  'all',
+  'also',
+  'am',
+  'an',
+  'and',
+  'another',
+  'any',
+  'are',
+  'around',
+  'as',
+  'at',
+  'be',
+  'because',
+  'been',
+  'before',
+  'being',
+  'below',
+  'between',
+  'both',
+  'but',
+  'by',
+  'can',
+  'could',
+  'did',
+  'do',
+  'does',
+  'doing',
+  'down',
+  'during',
+  'each',
+  'even',
+  'every',
+  'few',
+  'for',
+  'from',
+  'further',
+  'get',
+  'gets',
+  'give',
+  'gives',
+  'given',
+  'had',
+  'has',
+  'have',
+  'having',
+  'he',
+  'her',
+  'here',
+  'hers',
+  'him',
+  'his',
+  'how',
+  'however',
+  'if',
+  'in',
+  'into',
+  'is',
+  'it',
+  'its',
+  'itself',
+  'just',
+  'key',
+  'less',
+  'like',
+  'made',
+  'main',
+  'make',
+  'makes',
+  'many',
+  'may',
+  'me',
+  'might',
+  'more',
+  'most',
+  'much',
+  'must',
+  'my',
+  'need',
+  'needs',
+  'new',
+  'next',
+  'no',
+  'nor',
+  'not',
+  'of',
+  'off',
+  'often',
+  'on',
+  'once',
+  'one',
+  'only',
+  'or',
+  'other',
+  'our',
+  'out',
+  'over',
+  'own',
+  'same',
+  'see',
+  'she',
+  'should',
+  'show',
+  'shows',
+  'so',
+  'some',
+  'such',
+  'take',
+  'takes',
+  'taken',
+  'than',
+  'that',
+  'the',
+  'their',
+  'them',
+  'then',
+  'there',
+  'these',
+  'they',
+  'this',
+  'those',
+  'through',
+  'thus',
+  'to',
+  'too',
+  'under',
+  'up',
+  'us',
+  'use',
+  'used',
+  'uses',
+  'using',
+  'very',
+  'was',
+  'we',
+  'well',
+  'were',
+  'what',
+  'when',
+  'where',
+  'whether',
+  'which',
+  'while',
+  'who',
+  'whom',
+  'whose',
+  'why',
+  'will',
+  'with',
+  'within',
+  'without',
+  'would',
+  'yet',
+  'you',
+  'your',
+]);
+
+// Framing/summary sentences carry a marker but assert no source fact, so a
+// zero-overlap match there is noise, not a mis-citation.
+const META_CLAIM_RE =
+  /^(?:in (?:summary|conclusion|short)|overall|together|this (?:section|chapter|lesson|slide|page|video|module|unit|course)|as (?:shown|we saw|noted)|these (?:steps|stages|ideas))\b/i;
+
+// Sentence ends (Latin requires trailing space so decimals/abbreviations do
+// not split) plus hard breaks; CJK punctuation ends a sentence directly.
+const SUPPORT_SENTENCE_RE = /(?<=[.!?])\s+|\n+|(?<=[。！？])/;
+const SUPPORT_LATIN_RE = /[a-z][a-z'-]{1,}/gi;
+const SUPPORT_CJK_RE = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]+/g;
+
+const MAX_SUPPORT_CLAIMS = 24;
+const MAX_SUPPORT_FINDINGS = 2;
+const MIN_SUPPORT_CLAIM_TERMS = 4;
+// A paraphrase may reuse none of its source's exact words; require a long
+// claim before calling a corpus-wide zero match "unsupported".
+const MIN_UNSUPPORTED_CLAIM_TERMS = 8;
+const MARKER_PIECE_RE = /^\[source\s+[^\]]+\]$/i;
+const SENTENCE_END_RE = /[.!?。！？]$/;
+
+/**
+ * Sentences with the citation attached, not the marker alone. Generated
+ * content normally writes "Claim text. [source p.1]", so markers are split
+ * out as their own pieces and bound to the sentence they follow. A marker
+ * that lands mid-sentence stays inside that sentence.
+ */
+function splitCitedClaims(text: string): string[] {
+  const claims: string[] = [];
+  let pending = '';
+  const flush = () => {
+    const claim = pending.trim();
+    if (claim) claims.push(claim);
+    pending = '';
+  };
+
+  for (const block of text.split(/\n+/)) {
+    for (const piece of stripHtml(block).split(/(\[source\s+[^\]]+\])/i)) {
+      const trimmed = piece.trim();
+      if (!trimmed) continue;
+      if (MARKER_PIECE_RE.test(trimmed)) {
+        if (pending.trim()) {
+          pending = `${pending.trimEnd()} ${trimmed}`;
+        } else if (claims.length > 0) {
+          claims[claims.length - 1] += ` ${trimmed}`;
+        } else {
+          pending = trimmed;
+        }
+        continue;
+      }
+      const sentences = trimmed.split(SUPPORT_SENTENCE_RE).filter((part) => part.trim());
+      for (let i = 0; i < sentences.length; i++) {
+        const sentence = sentences[i].trim();
+        pending = pending ? `${pending} ${sentence}` : sentence;
+        // A final fragment continues into the next piece when the text ends
+        // mid-sentence; a completed sentence is closed now.
+        if (i < sentences.length - 1 || SENTENCE_END_RE.test(sentence)) flush();
+      }
+    }
+    flush(); // a block boundary always ends the current sentence
+  }
+  flush();
+  return claims;
+}
+
+function supportKeys(text: string): Set<string> {
+  const keys = new Set<string>();
+  const cleaned = stripCitationMarkers(stripHtml(text));
+  for (const raw of cleaned.match(SUPPORT_LATIN_RE) ?? []) {
+    const word = raw.toLowerCase().replace(/^'+|'+$/g, '');
+    if (word.length < 3 || SUPPORT_STOP_WORDS.has(word)) continue;
+    // Prefix matching agrees on inflection without a stemmer
+    // (evaporation/evaporate, molecule/molecules).
+    keys.add(word.slice(0, 5));
+  }
+  for (const run of cleaned.match(SUPPORT_CJK_RE) ?? []) {
+    if (run.length < 2) continue;
+    for (let i = 0; i + 1 < run.length; i++) keys.add(run.slice(i, i + 2));
+  }
+  return keys;
+}
+
+function sharesKey(left: Set<string>, right: Set<string>): boolean {
+  for (const key of left) {
+    if (right.has(key)) return true;
+  }
+  return false;
+}
+
+function citationSupportFindings(combinedText: string, retrievalContext: string): string[] {
+  const chunks = parseRetrievalChunks(retrievalContext);
+  if (chunks.length === 0) return [];
+  const termsByCitation = new Map<string, Set<string>>();
+  for (const chunk of chunks) {
+    // A web source can span several chunks that share one citation index, so
+    // the marker's vocabulary is the union of its chunks.
+    const keys = supportKeys(chunk.text);
+    const existing = termsByCitation.get(chunk.citation);
+    if (existing) {
+      for (const key of keys) existing.add(key);
+    } else {
+      termsByCitation.set(chunk.citation, keys);
+    }
+  }
+
+  const findings: string[] = [];
+  let checked = 0;
+  let unreported = 0;
+  for (const segment of splitCitedClaims(combinedText)) {
+    if (checked >= MAX_SUPPORT_CLAIMS) break;
+    const cited = extractCitationMarkers(segment).filter((marker) => termsByCitation.has(marker));
+    if (cited.length === 0) continue; // unknown markers are reported above
+    checked++;
+    if (META_CLAIM_RE.test(segment)) continue;
+
+    const claimKeys = supportKeys(segment);
+    if (claimKeys.size < MIN_SUPPORT_CLAIM_TERMS) continue;
+
+    const citedKeys = new Set<string>();
+    for (const marker of cited) {
+      for (const key of termsByCitation.get(marker) ?? []) citedKeys.add(key);
+    }
+    if (sharesKey(claimKeys, citedKeys)) continue;
+
+    const matchesElsewhere = [...termsByCitation.entries()]
+      .filter(([marker]) => !cited.includes(marker))
+      .filter(([, keys]) => sharesKey(claimKeys, keys))
+      .map(([marker]) => marker);
+
+    let finding: string | undefined;
+    if (matchesElsewhere.length > 0) {
+      finding = `the cited claim "${segment.slice(0, 90)}" shares no key terms with [source ${cited.join('] / [source ')}] but does with [source ${matchesElsewhere.join('] / [source ')}] — cite the source that actually states it`;
+    } else if (claimKeys.size >= MIN_UNSUPPORTED_CLAIM_TERMS) {
+      finding = `the cited claim "${segment.slice(0, 90)}" shares no key terms with the retrieved material — ground it in the sources or drop the [source ${cited[0]}] marker`;
+    }
+    if (!finding) continue;
+
+    if (findings.length >= MAX_SUPPORT_FINDINGS) {
+      unreported++;
+      continue;
+    }
+    findings.push(finding);
+  }
+  if (unreported > 0) {
+    findings.push(`${unreported} more cited claim(s) share no key terms with the source they cite`);
   }
   return findings;
 }
@@ -287,7 +621,7 @@ export function validateSlideDepth(
   }
 
   if (retrievalContext) {
-    findings.push(...citationFindings(texts.join(' '), retrievalContext, floor.minCitations));
+    findings.push(...citationFindings(texts.join('\n'), retrievalContext, floor.minCitations));
   }
 
   return {
@@ -348,11 +682,10 @@ export function validateQuizDepth(
 
   if (retrievalContext) {
     const combinedText = questions
-      .map(
-        (q) =>
-          `${q.question} ${q.analysis ?? ''} ${(q.options ?? []).map((o) => o.label).join(' ')}`,
+      .map((q) =>
+        [q.question, q.analysis ?? '', ...(q.options ?? []).map((o) => o.label)].join('\n'),
       )
-      .join(' ');
+      .join('\n');
     findings.push(...citationFindings(combinedText, retrievalContext, floor.minCitations));
   }
 
@@ -420,8 +753,8 @@ export function validateExerciseDepth(
 
   if (options.retrievalContext) {
     const combinedText = problems
-      .map((p) => `${p.statement} ${p.hint ?? ''} ${p.solution} ${p.analysis ?? ''}`)
-      .join(' ');
+      .map((p) => [p.statement, p.hint ?? '', p.solution, p.analysis ?? ''].join('\n'))
+      .join('\n');
     findings.push(
       ...citationFindings(
         combinedText,
@@ -465,7 +798,7 @@ export function validateDerivationDepth(
   }
 
   if (options.retrievalContext) {
-    const combinedText = steps.map((s) => `${s.claim ?? ''} ${s.explanation}`).join(' ');
+    const combinedText = steps.map((s) => [s.claim ?? '', s.explanation].join('\n')).join('\n');
     findings.push(
       ...citationFindings(
         combinedText,
@@ -579,9 +912,9 @@ export function validateComparisonDepth(
 
   if (options.retrievalContext) {
     const combinedText = (content.rows ?? [])
-      .map((row) => `${row.dimension} ${(row.cells ?? []).join(' ')}`)
+      .map((row) => [row.dimension, ...(row.cells ?? [])].join('\n'))
       .concat(content.takeaways ?? [])
-      .join(' ');
+      .join('\n');
     findings.push(
       ...citationFindings(
         combinedText,
@@ -649,8 +982,8 @@ export function validateDataReadingDepth(
 
   if (options.retrievalContext) {
     const combinedText = (content.claims ?? [])
-      .map((claim) => `${claim.statement} ${claim.explanation}`)
-      .join(' ');
+      .map((claim) => [claim.statement, claim.explanation].join('\n'))
+      .join('\n');
     findings.push(
       ...citationFindings(
         combinedText,
@@ -724,7 +1057,7 @@ export function validateTradeoffsDepth(
       ...(content.constraints ?? []),
       ...options_.flatMap((o) => [o.name, ...(o.pros ?? []), ...(o.cons ?? []), o.bestFor ?? '']),
       recommendation?.justification ?? '',
-    ].join(' ');
+    ].join('\n');
     findings.push(
       ...citationFindings(
         combinedText,
@@ -797,7 +1130,7 @@ export function validateFreeResponseDepth(
       ...(content.guidance ?? []),
       ...rubric.map((c) => `${c.criterion} ${c.lookFor}`),
       content.sampleAnswer,
-    ].join(' ');
+    ].join('\n');
     findings.push(
       ...citationFindings(
         combinedText,

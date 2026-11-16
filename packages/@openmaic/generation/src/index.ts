@@ -177,13 +177,20 @@ export {
   validateSlideDepth,
 } from './content-depth.js';
 export type { DepthReport, SceneDepthSummary, SlideDepthOptions } from './content-depth.js';
-export type { ChunkOptions, PdfChunk, RetrieveOptions } from './pdf-retrieval.js';
+export type {
+  ChunkOptions,
+  PdfChunk,
+  RetrieveOptions,
+  RetrievedChunkText,
+} from './pdf-retrieval.js';
 export {
   chunkSourceText,
   extractCitationMarkers,
   formatRetrievalContext,
+  parseRetrievalChunks,
   retrieveChunks,
   scoreChunk,
+  stripCitationMarkers,
   validateCitations,
 } from './pdf-retrieval.js';
 export { noopGenerationLogger } from './logger.js';
