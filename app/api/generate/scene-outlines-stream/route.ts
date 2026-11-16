@@ -15,6 +15,7 @@
 
 import { NextRequest } from 'next/server';
 import { streamLLM, callLLM } from '@/lib/ai/llm';
+import { isLlmOutputTruncatedError } from '@/lib/ai/llm-truncation';
 import {
   OUTLINE_OUTPUT_CAP,
   OUTLINE_REVIEW_OUTPUT_CAP,
@@ -654,6 +655,9 @@ async function generateMultiUnitOutlines(
         syllabusFeedback = `Your previous response did NOT meet the syllabus contract:\n${errors.map((e) => `- ${e}`).join('\n')}\nFix the structure and return the corrected JSON.`;
       } catch (error) {
         if (signal?.aborted) throw error;
+        // A truncated syllabus cannot be repaired by another attempt at the
+        // same cap; surface it instead of re-billing the generation.
+        if (isLlmOutputTruncatedError(error)) throw error;
         log.warn(`Syllabus attempt ${attempt} failed:`, error);
         if (attempt >= MAX_BLUEPRINT_ATTEMPTS) throw error;
       }
@@ -973,6 +977,7 @@ async function generateMultiUnitOutlines(
         lessonFeedback = problems.join('\n');
       } catch (error) {
         if (signal?.aborted) throw error;
+        if (isLlmOutputTruncatedError(error)) throw error;
         log.warn(`Lesson ${lessonIndex + 1} outline attempt ${attempt} failed:`, error);
         if (attempt >= MAX_BLUEPRINT_ATTEMPTS) throw error;
       }
@@ -1756,6 +1761,16 @@ export async function POST(req: NextRequest) {
                   lastError = 'LLM response blocked by content filter';
                   log.warn(
                     `Outlines attempt ${attempt}: content-filter finish - not retrying, not falling back`,
+                  );
+                  break;
+                } else if (finishReason === 'length') {
+                  // The JSON repair path would otherwise close the truncated
+                  // deck into a partial success. A retry at the same cap cuts
+                  // at the same place, so surface it instead.
+                  lastError =
+                    'LLM output was truncated at the output limit; raise the outline output cap or lower the requested scene count';
+                  log.error(
+                    `Outlines attempt ${attempt}: length finish - not retrying, not falling back`,
                   );
                   break;
                 } else {

@@ -152,6 +152,27 @@ describe('generateSceneContent — PBL v2 planner routing', () => {
     expect(fallback).not.toHaveBeenCalled();
   });
 
+  it('skips the loop fallback after a truncated single-call output', async () => {
+    const fallback = vi.fn();
+    const truncated = Object.assign(new Error('output truncated'), {
+      code: 'LLM_OUTPUT_TRUNCATED',
+      isRetryable: false,
+    });
+    await expect(
+      generateSceneContent(
+        pblOutline(),
+        async () => {
+          throw truncated;
+        },
+        { pblLoopFallback: fallback },
+      ),
+    ).rejects.toMatchObject({
+      name: PBLGenerationError.name,
+      cause: truncated,
+    });
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
   it('skips the loop fallback after cancellation', async () => {
     const fallback = vi.fn();
     const aborted = new DOMException('The operation was aborted', 'AbortError');

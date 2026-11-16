@@ -8,6 +8,7 @@
 
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
+import { isLlmOutputTruncatedError } from '@/lib/ai/llm-truncation';
 import {
   QUIZ_VERIFY_OUTPUT_CAP,
   SCENE_CONTENT_OUTPUT_CAP,
@@ -210,6 +211,36 @@ export async function POST(req: NextRequest) {
     ): Promise<string> => {
       const effectiveSystem = thinkingIsEnabled ? systemPrompt + CONVERGENCE_NUDGE : systemPrompt;
 
+      /**
+       * A length finish with an empty/near-empty payload is the reasoning
+       * collapse this route already salvages (the scratchpad consumed the
+       * whole budget). A longer truncated payload is real truncation and must
+       * surface: `callLLM` throws it so no JSON repair path can accept a
+       * partial scene.
+       */
+      const callPrimaryOrSalvage = async (
+        params: Parameters<typeof callLLM>[0],
+        retryWithoutThinking: () => Promise<string>,
+      ): Promise<string> => {
+        try {
+          const first = await callLLM(params, 'scene-content', undefined, thinkingConfig, {
+            serverManaged,
+          });
+          return isReasoningCollapse(first.text) && thinkingIsEnabled
+            ? retryWithoutThinking()
+            : first.text;
+        } catch (error) {
+          if (
+            isLlmOutputTruncatedError(error) &&
+            thinkingIsEnabled &&
+            isReasoningCollapse(error.text)
+          ) {
+            return retryWithoutThinking();
+          }
+          throw error;
+        }
+      };
+
       let result: string;
       if (images?.length && hasVision) {
         // Server-backed transport: `imageMapping` values are allocated asset
@@ -231,17 +262,9 @@ export async function POST(req: NextRequest) {
             maxRetries: 0,
             abortSignal: req.signal,
           }) as Parameters<typeof callLLM>[0];
-        const first = await callLLM(
-          callParams(sceneOutputBudget),
-          'scene-content',
-          undefined,
-          thinkingConfig,
-          { serverManaged },
+        result = await callPrimaryOrSalvage(callParams(sceneOutputBudget), () =>
+          callWithoutThinking((maxTokens) => callParams(maxTokens as number)),
         );
-        result =
-          isReasoningCollapse(first.text) && thinkingIsEnabled
-            ? await callWithoutThinking((maxTokens) => callParams(maxTokens as number))
-            : first.text;
       } else {
         const callParams = (maxTokens: number | undefined) =>
           ({
@@ -252,17 +275,9 @@ export async function POST(req: NextRequest) {
             maxRetries: 0,
             abortSignal: req.signal,
           }) as Parameters<typeof callLLM>[0];
-        const first = await callLLM(
-          callParams(sceneOutputBudget),
-          'scene-content',
-          undefined,
-          thinkingConfig,
-          { serverManaged },
+        result = await callPrimaryOrSalvage(callParams(sceneOutputBudget), () =>
+          callWithoutThinking(callParams),
         );
-        result =
-          isReasoningCollapse(first.text) && thinkingIsEnabled
-            ? await callWithoutThinking(callParams)
-            : first.text;
       }
       return result;
     };

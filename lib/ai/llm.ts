@@ -10,6 +10,7 @@ import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
 import { isEmptyLlmOutput, shouldFallbackFor, logFallbackFired } from '@/lib/server/llm-fallback';
+import { LlmOutputTruncatedError, isLlmOutputTruncatedError } from '@/lib/ai/llm-truncation';
 import type { LlmStage } from '@/lib/server/model-routes';
 import { getModelMetadataKey } from './model-metadata';
 import { getCanonicalModelId } from './model-aliases';
@@ -24,6 +25,7 @@ const log = createLogger('LLM');
 
 // Re-export for external use
 export type { ThinkingConfig } from '@/lib/types/provider';
+export { LlmOutputTruncatedError, isLlmOutputTruncatedError } from '@/lib/ai/llm-truncation';
 
 // Re-export the parameter types accepted by AI SDK
 type GenerateTextParams = Parameters<typeof generateText>[0];
@@ -431,6 +433,22 @@ export async function callLLM<T extends GenerateTextParams>(
         return { ok: false, error: undefined, result, finishReason: 'content-filter' };
       }
 
+      // Truncation is not a transient failure: the same cap cuts the retry at
+      // the same place, and the fallback model inherits the cap. Surface it as
+      // a non-retryable error instead of re-billing the truncated generation.
+      if (result.finishReason === 'length') {
+        const maxOutputTokens = (roundParams as { maxOutputTokens?: number }).maxOutputTokens;
+        log.warn(
+          `[${source}] Output truncated at the output limit (${attemptLabel})${
+            maxOutputTokens ? ` maxOutputTokens=${maxOutputTokens}` : ''
+          }`,
+        );
+        return {
+          ok: false,
+          error: new LlmOutputTruncatedError(source, maxOutputTokens, result.text),
+        };
+      }
+
       // Empty-output detection arms by default when a fallback model is
       // configured and no caller-supplied validator is in play: an empty
       // result that used to return as success now gets one fallback attempt.
@@ -458,6 +476,10 @@ export async function callLLM<T extends GenerateTextParams>(
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const round = await runRound(params, `attempt ${attempt}/${maxAttempts}`);
     if (round.ok) return round.result;
+    if (isLlmOutputTruncatedError(round.error)) {
+      // Never retry or fall back: both would hit the same cap.
+      throw round.error;
+    }
     if (round.error !== undefined) {
       lastError = round.error;
       if (attempt < maxAttempts) {

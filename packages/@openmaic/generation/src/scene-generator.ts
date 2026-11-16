@@ -104,6 +104,19 @@ import type {
 } from './pipeline-types.js';
 import { noopGenerationLogger, type GenerationLogger } from './logger.js';
 import { isAbortError } from './generation-retry.js';
+
+/**
+ * The host app's `LlmOutputTruncatedError` crosses this package boundary by
+ * its stable code. A truncated output must not trigger the loop fallback: the
+ * loop would pay for a second full generation at the same cap.
+ */
+function isLlmOutputTruncatedFailure(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === 'LLM_OUTPUT_TRUNCATED'
+  );
+}
 import { generatePBLV2ProjectSingleCall } from './pbl/planner-single-call.js';
 import { PlannerV2Error } from './pbl/planner-core.js';
 import type { PBLPlannerV2Input, PBLProjectV2 } from './pbl/types.js';
@@ -1714,7 +1727,9 @@ async function generatePBLSceneContent(
     // still succeed on the loop path, so fall through to it.
     // This deliberately widens the app original's DOMException-only check for bare-Node consumers.
     const skipLoopFallback =
-      plannerErrorStatus(singleCallError) !== undefined || isAbortError(singleCallError);
+      plannerErrorStatus(singleCallError) !== undefined ||
+      isAbortError(singleCallError) ||
+      isLlmOutputTruncatedFailure(singleCallError);
 
     if (pblLoopFallback && !skipLoopFallback) {
       try {
