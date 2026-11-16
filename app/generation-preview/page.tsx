@@ -20,6 +20,7 @@ import { isQwenCloneVoice, resolveTTSModelForVoice } from '@/lib/audio/constants
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { useAllVoiceProfiles } from '@/lib/audio/voxcpm-voices';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { languageNameForLocale } from '@/lib/i18n/locale-language';
 import {
   fetchSceneActions,
   fetchSceneContent,
@@ -123,7 +124,7 @@ type SceneGenerationFailure = {
 
 function GenerationPreviewContent() {
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const hasStartedRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const outlineReviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -521,6 +522,10 @@ function GenerationPreviewContent() {
                 headers: getApiHeaders(),
                 body: JSON.stringify({
                   text: bundle.text,
+                  // The digest and captions are written in this language. The
+                  // route defaults to English; a non-English UI must say so or
+                  // every indexed document comes back in English.
+                  language: languageNameForLocale(locale),
                   images: bundle.images.map((img) => ({
                     id: img.id,
                     src: img.src,
