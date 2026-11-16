@@ -8,6 +8,7 @@
 
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
+import { EXAM_GRADING_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
@@ -31,6 +32,17 @@ interface GradeFrRequest {
   /** Whether to return per-rubric-criterion verdicts (default true). */
   withCriteria?: boolean;
 }
+
+/**
+ * Input tripwires. A free-response answer can legitimately be long, but not
+ * unbounded: a pasted book chapter must not become one grading prompt.
+ */
+const MAX_PROMPT_CHARS = 8_000;
+const MAX_ANSWER_CHARS = 24_000;
+const MAX_SAMPLE_ANSWER_CHARS = 16_000;
+const MAX_GUIDANCE_CHARS = 4_000;
+const MAX_RUBRIC_CRITERIA = 40;
+const MAX_RUBRIC_FIELD_CHARS = 2_000;
 
 export async function POST(req: NextRequest) {
   let promptSnippet: string | undefined;
@@ -64,6 +76,64 @@ export async function POST(req: NextRequest) {
     }
     if (!maxPoints || !Number.isFinite(maxPoints) || maxPoints <= 0) {
       return apiError('INVALID_REQUEST', 400, 'maxPoints must be a positive number');
+    }
+
+    if (prompt.length > MAX_PROMPT_CHARS) {
+      return apiError(
+        'INVALID_REQUEST',
+        413,
+        `prompt is too large (max ${MAX_PROMPT_CHARS} characters)`,
+      );
+    }
+    if (userAnswer.length > MAX_ANSWER_CHARS) {
+      return apiError(
+        'INVALID_REQUEST',
+        413,
+        `userAnswer is too large (max ${MAX_ANSWER_CHARS} characters)`,
+      );
+    }
+    if (
+      sampleAnswer !== undefined &&
+      (typeof sampleAnswer !== 'string' || sampleAnswer.length > MAX_SAMPLE_ANSWER_CHARS)
+    ) {
+      return apiError(
+        'INVALID_REQUEST',
+        413,
+        `sampleAnswer is too large (max ${MAX_SAMPLE_ANSWER_CHARS} characters)`,
+      );
+    }
+    if (
+      commentPrompt !== undefined &&
+      (typeof commentPrompt !== 'string' || commentPrompt.length > MAX_GUIDANCE_CHARS)
+    ) {
+      return apiError(
+        'INVALID_REQUEST',
+        413,
+        `commentPrompt is too large (max ${MAX_GUIDANCE_CHARS} characters)`,
+      );
+    }
+    if (rubric.length > MAX_RUBRIC_CRITERIA) {
+      return apiError(
+        'INVALID_REQUEST',
+        413,
+        `rubric has too many criteria (max ${MAX_RUBRIC_CRITERIA})`,
+      );
+    }
+    const oversizedCriterion = rubric.some(
+      (criterion) =>
+        !criterion ||
+        typeof criterion.criterion !== 'string' ||
+        criterion.criterion.length > MAX_RUBRIC_FIELD_CHARS ||
+        (criterion.lookFor !== undefined &&
+          (typeof criterion.lookFor !== 'string' ||
+            criterion.lookFor.length > MAX_RUBRIC_FIELD_CHARS)),
+    );
+    if (oversizedCriterion) {
+      return apiError(
+        'INVALID_REQUEST',
+        413,
+        `each rubric criterion is limited to ${MAX_RUBRIC_FIELD_CHARS} characters`,
+      );
     }
 
     const { model: languageModel, thinkingConfig } = await resolveModelFromRequest(
@@ -104,7 +174,13 @@ STUDENT ANSWER:
 ${userAnswer}`;
 
     const result = await callLLM(
-      { model: languageModel, system, prompt: userPrompt },
+      {
+        model: languageModel,
+        system,
+        prompt: userPrompt,
+        // Per-criterion verdicts and a short rationale; not a full essay.
+        maxOutputTokens: clampOutputBudget(EXAM_GRADING_OUTPUT_CAP, undefined, thinkingConfig),
+      },
       'exam-grading',
       undefined,
       thinkingConfig,

@@ -12,6 +12,7 @@
 
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
+import { EXAM_GENERATION_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
@@ -194,7 +195,11 @@ ${languageDirective ? `- Language directive: ${languageDirective}` : '- Write al
           prompt: extra
             ? `${userPrompt}\n\nCONSTRAINT VIOLATION REPORT — fix and resubmit the FULL JSON:\n${extra}`
             : userPrompt,
-          maxOutputTokens: modelInfo?.outputWindow,
+          maxOutputTokens: clampOutputBudget(
+            EXAM_GENERATION_OUTPUT_CAP,
+            modelInfo?.outputWindow,
+            thinkingConfig,
+          ),
           maxRetries: 0,
         },
         'exam-generation',

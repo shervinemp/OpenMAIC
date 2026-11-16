@@ -27,6 +27,7 @@ import type { LanguageModel } from 'ai';
 
 import { createLogger } from '@/lib/logger';
 import { callLLM, streamLLM } from '@/lib/ai/llm';
+import { PBL_NARRATOR_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { loadPBLV2Prompt } from '../prompts/loader';
 import { trimmedPBLText } from '../readers';
@@ -299,6 +300,9 @@ async function runDirectorNarratorPass(args: {
         model: languageModel,
         system,
         messages,
+        // One or two visible beats per turn, plus explicit reasoning headroom;
+        // the narrator never needs a full model window.
+        maxOutputTokens: clampOutputBudget(PBL_NARRATOR_OUTPUT_CAP, undefined, thinkingConfig),
         ...(signal ? { abortSignal: signal } : {}),
       },
       'pbl-v2-simulator-narrator',

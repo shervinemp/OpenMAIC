@@ -7,6 +7,7 @@
 
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
+import { QUIZ_GRADE_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
@@ -25,22 +26,61 @@ interface GradeResponse {
   comment: string;
 }
 
+/**
+ * Input tripwires. Real short answers are a few paragraphs; these bounds stop
+ * a pasted document (or a hostile request) from turning one grading call into
+ * an unbounded prompt.
+ */
+const MAX_QUESTION_CHARS = 8_000;
+const MAX_ANSWER_CHARS = 16_000;
+const MAX_GUIDANCE_CHARS = 4_000;
+
 export async function POST(req: NextRequest) {
   let questionSnippet: string | undefined;
   let resolvedPoints: number | undefined;
   try {
     const body = (await req.json()) as GradeRequest;
     const { question, userAnswer, points, commentPrompt, language } = body;
-    questionSnippet = question?.substring(0, 60);
+    questionSnippet = typeof question === 'string' ? question.substring(0, 60) : undefined;
     resolvedPoints = points;
 
-    if (!question || !userAnswer) {
+    if (
+      typeof question !== 'string' ||
+      !question ||
+      typeof userAnswer !== 'string' ||
+      !userAnswer
+    ) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'question and userAnswer are required');
     }
 
     // Validate points is a positive finite number
     if (!points || !Number.isFinite(points) || points <= 0) {
       return apiError('INVALID_REQUEST', 400, 'points must be a positive number');
+    }
+
+    if (question.length > MAX_QUESTION_CHARS) {
+      return apiError(
+        'INVALID_REQUEST',
+        413,
+        `question is too large (max ${MAX_QUESTION_CHARS} characters)`,
+      );
+    }
+    if (userAnswer.length > MAX_ANSWER_CHARS) {
+      return apiError(
+        'INVALID_REQUEST',
+        413,
+        `userAnswer is too large (max ${MAX_ANSWER_CHARS} characters)`,
+      );
+    }
+    if (
+      commentPrompt !== undefined &&
+      (typeof commentPrompt !== 'string' || commentPrompt.length > MAX_GUIDANCE_CHARS)
+    ) {
+      return apiError(
+        'INVALID_REQUEST',
+        413,
+        `commentPrompt is too large (max ${MAX_GUIDANCE_CHARS} characters)`,
+      );
     }
 
     // Resolve model from request headers/body
@@ -73,6 +113,9 @@ ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${
         model: languageModel,
         system: systemPrompt,
         prompt: userPrompt,
+        // One score + one or two sentences of feedback + any explicit
+        // reasoning headroom; the full model window is never useful here.
+        maxOutputTokens: clampOutputBudget(QUIZ_GRADE_OUTPUT_CAP, undefined, thinkingConfig),
       },
       'quiz-grade',
       undefined,

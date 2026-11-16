@@ -16,6 +16,12 @@
  * - outlines: a lesson with 12 scenes lands well under 16k.
  * - review verdicts: a small JSON object; 2k is already generous.
  * - quiz answer verification: a small answers array; 2k is already generous.
+ * - quiz grading: one score + one comment; 512 leaves ample margin.
+ * - exam grading: per-criterion verdicts + feedback; 2k is generous.
+ * - exam generation: a full exam JSON; 16k is a runaway tripwire.
+ * - PBL narrator turns: one or two visible beats; 1k is generous.
+ * - PBL planner steps: tool calls, not prose; 8k bounds a runaway step while
+ *   leaving a typical tool call an order of magnitude of headroom.
  * - document index batches: section cards/captions per batch; 8k is generous.
  *
  * Providers count reasoning inside the output budget. When the resolved
@@ -33,6 +39,11 @@ export const SCENE_ACTIONS_OUTPUT_CAP = 8_000;
 export const OUTLINE_OUTPUT_CAP = 16_000;
 export const OUTLINE_REVIEW_OUTPUT_CAP = 2_000;
 export const QUIZ_VERIFY_OUTPUT_CAP = 2_000;
+export const QUIZ_GRADE_OUTPUT_CAP = 512;
+export const EXAM_GENERATION_OUTPUT_CAP = 16_000;
+export const EXAM_GRADING_OUTPUT_CAP = 2_000;
+export const PBL_NARRATOR_OUTPUT_CAP = 1_000;
+export const PBL_PLANNER_OUTPUT_CAP = 8_000;
 export const DOCUMENT_INDEX_OUTPUT_CAP = 8_000;
 export const AGENT_PROFILES_OUTPUT_CAP = 4_000;
 

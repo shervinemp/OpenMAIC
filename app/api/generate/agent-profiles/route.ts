@@ -8,6 +8,7 @@
 import { NextRequest } from 'next/server';
 import { nanoid } from 'nanoid';
 import { callLLM } from '@/lib/ai/llm';
+import { AGENT_PROFILES_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
@@ -161,6 +162,7 @@ export async function POST(req: NextRequest) {
     // ── Model resolution from request headers/body ──
     const {
       model: languageModel,
+      modelInfo,
       modelString: _modelString,
       thinkingConfig,
       serverManaged,
@@ -264,6 +266,17 @@ Return a JSON object with this exact structure:
           model: languageModel,
           system: systemPrompt,
           prompt: userPrompt,
+          // 3-5 short profiles fit comfortably; the cap is the same tripwire the
+          // server classroom path applies, so a runaway cannot bill the window.
+          maxOutputTokens: clampOutputBudget(
+            AGENT_PROFILES_OUTPUT_CAP,
+            modelInfo?.outputWindow,
+            thinkingConfig,
+          ),
+          // No outer retry loop here; one SDK retry covers a transient 429
+          // without making a failure multiply into three generations.
+          maxRetries: 1,
+          abortSignal: req.signal,
         },
         'agent-profiles',
         undefined,

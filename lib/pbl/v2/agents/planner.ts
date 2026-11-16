@@ -22,6 +22,8 @@ import type { LanguageModel, StepResult, StopCondition, ToolSet } from 'ai';
 import { tool, stepCountIs } from 'ai';
 import { z } from 'zod';
 
+import { PBL_PLANNER_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
+
 import { createLogger } from '@/lib/logger';
 import { normalizeProjectRuntime, normalizeScenario } from '@openmaic/generation';
 import type { ThinkingConfig } from '@/lib/types/provider';
@@ -59,6 +61,7 @@ export type PlannerCallFn = (
     tools: ToolSet;
     stopWhen: StopCondition<ToolSet>[];
     onStepFinish: (step: Pick<StepResult<ToolSet>, 'toolCalls'>) => void;
+    maxOutputTokens?: number;
   },
   source: 'pbl-v2-planner',
   retryOptions: undefined,
@@ -158,6 +161,9 @@ export async function generatePBLV2Project(
       system: systemPrompt,
       prompt:
         'Design the PBL project now. Call the tools in the documented order; do not write narrative text.',
+      // Each step is a tool call, not prose. The cap bounds a runaway step
+      // across the (defensive) 80-step budget without truncating normal calls.
+      maxOutputTokens: clampOutputBudget(PBL_PLANNER_OUTPUT_CAP, undefined, thinkingConfig),
       tools,
       stopWhen: [plannerDesignAccepted(), stepCountIs(MAX_PLANNER_STEPS)],
       onStepFinish: ({ toolCalls }) => {
