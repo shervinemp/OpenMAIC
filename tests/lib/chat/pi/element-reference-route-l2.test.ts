@@ -366,6 +366,9 @@ describe('PPT element reference Route → Director → real call_agent L2', () =
       expect(prompts).toContain('ordinary student-facing language');
       expect(mocks.directorPrompts.join('\n')).toContain('PAGE-REPORTED STATE');
     },
+    // The assertions are fast; importing and exercising the full Pi route graph
+    // is not. This case sits at the default 5s budget on a cold module cache.
+    15_000,
   );
 
   it('keeps static references accepted when browser runtime sampling is unsupported', async () => {
