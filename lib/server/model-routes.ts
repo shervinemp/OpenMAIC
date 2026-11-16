@@ -139,6 +139,7 @@ function parseThinking(key: string, raw: unknown): ThinkingConfig | undefined {
 export const LLM_STAGES = [
   'scene-outlines-stream',
   'documents-index',
+  'documents-captions',
   'scene-content',
   'scene-content:slide',
   'scene-content:quiz',
@@ -154,6 +155,7 @@ export const LLM_STAGES = [
   'scene-content:freeResponse',
   'scene-actions',
   'scene-verify',
+  'quiz-verify',
   'agent-profiles',
   'quiz-grade',
   'exam-generation',
@@ -419,9 +421,13 @@ export const THINKING_PRESET_LEAN: Partial<Record<LlmStage, ThinkingConfig>> = {
   'scene-content:dataReading': { enabled: false },
   'scene-content:tradeoffs': { enabled: false },
   'scene-actions': { enabled: false },
+  'quiz-verify': { enabled: false },
   'web-search-query-rewrite': { enabled: false },
   'conversation-title': { enabled: false },
   'documents-index': { enabled: false },
+  // Captioning is a one-shot perception task over an attached image batch; the
+  // output is short structured JSON validated by the caption parser.
+  'documents-captions': { enabled: false },
 
   // Judgment / long-horizon stages: reasoning earns its tokens.
   // `scene-verify` is the layout/quality judge: enabled WITHOUT budgetTokens —

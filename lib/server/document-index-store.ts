@@ -42,6 +42,12 @@ export interface DocumentIndexIdentity {
   text: string;
   language?: string;
   modelString?: string;
+  /**
+   * The model that captions images, when it differs from the digest model.
+   * Captions are half the cached payload, so a different captioner must not
+   * reuse another model's captions.
+   */
+  captionModelString?: string;
   images?: readonly DocumentIndexImageIdentity[];
 }
 
@@ -59,6 +65,15 @@ export function buildDocumentIndexHandle(identity: DocumentIndexIdentity): strin
   hash.update(`openmaic-doc-index:v${DOCUMENT_INDEX_KEY_VERSION}\n`);
   hash.update(`language:${identity.language ?? 'English'}\n`);
   hash.update(`model:${identity.modelString ?? ''}\n`);
+  // Only a SEPARATE caption model is a variant: the default path (captions on
+  // the digest model) must keep producing the same handle it always has.
+  hash.update(
+    `captionModel:${
+      identity.captionModelString && identity.captionModelString !== identity.modelString
+        ? identity.captionModelString
+        : ''
+    }\n`,
+  );
   const images = [...(identity.images ?? [])].sort((left, right) =>
     String(left.id ?? '').localeCompare(String(right.id ?? '')),
   );
@@ -91,6 +106,8 @@ export interface StoredDocumentIndex {
   language?: string;
   /** Model string used to build the digest/captions (absent on legacy entries). */
   modelString?: string;
+  /** Model string used for captions when it differs from the digest model. */
+  captionModelString?: string;
   /** Key derivation version (absent on legacy entries). */
   keyVersion?: number;
   /** Full extracted text, unmodified (noise stripping happens on load). */

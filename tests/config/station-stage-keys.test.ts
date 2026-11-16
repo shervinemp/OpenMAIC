@@ -18,6 +18,9 @@ const interactionRoute: UserStageRoute = { model: 'minimax-m2.7' };
  * exception is deliberate, not a missed knob:
  * - conversation-title: reuses the agent-driver connection, not a course stage;
  * - generate-classroom / maic-agent: mainline / legacy entry points;
+ * - quiz-verify: an OPT-IN paid check. A station selection writes its model to
+ *   every stage in the station, which would silently turn the verifier on; it
+ *   is enabled deliberately through MODEL_ROUTES instead.
  * - maic-agent-driver: operator-only. It is resolved exclusively from the
  *   operator's MODEL_ROUTES (with an explicit api dialect and contextWindow) in
  *   agent-runtime/agent-driver-model.ts, so the UI deliberately offers no
@@ -27,6 +30,7 @@ const STAGES_WITHOUT_A_STATION = [
   'conversation-title',
   'generate-classroom',
   'maic-agent',
+  'quiz-verify',
   'maic-agent-driver',
 ] as const;
 

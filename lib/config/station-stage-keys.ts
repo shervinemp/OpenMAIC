@@ -17,7 +17,7 @@ export const STATION_STAGE_KEYS: Record<string, readonly string[]> = {
   // Fork stages ride the station whose job they share: document indexing
   // (digest + captions) prepares the outline; the layout judge and semester
   // exam generation are content; exam grading is classroom interaction.
-  outline: ['scene-outlines-stream', 'documents-index'],
+  outline: ['scene-outlines-stream', 'documents-index', 'documents-captions'],
   agents: ['agent-profiles'],
   'scene-content': ['scene-content', 'scene-verify', 'exam-generation'],
   'scene-actions': ['scene-actions'],

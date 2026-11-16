@@ -55,6 +55,18 @@ describe('buildDocumentIndexHandle', () => {
     );
   });
 
+  it('keys captions by a separate caption model', () => {
+    expect(
+      buildDocumentIndexHandle({ ...base, captionModelString: 'openai:gpt-vision-cheap' }),
+    ).not.toBe(buildDocumentIndexHandle(base));
+  });
+
+  it('keeps the handle stable when the caption model is the index model', () => {
+    expect(buildDocumentIndexHandle({ ...base, captionModelString: base.modelString })).toBe(
+      buildDocumentIndexHandle(base),
+    );
+  });
+
   it('keys captions by the actual image bytes, not just the id', () => {
     const changed = images.map((image) =>
       image.id === 'img_1' ? { ...image, src: 'data:image/png;base64,CCCC' } : image,

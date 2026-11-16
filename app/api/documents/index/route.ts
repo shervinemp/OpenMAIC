@@ -28,7 +28,8 @@ import { captionDocumentImages, type ImageCaption } from '@/lib/generation/image
 import { chunkSourceText, type PdfChunk } from '@openmaic/generation';
 import { createLogger } from '@/lib/logger';
 import { apiError } from '@/lib/server/api-response';
-import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { resolveModel, resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { getStageModel, parseUserStageRoutes } from '@/lib/server/model-routes';
 import {
   buildDocumentIndexHandle,
   DOCUMENT_INDEX_KEY_VERSION,
@@ -88,6 +89,44 @@ export async function POST(req: NextRequest) {
       thinkingConfig,
     );
 
+    /**
+     * Captions are a perception task with short structured output: a cheap
+     * vision model is usually enough, while the coverage digest stays on the
+     * main model. The `documents-captions` stage route (operator MODEL_ROUTES
+     * or the UI's outline station) selects that model; when it is unset, or
+     * resolves without vision, the index model keeps captioning exactly as
+     * before.
+     */
+    const captionRouteModel = getStageModel('documents-captions');
+    const userRoutes = parseUserStageRoutes(req.headers.get('x-model-routes'));
+    const captionRouteConfigured = Boolean(captionRouteModel || userRoutes['documents-captions']);
+    const captionModel = captionRouteConfigured
+      ? await resolveModel({ stage: 'documents-captions', modelString, userRoutes }).catch(
+          (error: unknown) => {
+            log.warn(
+              `Caption model route could not be resolved; falling back to the index model:`,
+              error,
+            );
+            return null;
+          },
+        )
+      : null;
+    const usesCaptionModel = !!captionModel?.modelInfo?.capabilities?.vision;
+    if (captionModel && !usesCaptionModel) {
+      log.warn(
+        `Caption model "${captionModel.modelString}" has no vision capability; falling back to the index model for captions.`,
+      );
+    }
+    const captionModelString = usesCaptionModel ? captionModel.modelString : modelString;
+    const captionHasVision = usesCaptionModel ? true : hasVision;
+    const captionOutputBudget = usesCaptionModel
+      ? clampOutputBudget(
+          DOCUMENT_INDEX_OUTPUT_CAP,
+          captionModel.modelInfo?.outputWindow,
+          captionModel.thinkingConfig,
+        )
+      : indexOutputBudget;
+
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
@@ -120,6 +159,7 @@ export async function POST(req: NextRequest) {
             text,
             language,
             modelString,
+            captionModelString,
             images,
           });
 
@@ -183,6 +223,38 @@ export async function POST(req: NextRequest) {
             return result.text;
           };
 
+          /**
+           * Captions ride their own model when one is routed. The batch always
+           * carries image parts, so this path builds vision content directly
+           * instead of reusing the generic text/vision branch above.
+           */
+          const captionAiCall = async (
+            system: string,
+            user: string,
+            visionImages?: Array<{ id: string; src: string }>,
+          ): Promise<string> => {
+            if (!usesCaptionModel || !captionModel) return aiCall(system, user, visionImages);
+            const result = await callLLM(
+              {
+                model: captionModel.model,
+                system,
+                messages: [
+                  {
+                    role: 'user' as const,
+                    content: buildVisionUserContent(user, visionImages ?? []),
+                  },
+                ],
+                maxOutputTokens: captionOutputBudget,
+                maxRetries: 1,
+              },
+              'documents-captions',
+              undefined,
+              captionModel.thinkingConfig,
+              { serverManaged: captionModel.serverManaged },
+            );
+            return result.text;
+          };
+
           // 1) Coverage digest (skipped for small documents — raw tier).
           const tier = resolveDigestTier(text.length);
           let digest: DocumentDigest;
@@ -209,7 +281,7 @@ export async function POST(req: NextRequest) {
           // 2) Batch-caption EVERY image (one-time, cached with the index).
           const captions: Record<string, ImageCaption> = {};
           let captionedCount = 0;
-          if (images.length > 0 && hasVision) {
+          if (images.length > 0 && captionHasVision) {
             const pass = await captionDocumentImages(
               images.map((image) => ({
                 id: image.id,
@@ -220,7 +292,7 @@ export async function POST(req: NextRequest) {
               })),
               {
                 language,
-                aiCall,
+                aiCall: captionAiCall,
                 onProgress: (done, total) =>
                   enqueue({ type: 'progress', phase: 'captions', done, total }),
               },
@@ -248,6 +320,7 @@ export async function POST(req: NextRequest) {
             handle,
             language,
             modelString,
+            captionModelString,
             keyVersion: DOCUMENT_INDEX_KEY_VERSION,
             text,
             chunks,
