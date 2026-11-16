@@ -107,6 +107,14 @@ describe('prune-empty-parts', () => {
     expect(plan.outlineIds).toEqual(['o-base']);
   });
 
+  it('applies an empty plan to an imported document with no outline', () => {
+    const document = makeDocument();
+    delete (document as { outline?: unknown }).outline;
+    const scenesBefore = document.scenes.length;
+    expect(() => applyEmptyPartPrune(document, { sceneIds: [], outlineIds: [] })).not.toThrow();
+    expect(document.scenes).toHaveLength(scenesBefore);
+  });
+
   it('keeps empties without a materialized sibling (orphans and empty pairs)', () => {
     const document = makeDocument();
     const plan = findEmptyPartPrune(document);
@@ -130,11 +138,11 @@ describe('prune-empty-parts', () => {
       'pair-empty-b',
       'quiz-1',
     ]);
-    expect((document.outline.outlines ?? []).map((o) => o.id)).not.toContain('o-base');
+    expect((document.outline!.outlines ?? []).map((o) => o.id)).not.toContain('o-base');
     expect(
-      (document.outline.lessonGroups ?? []).flatMap((g) => (g.jobs ?? []).map((j) => j.outlineId)),
+      (document.outline!.lessonGroups ?? []).flatMap((g) => (g.jobs ?? []).map((j) => j.outlineId)),
     ).not.toContain('o-base');
-    const blueprint = document.outline.blueprint!;
+    const blueprint = document.outline!.blueprint!;
     const lessonIds = (blueprint.lessons ?? []).flatMap((l) =>
       ((l as { outlines?: Array<{ id?: string }> }).outlines ?? []).map((o) => o.id),
     );

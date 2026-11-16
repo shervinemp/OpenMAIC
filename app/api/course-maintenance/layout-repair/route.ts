@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { DocumentVersionError } from '@openmaic/storage';
 import { isMaintenanceUnauthorized } from '@/lib/server/maintenance-auth';
 import { createCourseDocumentStore } from '@/lib/persistence/course-document-store';
 import { singleFlight } from '@/lib/server/single-flight';
@@ -166,6 +167,25 @@ async function runLayoutRepair(
     };
   }
 
+  // Legacy documents load migrated in memory, but the file on disk is still
+  // at the old DSL version. Incremental `putScene` refuses that mismatch, so
+  // every repair write used to fail silently and the next load re-clamped the
+  // same geometry. On the first version rejection, write the migrated
+  // aggregate once, then continue with the cheap per-scene path.
+  let migratedDocumentSaved = false;
+  const persistScene = async (scene: { id?: string }): Promise<void> => {
+    try {
+      await documentStore.putScene(courseId, scene as never);
+    } catch (error) {
+      if (!(error instanceof DocumentVersionError)) throw error;
+      if (!migratedDocumentSaved) {
+        await documentStore.saveDocument(document as never);
+        migratedDocumentSaved = true;
+      }
+      await documentStore.putScene(courseId, scene as never);
+    }
+  };
+
   const requestedIds = body.sceneIds?.length ? body.sceneIds : null;
   // DELETE-ONLY remediation for the empty-split-leftover class (the old
   // splitter could leave its first chunk empty while every row went to the
@@ -288,6 +308,13 @@ async function runLayoutRepair(
   }> = [];
 
   for (const scene of targets) {
+    // Out-of-bounds rects are the one class the relayout plan cannot see:
+    // clamping is the validator's lossless pass, not a packing decision. Run
+    // it on entry (apply runs only) so a scene whose ONLY debt is geometry
+    // outside the canvas still enters the write branch — otherwise its stale
+    // "fresh" ledger made the sweep skip it forever while every load re-clamped
+    // the same elements in memory.
+    const placementFixes = body.dryRun ? 0 : sanitizeSceneCanvas(scene);
     // Skip gate uses a CHEAP pre-plan on raw geometry: the honest plan is
     // computed only AFTER the deterministic passes, because the passes
     // change the geometry the plan packs. (Computing once up-front and
@@ -338,7 +365,8 @@ async function runLayoutRepair(
       !hasGhosts &&
       !hasBadGeometry &&
       preContentErrors === 0 &&
-      !needsProvenanceStrip
+      !needsProvenanceStrip &&
+      placementFixes === 0
     ) {
       // Clean scene with no debt marker. Persist a ledger ONCE so the
       // incremental sweep can skip it on future passes: freshness must be
@@ -353,7 +381,7 @@ async function runLayoutRepair(
         applyLayoutLedger(scene, preContent, stamp);
         (scene as { updatedAt?: number }).updatedAt = stamp;
         try {
-          await documentStore.putScene(courseId, scene as never);
+          await persistScene(scene);
         } catch (error) {
           console.error('[layout-relayout] ledger write-off failed', scene.id, error);
         }
@@ -400,7 +428,15 @@ async function runLayoutRepair(
       // flat: they must reach the store or the pass heals nothing and
       // reports a phantom fix.
       const passChanged =
-        coerced + exploded + stripped + nudged + normalized + scrubbed + deadAnchorStrips > 0;
+        coerced +
+          exploded +
+          stripped +
+          nudged +
+          normalized +
+          scrubbed +
+          deadAnchorStrips +
+          placementFixes >
+        0;
       // The HONEST plan — computed on the post-pass geometry it will move.
       const plan = computeRelayoutPlan(scene);
       if (plan) {
@@ -716,7 +752,7 @@ async function runLayoutRepair(
       if (needsWrite) {
         try {
           (scene as { updatedAt?: number }).updatedAt = visitStamp;
-          await documentStore.putScene(courseId, scene as never);
+          await persistScene(scene);
           applied = true;
         } catch (error) {
           console.error('[layout-relayout] putScene failed', scene.id, error);

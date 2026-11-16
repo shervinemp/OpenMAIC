@@ -69,7 +69,10 @@ export interface RowLayout {
   viewportRatio: number;
 }
 
-export function computeRowLayout(content: unknown): RowLayout | null {
+export function computeRowLayout(
+  content: unknown,
+  options: { preserveArrayOrder?: boolean } = {},
+): RowLayout | null {
   const slide = (content ?? null) as {
     type?: string;
     canvas?: { viewportSize?: number; viewportRatio?: number; elements?: RectElement[] };
@@ -89,14 +92,25 @@ export function computeRowLayout(content: unknown): RowLayout | null {
       continue;
     }
     const top = typeof element.top === 'number' ? element.top : 0;
-    // Height truth first: the element's declared height for non-text; for
-    // text rows the content-height estimator makes packed rows safe (the
-    // declared grid height underestimates wrapped text).
+    // Height truth: non-text keeps its declared box. Text uses the LARGER of
+    // the declared height and the content-aware estimate — imported decks
+    // routinely declare a 40px box around six wrapped lines, and trusting
+    // that number packs rows on top of each other. The estimate is what makes
+    // a split part actually readable.
     const declared = typeof element.height === 'number' ? element.height : 0;
-    const estimated = declared > 0 ? declared : estimatedRowHeight(element);
+    const estimated =
+      element.type === 'text'
+        ? Math.max(declared, estimatedRowHeight(element))
+        : declared > 0
+          ? declared
+          : estimatedRowHeight(element);
     rows.push({ id: element.id, originalTop: top, estimatedHeight: Math.max(1, estimated) });
   }
-  rows.sort((a, b) => a.originalTop - b.originalTop);
+  // Imported decks were flattened to full-width rows, but their element array
+  // still carries the source reading order (problem 1 → problem 2 → …).
+  // Sorting those by `top` interleaves unrelated columns; generated decks are
+  // laid out in geometric order and still want the top sort.
+  if (!options.preserveArrayOrder) rows.sort((a, b) => a.originalTop - b.originalTop);
   return {
     pinnedIds,
     rows,
@@ -145,16 +159,19 @@ function estimatedRowHeight(element: RectElement): number {
 
 export { estimatedRowHeight as estimateTextRowHeight };
 
-export function computeSplitPlan(scene: {
-  id: string;
-  title?: string;
-  order?: number;
-  type?: string;
-  content?: unknown;
-  actions?: Array<{ id: string; type: string; elementId?: string; text?: string }>;
-}): SplitPlan | null {
+export function computeSplitPlan(
+  scene: {
+    id: string;
+    title?: string;
+    order?: number;
+    type?: string;
+    content?: unknown;
+    actions?: Array<{ id: string; type: string; elementId?: string; text?: string }>;
+  },
+  options: { preserveArrayOrder?: boolean } = {},
+): SplitPlan | null {
   if (scene.type !== 'slide') return null;
-  const layout = computeRowLayout(scene.content);
+  const layout = computeRowLayout(scene.content, options);
   if (!layout) return null;
   const findings = validateSlidePlacement({
     viewportSize: layout.viewportSize,
@@ -165,13 +182,32 @@ export function computeSplitPlan(scene: {
   if (errorCount === 0) return null; // nothing to split
 
   const workingIds = new Set(layout.rows.map((r) => r.id));
+  const elementTextById = new Map(
+    sceneContentElements(scene.content).map((element) => [
+      String(element.id),
+      typeof element.content === 'string' ? plainText(element.content) : '',
+    ]),
+  );
+  // In a flattened import, a "Problem N" heading is a hard page boundary:
+  // without it the tail of Problem N's analysis shares a page with the next
+  // problem's heading. Generated decks keep the pure height packing.
+  const isProblemHeading = (id: string): boolean =>
+    /^problem\s+\d+\b/i.test((elementTextById.get(id) ?? '').replace(/\s+/g, ' ').trim());
   // Greedy sequential packing: rows in original order, each chunk as full as
   // the canvas allows, so the plan is deterministic regardless of run count.
   const chunksById = new Array<Set<string>>();
   let cursor = 40;
   let current = new Set<string>();
   for (const row of layout.rows) {
-    if (cursor + row.estimatedHeight + PIN_GAP > layout.canvasHeight - EDGE_MARGIN) {
+    if (options.preserveArrayOrder && current.size > 0 && isProblemHeading(row.id)) {
+      chunksById.push(current);
+      current = new Set();
+      cursor = 40;
+    }
+    if (
+      current.size > 0 &&
+      cursor + row.estimatedHeight + PIN_GAP > layout.canvasHeight - EDGE_MARGIN
+    ) {
       chunksById.push(current);
       current = new Set();
       cursor = 40;
@@ -240,12 +276,25 @@ export function computeSplitPlan(scene: {
   });
 
   const baseTitle = scene.title ?? scene.id;
+  // Give each part the heading it opens with ("Problem 2", "Checkpoint", …)
+  // instead of four identical "… (part N)" rows in the lesson list. Only
+  // short, named headings qualify; a chunk that starts mid-paragraph keeps
+  // the descriptive parent title.
+  const headingPattern =
+    /^(problem|question|checkpoint|exercise|step|activity|worked example|hint|analysis|summary)\b/i;
+  const titleForChunk = (chunk: Set<string>, index: number): string => {
+    for (const id of chunk) {
+      const text = (elementTextById.get(id) ?? '').replace(/\s+/g, ' ').trim();
+      if (text.length > 0 && text.length <= 64 && headingPattern.test(text)) return text;
+    }
+    return index === 0 ? baseTitle : `${baseTitle} (part ${index + 1})`;
+  };
   return {
     sceneId: scene.id,
     title: baseTitle,
     order: scene.order ?? -1,
     chunks: chunksById.map((chunk, index) => ({
-      title: index === 0 ? baseTitle : `${baseTitle} (part ${index + 1})`,
+      title: titleForChunk(chunk, index),
       elementIds: [...chunk],
       actionIds: chunkActions[index],
       fitsWithoutMerge: true,

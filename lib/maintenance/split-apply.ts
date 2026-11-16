@@ -1,5 +1,5 @@
 import { validateSlidePlacement, sanitizeSlidePlacement } from '@openmaic/dsl';
-import { computeSplitPlan } from './split-plan';
+import { computeSplitPlan, estimateTextRowHeight } from './split-plan';
 import { registerOrphanOutlines } from './lesson-membership';
 
 /**
@@ -11,7 +11,9 @@ import { registerOrphanOutlines } from './lesson-membership';
  * Whole-document surgery: scenes + outline entries + lesson-group jobs
  * change together in memory; the caller persists with ONE `saveDocument`,
  * so the deck-completeness invariant (every outline has its scene at the
- * matching order) never gaps mid-flight.
+ * matching order) never gaps mid-flight. Imported decks have no outline
+ * records at all — they split into scene-only parts, and the outline/job
+ * bookkeeping is skipped rather than invented.
  *
  * Faithfulness contract (no silent rewrites):
  *   - element rows are used VERBATIM (ids, content untouched); positions
@@ -47,7 +49,8 @@ export interface SplitApplyResult {
 export interface SplitApplyDocumentShape {
   stage: { id: string; [key: string]: unknown };
   scenes: Array<Record<string, unknown>>;
-  outline: {
+  /** Absent on imported decks: they have scenes but no generation outline. */
+  outline?: {
     outlines: Array<Record<string, unknown>>;
     lessonGroups: Array<{ lessonId: string; jobs?: Array<Record<string, unknown>> }>;
     generationComplete: boolean;
@@ -144,8 +147,13 @@ export function buildChunkCanvas(
   let cursor = FIRST_ROW_TOP;
   const positioned: Array<Record<string, unknown>> = [];
   for (const row of chunkRows) {
-    const height = Math.max(1, Math.round((row.height as number) || 50));
-    positioned.push({ ...row, top: cursor });
+    const declared = Math.max(1, Math.round((row.height as number) || 50));
+    // The declared text box is often smaller than the wrapped content. Grow
+    // it to the same estimate the plan used, or the next row starts on top of
+    // this row's last line even though the chunks themselves fit.
+    const height =
+      row.type === 'text' ? Math.max(declared, estimateTextRowHeight(row as never)) : declared;
+    positioned.push({ ...row, top: cursor, height });
     cursor += height + PIN_GAP;
   }
   return {
@@ -164,18 +172,27 @@ export function applySplit(
   const sceneIndex = document.scenes.findIndex((s) => s.id === sceneId && s.type === 'slide');
   if (sceneIndex < 0) return null;
   const scene = document.scenes[sceneIndex];
-  const plan = computeSplitPlan(scene as never);
+  // Imported decks have no outline; their element array is the reading order.
+  const plan = computeSplitPlan(scene as never, { preserveArrayOrder: !document.outline });
   if (!plan || plan.chunks.length <= 1) return null;
 
   const canvas = canvasOf(scene);
   if (!canvas) return null;
   const originalOrder = scene.order as number;
-  const outlineId = scene.outlineId as string;
-  const outlineSource = document.outline.outlines.find(
-    (entry) => (entry as { id?: string }).id === outlineId,
-  );
-  if (!outlineSource) return null;
-  const outlineRecord: Record<string, unknown> = { ...outlineSource };
+  const outlineId = typeof scene.outlineId === 'string' ? scene.outlineId : undefined;
+  // Imported/legacy decks have scenes but no generation outline. They can
+  // still be split: the part pages are self-contained, so only the bookkeeping
+  // (outline entries / lesson jobs) is skipped. A scene that NAMES an outline
+  // which is missing is different — that is a damaged generated deck, and the
+  // splitter declines rather than silently orphaning the part.
+  const outlineDocument = document.outline;
+  const outlineSource = outlineId
+    ? outlineDocument?.outlines?.find((entry) => (entry as { id?: string }).id === outlineId)
+    : undefined;
+  if (outlineId && !outlineSource) return null;
+  const outlineRecord: Record<string, unknown> | undefined = outlineSource
+    ? { ...outlineSource }
+    : undefined;
 
   const actionById = new Map<string, Record<string, unknown>>();
   for (const action of (scene.actions ?? []) as Array<Record<string, unknown>>) {
@@ -195,7 +212,7 @@ export function applySplit(
   const takenIds = new Set<string>(
     [
       ...document.scenes,
-      ...((document.outline.outlines ?? []) as Array<Record<string, unknown>>),
+      ...((outlineDocument?.outlines ?? []) as Array<Record<string, unknown>>),
     ].map((entry) => String((entry as { id?: string }).id)),
   );
   const mintPartId = (base: string, k: number): string => {
@@ -211,7 +228,11 @@ export function applySplit(
 
   plan.chunks.forEach((chunk, partIndex) => {
     const isFirst = partIndex === 0;
-    const partOutlineId = isFirst ? outlineId : mintPartId(outlineId, partIndex + 1);
+    const partOutlineId = outlineRecord
+      ? isFirst
+        ? outlineId!
+        : mintPartId(outlineId!, partIndex + 1)
+      : '';
     const partSceneId = isFirst ? String(scene.id) : mintPartId(String(scene.id), partIndex + 1);
     const order = originalOrder + partIndex;
 
@@ -232,7 +253,7 @@ export function applySplit(
     const partScene: Record<string, unknown> = {
       ...scene,
       id: partSceneId,
-      outlineId: partOutlineId,
+      ...(partOutlineId ? { outlineId: partOutlineId } : {}),
       order,
       title: chunk.title,
       content: {
@@ -246,12 +267,14 @@ export function applySplit(
       updatedAt: Date.now(),
     };
 
-    const partOutline: Record<string, unknown> = {
-      ...outlineRecord,
-      id: partOutlineId,
-      order,
-      title: chunk.title,
-    };
+    if (outlineRecord) {
+      newOutlines.push({
+        ...outlineRecord,
+        id: partOutlineId,
+        order,
+        title: chunk.title,
+      });
+    }
 
     parts.push({
       outlineId: partOutlineId,
@@ -260,21 +283,23 @@ export function applySplit(
       actionCount: actions.length,
       residualErrors: partErrors,
     });
-    partOutlineIds.push(partOutlineId);
+    if (partOutlineId) partOutlineIds.push(partOutlineId);
     partSceneIds.push(partSceneId);
     newScenes.push(partScene);
-    newOutlines.push(partOutline);
   });
 
   if (newScenes.length < 2) return null;
 
   document.scenes.splice(sceneIndex, 1, ...newScenes);
 
-  const outlineEntryIndex = document.outline.outlines.findIndex(
-    (entry) => (entry as { id?: string }).id === outlineId,
-  );
-  if (outlineEntryIndex >= 0)
-    document.outline.outlines.splice(outlineEntryIndex, 1, ...newOutlines);
+  if (outlineDocument) {
+    const outlineEntryIndex = outlineDocument.outlines.findIndex(
+      (entry) => (entry as { id?: string }).id === outlineId,
+    );
+    if (outlineEntryIndex >= 0) {
+      outlineDocument.outlines.splice(outlineEntryIndex, 1, ...newOutlines);
+    }
+  }
 
   const shift = plan.chunks.length - 1;
   let shifted = 0;
@@ -287,12 +312,14 @@ export function applySplit(
         shifted += 1;
       }
     }
-    for (const entry of document.outline.outlines) {
-      if (partOutlineIds.includes(String(entry.id))) continue;
-      const order = (entry as { order?: number }).order;
-      if (typeof order === 'number' && order > originalOrder) {
-        (entry as { order: number }).order = order + shift;
-        shifted += 1;
+    if (outlineDocument) {
+      for (const entry of outlineDocument.outlines) {
+        if (partOutlineIds.includes(String(entry.id))) continue;
+        const order = (entry as { order?: number }).order;
+        if (typeof order === 'number' && order > originalOrder) {
+          (entry as { order: number }).order = order + shift;
+          shifted += 1;
+        }
       }
     }
   }
@@ -302,8 +329,12 @@ export function applySplit(
   // envelopes are marked done — the part IS the materialized rows, content
   // and actions arrived verbatim from the original scene — so the generation
   // panel does not render the parts as bare pending envelopes.
-  const lessonId = (outlineRecord as { lessonId?: string }).lessonId;
-  const group = (document.outline.lessonGroups.find((g) => g.lessonId === lessonId) ?? null) as {
+  const lessonId = outlineRecord?.lessonId as string | undefined;
+  const group = (
+    outlineDocument && lessonId
+      ? (outlineDocument.lessonGroups.find((g) => g.lessonId === lessonId) ?? null)
+      : null
+  ) as {
     lessonId: string;
     jobs?: Array<Record<string, unknown>>;
   } | null;
@@ -341,7 +372,7 @@ export function applySplit(
   // The parts belong to the lesson the slide was in: the flat list and the job
   // group above are not the table of contents, the blueprint is. Without this
   // every part is listed under "Ungrouped scenes".
-  registerOrphanOutlines(document.outline as never);
+  if (outlineDocument) registerOrphanOutlines(outlineDocument as never);
 
   return {
     sceneId,

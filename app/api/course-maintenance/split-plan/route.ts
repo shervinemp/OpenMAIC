@@ -52,7 +52,9 @@ export async function POST(req: NextRequest) {
 
   const plans: Array<SplitPlan & { summary: string }> = [];
   for (const scene of targets) {
-    const plan = computeSplitPlan(scene as never);
+    // Imported decks carry no outline; their element array is the source
+    // reading order, not the flattened top coordinates.
+    const plan = computeSplitPlan(scene as never, { preserveArrayOrder: !document.outline });
     if (plan && plan.chunks.length > 1) plans.push({ ...plan, summary: planSummary(plan) });
   }
   plans.sort((a, b) => a.order - b.order);

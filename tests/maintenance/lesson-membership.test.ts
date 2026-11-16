@@ -35,6 +35,10 @@ function record(): OutlineRecordShape {
 }
 
 describe('registerOrphanOutlines', () => {
+  it('is a no-op for imported decks with no outline object', () => {
+    expect(registerOrphanOutlines(undefined)).toBe(0);
+  });
+
   it('puts each part in its lesson, in play order, right after the slide it came from', () => {
     const doc = record();
     expect(registerOrphanOutlines(doc)).toBe(3);

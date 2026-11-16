@@ -39,7 +39,8 @@ export interface EmptyPartPruneResult {
 
 export interface PruneDocumentShape {
   scenes: Array<Record<string, unknown>>;
-  outline: {
+  /** Absent on imported decks: they have scenes but no generation outline. */
+  outline?: {
     outlines?: Array<Record<string, unknown>>;
     lessonGroups?: Array<{ lessonId?: string; jobs?: Array<Record<string, unknown>> }>;
     blueprint?: {
@@ -174,30 +175,32 @@ export function applyEmptyPartPrune(
   document.scenes = document.scenes.filter((scene) => !sceneSet.has(String(scene.id)));
 
   const outline = document.outline;
-  if (Array.isArray(outline.outlines)) {
-    outline.outlines = outline.outlines.filter(
-      (entry) => !outlineSet.has(String((entry as { id?: string }).id)),
-    );
-  }
-  for (const group of outline.lessonGroups ?? []) {
-    if (!Array.isArray(group.jobs)) continue;
-    group.jobs = group.jobs.filter((job) => !outlineSet.has(String(job.outlineId)));
-  }
-  const stripBlueprintOutlines = (lessons: Array<Record<string, unknown>> | undefined): void => {
-    if (!Array.isArray(lessons)) return;
-    for (const lesson of lessons) {
-      const outlines = (lesson as { outlines?: Array<Record<string, unknown>> }).outlines;
-      if (!Array.isArray(outlines)) continue;
-      (lesson as { outlines: Array<Record<string, unknown>> }).outlines = outlines.filter(
+  if (outline) {
+    if (Array.isArray(outline.outlines)) {
+      outline.outlines = outline.outlines.filter(
         (entry) => !outlineSet.has(String((entry as { id?: string }).id)),
       );
     }
-  };
-  const blueprint = outline.blueprint;
-  if (blueprint) {
-    stripBlueprintOutlines(blueprint.lessons);
-    for (const unit of blueprint.units ?? []) {
-      stripBlueprintOutlines((unit as { lessons?: Array<Record<string, unknown>> }).lessons);
+    for (const group of outline.lessonGroups ?? []) {
+      if (!Array.isArray(group.jobs)) continue;
+      group.jobs = group.jobs.filter((job) => !outlineSet.has(String(job.outlineId)));
+    }
+    const stripBlueprintOutlines = (lessons: Array<Record<string, unknown>> | undefined): void => {
+      if (!Array.isArray(lessons)) return;
+      for (const lesson of lessons) {
+        const outlines = (lesson as { outlines?: Array<Record<string, unknown>> }).outlines;
+        if (!Array.isArray(outlines)) continue;
+        (lesson as { outlines: Array<Record<string, unknown>> }).outlines = outlines.filter(
+          (entry) => !outlineSet.has(String((entry as { id?: string }).id)),
+        );
+      }
+    };
+    const blueprint = outline.blueprint;
+    if (blueprint) {
+      stripBlueprintOutlines(blueprint.lessons);
+      for (const unit of blueprint.units ?? []) {
+        stripBlueprintOutlines((unit as { lessons?: Array<Record<string, unknown>> }).lessons);
+      }
     }
   }
 

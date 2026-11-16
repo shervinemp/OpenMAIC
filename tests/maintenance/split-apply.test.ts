@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applySplit, canSplit } from '@/lib/maintenance/split-apply';
+import { applySplit, buildChunkCanvas, canSplit } from '@/lib/maintenance/split-apply';
 import type { SplitApplyDocumentShape } from '@/lib/maintenance/split-apply';
 
 function document(): SplitApplyDocumentShape {
@@ -114,7 +114,7 @@ describe('split-apply', () => {
   it('keeps outline/scene 1:1 with matching unique orders after the split', () => {
     const doc = document();
     applySplit(doc, 'sceneA');
-    const outlineById = new Map(doc.outline.outlines.map((entry) => [entry.id as string, entry]));
+    const outlineById = new Map(doc.outline!.outlines.map((entry) => [entry.id as string, entry]));
     const orders = doc.scenes.map((entry) => entry.order as number);
     expect(new Set(orders).size).toBe(doc.scenes.length);
     for (const scene of doc.scenes) {
@@ -130,7 +130,7 @@ describe('split-apply', () => {
     const partsCount = result.parts.length;
     const sibling = doc.scenes.find((s) => s.id === 'sceneB')!;
     expect(sibling.order).toBe(9 + (partsCount - 1));
-    const outlineEntry = doc.outline.outlines.find((entry) => entry.id === 'scene_9');
+    const outlineEntry = doc.outline!.outlines.find((entry) => entry.id === 'scene_9');
     expect((outlineEntry as unknown as { order: number }).order).toBe(9 + (partsCount - 1));
   });
 
@@ -146,7 +146,7 @@ describe('split-apply', () => {
 
   it('carries tts/media verdicts onto every part job (fill-decay stays visible)', () => {
     const doc = document();
-    const group = doc.outline.lessonGroups[0];
+    const group = doc.outline!.lessonGroups[0];
     const original = (group.jobs as Array<Record<string, unknown>>).find(
       (job) => job.outlineId === 'scene_8',
     )!;
@@ -173,7 +173,7 @@ describe('split-apply', () => {
   it('leaves jobs without narration phases phase-free after the split', () => {
     const doc = document();
     const result = applySplit(doc, 'sceneA')!;
-    const partJobs = (doc.outline.lessonGroups[0].jobs as Array<Record<string, unknown>>).filter(
+    const partJobs = (doc.outline!.lessonGroups[0].jobs as Array<Record<string, unknown>>).filter(
       (job) => result.parts.some((part) => part.outlineId === job.outlineId),
     );
     for (const job of partJobs) {
@@ -213,5 +213,43 @@ describe('split-apply', () => {
     expect(lessonIds[lessonIds.length - 1]).toBe('scene_9');
     expect(new Set(lessonIds).size).toBe(lessonIds.length);
     expect(blueprint.units[1]!.lessons[0]!.outlines.map((entry) => entry.id)).toEqual(lessonIds);
+  });
+
+  it('grows short declared text boxes so adjacent rows do not overlap', () => {
+    const longText = `<p style="font-size:14px">${'A sentence that has to wrap more than once. '.repeat(24)}</p>`;
+    const canvas = {
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      elements: [
+        { id: 'a', type: 'text', left: 60, top: 40, width: 880, height: 20, content: longText },
+        { id: 'b', type: 'text', left: 60, top: 65, width: 880, height: 20, content: 'Next row' },
+      ],
+      rest: {},
+    };
+    const built = buildChunkCanvas(canvas, { elementIds: ['a', 'b'] });
+    expect(built).not.toBeNull();
+    const a = built!.elements.find((element) => element.id === 'a')!;
+    const b = built!.elements.find((element) => element.id === 'b')!;
+    expect(a.height as number).toBeGreaterThan(20);
+    expect(b.top as number).toBeGreaterThanOrEqual((a.top as number) + (a.height as number));
+  });
+
+  it('declines a scene whose named outline is missing', () => {
+    const doc = document();
+    delete (doc as { outline?: unknown }).outline;
+    expect(applySplit(doc, 'sceneA')).toBeNull();
+  });
+
+  it('splits an imported deck that has no outline or outline ids at all', () => {
+    const doc = document();
+    delete (doc as { outline?: unknown }).outline;
+    for (const scene of doc.scenes) delete scene.outlineId;
+    const result = applySplit(doc, 'sceneA');
+    expect(result).not.toBeNull();
+    expect(result!.parts.length).toBeGreaterThanOrEqual(2);
+    expect(result!.partOutlineIds).toEqual([]);
+    expect(doc.scenes.every((scene) => scene.outlineId === undefined)).toBe(true);
+    const orders = doc.scenes.map((scene) => scene.order as number);
+    expect(new Set(orders).size).toBe(orders.length);
   });
 });

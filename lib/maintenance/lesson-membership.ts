@@ -71,10 +71,11 @@ function insertAfter(
 }
 
 /** Returns how many outlines were put into a lesson. */
-export function registerOrphanOutlines(record: OutlineRecordShape): number {
-  const lessons = record.blueprint?.lessons;
-  const flat = record.outlines;
-  if (!Array.isArray(lessons) || lessons.length === 0 || !Array.isArray(flat)) return 0;
+export function registerOrphanOutlines(record: OutlineRecordShape | undefined): number {
+  // Imported decks have no outline object at all; there is nothing to regroup.
+  const lessons = record?.blueprint?.lessons;
+  const flat = record?.outlines;
+  if (!record || !Array.isArray(lessons) || lessons.length === 0 || !Array.isArray(flat)) return 0;
 
   const lessonOf = new Map<unknown, number>();
   lessons.forEach((lesson, index) =>

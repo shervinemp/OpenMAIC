@@ -63,6 +63,16 @@ describe('split-plan', () => {
     expect(layout!.rows.at(-1)!.originalTop).toBe(100 + 39 * 22);
   });
 
+  it('preserves document order for flattened imported decks', () => {
+    const scene = megaScene();
+    // The title is first in the source array but placed at the bottom of the
+    // flattened canvas. Imported decks must follow the array, not geometry.
+    scene.content.canvas.elements[0].top = 900;
+    const layout = computeRowLayout(scene.content, { preserveArrayOrder: true });
+    expect(layout).not.toBeNull();
+    expect(layout!.rows[0].id).toBe('title');
+  });
+
   it('proposes deterministic, canvas-fitting multi-chunk splits with anchored actions', () => {
     const scene = megaScene();
     const plan = computeSplitPlan(scene);

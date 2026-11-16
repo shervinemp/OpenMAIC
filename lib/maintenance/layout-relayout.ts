@@ -476,7 +476,12 @@ export function normalizeFullBleedRows(
   scene: { content?: unknown },
   canvasHeight?: number,
 ): number {
-  const MARGIN = 40;
+  // Top margin is a reading-comfort rule; the bottom is a hard canvas bound.
+  // Using 40px at the bottom too shrank content-bearing text rows (and clipped
+  // their last line) merely to satisfy the cosmetic margin. Preserve the row
+  // height whenever it is inside the canvas; only clamp true overflow.
+  const TOP_MARGIN = 40;
+  const BOTTOM_MARGIN = 8;
   const canvas = (
     scene.content as
       | {
@@ -504,11 +509,10 @@ export function normalizeFullBleedRows(
     // Geometry validity is owned by coerceElementGeometry (the route's first
     // pass): by the time normalization runs, tops/heights are finite.
     const span = el.top + el.height;
-    if (el.top >= MARGIN && span <= height - MARGIN) continue;
-    if (el.top < MARGIN || span > height - MARGIN) changed += 1;
-    el.top = Math.max(MARGIN, el.top);
-    el.height = Math.min(el.height, height - MARGIN - el.top);
-    if (el.height <= 0) el.height = 60;
+    if (el.top >= TOP_MARGIN && span <= height - BOTTOM_MARGIN) continue;
+    if (el.top < TOP_MARGIN || span > height - BOTTOM_MARGIN) changed += 1;
+    el.top = Math.max(TOP_MARGIN, Math.min(el.top, height - BOTTOM_MARGIN - 1));
+    el.height = Math.max(1, Math.min(el.height, height - BOTTOM_MARGIN - el.top));
   }
   return changed;
 }
