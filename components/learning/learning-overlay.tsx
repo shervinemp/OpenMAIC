@@ -248,6 +248,15 @@ export function LearningOverlay({ stageId, open, onOpenChange }: LearningOverlay
     };
   }, [open, stageId, reloadKey]);
 
+  useEffect(() => {
+    if (!open) return;
+    // The queue is time-sensitive: `again` schedules a card ten minutes out,
+    // and a card due later tonight should surface without reopening the panel.
+    // One coarse tick is enough; the UI never displays seconds.
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [open]);
+
   const questionByItem = useMemo(() => {
     const map = new Map<string, QuizQuestion>();
     for (const scene of scenes) {
