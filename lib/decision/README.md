@@ -214,4 +214,6 @@ adapter's retry and response guards, telemetry and shadow reporting, the
 connectivity probe, router modes and fallbacks, and each site's mapping.
 `tests/api/decision-grading.test.ts` exercises the real routes with a stubbed
 decision server; `tests/api/decision-status.test.ts` covers the operator
-diagnostics route and its token gate.
+diagnostics route and its token gate. `tests/decision/chat-json-mode.test.ts`
+proves the chat adapter's decoder constraint against a real local
+OpenAI-compatible endpoint.
