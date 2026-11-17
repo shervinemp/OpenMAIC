@@ -73,4 +73,26 @@ describe('media task re-keying', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:b-poster');
     expect(revokeObjectURL).not.toHaveBeenCalledWith('blob:a');
   });
+
+  it('leaves durable hosted poster URLs alone when a duplicate task is dropped', () => {
+    const hostedPoster = '/api/classroom-media/stage-1/media/poster.png';
+    useMediaGenerationStore.setState({
+      tasks: {
+        gen_a: task('gen_a'),
+        gen_b: {
+          ...task('gen_b'),
+          status: 'done',
+          objectUrl: 'blob:b',
+          poster: hostedPoster,
+        },
+      },
+    });
+
+    const store = useMediaGenerationStore.getState();
+    store.rekeyDone('gen_a', 'ast_shared', 'blob:a');
+    store.rekeyDone('gen_b', 'ast_shared', 'blob:b', hostedPoster);
+
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:b');
+    expect(revokeObjectURL).not.toHaveBeenCalledWith(hostedPoster);
+  });
 });
