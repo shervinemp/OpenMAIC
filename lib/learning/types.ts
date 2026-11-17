@@ -82,6 +82,10 @@ export interface ReviewCard {
    * attempts and avoid colliding with another quiz's `q1`.
    */
   cardId: string;
+  /** Scene that owns the item, when known. Lets the dashboard find the stem. */
+  sceneId?: string;
+  /** Item id inside the scene (a quiz question id today). */
+  itemId?: string;
   conceptIds: readonly ConceptId[];
   /** SM-2 ease factor, never below `MIN_REVIEW_EASE`. */
   ease: number;

@@ -100,10 +100,18 @@ into one card.
 - Ungraded items become evidence but never review cards.
 - Retagging a question refreshes the card's concepts without changing its
   schedule.
+- The stage header opens a learning overlay: a due-review session with
+  show-answer and four-button rating, plus a weakest-first per-concept mastery
+  list. Rating a card advances its schedule and appends the half-weight review
+  evidence (`recordReviewRating`); a repeated review id is a no-op.
+- Cards carry `sceneId` / `itemId` so the overlay can find the question stem;
+  legacy cards without those fields fall back to decoding the card id. A card
+  whose scene or question was deleted stays out of the review session and is
+  reported as orphaned.
 
 ## Next
 
-1. Record review ratings and fold them back into the card and mastery evidence.
-2. Surface a due queue and a per-concept dashboard.
-3. Add distractor-to-misconception diagnosis and remediation links.
-4. Attach exam and activity producers to the same log.
+1. Add distractor-to-misconception diagnosis and remediation links.
+2. Attach exam and activity producers to the same log.
+3. Add a placement / adaptive-routing decision on top of real evidence.
+4. Compact very old evidence records in the runtime store.

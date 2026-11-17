@@ -17,14 +17,19 @@ import { getLearnerKey } from '@/lib/runtime/learner-key';
 import { getRuntimeStore } from '@/lib/runtime/store';
 
 import { appendEvidence, hasEvidence, normalizeEvidence } from './evidence';
-import { newReviewCard } from './review';
+import {
+  evidenceFromReview,
+  newReviewCard,
+  normalizeReviewCard,
+  reviewCard as scheduleReview,
+} from './review';
 import {
   LEARNING_PAYLOAD_VERSION,
   foldLearningRecords,
   type LearningRecordPayload,
   type LearningState,
 } from './store-payload';
-import type { LearningEvidence, ReviewCard } from './types';
+import type { LearningEvidence, ReviewCard, ReviewRating } from './types';
 
 export const LEARNING_SESSION_KIND = 'learning';
 
@@ -250,9 +255,22 @@ export async function ensureReviewCards(
 
     const card = existing.get(cardId);
     if (!card) {
-      updates.push(newReviewCard(cardId, conceptIds, now));
-    } else if (!sameConceptSet(card.conceptIds, conceptIds)) {
-      updates.push({ ...card, conceptIds });
+      updates.push({
+        ...newReviewCard(cardId, conceptIds, now),
+        sceneId: item.sceneId,
+        itemId: item.itemId,
+      });
+    } else if (
+      !sameConceptSet(card.conceptIds, conceptIds) ||
+      card.sceneId !== item.sceneId ||
+      card.itemId !== item.itemId
+    ) {
+      updates.push({
+        ...card,
+        conceptIds,
+        sceneId: item.sceneId,
+        itemId: item.itemId,
+      });
     }
   }
   if (updates.length === 0) return;
@@ -270,4 +288,92 @@ export async function ensureReviewCards(
     createdAt: timestamp,
     payload,
   });
+}
+
+export interface RecordReviewRatingInput {
+  stageId: string;
+  /** The card as the caller saw it; the stored schedule wins when present. */
+  card: ReviewCard;
+  rating: ReviewRating;
+  /** Idempotency key for this rating action. */
+  reviewId: string;
+}
+
+export interface ReviewRatingResult {
+  card: ReviewCard;
+  evidence: LearningEvidence;
+}
+
+/**
+ * Apply one review rating: advance the card, then record the half-weight
+ * mastery observation.
+ *
+ * The stored card, not the caller's copy, is the schedule source of truth:
+ * a second tab may have reviewed it since the dashboard loaded. A repeated
+ * `reviewId` returns the existing observation without advancing the schedule
+ * twice, which makes a double click safe.
+ *
+ * Card and evidence are separate appends (the runtime has no cross-record
+ * transaction). A failure between them leaves the schedule advanced and the
+ * observation missing; the next rating repairs the observation, and mastery is
+ * never fed a fabricated result in the meantime.
+ */
+export async function recordReviewRating(
+  input: RecordReviewRatingInput,
+  deps: LearningStoreDeps = {},
+): Promise<ReviewRatingResult> {
+  const reviewId = input.reviewId.trim();
+  if (!reviewId) throw new Error('recordReviewRating requires a non-empty reviewId');
+
+  const store = deps.store ?? getRuntimeStore();
+  const learnerKey = deps.learnerKey ?? (await getLearnerKey());
+  const state = await loadLearningState({ stageId: input.stageId }, { ...deps, store, learnerKey });
+  const current =
+    state.reviewCards.find((card) => card.cardId === input.card.cardId) ??
+    normalizeReviewCard(input.card);
+  if (!current) throw new Error('recordReviewRating received an invalid review card');
+
+  const evidenceId = `review:${reviewId}`;
+  const replay = state.evidence.find((record) => record.id === evidenceId);
+  if (replay) return { card: current, evidence: replay };
+
+  const now = (deps.now ?? Date.now)();
+  const updated = scheduleReview(current, input.rating, now);
+  const timestamp = new Date(now).toISOString();
+  const sessionId = await ensureLearningSession(store, input.stageId, learnerKey, timestamp);
+  const mint = deps.mintRecordId ?? mintRecordId;
+
+  const cardPayload: LearningRecordPayload = {
+    version: LEARNING_PAYLOAD_VERSION,
+    kind: 'reviewCards',
+    cards: [updated],
+  };
+  await store.appendRecord({
+    id: mint(),
+    sessionId,
+    createdAt: timestamp,
+    payload: cardPayload,
+  });
+
+  const evidence = evidenceFromReview({
+    id: evidenceId,
+    learnerKey,
+    stageId: input.stageId,
+    card: updated,
+    rating: input.rating,
+    recordedAt: now,
+  });
+  const evidencePayload: LearningRecordPayload = {
+    version: LEARNING_PAYLOAD_VERSION,
+    kind: 'evidence',
+    evidence,
+  };
+  await store.appendRecord({
+    id: mint(),
+    sessionId,
+    createdAt: timestamp,
+    payload: evidencePayload,
+  });
+
+  return { card: updated, evidence };
 }

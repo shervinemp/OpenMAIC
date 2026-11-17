@@ -2539,5 +2539,28 @@
     "cleanDesc": "No off-canvas or occluded elements found.",
     "clamped": "Elements moved back inside the canvas:",
     "flagged": "Flagged findings:"
+  },
+  "learning": {
+    "title": "Learning",
+    "subtitle": "Your review queue and concept mastery",
+    "reviewTab": "Review",
+    "masteryTab": "Mastery",
+    "dueCount": "Due: {{count}}",
+    "nextReview": "Next review {{date}}",
+    "orphaned": "{{count}} card(s) point to questions no longer in this course.",
+    "nothingDue": "Nothing due right now",
+    "nothingDueDesc": "Finish a quiz to start building your review queue.",
+    "noConcepts": "No concept data yet",
+    "noConceptsDesc": "Concept tags appear after you complete a tagged quiz.",
+    "showAnswer": "Show answer",
+    "ratePrompt": "How well did you recall this?",
+    "again": "Again",
+    "hard": "Hard",
+    "good": "Good",
+    "easy": "Easy",
+    "loadFailed": "Could not load your learning history.",
+    "confidence": "Confidence {{value}}%",
+    "observations": "{{count}} observations",
+    "saveFailed": "Could not save this review. Try again."
   }
 }

@@ -105,9 +105,13 @@ export function normalizeReviewCard(value: unknown): ReviewCard | null {
   }
 
   const lastReviewedAt = card.lastReviewedAt;
+  const sceneId = typeof card.sceneId === 'string' ? card.sceneId.trim() : '';
+  const itemId = typeof card.itemId === 'string' ? card.itemId.trim() : '';
   return {
     cardId,
     conceptIds,
+    ...(sceneId ? { sceneId } : {}),
+    ...(itemId ? { itemId } : {}),
     ease: Math.max(MIN_REVIEW_EASE, card.ease as number),
     intervalDays: Math.max(0, Math.round(card.intervalDays as number)),
     repetitions: Math.max(0, Math.floor(card.repetitions as number)),

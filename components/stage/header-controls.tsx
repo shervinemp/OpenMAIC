@@ -8,6 +8,7 @@ import {
   FileDown,
   Film,
   FolderGit2,
+  GraduationCap,
   Loader2,
   Monitor,
   Moon,
@@ -31,6 +32,7 @@ import { useVideoRenderStore } from '@/lib/store/video-render';
 import { CircularProgress } from '@/components/ui/circular-progress';
 import { VideoExportDialog } from './video-export-dialog';
 import ExamOverlay from '@/components/exam/exam-view';
+import { LearningOverlay } from '@/components/learning/learning-overlay';
 import { LanguageSwitcher } from '../language-switcher';
 import { SettingsDialog } from '../settings';
 import { GitBindingDialog } from './git-binding-dialog';
@@ -90,6 +92,7 @@ export function HeaderControls({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
   const [examsOpen, setExamsOpen] = useState(false);
+  const [learningOpen, setLearningOpen] = useState(false);
   const [gitDialogOpen, setGitDialogOpen] = useState(false);
   const gitSyncAvailable = isGitSyncAvailable();
   const stageId = useStageStore((s) => s.stage?.id ?? null);
@@ -263,6 +266,18 @@ export function HeaderControls({
             aria-label={t('exams.title')}
           >
             <BookCheck className="w-4 h-4" />
+          </button>
+        )}
+
+        {/* Learning — the learner's review queue and concept mastery. */}
+        {stageId && (
+          <button
+            onClick={() => setLearningOpen(true)}
+            className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
+            aria-label={t('learning.title')}
+            title={t('learning.title')}
+          >
+            <GraduationCap className="w-4 h-4" />
           </button>
         )}
 
@@ -561,6 +576,7 @@ export function HeaderControls({
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       {examsAvailable && <ExamOverlay open={examsOpen} onOpenChange={setExamsOpen} />}
+      <LearningOverlay stageId={stageId} open={learningOpen} onOpenChange={setLearningOpen} />
       {videoExportEnabled && (
         <VideoExportDialog open={videoDialogOpen} onOpenChange={setVideoDialogOpen} />
       )}

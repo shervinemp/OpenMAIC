@@ -9,8 +9,14 @@ import type { RuntimeSessionInit } from '@openmaic/storage';
 
 import type { QuestionResult } from '@/lib/quiz/grading';
 import type { QuizQuestion } from '@/lib/types/stage';
+import { RELEARN_DELAY_MS, REVIEW_DAY_MS } from '@/lib/learning/review';
 import { recordQuizLearning } from '@/lib/learning/record-quiz';
-import { ensureReviewCards, loadLearningState, type LearningStoreDeps } from '@/lib/learning/store';
+import {
+  ensureReviewCards,
+  loadLearningState,
+  recordReviewRating,
+  type LearningStoreDeps,
+} from '@/lib/learning/store';
 
 /**
  * A minimal append-only runtime store: enough of the contract for the
@@ -192,5 +198,102 @@ describe('quiz learning persistence', () => {
     expect(state.reviewCards).toHaveLength(1);
     expect(state.reviewCards[0].conceptIds).toEqual(['recursion', 'stack frame']);
     expect(state.reviewCards[0].dueAt).toBe(1_000);
+  });
+
+  it('advances a rated card and records half-weight review evidence', async () => {
+    const store = new FakeRuntimeStore();
+    await recordQuizLearning({
+      stageId: STAGE_ID,
+      sceneId: SCENE_ID,
+      attemptId: 'attempt-1',
+      questions: questions(),
+      results: results(),
+      recordedAt: 1_000,
+      learnerKey: LEARNER_KEY,
+      store: store as never,
+    });
+    const before = (await loadLearningState({ stageId: STAGE_ID }, deps(store))).reviewCards[0];
+    expect(before).toMatchObject({ sceneId: SCENE_ID, itemId: 'q1', repetitions: 0 });
+
+    const result = await recordReviewRating(
+      { stageId: STAGE_ID, card: before, rating: 'good', reviewId: 'review-1' },
+      { store: store as never, learnerKey: LEARNER_KEY, now: () => 2_000 },
+    );
+
+    expect(result.card).toMatchObject({
+      cardId: before.cardId,
+      repetitions: 1,
+      intervalDays: 1,
+      dueAt: 2_000 + REVIEW_DAY_MS,
+    });
+    expect(result.evidence).toMatchObject({
+      id: 'review:review-1',
+      itemId: before.cardId,
+      source: 'review',
+      score: 1,
+      weight: 0.5,
+      conceptIds: ['recursion', 'base case'],
+    });
+
+    const state = await loadLearningState({ stageId: STAGE_ID }, deps(store));
+    expect(state.evidence.map((record) => record.id)).toContain('review:review-1');
+    expect(state.reviewCards[0].dueAt).toBe(2_000 + REVIEW_DAY_MS);
+  });
+
+  it('does not advance the schedule twice for one review id', async () => {
+    const store = new FakeRuntimeStore();
+    await recordQuizLearning({
+      stageId: STAGE_ID,
+      sceneId: SCENE_ID,
+      attemptId: 'attempt-1',
+      questions: questions(),
+      results: results(),
+      recordedAt: 1_000,
+      learnerKey: LEARNER_KEY,
+      store: store as never,
+    });
+    const before = (await loadLearningState({ stageId: STAGE_ID }, deps(store))).reviewCards[0];
+    const input = {
+      stageId: STAGE_ID,
+      card: before,
+      rating: 'good' as const,
+      reviewId: 'review-1',
+    };
+    const ratingDeps = { store: store as never, learnerKey: LEARNER_KEY, now: () => 2_000 };
+
+    const first = await recordReviewRating(input, ratingDeps);
+    const replay = await recordReviewRating(input, { ...ratingDeps, now: () => 9_000 });
+
+    expect(replay.card.dueAt).toBe(first.card.dueAt);
+    expect(replay.evidence.id).toBe('review:review-1');
+    const state = await loadLearningState({ stageId: STAGE_ID }, deps(store));
+    expect(state.evidence.filter((record) => record.id === 'review:review-1')).toHaveLength(1);
+  });
+
+  it('returns a lapsed card to short-term relearning', async () => {
+    const store = new FakeRuntimeStore();
+    await recordQuizLearning({
+      stageId: STAGE_ID,
+      sceneId: SCENE_ID,
+      attemptId: 'attempt-1',
+      questions: questions(),
+      results: results(),
+      recordedAt: 1_000,
+      learnerKey: LEARNER_KEY,
+      store: store as never,
+    });
+    const before = (await loadLearningState({ stageId: STAGE_ID }, deps(store))).reviewCards[0];
+    const result = await recordReviewRating(
+      { stageId: STAGE_ID, card: before, rating: 'again', reviewId: 'review-again' },
+      { store: store as never, learnerKey: LEARNER_KEY, now: () => 2_000 },
+    );
+
+    expect(result.card).toMatchObject({
+      repetitions: 0,
+      intervalDays: 0,
+      lapses: 0,
+      dueAt: 2_000 + RELEARN_DELAY_MS,
+    });
+    expect(result.evidence.score).toBe(0);
   });
 });
