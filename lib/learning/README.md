@@ -88,8 +88,17 @@ Two record kinds ride the append-only session:
 uses the bounded, first-write-wins log; a card snapshot with a corrupt due date
 is dropped rather than repaired. The payload is registered as a RuntimeStore
 validator, so a malformed row is rejected at the write boundary as well. The
-logical evidence window is bounded on read; physical compaction of very old
-records is left to the runtime store.
+logical evidence window is bounded on read.
+
+Physical compaction is log-structured, not a checkpoint rewrite. When one
+active session reaches 2,000 records and its oldest record is 30 days old, a
+throttled pass (at most once per stage per six hours, after the learning
+overlay loads) creates a fresh active session and archives the old one with an
+optimistic tail check. A later pass deletes an inactive session only when
+nothing in it is still visible: none of its evidence survives the bounded
+window, and none of its card snapshots is the latest snapshot for a card.
+Active sessions are never deleted, so a concurrent writer cannot lose a record;
+nothing is copied, so a partial failure only leaves records for the next pass.
 
 Review card ids are scene-qualified (`stageId:sceneId:itemId`): quiz item ids
 repeat across scenes (`q1`), and an unqualified id would merge unrelated items
@@ -125,7 +134,8 @@ into one card.
 - The stage header opens a learning overlay: a due-review session with
   show-answer and four-button rating, plus a weakest-first per-concept mastery
   list. Rating a card advances its schedule and appends the half-weight review
-  evidence (`recordReviewRating`); a repeated review id is a no-op.
+  evidence (`recordReviewRating`); a repeated review id is a no-op. Opening the
+  overlay also runs the throttled `maybeCompactLearningHistory` pass.
 - Cards carry `sceneId` / `itemId` so the overlay can find the question stem;
   legacy cards without those fields fall back to decoding the card id. A card
   whose scene or question was deleted stays out of the review session and is
@@ -141,4 +151,3 @@ into one card.
 ## Next
 
 1. Add a placement / adaptive-routing decision on top of real evidence.
-2. Compact very old evidence records in the runtime store.

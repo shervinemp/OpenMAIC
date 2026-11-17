@@ -3,8 +3,9 @@ import {
   type RuntimeRecord,
   type RuntimeRecordInit,
   type RuntimeSession,
+  type RuntimeSessionStatus,
 } from '@openmaic/dsl';
-import type { RuntimeSessionInit } from '@openmaic/storage';
+import { RuntimeAppendConflictError, type RuntimeSessionInit } from '@openmaic/storage';
 
 /**
  * A minimal append-only runtime store: enough of the contract for the
@@ -41,11 +42,44 @@ export class FakeRuntimeStore {
   }
 
   async appendRecord(init: RuntimeRecordInit): Promise<RuntimeRecord> {
+    const session = this.sessions.get(init.sessionId);
+    if (!session) {
+      throw new Error(
+        `@openmaic/storage: cannot append to session ${JSON.stringify(init.sessionId)} - session not found`,
+      );
+    }
+    if (session.status !== 'active') {
+      throw new Error(
+        `@openmaic/storage: cannot append to session ${JSON.stringify(init.sessionId)} with ` +
+          `status '${session.status}' - records may only be appended to an active session`,
+      );
+    }
     const next = (this.seq.get(init.sessionId) ?? 0) + 1;
     this.seq.set(init.sessionId, next);
     const record = { ...init, seq: next } as RuntimeRecord;
     this.records.set(init.sessionId, [...(this.records.get(init.sessionId) ?? []), record]);
     return record;
+  }
+
+  async setSessionStatus(
+    sessionId: string,
+    status: RuntimeSessionStatus,
+    updatedAt: string,
+    options: { expectedLastSeq?: number | null } = {},
+  ): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`session ${sessionId} is absent`);
+    const actual = this.seq.get(sessionId) ?? null;
+    if (options.expectedLastSeq !== undefined && options.expectedLastSeq !== actual) {
+      throw new RuntimeAppendConflictError(sessionId, options.expectedLastSeq, actual);
+    }
+    this.sessions.set(sessionId, { ...session, status, updatedAt });
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    this.sessions.delete(sessionId);
+    this.records.delete(sessionId);
+    this.seq.delete(sessionId);
   }
 
   async listRecords(sessionId: string): Promise<RuntimeRecord[]> {

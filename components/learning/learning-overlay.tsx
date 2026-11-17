@@ -17,6 +17,7 @@ import { useStageStore } from '@/lib/store';
 import { masteryByConcept, masteryConfidence, masteryScore } from '@/lib/learning/mastery';
 import { quizAnswerSummary, cardLocation } from '@/lib/learning/review-presentation';
 import { dueReviewCards, reviewSummary } from '@/lib/learning/review';
+import { maybeCompactLearningHistory } from '@/lib/learning/compact';
 import { loadLearningState, recordReviewRating } from '@/lib/learning/store';
 import type { LearningState } from '@/lib/learning/store-payload';
 import type { ReviewCard, ReviewRating } from '@/lib/learning/types';
@@ -233,7 +234,14 @@ export function LearningOverlay({ stageId, open, onOpenChange }: LearningOverlay
         if (!cancelled) setLoadError(true);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          // Throttled, fire-and-forget maintenance. The loaded state is still
+          // valid: compaction never rewrites visible observations or cards.
+          void maybeCompactLearningHistory({ stageId }).catch((err) => {
+            console.warn('[learning] compaction failed:', err);
+          });
+        }
       });
     return () => {
       cancelled = true;

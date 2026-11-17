@@ -32,6 +32,11 @@ export interface LearningState {
   reviewCards: ReviewCard[];
 }
 
+export interface FoldLearningRecordsOptions {
+  /** Evidence window used by the fold. Defaults to the log's own limit. */
+  evidenceLimit?: number;
+}
+
 /**
  * Validate and normalize one stored payload. Unknown versions and malformed
  * observations are skipped rather than trusted; a corrupted row must not move
@@ -82,7 +87,10 @@ function compareCards(a: ReviewCard, b: ReviewCard): number {
  * snapshots merge per card: a later snapshot for one card does not erase a
  * different card written by another tab.
  */
-export function foldLearningRecords(records: readonly { payload: unknown }[]): LearningState {
+export function foldLearningRecords(
+  records: readonly { payload: unknown }[],
+  options: FoldLearningRecordsOptions = {},
+): LearningState {
   let evidence: readonly LearningEvidence[] = [];
   const cards = new Map<string, ReviewCard>();
 
@@ -90,7 +98,7 @@ export function foldLearningRecords(records: readonly { payload: unknown }[]): L
     const payload = normalizeLearningPayload(record.payload);
     if (!payload) continue;
     if (payload.kind === 'evidence') {
-      evidence = appendEvidence(evidence, payload.evidence);
+      evidence = appendEvidence(evidence, payload.evidence, { limit: options.evidenceLimit });
       continue;
     }
     for (const card of payload.cards) cards.set(card.cardId, card);

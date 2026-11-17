@@ -64,12 +64,65 @@ export function reviewCardId(stageId: string, sceneId: string, itemId: string): 
   return `${encodeSegment(stageId)}:${encodeSegment(sceneId)}:${encodeSegment(itemId)}`;
 }
 
-function mintRecordId(): string {
+export function mintLearningRecordId(): string {
   const suffix =
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `learning-record:${suffix}`;
+}
+
+/**
+ * True for the store's "session is no longer active" rejection. Every
+ * RuntimeStore implementation uses this prefix; the retry below is the only
+ * consumer, and a different failure (version skew, validation) must propagate
+ * untouched.
+ */
+function isSessionClosedError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message.startsWith('@openmaic/storage: cannot append to session')
+  );
+}
+
+/**
+ * Append one learning record, retrying on a fresh active session when a
+ * concurrent compaction archived ours between the session lookup and the
+ * write. Without this retry, a learner could lose evidence to a maintenance
+ * pass that was supposed to be invisible.
+ */
+async function appendLearningRecord(input: {
+  store: RuntimeStore;
+  stageId: string;
+  learnerKey: string;
+  timestamp: string;
+  sessionId: string;
+  payload: LearningRecordPayload;
+  mint: () => string;
+}): Promise<string> {
+  const write = (sessionId: string) =>
+    input.store.appendRecord({
+      id: input.mint(),
+      sessionId,
+      createdAt: input.timestamp,
+      payload: input.payload,
+    });
+
+  try {
+    await write(input.sessionId);
+    return input.sessionId;
+  } catch (error) {
+    if (!isSessionClosedError(error)) throw error;
+    const next = await ensureLearningSession(
+      input.store,
+      input.stageId,
+      input.learnerKey,
+      input.timestamp,
+    );
+    if (next === input.sessionId) throw error;
+    await write(next);
+    return next;
+  }
 }
 
 async function ensureLearningSession(
@@ -191,19 +244,23 @@ export async function appendLearningEvidence(
   const now = deps.now ?? Date.now;
   const timestamp = new Date(now()).toISOString();
   const sessionId = await ensureLearningSession(store, input.stageId, learnerKey, timestamp);
-  const mint = deps.mintRecordId ?? mintRecordId;
+  const mint = deps.mintRecordId ?? mintLearningRecordId;
 
+  let activeSessionId = sessionId;
   for (const evidence of pending) {
     const payload: LearningRecordPayload = {
       version: LEARNING_PAYLOAD_VERSION,
       kind: 'evidence',
       evidence,
     };
-    await store.appendRecord({
-      id: mint(),
-      sessionId,
-      createdAt: timestamp,
+    activeSessionId = await appendLearningRecord({
+      store,
+      stageId: input.stageId,
+      learnerKey,
+      timestamp,
+      sessionId: activeSessionId,
       payload,
+      mint,
     });
   }
 }
@@ -282,11 +339,14 @@ export async function ensureReviewCards(
     kind: 'reviewCards',
     cards: updates,
   };
-  await store.appendRecord({
-    id: (deps.mintRecordId ?? mintRecordId)(),
+  await appendLearningRecord({
+    store,
+    stageId: input.stageId,
+    learnerKey,
+    timestamp,
     sessionId,
-    createdAt: timestamp,
     payload,
+    mint: deps.mintRecordId ?? mintLearningRecordId,
   });
 }
 
@@ -340,19 +400,22 @@ export async function recordReviewRating(
   const now = (deps.now ?? Date.now)();
   const updated = scheduleReview(current, input.rating, now);
   const timestamp = new Date(now).toISOString();
-  const sessionId = await ensureLearningSession(store, input.stageId, learnerKey, timestamp);
-  const mint = deps.mintRecordId ?? mintRecordId;
+  let sessionId = await ensureLearningSession(store, input.stageId, learnerKey, timestamp);
+  const mint = deps.mintRecordId ?? mintLearningRecordId;
 
   const cardPayload: LearningRecordPayload = {
     version: LEARNING_PAYLOAD_VERSION,
     kind: 'reviewCards',
     cards: [updated],
   };
-  await store.appendRecord({
-    id: mint(),
+  sessionId = await appendLearningRecord({
+    store,
+    stageId: input.stageId,
+    learnerKey,
+    timestamp,
     sessionId,
-    createdAt: timestamp,
     payload: cardPayload,
+    mint,
   });
 
   const evidence = evidenceFromReview({
@@ -368,11 +431,14 @@ export async function recordReviewRating(
     kind: 'evidence',
     evidence,
   };
-  await store.appendRecord({
-    id: mint(),
+  await appendLearningRecord({
+    store,
+    stageId: input.stageId,
+    learnerKey,
+    timestamp,
     sessionId,
-    createdAt: timestamp,
     payload: evidencePayload,
+    mint,
   });
 
   return { card: updated, evidence };
