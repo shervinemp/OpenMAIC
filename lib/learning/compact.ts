@@ -280,13 +280,17 @@ export async function maybeCompactLearningHistory(
   deps: LearningStoreDeps = {},
 ): Promise<LearningCompactionResult | null> {
   const now = deps.now?.() ?? Date.now();
-  const last = lastChecks.get(input.stageId);
+  // Multi-learner runtimes share a stage; one learner's check must not suppress
+  // another learner's maintenance. Resolve the partition once and reuse it.
+  const learnerKey = deps.learnerKey ?? (await getLearnerKey());
+  const checkKey = `${input.stageId}\u0000${learnerKey}`;
+  const last = lastChecks.get(checkKey);
   if (last !== undefined && now - last < LEARNING_COMPACTION_CHECK_INTERVAL_MS) return null;
-  lastChecks.set(input.stageId, now);
+  lastChecks.set(checkKey, now);
   try {
-    return await compactLearningHistory(input, deps);
+    return await compactLearningHistory(input, { ...deps, learnerKey });
   } catch (error) {
-    lastChecks.delete(input.stageId);
+    lastChecks.delete(checkKey);
     throw error;
   }
 }

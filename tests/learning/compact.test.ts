@@ -232,6 +232,12 @@ describe('learning compaction', () => {
     const first = await maybeCompactLearningHistory({ stageId: STAGE_ID }, deps(store));
     expect(first?.reason).toBe('no-sessions');
 
+    const otherLearner = await maybeCompactLearningHistory(
+      { stageId: STAGE_ID },
+      { ...deps(store), learnerKey: 'learner-2' },
+    );
+    expect(otherLearner?.reason).toBe('no-sessions');
+
     const second = await maybeCompactLearningHistory({ stageId: STAGE_ID }, deps(store));
     expect(second).toBeNull();
 
