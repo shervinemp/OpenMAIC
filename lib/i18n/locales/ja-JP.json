@@ -540,8 +540,27 @@
         "noReference": "模範解答を追加してからラボを検証してください。",
         "entryNotInReference": "模範解答がエントリーファイルを置き換えていません。",
         "duplicateTestIds": "2 つのテストが同じ ID を使用しています。",
-        "duplicateCheckIds": "2 つのチェックが同じ ID を使用しています。"
-      }
+        "duplicateCheckIds": "2 つのチェックが同じ ID を使用しています。",
+        "setupMissing": "初期化 SQL を追加し、毎回同じスキーマから始まるようにしてください。",
+        "starterMissing": "実行できて、少なくとも 1 つのチェックに失敗するスターターを追加してください。",
+        "noReferenceSql": "模範 SQL を追加してからラボを検証してください。",
+        "referenceMatchesStarter": "模範 SQL がスターターと同一です。"
+      },
+      "expectedRows": "期待する行（JSON）",
+      "invalidRows": "行の JSON 配列を入力してください（例: [[\"Ada\", 24]]）。",
+      "probeSql": "検証クエリ",
+      "ordered": "行の順序が重要",
+      "setupSql": "データベースの初期化",
+      "setupSqlDescription": "毎回の試行前に、新しいデータベースでスキーマとシード行を実行します。",
+      "starterSql": "スターター SQL",
+      "starterSqlDescription": "学習者が最初に見るクエリです。少なくとも 1 つのチェックに失敗する必要があります。",
+      "sqlChecksDescription": "各検証クエリは提出後に実行され、その行が期待値と比較されます。",
+      "referenceSql": "模範 SQL",
+      "referenceSqlDescription": "作成専用です。すべてのチェックを満たす必要があり、検証時に新しいデータベースで実行されます。",
+      "kind": "ラボの種類",
+      "kindDescription": "切り替えると、もう一方の種類に固有のフィールドがリセットされます。元に戻すと復元できます。",
+      "kindCode": "コード",
+      "kindSql": "SQL"
     },
     "cue": {
       "speech": "ナレーション",
@@ -856,7 +875,13 @@
     "unavailableTitle": "このラボはまだ利用できません",
     "unavailableBody": "{{kind}} ラボには、このページにまだない実行環境が必要です。",
     "unsupportedLanguage": "このラボは {{language}} を必要としますが、このランナーはまだ対応していません。",
-    "runnerUnavailable": "このページでコードランナーを起動できませんでした。"
+    "runnerUnavailable": "このページでコードランナーを起動できませんでした。",
+    "sqlEditor": "SQL クエリ",
+    "sqlNoOutput": "クエリを実行すると、ここに結果が表示されます。",
+    "sqlEmptyOutput": "クエリは結果なしで終了しました。",
+    "sqlError": "SQL エラー",
+    "sqlProbeError": "プローブが失敗しました: {{id}}",
+    "sqlEmptyResult": "行は返されませんでした。"
   },
   "roundtable": {
     "teacher": "教師",

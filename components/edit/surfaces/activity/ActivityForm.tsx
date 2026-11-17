@@ -1,16 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Loader2,
-  Plus,
-  ShieldCheck,
-  Trash2,
-  XCircle,
-} from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, ShieldCheck } from 'lucide-react';
 import type {
   ActivityCheck,
   ActivityContent,
@@ -19,10 +10,21 @@ import type {
 } from '@/lib/types/stage';
 import type { ActivityRunner } from '@/lib/activity/code-runner';
 import { createPythonCodeRunner } from '@/lib/activity/code-runner';
-import { type CodeActivityVerification, verifyCodeActivity } from '@/lib/activity/verify';
+import { type ActivityVerification, verifyCodeActivity } from '@/lib/activity/verify';
 import { MarkdownText } from '@/components/scene-renderers/pbl/v2/markdown-text';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
+import {
+  ActivityKindSelect,
+  AddButton,
+  CODE,
+  INPUT,
+  LABEL,
+  RemoveButton,
+  Section,
+  VerificationPanel,
+} from './activity-form-ui';
+import { SqlActivityEditor } from './SqlActivityForm';
 import {
   addActivityCheckBound,
   addActivityFileBound,
@@ -35,6 +37,7 @@ import {
   removeActivityHintBound,
   removeActivityReferenceFileBound,
   removeActivityTestBound,
+  switchActivityKindBound,
   updateActivityBasicsBound,
   updateActivityCheckBound,
   updateActivityFileBound,
@@ -44,65 +47,6 @@ import {
   useActivitySurfaceLifecycle,
   useResolvedActivityContent,
 } from './use-activity-surface';
-
-const INPUT =
-  'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm outline-none transition-colors focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30';
-const LABEL = 'text-[11px] font-semibold uppercase tracking-wide text-muted-foreground';
-const SECTION = 'rounded-xl border border-border/70 bg-card p-4';
-const CODE =
-  'w-full resize-y rounded-md border border-border bg-zinc-950 px-2.5 py-2 font-mono text-[12px] leading-relaxed text-zinc-100 outline-none focus:border-cyan-500';
-
-function Section({
-  title,
-  description,
-  children,
-  action,
-}: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-  action?: React.ReactNode;
-}) {
-  return (
-    <section className={SECTION}>
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold">{title}</h2>
-          {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
-        </div>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted"
-    >
-      <Plus className="h-3.5 w-3.5" />
-      {label}
-    </button>
-  );
-}
-
-function RemoveButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-    >
-      <Trash2 className="h-3.5 w-3.5" />
-    </button>
-  );
-}
 
 function checkMode(check: ActivityCheck): 'exact' | 'contains' {
   return 'mode' in check && check.mode === 'contains' ? 'contains' : 'exact';
@@ -235,56 +179,11 @@ function CheckFields({ check, index }: { check: CodeActivityCheck; index: number
   );
 }
 
-function VerificationPanel({ report }: { report: CodeActivityVerification }) {
-  const { t } = useI18n();
-  return (
-    <div
-      data-testid="activity-verification"
-      className={cn(
-        'rounded-lg border p-3 text-sm',
-        report.ok
-          ? 'border-emerald-300/60 bg-emerald-50 text-emerald-900 dark:border-emerald-700/40 dark:bg-emerald-500/10 dark:text-emerald-200'
-          : 'border-amber-300/60 bg-amber-50 text-amber-900 dark:border-amber-700/40 dark:bg-amber-500/10 dark:text-amber-200',
-      )}
-    >
-      <div className="flex items-center gap-2 font-semibold">
-        {report.ok ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-        {report.ok ? t('edit.activity.verified') : t('edit.activity.unverified')}
-      </div>
-      {report.reference && (
-        <p className="mt-1 text-xs">
-          {t('edit.activity.verifyReference', {
-            passed: report.reference.evaluation.results.filter(
-              (result) => result.status === 'passed',
-            ).length,
-            total: report.reference.evaluation.results.length,
-          })}
-        </p>
-      )}
-      {report.starter && (
-        <p className="mt-0.5 text-xs">
-          {t('edit.activity.verifyStarter', {
-            failed: report.starter.evaluation.results.filter((result) => result.status === 'failed')
-              .length,
-          })}
-        </p>
-      )}
-      {report.issues.length > 0 && (
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
-          {report.issues.map((issue, index) => (
-            <li key={index}>{issue}</li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 function CodeActivityEditor({ content }: { content: CodeActivityContent }) {
   const { t } = useI18n();
   const runnerRef = useRef<ActivityRunner | null>(null);
   const [verifying, setVerifying] = useState(false);
-  const [report, setReport] = useState<CodeActivityVerification | null>(null);
+  const [report, setReport] = useState<ActivityVerification | null>(null);
   const [newCheckType, setNewCheckType] = useState<CodeActivityCheck['type']>('expectTests');
 
   useEffect(() => {
@@ -317,6 +216,7 @@ function CodeActivityEditor({ content }: { content: CodeActivityContent }) {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-background">
       <div className="mx-auto w-full max-w-4xl space-y-4 px-5 py-5">
+        <ActivityKindSelect value="code" onChange={switchActivityKindBound} />
         <Section title={t('edit.activity.basics')}>
           <div className="grid gap-3">
             <label className="grid gap-1">
@@ -669,6 +569,8 @@ export function ActivityForm() {
     <div className="h-full min-h-0" data-activity-editor={sceneId} aria-label={heading}>
       {content.kind === 'code' ? (
         <CodeActivityEditor content={content} />
+      ) : content.kind === 'sql' ? (
+        <SqlActivityEditor content={content} />
       ) : (
         <UnsupportedKind content={content} />
       )}

@@ -58,7 +58,7 @@ function checkLabel(
   return label && label.trim() ? label : t('activity.checkFallback', { id: checkId });
 }
 
-export function ActivityView({ content, sceneId }: ActivityViewProps) {
+export function CodeActivityView({ content, sceneId }: ActivityViewProps) {
   const { t } = useI18n();
   const learnerContent = useMemo(() => projectActivityForLearner(content), [content]);
   const runnerRef = useRef<ActivityRunner | null>(null);

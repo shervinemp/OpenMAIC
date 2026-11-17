@@ -1,5 +1,5 @@
 /**
- * Authoring-time verification for code activities.
+ * Authoring-time verification for activity labs.
  *
  * A lab is only trustworthy if its own reference solution passes every check
  * and its starter does not. The first proves the checks are satisfiable; the
@@ -11,12 +11,21 @@
  * so the same logic can run in the authoring UI (browser worker) or in a
  * server-side isolation service later.
  */
-import type { ActivityFile, CodeActivityContent } from '@/lib/types/stage';
+import type {
+  ActivityContent,
+  ActivityFile,
+  CodeActivityContent,
+  SqlActivityContent,
+} from '@/lib/types/stage';
 import { evaluateActivityChecks, type ActivityEvaluation } from './checks';
-import { buildActivityRunRequest, type ActivityRunResult } from './protocol';
-import type { ActivityRunner } from './code-runner';
+import {
+  buildActivityRunRequest,
+  type ActivityRunRequest,
+  type ActivityRunResult,
+} from './protocol';
+import type { ActivityRunner } from './worker-runner';
 
-export interface CodeActivityVerification {
+export interface ActivityVerification {
   /** True only when the reference passes every check and the starter fails at least one. */
   ok: boolean;
   /** Human-readable reasons the lab is not verifiable. Empty when `ok`. */
@@ -31,10 +40,16 @@ export interface CodeActivityVerification {
   };
 }
 
-export interface CodeActivityVerificationOptions {
+export type CodeActivityVerification = ActivityVerification;
+export type SqlActivityVerification = ActivityVerification;
+
+export interface ActivityVerificationOptions {
   /** Skip the starter mutation run (reference-only check). Defaults to false. */
   referenceOnly?: boolean;
 }
+
+export type CodeActivityVerificationOptions = ActivityVerificationOptions;
+export type SqlActivityVerificationOptions = ActivityVerificationOptions;
 
 /** Merge reference files over the starter workspace without mutating either. */
 export function referenceWorkspaceFiles(
@@ -54,16 +69,76 @@ export function workspaceFiles(
   return files;
 }
 
-function checkIssues(evaluation: ActivityEvaluation, phase: 'reference' | 'starter'): string[] {
-  if (phase === 'reference') {
-    return evaluation.results
-      .filter((result) => result.status !== 'passed')
-      .map(
-        (result) =>
-          `Reference solution ${result.status === 'failed' ? 'failed' : 'was not graded for'} check ${JSON.stringify(result.checkId)}${result.message ? `: ${result.message}` : '.'}`,
-      );
+function referenceCheckIssues(evaluation: ActivityEvaluation, referenceLabel: string): string[] {
+  return evaluation.results
+    .filter((result) => result.status !== 'passed')
+    .map((result) => {
+      const detail = [result.message, result.actual].filter(Boolean).join(' — ');
+      return `${referenceLabel} ${result.status === 'failed' ? 'failed' : 'was not graded for'} check ${JSON.stringify(result.checkId)}${detail ? `: ${detail}` : '.'}`;
+    });
+}
+
+async function verifyWithRequests(
+  activity: ActivityContent,
+  runner: ActivityRunner,
+  referenceRequest: ActivityRunRequest,
+  starterRequest: ActivityRunRequest,
+  options: ActivityVerificationOptions,
+  referenceLabel: string,
+): Promise<ActivityVerification> {
+  const issues: string[] = [];
+
+  const referenceResult = await runner.run(referenceRequest);
+  const referenceEvaluation = evaluateActivityChecks(activity, referenceResult);
+  if (referenceResult.status !== 'ok') {
+    issues.push(
+      referenceResult.status === 'timeout'
+        ? `${referenceLabel} timed out.`
+        : `The reference run failed: ${referenceResult.error ?? 'unknown runner error'}.`,
+    );
+  } else if (!referenceEvaluation.passed) {
+    issues.push(...referenceCheckIssues(referenceEvaluation, referenceLabel));
   }
-  return [];
+
+  const report: ActivityVerification = {
+    ok: false,
+    issues,
+    reference: { result: referenceResult, evaluation: referenceEvaluation },
+  };
+
+  if (options.referenceOnly) {
+    report.ok = issues.length === 0;
+    return report;
+  }
+  if (issues.length > 0) return report;
+
+  const starterResult = await runner.run(starterRequest);
+  const starterEvaluation = evaluateActivityChecks(activity, starterResult);
+  report.starter = { result: starterResult, evaluation: starterEvaluation };
+
+  if (starterResult.status !== 'ok') {
+    report.issues.push(
+      starterResult.status === 'timeout'
+        ? 'The starter timed out instead of failing a check cleanly.'
+        : `The starter run failed: ${starterResult.error ?? 'unknown runner error'}.`,
+    );
+    return report;
+  }
+  if (starterEvaluation.passed) {
+    report.issues.push(
+      'The starter already passes every check, so the lab asks the learner to do nothing.',
+    );
+    return report;
+  }
+  if (!starterEvaluation.results.some((result) => result.status === 'failed')) {
+    report.issues.push(
+      'The starter produced no definite failures, so the checks do not prove the task is incomplete.',
+    );
+    return report;
+  }
+
+  report.ok = true;
+  return report;
 }
 
 /**
@@ -74,10 +149,8 @@ function checkIssues(evaluation: ActivityEvaluation, phase: 'reference' | 'start
 export async function verifyCodeActivity(
   activity: CodeActivityContent,
   runner: ActivityRunner,
-  options: CodeActivityVerificationOptions = {},
-): Promise<CodeActivityVerification> {
-  const issues: string[] = [];
-
+  options: ActivityVerificationOptions = {},
+): Promise<ActivityVerification> {
   if (activity.checks.length === 0) {
     return { ok: false, issues: ['The lab has no checks, so there is nothing to verify.'] };
   }
@@ -110,65 +183,69 @@ export async function verifyCodeActivity(
       issues: ['The reference workspace could not be submitted to the code runner.'],
     };
   }
-
-  const referenceResult = await runner.run(referenceRequest);
-  const referenceEvaluation = evaluateActivityChecks(activity, referenceResult);
-  if (referenceResult.status !== 'ok') {
-    issues.push(
-      referenceResult.status === 'timeout'
-        ? 'The reference solution timed out.'
-        : `The reference run failed: ${referenceResult.error ?? 'unknown runner error'}.`,
-    );
-  } else if (!referenceEvaluation.passed) {
-    issues.push(...checkIssues(referenceEvaluation, 'reference'));
-  }
-
-  const report: CodeActivityVerification = {
-    ok: false,
-    issues,
-    reference: { result: referenceResult, evaluation: referenceEvaluation },
-  };
-
-  if (options.referenceOnly) {
-    report.ok = issues.length === 0;
-    return report;
-  }
-  if (issues.length > 0) return report;
-
   const starterRequest = buildActivityRunRequest(activity, {
     kind: 'code',
     files: workspaceFiles(activity.files),
   });
   if (!starterRequest) {
-    report.issues.push('The starter workspace could not be submitted to the code runner.');
-    return report;
+    return {
+      ok: false,
+      issues: ['The starter workspace could not be submitted to the code runner.'],
+    };
   }
 
-  const starterResult = await runner.run(starterRequest);
-  const starterEvaluation = evaluateActivityChecks(activity, starterResult);
-  report.starter = { result: starterResult, evaluation: starterEvaluation };
+  return verifyWithRequests(
+    activity,
+    runner,
+    referenceRequest,
+    starterRequest,
+    options,
+    'Reference solution',
+  );
+}
 
-  if (starterResult.status !== 'ok') {
-    report.issues.push(
-      starterResult.status === 'timeout'
-        ? 'The starter timed out instead of failing a check cleanly.'
-        : `The starter run failed: ${starterResult.error ?? 'unknown runner error'}.`,
-    );
-    return report;
+/**
+ * Verify a SQL activity. The reference SQL and the starter SQL run against
+ * freshly seeded databases, then the same probes the learner is graded on.
+ */
+export async function verifySqlActivity(
+  activity: SqlActivityContent,
+  runner: ActivityRunner,
+  options: ActivityVerificationOptions = {},
+): Promise<ActivityVerification> {
+  if (activity.checks.length === 0) {
+    return { ok: false, issues: ['The lab has no checks, so there is nothing to verify.'] };
   }
-  if (starterEvaluation.passed) {
-    report.issues.push(
-      'The starter already passes every check, so the lab asks the learner to do nothing.',
-    );
-    return report;
-  }
-  if (!starterEvaluation.results.some((result) => result.status === 'failed')) {
-    report.issues.push(
-      'The starter produced no definite failures, so the checks do not prove the task is incomplete.',
-    );
-    return report;
+  if (!activity.referenceSql || activity.referenceSql.trim() === '') {
+    return {
+      ok: false,
+      issues: [
+        'The lab has no reference SQL. Add a reference query so its checks can be proven satisfiable.',
+      ],
+    };
   }
 
-  report.ok = true;
-  return report;
+  const referenceRequest = buildActivityRunRequest(activity, {
+    kind: 'sql',
+    sql: activity.referenceSql,
+  });
+  if (!referenceRequest) {
+    return { ok: false, issues: ['The reference SQL could not be submitted to the SQL runner.'] };
+  }
+  const starterRequest = buildActivityRunRequest(activity, {
+    kind: 'sql',
+    sql: activity.starterSql,
+  });
+  if (!starterRequest) {
+    return { ok: false, issues: ['The starter SQL could not be submitted to the SQL runner.'] };
+  }
+
+  return verifyWithRequests(
+    activity,
+    runner,
+    referenceRequest,
+    starterRequest,
+    options,
+    'Reference SQL',
+  );
 }

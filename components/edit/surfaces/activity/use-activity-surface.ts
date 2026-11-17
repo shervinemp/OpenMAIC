@@ -10,7 +10,6 @@ import type {
   ActivityFile,
   ActivityTest,
   CodeActivityCheck,
-  CodeActivityContent,
 } from '@/lib/types/stage';
 import {
   addActivityCheck,
@@ -18,19 +17,27 @@ import {
   addActivityHint,
   addActivityReferenceFile,
   addActivityTest,
+  addSqlCheck,
   moveActivityTest,
   removeActivityCheck,
   removeActivityFile,
   removeActivityHint,
   removeActivityReferenceFile,
   removeActivityTest,
+  removeSqlCheck,
   setActivityHints,
+  setSqlReference,
+  setSqlSetup,
+  setSqlStarter,
+  switchActivityKind,
   updateActivityBasics,
   updateActivityCheck,
   updateActivityFile,
   updateActivityHint,
   updateActivityReferenceFile,
   updateActivityTest,
+  updateSqlActivityBasics,
+  updateSqlCheck,
 } from './activity-edit-ops';
 import { useActivityEditSession } from './activity-edit-session';
 
@@ -56,10 +63,6 @@ function currentActivityContent(sceneId: string): ActivityContent | null {
 function resolvePresent(): ActivityContent {
   const { history, sceneId } = useActivityEditSession.getState();
   return history?.present ?? (sceneId ? currentActivityContent(sceneId) : null) ?? EMPTY_ACTIVITY;
-}
-
-function codeOrNull(content: ActivityContent): CodeActivityContent | null {
-  return content.kind === 'code' ? content : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +168,53 @@ export function removeActivityReferenceFileBound(index: number): void {
   commitActivity(removeActivityReferenceFile(resolvePresent(), index));
 }
 
+export function updateSqlBasicsBound(
+  patch: Parameters<typeof updateSqlActivityBasics>[1],
+  coalesceKey: string,
+): void {
+  useActivityEditSession
+    .getState()
+    .commitText(updateSqlActivityBasics(resolvePresent(), patch), coalesceKey);
+}
+
+export function setSqlSetupBound(value: string): void {
+  useActivityEditSession.getState().commitText(setSqlSetup(resolvePresent(), value), 'sql:setup');
+}
+
+export function setSqlStarterBound(value: string): void {
+  useActivityEditSession
+    .getState()
+    .commitText(setSqlStarter(resolvePresent(), value), 'sql:starter');
+}
+
+export function setSqlReferenceBound(value: string): void {
+  useActivityEditSession
+    .getState()
+    .commitText(setSqlReference(resolvePresent(), value), 'sql:reference');
+}
+
+export function addSqlCheckBound(): void {
+  commitActivity(addSqlCheck(resolvePresent()));
+}
+
+export function updateSqlCheckBound(
+  index: number,
+  patch: Parameters<typeof updateSqlCheck>[2],
+  field: string,
+): void {
+  useActivityEditSession
+    .getState()
+    .commitText(updateSqlCheck(resolvePresent(), index, patch), `sqlcheck:${index}:${field}`);
+}
+
+export function removeSqlCheckBound(index: number): void {
+  commitActivity(removeSqlCheck(resolvePresent(), index));
+}
+
+export function switchActivityKindBound(kind: 'code' | 'sql'): void {
+  commitActivity(switchActivityKind(resolvePresent(), kind));
+}
+
 // ---------------------------------------------------------------------------
 // Authoring hints
 // ---------------------------------------------------------------------------
@@ -181,13 +231,29 @@ export function buildActivityHints(
     hints.push({ id, severity, message: t(`edit.activity.hint.${key}`) });
   };
 
-  const current = codeOrNull(content);
+  const current = content.kind === 'code' || content.kind === 'sql' ? content : null;
   if (!current) {
     add('unsupported', 'info', 'unsupportedKind');
     return hints;
   }
 
   if (!current.instructions.trim()) add('instructions', 'suggestion', 'emptyInstructions');
+
+  if (current.kind === 'sql') {
+    if (!current.setupSql.trim()) add('setup', 'warning', 'setupMissing');
+    if (!current.starterSql.trim()) add('starter', 'suggestion', 'starterMissing');
+    if (current.checks.length === 0) add('checks', 'warning', 'noChecks');
+    if (!current.referenceSql || !current.referenceSql.trim()) {
+      add('reference', 'suggestion', 'noReferenceSql');
+    } else if (current.referenceSql.trim() === current.starterSql.trim()) {
+      add('reference', 'warning', 'referenceMatchesStarter');
+    }
+    if (new Set(current.checks.map((check) => check.id)).size !== current.checks.length) {
+      add('duplicateChecks', 'warning', 'duplicateCheckIds');
+    }
+    return hints;
+  }
+
   if (!current.entryFile.trim()) add('entryFile', 'warning', 'entryMissing');
   else if (!current.files.some((file) => file.path === current.entryFile)) {
     add('entryFile', 'warning', 'entryMissing');

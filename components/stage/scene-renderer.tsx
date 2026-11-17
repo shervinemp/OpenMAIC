@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import type { Scene, StageMode } from '@/lib/types/stage';
 import { SlideEditor as SlideRenderer } from '../slide-renderer/Editor';
 import { QuizView } from '../scene-renderers/quiz-view';
-import { ActivityView } from '../scene-renderers/activity-view';
+import { ActivityView } from '../scene-renderers/activity-scene-view';
 import { InteractiveRenderer } from '../scene-renderers/interactive-renderer';
 import { PBLRenderer } from '../scene-renderers/pbl-renderer';
 

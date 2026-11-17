@@ -540,8 +540,27 @@
         "noReference": "添加参考答案后验证实验。",
         "entryNotInReference": "参考答案没有替换入口文件。",
         "duplicateTestIds": "有两个测试使用了相同的 ID。",
-        "duplicateCheckIds": "有两个检查使用了相同的 ID。"
-      }
+        "duplicateCheckIds": "有两个检查使用了相同的 ID。",
+        "setupMissing": "添加初始化 SQL，让每次尝试都从相同的表结构开始。",
+        "starterMissing": "添加一个能运行但至少有一项检查失败的初始查询。",
+        "noReferenceSql": "添加参考 SQL，然后验证实验。",
+        "referenceMatchesStarter": "参考 SQL 与初始 SQL 完全相同。"
+      },
+      "expectedRows": "期望结果行（JSON）",
+      "invalidRows": "请输入行的 JSON 数组，例如 [[\"Ada\", 24]]。",
+      "probeSql": "检查查询",
+      "ordered": "行顺序重要",
+      "setupSql": "数据库初始化",
+      "setupSqlDescription": "每次尝试前都会在全新数据库上执行建表和种子数据。",
+      "starterSql": "初始 SQL",
+      "starterSqlDescription": "学习者首先看到的查询；它必须至少有一项检查失败。",
+      "sqlChecksDescription": "每条检查查询在提交后运行，其结果行会与期望值比较。",
+      "referenceSql": "参考 SQL",
+      "referenceSqlDescription": "仅用于编写。它必须满足所有检查；验证会在全新数据库上运行它。",
+      "kind": "实验类型",
+      "kindDescription": "切换会重置另一种实验类型特有的字段；撤销可恢复。",
+      "kindCode": "代码",
+      "kindSql": "SQL"
     },
     "cue": {
       "speech": "讲解",
@@ -856,7 +875,13 @@
     "unavailableTitle": "此实验暂不可用",
     "unavailableBody": "{{kind}} 实验需要此页面尚不具备的运行环境。",
     "unsupportedLanguage": "此实验需要 {{language}}，当前运行器尚不支持。",
-    "runnerUnavailable": "代码运行器无法在此页面启动。"
+    "runnerUnavailable": "代码运行器无法在此页面启动。",
+    "sqlEditor": "SQL 查询",
+    "sqlNoOutput": "运行查询后，结果会显示在这里。",
+    "sqlEmptyOutput": "查询已运行，但没有可显示的结果。",
+    "sqlError": "SQL 错误",
+    "sqlProbeError": "检查查询失败：{{id}}",
+    "sqlEmptyResult": "没有返回任何行。"
   },
   "roundtable": {
     "teacher": "教师",

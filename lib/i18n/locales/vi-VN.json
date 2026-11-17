@@ -540,8 +540,27 @@
         "noReference": "Thêm lời giải tham chiếu rồi xác minh phòng thực hành.",
         "entryNotInReference": "Lời giải tham chiếu không thay thế tệp thực thi.",
         "duplicateTestIds": "Hai bài kiểm thử dùng cùng một ID.",
-        "duplicateCheckIds": "Hai kiểm tra dùng cùng một ID."
-      }
+        "duplicateCheckIds": "Hai kiểm tra dùng cùng một ID.",
+        "setupMissing": "Thêm SQL khởi tạo để mỗi lần thử bắt đầu từ cùng một lược đồ.",
+        "starterMissing": "Thêm truy vấn khởi đầu chạy được nhưng trượt ít nhất một kiểm tra.",
+        "noReferenceSql": "Thêm SQL tham chiếu rồi xác minh phòng thực hành.",
+        "referenceMatchesStarter": "SQL tham chiếu giống hệt SQL khởi đầu."
+      },
+      "expectedRows": "Các hàng kỳ vọng (JSON)",
+      "invalidRows": "Nhập mảng JSON các hàng, ví dụ [[\"Ada\", 24]].",
+      "probeSql": "Truy vấn kiểm tra",
+      "ordered": "Thứ tự hàng quan trọng",
+      "setupSql": "Khởi tạo cơ sở dữ liệu",
+      "setupSqlDescription": "Lược đồ và các hàng dữ liệu mẫu được chạy trên cơ sở dữ liệu mới trước mỗi lần thử.",
+      "starterSql": "SQL khởi đầu",
+      "starterSqlDescription": "Truy vấn người học thấy đầu tiên; nó phải trượt ít nhất một kiểm tra.",
+      "sqlChecksDescription": "Mỗi truy vấn kiểm tra chạy sau khi gửi bài; các hàng của nó được so với kỳ vọng.",
+      "referenceSql": "SQL tham chiếu",
+      "referenceSqlDescription": "Chỉ dùng khi soạn bài. Nó phải thỏa mọi kiểm tra; quá trình xác minh chạy nó trên cơ sở dữ liệu mới.",
+      "kind": "Loại phòng thực hành",
+      "kindDescription": "Chuyển loại sẽ đặt lại các trường riêng của loại kia; hoàn tác sẽ khôi phục chúng.",
+      "kindCode": "Mã",
+      "kindSql": "SQL"
     },
     "cue": {
       "speech": "Lời giảng",
@@ -856,7 +875,13 @@
     "unavailableTitle": "Phòng thực hành này chưa khả dụng",
     "unavailableBody": "Phòng thực hành {{kind}} cần một môi trường chạy mà trang này chưa có.",
     "unsupportedLanguage": "Phòng thực hành này yêu cầu {{language}}, mà trình chạy này chưa hỗ trợ.",
-    "runnerUnavailable": "Không thể khởi động trình chạy mã trên trang này."
+    "runnerUnavailable": "Không thể khởi động trình chạy mã trên trang này.",
+    "sqlEditor": "Truy vấn SQL",
+    "sqlNoOutput": "Chạy truy vấn để xem kết quả tại đây.",
+    "sqlEmptyOutput": "Truy vấn kết thúc mà không có kết quả để hiển thị.",
+    "sqlError": "Lỗi SQL",
+    "sqlProbeError": "Truy vấn kiểm tra thất bại: {{id}}",
+    "sqlEmptyResult": "Không trả về hàng nào."
   },
   "roundtable": {
     "teacher": "GIẢNG VIÊN",

@@ -540,8 +540,27 @@
         "noReference": "أضف حلًا مرجعيًا ثم تحقق من المختبر.",
         "entryNotInReference": "الحل المرجعي لا يستبدل ملف الدخول.",
         "duplicateTestIds": "اختباران يستخدمان المعرّف نفسه.",
-        "duplicateCheckIds": "فحصان يستخدمان المعرّف نفسه."
-      }
+        "duplicateCheckIds": "فحصان يستخدمان المعرّف نفسه.",
+        "setupMissing": "أضف SQL التهيئة لتبدأ كل محاولة من المخطط نفسه.",
+        "starterMissing": "أضف استعلامًا مبدئيًا يعمل لكنه يفشل في فحص واحد على الأقل.",
+        "noReferenceSql": "أضف SQL المرجعي ثم تحقق من المختبر.",
+        "referenceMatchesStarter": "SQL المرجعي مطابق لـ SQL المبدئي."
+      },
+      "expectedRows": "الصفوف المتوقعة (JSON)",
+      "invalidRows": "أدخل مصفوفة JSON من الصفوف، مثل [[\"Ada\", 24]].",
+      "probeSql": "استعلام الفحص",
+      "ordered": "ترتيب الصفوف مهم",
+      "setupSql": "تهيئة قاعدة البيانات",
+      "setupSqlDescription": "يُنفَّذ المخطط وصفوف البيانات الأولية على قاعدة جديدة قبل كل محاولة.",
+      "starterSql": "SQL المبدئي",
+      "starterSqlDescription": "الاستعلام الذي يراه المتعلم أولًا؛ ويجب أن يفشل في فحص واحد على الأقل.",
+      "sqlChecksDescription": "يُنفَّذ كل استعلام فحص بعد الإرسال، وتُقارن صفوفه بالقيمة المتوقعة.",
+      "referenceSql": "SQL المرجعي",
+      "referenceSqlDescription": "للتأليف فقط. يجب أن يحقق كل الفحوص؛ ويُشغَّل عند التحقق على قاعدة جديدة.",
+      "kind": "نوع المختبر",
+      "kindDescription": "يؤدي التبديل إلى إعادة ضبط الحقول الخاصة بالنوع الآخر؛ ويمكن للإلغاء استعادتها.",
+      "kindCode": "كود",
+      "kindSql": "SQL"
     },
     "cue": {
       "speech": "السرد",
@@ -856,7 +875,13 @@
     "unavailableTitle": "هذا المختبر غير متاح بعد",
     "unavailableBody": "تحتاج مختبرات {{kind}} إلى بيئة تشغيل لا توفرها هذه الصفحة بعد.",
     "unsupportedLanguage": "يطلب هذا المختبر {{language}}، وهو غير مدعوم في هذا المشغّل بعد.",
-    "runnerUnavailable": "تعذّر بدء مشغّل الكود في هذه الصفحة."
+    "runnerUnavailable": "تعذّر بدء مشغّل الكود في هذه الصفحة.",
+    "sqlEditor": "استعلام SQL",
+    "sqlNoOutput": "شغّل استعلامك لعرض النتيجة هنا.",
+    "sqlEmptyOutput": "انتهى الاستعلام دون نتيجة للعرض.",
+    "sqlError": "خطأ SQL",
+    "sqlProbeError": "فشل استعلام الفحص: {{id}}",
+    "sqlEmptyResult": "لم تُرجع أي صفوف."
   },
   "roundtable": {
     "teacher": "المعلم",

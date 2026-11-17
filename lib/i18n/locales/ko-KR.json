@@ -684,8 +684,27 @@
         "noReference": "참조 풀이를 추가한 뒤 실습을 검증하세요.",
         "entryNotInReference": "참조 풀이가 진입 파일을 대체하지 않습니다.",
         "duplicateTestIds": "두 테스트가 같은 ID를 사용합니다.",
-        "duplicateCheckIds": "두 검사가 같은 ID를 사용합니다."
-      }
+        "duplicateCheckIds": "두 검사가 같은 ID를 사용합니다.",
+        "setupMissing": "초기화 SQL을 추가해 매번 같은 스키마에서 시작하도록 하세요.",
+        "starterMissing": "실행되지만 하나 이상의 검사에서 실패하는 시작 쿼리를 추가하세요.",
+        "noReferenceSql": "참조 SQL을 추가한 뒤 실습을 검증하세요.",
+        "referenceMatchesStarter": "참조 SQL이 시작 SQL과 동일합니다."
+      },
+      "expectedRows": "예상 행(JSON)",
+      "invalidRows": "행의 JSON 배열을 입력하세요. 예: [[\"Ada\", 24]]",
+      "probeSql": "검사 쿼리",
+      "ordered": "행 순서 중요",
+      "setupSql": "데이터베이스 초기화",
+      "setupSqlDescription": "시도할 때마다 새 데이터베이스에서 스키마와 시드 행을 실행합니다.",
+      "starterSql": "시작 SQL",
+      "starterSqlDescription": "학습자가 처음 보는 쿼리이며, 하나 이상의 검사에서 실패해야 합니다.",
+      "sqlChecksDescription": "각 검사 쿼리는 제출 후 실행되며, 그 행이 예상 값과 비교됩니다.",
+      "referenceSql": "참조 SQL",
+      "referenceSqlDescription": "작성 전용입니다. 모든 검사를 충족해야 하며, 검증 시 새 데이터베이스에서 실행됩니다.",
+      "kind": "실습 유형",
+      "kindDescription": "전환하면 다른 실습 유형의 필드가 초기화됩니다. 실행 취소로 복원할 수 있습니다.",
+      "kindCode": "코드",
+      "kindSql": "SQL"
     },
     "zorder": {
       "toFront": "맨 앞으로 가져오기",
@@ -856,7 +875,13 @@
     "unavailableTitle": "이 실습은 아직 사용할 수 없습니다",
     "unavailableBody": "{{kind}} 실습에는 이 페이지에 아직 없는 실행 환경이 필요합니다.",
     "unsupportedLanguage": "이 실습은 {{language}}을(를) 요구하지만 이 실행기는 아직 지원하지 않습니다.",
-    "runnerUnavailable": "이 페이지에서 코드 실행기를 시작할 수 없습니다."
+    "runnerUnavailable": "이 페이지에서 코드 실행기를 시작할 수 없습니다.",
+    "sqlEditor": "SQL 쿼리",
+    "sqlNoOutput": "쿼리를 실행하면 여기에 결과가 표시됩니다.",
+    "sqlEmptyOutput": "쿼리가 결과 없이 끝났습니다.",
+    "sqlError": "SQL 오류",
+    "sqlProbeError": "프로브 실패: {{id}}",
+    "sqlEmptyResult": "반환된 행이 없습니다."
   },
   "roundtable": {
     "teacher": "선생님",

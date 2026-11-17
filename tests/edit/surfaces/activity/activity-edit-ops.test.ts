@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { validateActivityContent } from '@openmaic/dsl';
 import type { ActivityContent, CodeActivityContent } from '@/lib/types/stage';
 import {
   addActivityCheck,
@@ -23,6 +24,14 @@ import {
   commitActivityContent,
   redoActivity,
   undoActivity,
+  addSqlCheck,
+  removeSqlCheck,
+  setSqlReference,
+  setSqlSetup,
+  setSqlStarter,
+  switchActivityKind,
+  updateSqlActivityBasics,
+  updateSqlCheck,
 } from '@/components/edit/surfaces/activity/activity-edit-ops';
 
 function activity(overrides: Partial<CodeActivityContent> = {}): CodeActivityContent {
@@ -167,13 +176,117 @@ describe('non-code activities', () => {
     checks: [],
   };
 
-  it('passes through every mutation unchanged', () => {
+  it('keeps code-only mutations away from a SQL lab', () => {
     expect(addActivityFile(sql)).toBe(sql);
     expect(addActivityTest(sql)).toBe(sql);
     expect(addActivityCheck(sql, 'expectTests')).toBe(sql);
-    expect(addActivityHint(sql)).toBe(sql);
     expect(addActivityReferenceFile(sql)).toBe(sql);
     expect(updateActivityBasics(sql, { language: 'sql' })).toBe(sql);
     expect(removeActivityFile(sql, 0)).toBe(sql);
+  });
+
+  it('edits SQL basics and the three SQL bodies', () => {
+    let next: ActivityContent = updateSqlActivityBasics(sql, {
+      instructions: 'Return the adults.',
+      timeLimitSec: 20,
+      debrief: 'Views encapsulate a query.',
+    });
+    expect(next).toMatchObject({
+      kind: 'sql',
+      instructions: 'Return the adults.',
+      timeLimitSec: 20,
+      debrief: 'Views encapsulate a query.',
+    });
+
+    next = setSqlSetup(next, 'create table t (n int);');
+    next = setSqlStarter(next, 'select * from t;');
+    next = setSqlReference(next, 'select n from t;');
+    expect(next).toMatchObject({
+      setupSql: 'create table t (n int);',
+      starterSql: 'select * from t;',
+      referenceSql: 'select n from t;',
+    });
+  });
+
+  it('adds, updates and removes SQL checks without touching code ones', () => {
+    let next: ActivityContent = addSqlCheck(sql);
+    if (next.kind !== 'sql') throw new Error('expected sql');
+    expect(next.checks).toHaveLength(1);
+    expect(next.checks[0]).toMatchObject({
+      type: 'expectSqlRows',
+      sql: '',
+      expected: [],
+      ordered: false,
+    });
+
+    next = updateSqlCheck(next, 0, {
+      sql: 'select name from adults;',
+      expected: [['Ada']],
+      ordered: true,
+      label: 'Adults',
+    });
+    if (next.kind !== 'sql') throw new Error('expected sql');
+    expect(next.checks[0]).toMatchObject({
+      id: expect.any(String),
+      sql: 'select name from adults;',
+      expected: [['Ada']],
+      ordered: true,
+      label: 'Adults',
+    });
+
+    next = removeSqlCheck(next, 0);
+    if (next.kind !== 'sql') throw new Error('expected sql');
+    expect(next.checks).toEqual([]);
+  });
+
+  it('edits hints on a SQL lab', () => {
+    const next = addActivityHint(sql);
+    expect(next.hints).toEqual(['']);
+    expect(updateActivityHint(next, 0, 'try a view')).toMatchObject({ hints: ['try a view'] });
+    expect(removeActivityHint(next, 0)).toMatchObject({ hints: [] });
+  });
+});
+
+describe('switchActivityKind', () => {
+  it('creates a valid SQL stub while keeping shared fields', () => {
+    const source = activity({ instructions: 'Keep me', hints: ['hint'] });
+    const next = switchActivityKind(source, 'sql');
+    if (next.kind !== 'sql') throw new Error('expected sql');
+    expect(next).toMatchObject({
+      kind: 'sql',
+      instructions: 'Keep me',
+      hints: ['hint'],
+      setupSql: '',
+      starterSql: 'select 1 as value;',
+    });
+    expect(next.checks).toHaveLength(1);
+    expect(next.checks[0]).toMatchObject({ type: 'expectSqlRows', sql: 'select 1 as value;' });
+    expect(validateActivityContent(next)).toEqual({ valid: true });
+  });
+
+  it('creates a valid code stub from a SQL lab', () => {
+    const sql: ActivityContent = {
+      type: 'activity',
+      kind: 'sql',
+      instructions: 'Keep me',
+      setupSql: 'create table t (n int);',
+      starterSql: 'select * from t;',
+      checks: [{ id: 'rows', type: 'expectSqlRows', sql: 'select n from t;', expected: [[1]] }],
+    };
+    const next = switchActivityKind(sql, 'code');
+    if (next.kind !== 'code') throw new Error('expected code');
+    expect(next).toMatchObject({
+      kind: 'code',
+      instructions: 'Keep me',
+      language: 'python',
+      entryFile: 'main.py',
+    });
+    expect(next.checks[0]).toMatchObject({ type: 'expectTests' });
+    expect(validateActivityContent(next)).toEqual({ valid: true });
+  });
+
+  it('returns the same content for the current kind', () => {
+    const source = activity();
+    expect(switchActivityKind(source, 'code')).toBe(source);
   });
 });

@@ -540,8 +540,27 @@
         "noReference": "Add a reference solution, then verify the lab.",
         "entryNotInReference": "The reference solution does not replace the entry file.",
         "duplicateTestIds": "Two tests share an id.",
-        "duplicateCheckIds": "Two checks share an id."
-      }
+        "duplicateCheckIds": "Two checks share an id.",
+        "setupMissing": "Add setup SQL so every attempt starts from the same schema.",
+        "starterMissing": "Add a starter query that runs but fails at least one check.",
+        "noReferenceSql": "Add reference SQL, then verify the lab.",
+        "referenceMatchesStarter": "The reference SQL is identical to the starter."
+      },
+      "expectedRows": "Expected rows (JSON)",
+      "invalidRows": "Enter a JSON array of rows, e.g. [[\"Ada\", 24]].",
+      "probeSql": "Probe query",
+      "ordered": "Row order matters",
+      "setupSql": "Database setup",
+      "setupSqlDescription": "Schema and seed rows run against a fresh database before every attempt.",
+      "starterSql": "Starter SQL",
+      "starterSqlDescription": "The query the learner sees first; it must fail at least one check.",
+      "sqlChecksDescription": "Each probe runs after the submission; its rows are compared with the expectation.",
+      "referenceSql": "Reference SQL",
+      "referenceSqlDescription": "Authoring-only. It must satisfy every check; verification runs it against a fresh database.",
+      "kind": "Lab type",
+      "kindDescription": "Switching resets the fields specific to the other lab type; undo restores them.",
+      "kindCode": "Code",
+      "kindSql": "SQL"
     },
     "cue": {
       "speech": "Narration",
@@ -856,7 +875,13 @@
     "unavailableTitle": "This lab is not available yet",
     "unavailableBody": "{{kind}} labs need a runtime that this page does not have yet.",
     "unsupportedLanguage": "This lab asks for {{language}}, which this runner does not support yet.",
-    "runnerUnavailable": "The code runner could not start on this page."
+    "runnerUnavailable": "The code runner could not start on this page.",
+    "sqlEditor": "SQL query",
+    "sqlNoOutput": "Run your query to see the result here.",
+    "sqlEmptyOutput": "The query ran without a result to show.",
+    "sqlError": "SQL error",
+    "sqlProbeError": "Probe failed: {{id}}",
+    "sqlEmptyResult": "No rows returned."
   },
   "roundtable": {
     "teacher": "TEACHER",

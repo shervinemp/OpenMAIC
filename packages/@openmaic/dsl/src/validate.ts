@@ -317,6 +317,15 @@ const CODE_CHECK_TYPES = new Set(['expectTests', 'expectStdout', 'expectFile']);
 const SQL_CHECK_TYPES = new Set(['expectSqlRows']);
 const TERMINAL_CHECK_TYPES = new Set(['expectStdout', 'expectFile', 'expectState']);
 
+function isSqlCellValue(value: unknown): boolean {
+  return (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  );
+}
+
 function checkActivityCheck(
   doc: unknown,
   path: string,
@@ -397,6 +406,14 @@ function checkActivityCheck(
               message: 'every expected SQL row must have the same number of columns',
             });
           }
+          (row as unknown[]).forEach((cell, cellIndex) => {
+            if (!isSqlCellValue(cell)) {
+              errors.push({
+                path: `${path}/expected/${index}/${cellIndex}`,
+                message: 'expected SQL cells must be string, number, boolean or null',
+              });
+            }
+          });
         });
       }
       if (doc.ordered !== undefined && typeof doc.ordered !== 'boolean') {

@@ -1,9 +1,9 @@
 /**
  * Pure editing operations for the activity content surface.
  *
- * Only `kind: 'code'` is authorable today; SQL and terminal activities pass
- * through unchanged so an imported scene stays readable without pretending to
- * edit fields the form does not expose.
+ * Code and SQL labs are authorable; terminal activities pass through unchanged
+ * so an imported scene stays readable without pretending to edit fields the
+ * form does not expose.
  *
  * The history primitive is the same snapshot shape the quiz surface uses:
  * every helper returns a new content object, and the session store folds it in
@@ -12,10 +12,12 @@
 import type {
   ActivityCheck,
   ActivityContent,
+  ActivityExpectSqlRowsCheck,
   ActivityFile,
   ActivityTest,
   CodeActivityCheck,
   CodeActivityContent,
+  SqlActivityContent,
 } from '@/lib/types/stage';
 import { createElementId } from '@/lib/edit/element-id';
 
@@ -76,12 +78,10 @@ export function updateActivityBasics(
 }
 
 export function setActivityHints(content: ActivityContent, hints: string[]): ActivityContent {
-  if (content.kind !== 'code') return content;
   return { ...content, hints };
 }
 
 export function addActivityHint(content: ActivityContent): ActivityContent {
-  if (content.kind !== 'code') return content;
   return { ...content, hints: [...(content.hints ?? []), ''] };
 }
 
@@ -90,7 +90,6 @@ export function updateActivityHint(
   index: number,
   value: string,
 ): ActivityContent {
-  if (content.kind !== 'code') return content;
   const hints = [...(content.hints ?? [])];
   if (index < 0 || index >= hints.length) return content;
   hints[index] = value;
@@ -98,7 +97,6 @@ export function updateActivityHint(
 }
 
 export function removeActivityHint(content: ActivityContent, index: number): ActivityContent {
-  if (content.kind !== 'code') return content;
   const hints = (content.hints ?? []).filter((_, i) => i !== index);
   return { ...content, hints };
 }
@@ -261,4 +259,120 @@ export function removeActivityCheck(content: ActivityContent, index: number): Ac
   const current = code(content);
   if (!current || index < 0 || index >= current.checks.length) return content;
   return { ...current, checks: current.checks.filter((_, i) => i !== index) };
+}
+
+// ---------------------------------------------------------------------------
+// SQL labs
+// ---------------------------------------------------------------------------
+
+function sql(content: ActivityContent): SqlActivityContent | null {
+  return content.kind === 'sql' ? content : null;
+}
+
+export function updateSqlActivityBasics(
+  content: ActivityContent,
+  patch: Partial<Pick<SqlActivityContent, 'instructions' | 'timeLimitSec' | 'debrief'>>,
+): ActivityContent {
+  const current = sql(content);
+  if (!current) return content;
+  return { ...current, ...patch };
+}
+
+export function setSqlSetup(content: ActivityContent, setupSql: string): ActivityContent {
+  const current = sql(content);
+  if (!current) return content;
+  return { ...current, setupSql };
+}
+
+export function setSqlStarter(content: ActivityContent, starterSql: string): ActivityContent {
+  const current = sql(content);
+  if (!current) return content;
+  return { ...current, starterSql };
+}
+
+export function setSqlReference(content: ActivityContent, referenceSql: string): ActivityContent {
+  const current = sql(content);
+  if (!current) return content;
+  return { ...current, referenceSql };
+}
+
+export function createSqlCheck(): ActivityExpectSqlRowsCheck {
+  return {
+    id: createElementId('check'),
+    type: 'expectSqlRows',
+    sql: '',
+    expected: [],
+    ordered: false,
+  };
+}
+
+export function addSqlCheck(content: ActivityContent): ActivityContent {
+  const current = sql(content);
+  if (!current) return content;
+  return { ...current, checks: [...current.checks, createSqlCheck()] };
+}
+
+export function updateSqlCheck(
+  content: ActivityContent,
+  index: number,
+  patch: Partial<ActivityExpectSqlRowsCheck>,
+): ActivityContent {
+  const current = sql(content);
+  if (!current || index < 0 || index >= current.checks.length) return content;
+  return {
+    ...current,
+    checks: current.checks.map((check, i) =>
+      i === index ? ({ ...check, ...patch } as ActivityExpectSqlRowsCheck) : check,
+    ),
+  };
+}
+
+export function removeSqlCheck(content: ActivityContent, index: number): ActivityContent {
+  const current = sql(content);
+  if (!current || index < 0 || index >= current.checks.length) return content;
+  return { ...current, checks: current.checks.filter((_, i) => i !== index) };
+}
+
+/**
+ * Switch the lab family. Kind-specific fields are reset to a valid stub;
+ * shared instructions/hints/debrief/time limit survive. The caller's undo
+ * history makes the reset reversible.
+ */
+export function switchActivityKind(
+  content: ActivityContent,
+  kind: 'code' | 'sql',
+): ActivityContent {
+  if (content.kind === kind) return content;
+  const common = {
+    type: 'activity' as const,
+    instructions: content.instructions,
+    ...(content.hints !== undefined ? { hints: content.hints } : {}),
+    ...(content.debrief !== undefined ? { debrief: content.debrief } : {}),
+    ...(content.timeLimitSec !== undefined ? { timeLimitSec: content.timeLimitSec } : {}),
+  };
+  if (kind === 'code') {
+    return {
+      ...common,
+      kind: 'code',
+      language: 'python',
+      entryFile: 'main.py',
+      files: [{ path: 'main.py', content: '' }],
+      tests: [],
+      checks: [{ id: createElementId('check'), type: 'expectTests' }],
+    };
+  }
+  return {
+    ...common,
+    kind: 'sql',
+    setupSql: '',
+    starterSql: 'select 1 as value;',
+    checks: [
+      {
+        id: createElementId('check'),
+        type: 'expectSqlRows',
+        sql: 'select 1 as value;',
+        expected: [[1]],
+      },
+    ],
+  };
 }

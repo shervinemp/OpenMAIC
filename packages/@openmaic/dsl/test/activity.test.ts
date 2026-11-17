@@ -150,6 +150,30 @@ describe('activity contract', () => {
     expect(result.valid).toBe(false);
   });
 
+  it('rejects non-scalar expected SQL cells', () => {
+    const result = validateScene(
+      scene({
+        type: 'activity',
+        kind: 'sql',
+        instructions: 'Query.',
+        setupSql: '',
+        starterSql: '',
+        checks: [
+          {
+            id: 'rows',
+            type: 'expectSqlRows',
+            sql: 'select payload from t;',
+            expected: [[{ a: 1 }]],
+          },
+        ],
+      }),
+    );
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.errors.map((error) => error.path)).toContain('/content/checks/0/expected/0/0');
+    }
+  });
+
   it('tolerates unknown optional fields from older documents', () => {
     const result = validateScene(scene({ ...codeActivity, legacyNote: 'kept' }));
     expect(result).toEqual({ valid: true });

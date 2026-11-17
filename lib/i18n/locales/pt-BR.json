@@ -516,8 +516,27 @@
         "noReference": "Adicione uma solução de referência e depois verifique o laboratório.",
         "entryNotInReference": "A solução de referência não substitui o arquivo de entrada.",
         "duplicateTestIds": "Dois testes usam o mesmo ID.",
-        "duplicateCheckIds": "Duas verificações usam o mesmo ID."
-      }
+        "duplicateCheckIds": "Duas verificações usam o mesmo ID.",
+        "setupMissing": "Adicione SQL de inicialização para que cada tentativa comece do mesmo esquema.",
+        "starterMissing": "Adicione uma consulta inicial que execute mas falhe em pelo menos uma verificação.",
+        "noReferenceSql": "Adicione o SQL de referência e depois verifique o laboratório.",
+        "referenceMatchesStarter": "O SQL de referência é idêntico ao inicial."
+      },
+      "expectedRows": "Linhas esperadas (JSON)",
+      "invalidRows": "Digite um array JSON de linhas, por exemplo [[\"Ada\", 24]].",
+      "probeSql": "Consulta de verificação",
+      "ordered": "A ordem das linhas importa",
+      "setupSql": "Inicialização do banco",
+      "setupSqlDescription": "O esquema e as linhas iniciais são executados em um banco novo antes de cada tentativa.",
+      "starterSql": "SQL inicial",
+      "starterSqlDescription": "A consulta que o aluno vê primeiro; ela deve falhar em pelo menos uma verificação.",
+      "sqlChecksDescription": "Cada consulta de verificação é executada após o envio; suas linhas são comparadas com o esperado.",
+      "referenceSql": "SQL de referência",
+      "referenceSqlDescription": "Somente para autoria. Ele deve satisfazer todas as verificações; a verificação o executa em um banco novo.",
+      "kind": "Tipo de laboratório",
+      "kindDescription": "Trocar o tipo redefine os campos específicos do outro tipo; desfazer os restaura.",
+      "kindCode": "Código",
+      "kindSql": "SQL"
     },
     "cue": {
       "speech": "Narração",
@@ -856,7 +875,13 @@
     "unavailableTitle": "Este laboratório ainda não está disponível",
     "unavailableBody": "Laboratórios {{kind}} precisam de um ambiente que esta página ainda não tem.",
     "unsupportedLanguage": "Este laboratório exige {{language}}, que este executor ainda não suporta.",
-    "runnerUnavailable": "O executor de código não pôde iniciar nesta página."
+    "runnerUnavailable": "O executor de código não pôde iniciar nesta página.",
+    "sqlEditor": "Consulta SQL",
+    "sqlNoOutput": "Execute sua consulta para ver o resultado aqui.",
+    "sqlEmptyOutput": "A consulta terminou sem um resultado para mostrar.",
+    "sqlError": "Erro de SQL",
+    "sqlProbeError": "Falha na consulta de verificação: {{id}}",
+    "sqlEmptyResult": "Nenhuma linha retornada."
   },
   "roundtable": {
     "teacher": "PROFESSOR",

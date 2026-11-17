@@ -1,0 +1,236 @@
+/**
+ * Shared controller for Web-Worker activity runtimes.
+ *
+ * A lab keeps one worker across attempts so its engine is paid for once. A run
+ * that exceeds its limit terminates the worker — a busy WebAssembly loop
+ * cannot be interrupted from the main thread — and the next attempt starts a
+ * fresh one. Engine start-up is reported separately by the worker, so the
+ * learner's time limit never covers it.
+ */
+import type { ActivityKind } from '@/lib/types/stage';
+import type { ActivityRunRequest, ActivityRunResult } from './protocol';
+
+export interface ActivityRunner {
+  run(request: ActivityRunRequest): Promise<ActivityRunResult>;
+  dispose(): void;
+}
+
+/** The slice of the DOM Worker the controller uses; injectable for tests. */
+export interface ActivityWorker {
+  postMessage(message: unknown): void;
+  terminate(): void;
+  onmessage: ((event: { data: unknown }) => void) | null;
+  onerror: ((event: { message?: string }) => void) | null;
+  onmessageerror?: ((event: { message?: string }) => void) | null;
+}
+
+export interface WorkerActivityRunnerOptions {
+  /** App-origin URL of the module worker. */
+  workerUrl: string;
+  /** The single activity kind this worker executes. */
+  expectedKind: ActivityKind;
+  /** Engine name used in learner-facing harness messages (`Python`, `SQL`). */
+  runtimeLabel: string;
+  createWorker?: () => ActivityWorker;
+  /** Time allowed for engine start-up before the worker is abandoned. */
+  initTimeoutMs?: number;
+}
+
+export const DEFAULT_INIT_TIMEOUT_MS = 60_000;
+
+interface WorkerReply {
+  type?: string;
+  runId?: string;
+  result?: ActivityRunResult;
+  message?: string;
+}
+
+interface PendingRun {
+  runId: string;
+  resolve: (result: ActivityRunResult) => void;
+  timer: ReturnType<typeof setTimeout>;
+  started: boolean;
+  timeLimitMs: number;
+}
+
+function harnessFailure(message: string, status: 'error' | 'timeout'): ActivityRunResult {
+  return {
+    status,
+    stdout: '',
+    stderr: '',
+    error: message,
+    durationMs: 0,
+  };
+}
+
+export class WorkerActivityRunner implements ActivityRunner {
+  private readonly options: Required<
+    Pick<
+      WorkerActivityRunnerOptions,
+      'workerUrl' | 'expectedKind' | 'runtimeLabel' | 'initTimeoutMs'
+    >
+  > &
+    Pick<WorkerActivityRunnerOptions, 'createWorker'>;
+  private worker: ActivityWorker | null = null;
+  private pending: PendingRun | null = null;
+  private sequence = 0;
+  private disposed = false;
+
+  constructor(options: WorkerActivityRunnerOptions) {
+    this.options = {
+      createWorker: options.createWorker,
+      initTimeoutMs: options.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS,
+      workerUrl: options.workerUrl,
+      expectedKind: options.expectedKind,
+      runtimeLabel: options.runtimeLabel,
+    };
+  }
+
+  run(request: ActivityRunRequest): Promise<ActivityRunResult> {
+    const label = this.options.runtimeLabel;
+    if (this.disposed) {
+      return Promise.resolve(harnessFailure(`The ${label} runner was disposed.`, 'error'));
+    }
+    if (request.kind !== this.options.expectedKind) {
+      return Promise.resolve(
+        harnessFailure(
+          `This runner only executes ${this.options.expectedKind} activities.`,
+          'error',
+        ),
+      );
+    }
+    if (this.pending) {
+      return Promise.resolve(harnessFailure('Another run is already in progress.', 'error'));
+    }
+
+    let worker: ActivityWorker;
+    try {
+      worker = this.ensureWorker();
+    } catch (error) {
+      return Promise.resolve(
+        harnessFailure(
+          error instanceof Error ? error.message : `The ${label} runner could not start.`,
+          'error',
+        ),
+      );
+    }
+
+    this.sequence += 1;
+    const runId = `run-${this.sequence}`;
+    return new Promise<ActivityRunResult>((resolve) => {
+      const pending: PendingRun = {
+        runId,
+        resolve: (result) => {
+          this.settle(pending);
+          resolve(result);
+        },
+        timer: setTimeout(() => {
+          this.abandon(pending, 'error', `The ${label} runtime did not start in time.`);
+        }, this.options.initTimeoutMs),
+        started: false,
+        timeLimitMs: request.timeLimitMs,
+      };
+      this.pending = pending;
+      worker.postMessage({ type: 'run', runId, request });
+    });
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    const pending = this.pending;
+    if (pending) {
+      pending.resolve(
+        harnessFailure(`The ${this.options.runtimeLabel} runner was disposed.`, 'error'),
+      );
+    }
+    this.terminateWorker();
+  }
+
+  private ensureWorker(): ActivityWorker {
+    if (!this.worker) {
+      const label = this.options.runtimeLabel;
+      const worker = this.options.createWorker
+        ? this.options.createWorker()
+        : defaultWorkerFactory(this.options.workerUrl);
+      worker.onmessage = (event) => this.handleMessage(event.data);
+      worker.onerror = (event) => {
+        this.pending?.resolve(
+          harnessFailure(event.message || `The ${label} runtime failed to load.`, 'error'),
+        );
+        this.terminateWorker();
+      };
+      if ('onmessageerror' in worker) {
+        worker.onmessageerror = () => {
+          this.pending?.resolve(
+            harnessFailure(`The ${label} runtime sent an unreadable message.`, 'error'),
+          );
+          this.terminateWorker();
+        };
+      }
+      this.worker = worker;
+    }
+    return this.worker;
+  }
+
+  private handleMessage(data: unknown): void {
+    const reply = data as WorkerReply | null;
+    const pending = this.pending;
+    if (!reply || !pending || reply.runId !== pending.runId) return;
+
+    if (reply.type === 'started') {
+      if (pending.started) return;
+      pending.started = true;
+      clearTimeout(pending.timer);
+      pending.timer = setTimeout(() => {
+        this.abandon(pending, 'timeout', 'The run exceeded its time limit.');
+      }, pending.timeLimitMs);
+      return;
+    }
+
+    if (reply.type === 'result') {
+      pending.resolve(reply.result ?? harnessFailure('The runner returned no result.', 'error'));
+      return;
+    }
+
+    if (reply.type === 'error') {
+      pending.resolve(
+        harnessFailure(
+          reply.message || `The ${this.options.runtimeLabel} runtime failed.`,
+          'error',
+        ),
+      );
+      this.terminateWorker();
+    }
+  }
+
+  private abandon(pending: PendingRun, status: 'error' | 'timeout', message: string): void {
+    pending.resolve(harnessFailure(message, status));
+    // A timed-out engine is still running the learner's work; kill it so the
+    // next attempt gets a clean process.
+    this.terminateWorker();
+  }
+
+  private settle(pending: PendingRun): void {
+    clearTimeout(pending.timer);
+    if (this.pending === pending) this.pending = null;
+  }
+
+  private terminateWorker(): void {
+    if (this.worker) {
+      const worker = this.worker;
+      this.worker = null;
+      try {
+        worker.terminate();
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+}
+
+function defaultWorkerFactory(workerUrl: string): ActivityWorker {
+  if (typeof Worker === 'undefined') {
+    throw new Error('Web Workers are not available in this environment.');
+  }
+  return new Worker(workerUrl, { type: 'module' }) as unknown as ActivityWorker;
+}

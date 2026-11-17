@@ -468,8 +468,27 @@
         "noReference": "新增參考答案後驗證實驗。",
         "entryNotInReference": "參考答案沒有替換進入點檔案。",
         "duplicateTestIds": "有兩個測試使用了相同的 ID。",
-        "duplicateCheckIds": "有兩個檢查使用了相同的 ID。"
-      }
+        "duplicateCheckIds": "有兩個檢查使用了相同的 ID。",
+        "setupMissing": "新增初始化 SQL，讓每次嘗試都從相同的資料表結構開始。",
+        "starterMissing": "新增一個能執行但至少有一項檢查失敗的初始查詢。",
+        "noReferenceSql": "新增參考 SQL，然後驗證實驗。",
+        "referenceMatchesStarter": "參考 SQL 與初始 SQL 完全相同。"
+      },
+      "expectedRows": "預期結果列（JSON）",
+      "invalidRows": "請輸入資料列的 JSON 陣列，例如 [[\"Ada\", 24]]。",
+      "probeSql": "檢查查詢",
+      "ordered": "資料列順序重要",
+      "setupSql": "資料庫初始化",
+      "setupSqlDescription": "每次嘗試前都會在全新資料庫上執行建表與種子資料。",
+      "starterSql": "初始 SQL",
+      "starterSqlDescription": "學習者首先看到的查詢；它必須至少有一項檢查失敗。",
+      "sqlChecksDescription": "每條檢查查詢在提交後執行，其結果列會與預期值比較。",
+      "referenceSql": "參考 SQL",
+      "referenceSqlDescription": "僅供編寫使用。它必須滿足所有檢查；驗證會在全新資料庫上執行它。",
+      "kind": "實驗類型",
+      "kindDescription": "切換會重設另一種實驗類型特有的欄位；復原可還原。",
+      "kindCode": "程式碼",
+      "kindSql": "SQL"
     },
     "cue": {
       "speech": "旁白",
@@ -833,7 +852,13 @@
     "unavailableTitle": "此實驗尚不可用",
     "unavailableBody": "{{kind}} 實驗需要此頁面尚不具備的執行環境。",
     "unsupportedLanguage": "此實驗需要 {{language}}，目前執行器尚不支援。",
-    "runnerUnavailable": "程式碼執行器無法在此頁面啟動。"
+    "runnerUnavailable": "程式碼執行器無法在此頁面啟動。",
+    "sqlEditor": "SQL 查詢",
+    "sqlNoOutput": "執行查詢後，結果會顯示在這裡。",
+    "sqlEmptyOutput": "查詢已執行，但沒有可顯示的結果。",
+    "sqlError": "SQL 錯誤",
+    "sqlProbeError": "檢查查詢失敗：{{id}}",
+    "sqlEmptyResult": "沒有傳回任何資料列。"
   },
   "roundtable": {
     "teacher": "教師",

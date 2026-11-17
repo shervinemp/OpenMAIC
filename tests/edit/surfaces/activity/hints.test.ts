@@ -94,21 +94,53 @@ describe('buildActivityHints', () => {
     expect(hints).toHaveLength(5);
   });
 
-  it('marks SQL and terminal labs as not editable', () => {
-    const sql: ActivityContent = {
+  it('marks a terminal lab as not editable', () => {
+    const terminal: ActivityContent = {
       type: 'activity',
-      kind: 'sql',
+      kind: 'terminal',
       instructions: 'x',
-      setupSql: '',
-      starterSql: '',
-      checks: [],
+      files: [],
+      checks: [{ id: 'cwd', type: 'expectState', path: 'cwd', expected: '/home/learner' }],
     };
-    expect(buildActivityHints(sql, t)).toEqual([
+    expect(buildActivityHints(terminal, t)).toEqual([
       {
         id: 'unsupported',
         severity: 'info',
         message: 'edit.activity.hint.unsupportedKind',
       },
     ]);
+  });
+
+  it('flags a SQL lab without setup, starter or reference SQL', () => {
+    const sql: ActivityContent = {
+      type: 'activity',
+      kind: 'sql',
+      instructions:
+        'Create a view named adults that returns every learner aged 21 or older, ordered by name.',
+      setupSql: '',
+      starterSql: '',
+      checks: [],
+    };
+    const messages = buildActivityHints(sql, t).map((hint) => hint.message);
+    expect(messages).toContain('edit.activity.hint.setupMissing');
+    expect(messages).toContain('edit.activity.hint.starterMissing');
+    expect(messages).toContain('edit.activity.hint.noChecks');
+    expect(messages).toContain('edit.activity.hint.noReferenceSql');
+  });
+
+  it('flags a SQL reference identical to the starter', () => {
+    const sql: ActivityContent = {
+      type: 'activity',
+      kind: 'sql',
+      instructions:
+        'Create a view named adults that returns every learner aged 21 or older, ordered by name.',
+      setupSql: 'create table learners (name text, age int);',
+      starterSql: 'select 1;',
+      referenceSql: 'select 1;',
+      checks: [{ id: 'rows', type: 'expectSqlRows', sql: 'select 1;', expected: [[1]] }],
+    };
+    expect(buildActivityHints(sql, t).map((hint) => hint.message)).toContain(
+      'edit.activity.hint.referenceMatchesStarter',
+    );
   });
 });

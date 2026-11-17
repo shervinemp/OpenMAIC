@@ -39,6 +39,9 @@ test-results/
 # generated: Python runtime for activity code labs, copied from node_modules
 /public/vendor/pyodide
 
+# generated: SQL runtime for activity SQL labs, copied from node_modules
+/public/vendor/pglite
+
 # misc
 .DS_Store
 *.pem

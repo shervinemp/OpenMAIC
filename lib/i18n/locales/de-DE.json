@@ -540,8 +540,27 @@
         "noReference": "Füge eine Referenzlösung hinzu und prüfe dann das Lab.",
         "entryNotInReference": "Die Referenzlösung ersetzt die Einstiegsdatei nicht.",
         "duplicateTestIds": "Zwei Tests verwenden dieselbe ID.",
-        "duplicateCheckIds": "Zwei Prüfungen verwenden dieselbe ID."
-      }
+        "duplicateCheckIds": "Zwei Prüfungen verwenden dieselbe ID.",
+        "setupMissing": "Füge Setup-SQL hinzu, damit jeder Versuch mit demselben Schema beginnt.",
+        "starterMissing": "Füge eine Starter-Abfrage hinzu, die läuft, aber mindestens eine Prüfung verfehlt.",
+        "noReferenceSql": "Füge Referenz-SQL hinzu und prüfe dann das Lab.",
+        "referenceMatchesStarter": "Das Referenz-SQL ist identisch mit dem Starter."
+      },
+      "expectedRows": "Erwartete Zeilen (JSON)",
+      "invalidRows": "Gib ein JSON-Array von Zeilen ein, z. B. [[\"Ada\", 24]].",
+      "probeSql": "Prüfabfrage",
+      "ordered": "Zeilenreihenfolge zählt",
+      "setupSql": "Datenbank-Setup",
+      "setupSqlDescription": "Schema und Seed-Zeilen laufen vor jedem Versuch gegen eine frische Datenbank.",
+      "starterSql": "Starter-SQL",
+      "starterSqlDescription": "Die Abfrage, die Lernende zuerst sehen; mindestens eine Prüfung muss fehlschlagen.",
+      "sqlChecksDescription": "Jede Prüfabfrage läuft nach der Abgabe; ihre Zeilen werden mit der Erwartung verglichen.",
+      "referenceSql": "Referenz-SQL",
+      "referenceSqlDescription": "Nur zum Erstellen. Sie muss jede Prüfung bestehen; die Verifikation führt sie gegen eine frische Datenbank aus.",
+      "kind": "Lab-Typ",
+      "kindDescription": "Beim Wechsel werden die typspezifischen Felder zurückgesetzt; Rückgängig stellt sie wieder her.",
+      "kindCode": "Code",
+      "kindSql": "SQL"
     },
     "cue": {
       "speech": "Sprechertext",
@@ -856,7 +875,13 @@
     "unavailableTitle": "Dieses Lab ist noch nicht verfügbar",
     "unavailableBody": "{{kind}}-Labs benötigen eine Laufzeitumgebung, die diese Seite noch nicht hat.",
     "unsupportedLanguage": "Dieses Lab verlangt {{language}}, das dieser Runner noch nicht unterstützt.",
-    "runnerUnavailable": "Der Code-Runner konnte auf dieser Seite nicht starten."
+    "runnerUnavailable": "Der Code-Runner konnte auf dieser Seite nicht starten.",
+    "sqlEditor": "SQL-Abfrage",
+    "sqlNoOutput": "Führe deine Abfrage aus, um das Ergebnis hier zu sehen.",
+    "sqlEmptyOutput": "Die Abfrage endete ohne anzeigbares Ergebnis.",
+    "sqlError": "SQL-Fehler",
+    "sqlProbeError": "Prüfabfrage fehlgeschlagen: {{id}}",
+    "sqlEmptyResult": "Keine Zeilen zurückgegeben."
   },
   "roundtable": {
     "teacher": "LEHRKRAFT",

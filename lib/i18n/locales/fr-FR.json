@@ -540,8 +540,27 @@
         "noReference": "Ajoutez une solution de référence, puis vérifiez l'atelier.",
         "entryNotInReference": "La solution de référence ne remplace pas le fichier d'entrée.",
         "duplicateTestIds": "Deux tests partagent le même ID.",
-        "duplicateCheckIds": "Deux vérifications partagent le même ID."
-      }
+        "duplicateCheckIds": "Deux vérifications partagent le même ID.",
+        "setupMissing": "Ajoutez le SQL d’initialisation pour que chaque tentative parte du même schéma.",
+        "starterMissing": "Ajoutez une requête de départ qui s’exécute mais échoue à au moins une vérification.",
+        "noReferenceSql": "Ajoutez le SQL de référence, puis vérifiez l'atelier.",
+        "referenceMatchesStarter": "Le SQL de référence est identique au SQL de départ."
+      },
+      "expectedRows": "Lignes attendues (JSON)",
+      "invalidRows": "Saisissez un tableau JSON de lignes, par ex. [[\"Ada\", 24]].",
+      "probeSql": "Requête de vérification",
+      "ordered": "L'ordre des lignes compte",
+      "setupSql": "Initialisation de la base",
+      "setupSqlDescription": "Le schéma et les lignes de départ sont exécutés sur une base neuve avant chaque tentative.",
+      "starterSql": "SQL de départ",
+      "starterSqlDescription": "La requête que l'apprenant voit d'abord ; elle doit échouer à au moins une vérification.",
+      "sqlChecksDescription": "Chaque requête de vérification est exécutée après la soumission ; ses lignes sont comparées à l’attendu.",
+      "referenceSql": "SQL de référence",
+      "referenceSqlDescription": "Réservé à l'édition. Il doit satisfaire toutes les vérifications ; la vérification l'exécute sur une base neuve.",
+      "kind": "Type d'atelier",
+      "kindDescription": "Le changement réinitialise les champs propres à l'autre type ; annuler les restaure.",
+      "kindCode": "Code",
+      "kindSql": "SQL"
     },
     "cue": {
       "speech": "Narration",
@@ -856,7 +875,13 @@
     "unavailableTitle": "Cet atelier n'est pas encore disponible",
     "unavailableBody": "Les ateliers {{kind}} nécessitent un environnement que cette page n'a pas encore.",
     "unsupportedLanguage": "Cet atelier demande {{language}}, que cet exécuteur ne prend pas encore en charge.",
-    "runnerUnavailable": "L'exécuteur de code n'a pas pu démarrer sur cette page."
+    "runnerUnavailable": "L'exécuteur de code n'a pas pu démarrer sur cette page.",
+    "sqlEditor": "Requête SQL",
+    "sqlNoOutput": "Exécutez votre requête pour voir le résultat ici.",
+    "sqlEmptyOutput": "La requête s'est terminée sans résultat à afficher.",
+    "sqlError": "Erreur SQL",
+    "sqlProbeError": "Échec de la requête de vérification : {{id}}",
+    "sqlEmptyResult": "Aucune ligne renvoyée."
   },
   "roundtable": {
     "teacher": "PROFESSEUR",

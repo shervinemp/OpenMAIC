@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { CodeActivityContent } from '@/lib/types/stage';
+import type { CodeActivityContent, SqlActivityContent, SqlValue } from '@/lib/types/stage';
 import type { ActivityRunner } from '@/lib/activity/code-runner';
 import type { ActivityRunRequest, ActivityRunResult } from '@/lib/activity/protocol';
-import { referenceWorkspaceFiles, verifyCodeActivity, workspaceFiles } from '@/lib/activity/verify';
+import {
+  referenceWorkspaceFiles,
+  verifyCodeActivity,
+  verifySqlActivity,
+  workspaceFiles,
+} from '@/lib/activity/verify';
 
 function activity(overrides: Partial<CodeActivityContent> = {}): CodeActivityContent {
   return {
@@ -175,5 +180,79 @@ describe('verifyCodeActivity', () => {
     const report = await verifyCodeActivity(activity({ checks: [] }), runner);
     expect(report.ok).toBe(false);
     expect(runner.requests).toHaveLength(0);
+  });
+});
+
+function sqlActivity(overrides: Partial<SqlActivityContent> = {}): SqlActivityContent {
+  return {
+    type: 'activity',
+    kind: 'sql',
+    instructions: 'Create a view of adult learners.',
+    setupSql:
+      "create table learners (id int primary key, name text, age int); insert into learners values (1, 'Ada', 24), (2, 'Grace', 19);",
+    starterSql: 'select * from learners;',
+    checks: [
+      {
+        id: 'rows',
+        type: 'expectSqlRows',
+        sql: 'select name from adults order by name;',
+        expected: [['Ada']],
+        ordered: true,
+      },
+    ],
+    referenceSql: 'create view adults as select name from learners where age >= 21;',
+    ...overrides,
+  };
+}
+
+function sqlRows(rows: SqlValue[][]): ActivityRunResult {
+  return result({ sqlProbes: { rows: { columns: ['name'], rows } } });
+}
+
+describe('verifySqlActivity', () => {
+  it('passes when the reference returns the expected rows and the starter does not', async () => {
+    const runner = new FakeRunner((request) =>
+      request.submissionSql?.includes('create view') ? sqlRows([['Ada']]) : sqlRows([]),
+    );
+    const report = await verifySqlActivity(sqlActivity(), runner);
+    expect(report.ok).toBe(true);
+    expect(report.issues).toEqual([]);
+    expect(report.reference?.evaluation.passed).toBe(true);
+    expect(report.starter?.evaluation.passed).toBe(false);
+    expect(runner.requests).toHaveLength(2);
+  });
+
+  it('refuses a lab without reference SQL', async () => {
+    const runner = new FakeRunner(() => sqlRows([['Ada']]));
+    const report = await verifySqlActivity(sqlActivity({ referenceSql: undefined }), runner);
+    expect(report.ok).toBe(false);
+    expect(report.issues[0]).toContain('no reference SQL');
+    expect(runner.requests).toHaveLength(0);
+  });
+
+  it('reports a reference probe error as unverified', async () => {
+    const runner = new FakeRunner((request) =>
+      request.submissionSql?.includes('create view')
+        ? result({ sqlProbes: { rows: { error: 'relation "adults" does not exist' } } })
+        : sqlRows([]),
+    );
+    const report = await verifySqlActivity(sqlActivity(), runner);
+    expect(report.ok).toBe(false);
+    expect(report.issues.join(' ')).toContain('does not exist');
+  });
+
+  it('rejects a starter that already produces the expected rows', async () => {
+    const runner = new FakeRunner(() => sqlRows([['Ada']]));
+    const report = await verifySqlActivity(sqlActivity(), runner);
+    expect(report.ok).toBe(false);
+    expect(report.issues.join(' ')).toContain('asks the learner to do nothing');
+  });
+
+  it('supports a reference-only run', async () => {
+    const runner = new FakeRunner(() => sqlRows([['Ada']]));
+    const report = await verifySqlActivity(sqlActivity(), runner, { referenceOnly: true });
+    expect(report.ok).toBe(true);
+    expect(report.starter).toBeUndefined();
+    expect(runner.requests).toHaveLength(1);
   });
 });
