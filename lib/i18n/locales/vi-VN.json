@@ -2561,6 +2561,19 @@
     "loadFailed": "Could not load your learning history.",
     "confidence": "Confidence {{value}}%",
     "observations": "{{count}} observations",
+    "studyPlan": "Study plan",
+    "startAtLesson": "Next lesson: {{title}}",
+    "reviewNextLesson": "Review next: {{title}}",
+    "needsWork": "Needs work",
+    "skippedKnown": "Skipped {{count}} lesson(s) you have already demonstrated.",
+    "openLesson": "Open lesson",
+    "startFromBeginning": "Start from the beginning",
+    "noEvidence": "Not enough evidence to place you yet",
+    "noEvidenceDesc": "Finish a quiz, exam, or activity so the recommendation can be based on what you actually know.",
+    "noTaggedLessons": "No tagged lesson to route you to",
+    "noTaggedLessonsDesc": "This course's practice items are not linked to a lesson yet, so there is nowhere to send you.",
+    "allKnown": "Every tagged lesson is mastered",
+    "allKnownDesc": "Keep the review queue going, or move on to untagged material.",
     "saveFailed": "Could not save this review. Try again."
   }
 }

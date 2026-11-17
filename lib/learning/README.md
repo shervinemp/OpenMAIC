@@ -70,6 +70,39 @@ and when the next batch lands. A malformed due date is never treated as due.
 A review result is evidence with half weight: self-rating is real signal, but
 weaker than a fresh graded answer.
 
+## Placement and adaptive routing
+
+A course is a sequence of lessons, and a learner's history may already cover
+some of them. `route.ts` turns that history into one advisory decision:
+
+- **review** — the earliest lesson with a concept below a 0.6 posterior mean
+  after at least two observations. Repair before advancing.
+- **start** — the first tagged lesson that is not proven known, reported only
+  when at least one leading tagged lesson was skipped. A skip needs every
+  concept linked to the lesson at 0.8 or above after at least three
+  observations.
+- **abstain** — no tagged lesson, not enough evidence to skip anything, or
+  every tagged lesson is known.
+
+The walk is over tagged lessons only. An untagged scene is never skipped or
+claimed as known; it stays in the course order, outside the decision. That
+keeps a title slide or an unassessed lesson from being consumed by a placement
+the evidence cannot support. When nothing can be skipped, the router abstains
+instead of dressing up the course order as a decision; the overlay still offers
+the first scene so a new learner has an action.
+
+The thresholds are asymmetric on purpose: a false review costs minutes, while a
+false skip silently removes instruction. Three perfect answers is the smallest
+sample that reaches 0.8 under the Beta(1, 1) prior, and one wrong answer is not
+enough to call a concept weak. Nothing navigates automatically; the overlay
+offers one lesson and the learner chooses.
+
+Lessons are live scenes. `route-scenes.ts` gives an activity its own
+scene-level tags and maps quiz/exam concepts through the `remediationOutlineId`
+generation already stamped. An unlinked item contributes no target, so a stale
+or hand-written link cannot route a learner to an unrelated scene. A remediation
+id whose scene was deleted is dropped rather than turned into a dead link.
+
 ## Persistence
 
 `store.ts` keeps the log in the existing RuntimeStore partition
@@ -136,6 +169,11 @@ into one card.
   list. Rating a card advances its schedule and appends the half-weight review
   evidence (`recordReviewRating`); a repeated review id is a no-op. Opening the
   overlay also runs the throttled `maybeCompactLearningHistory` pass.
+- The mastery tab opens with a study-plan card. It reviews a weak lesson, skips
+  a run of leading lessons the learner has demonstrated and starts at the next
+  one, or abstains honestly. Opening the lesson jumps to the live scene and
+  closes the overlay; an evidence-free course offers its first scene instead of
+  a dead end.
 - Cards carry `sceneId` / `itemId` so the overlay can find the question stem;
   legacy cards without those fields fall back to decoding the card id. A card
   whose scene or question was deleted stays out of the review session and is
@@ -150,4 +188,5 @@ into one card.
 
 ## Next
 
-1. Add a placement / adaptive-routing decision on top of real evidence.
+1. Add PBL evidence once the PBL evaluator has a design that keeps its narrative
+   feedback while accepting deterministic and decision-model signals.

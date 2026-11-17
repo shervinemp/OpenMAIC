@@ -4,10 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
   ChevronRight,
+  Compass,
   GraduationCap,
   Loader2,
   RotateCcw,
-  Sparkles,
   BookOpenText,
 } from 'lucide-react';
 
@@ -17,6 +17,8 @@ import { useStageStore } from '@/lib/store';
 import { masteryByConcept, masteryConfidence, masteryScore } from '@/lib/learning/mastery';
 import { quizAnswerSummary, cardLocation } from '@/lib/learning/review-presentation';
 import { dueReviewCards, reviewSummary } from '@/lib/learning/review';
+import { planLearningRoute, type LearningRoute } from '@/lib/learning/route';
+import { routeLessonsFromScenes } from '@/lib/learning/route-scenes';
 import { maybeCompactLearningHistory } from '@/lib/learning/compact';
 import { loadLearningState, recordReviewRating } from '@/lib/learning/store';
 import type { LearningState } from '@/lib/learning/store-payload';
@@ -71,6 +73,89 @@ function ConceptChips({ conceptIds }: { conceptIds: readonly string[] }) {
           {conceptId}
         </span>
       ))}
+    </div>
+  );
+}
+
+/**
+ * The placement card.
+ *
+ * The decision is advisory and deliberately quiet: one headline, one reason,
+ * one action. An abstain still offers the course's first scene when there is
+ * one, because "we cannot place you yet" should not strand a new learner.
+ */
+function StudyPlanCard({
+  route,
+  onOpenScene,
+  onStartFromBeginning,
+}: {
+  route: LearningRoute;
+  onOpenScene: (sceneId: string) => void;
+  onStartFromBeginning?: () => void;
+}) {
+  const { t } = useI18n();
+
+  let headline: string;
+  let detail: string | null = null;
+  let weakConcepts: readonly string[] = [];
+  let action: { label: string; onClick: () => void } | null = null;
+
+  if (route.kind === 'review') {
+    headline = t('learning.reviewNextLesson', { title: route.lesson.title });
+    detail = t('learning.needsWork');
+    weakConcepts = route.conceptIds;
+    action = {
+      label: t('learning.openLesson'),
+      onClick: () => onOpenScene(route.lesson.sceneId),
+    };
+  } else if (route.kind === 'start') {
+    headline = t('learning.startAtLesson', { title: route.lesson.title });
+    detail = t('learning.skippedKnown', { count: route.skipped.length });
+    action = {
+      label: t('learning.openLesson'),
+      onClick: () => onOpenScene(route.lesson.sceneId),
+    };
+  } else if (route.reason === 'insufficient-evidence') {
+    headline = t('learning.noEvidence');
+    detail = t('learning.noEvidenceDesc');
+    action = onStartFromBeginning
+      ? { label: t('learning.startFromBeginning'), onClick: onStartFromBeginning }
+      : null;
+  } else if (route.reason === 'all-known') {
+    headline = t('learning.allKnown');
+    detail = t('learning.allKnownDesc');
+  } else {
+    headline = t('learning.noTaggedLessons');
+    detail = t('learning.noTaggedLessonsDesc');
+  }
+
+  return (
+    <div className="mb-4 rounded-xl border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-900/60 dark:bg-violet-950/20">
+      <div className="flex items-start gap-3">
+        <Compass className="mt-0.5 h-4 w-4 shrink-0 text-violet-500" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-300">
+            {t('learning.studyPlan')}
+          </p>
+          <p className="mt-1 text-sm font-medium text-gray-900 dark:text-gray-100">{headline}</p>
+          {detail && <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">{detail}</p>}
+          {weakConcepts.length > 0 && (
+            <div className="mt-2">
+              <ConceptChips conceptIds={weakConcepts} />
+            </div>
+          )}
+        </div>
+        {action && (
+          <button
+            type="button"
+            onClick={action.onClick}
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-50 dark:border-violet-800 dark:bg-gray-900 dark:text-violet-300 dark:hover:bg-violet-950/40"
+          >
+            {action.label}
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -206,6 +291,7 @@ function DueCard({
 export function LearningOverlay({ stageId, open, onOpenChange }: LearningOverlayProps) {
   const { t, locale } = useI18n();
   const scenes = useStageStore((s) => s.scenes);
+  const exams = useStageStore((s) => s.exams);
   const setCurrentSceneId = useStageStore((s) => s.setCurrentSceneId);
   const [state, setState] = useState<LearningState | null>(null);
   const [loading, setLoading] = useState(false);
@@ -297,6 +383,11 @@ export function LearningOverlay({ stageId, open, onOpenChange }: LearningOverlay
   );
   const orphaned = due.length - reviewable.length;
   const mastery = useMemo(() => masteryByConcept(state?.evidence ?? []), [state]);
+  const routeLessons = useMemo(() => routeLessonsFromScenes(scenes, exams), [scenes, exams]);
+  const route = useMemo(
+    () => planLearningRoute({ lessons: routeLessons, mastery }),
+    [routeLessons, mastery],
+  );
   const concepts = useMemo(
     () =>
       Object.values(mastery).sort(
@@ -307,6 +398,11 @@ export function LearningOverlay({ stageId, open, onOpenChange }: LearningOverlay
       ),
     [mastery],
   );
+
+  const openScene = (sceneId: string) => {
+    setCurrentSceneId(sceneId);
+    onOpenChange(false);
+  };
 
   const refresh = () => setReloadKey((value) => value + 1);
 
@@ -426,47 +522,46 @@ export function LearningOverlay({ stageId, open, onOpenChange }: LearningOverlay
         </div>
       )}
     </div>
-  ) : concepts.length === 0 ? (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <Sparkles className="h-10 w-10 text-violet-400" />
-      <p className="mt-3 font-medium text-gray-800 dark:text-gray-200">
-        {t('learning.noConcepts')}
-      </p>
-      <p className="mt-1 max-w-sm text-sm text-gray-500 dark:text-gray-400">
-        {t('learning.noConceptsDesc')}
-      </p>
-    </div>
   ) : (
-    <div className="grid gap-3">
-      {concepts.map((concept) => {
-        const score = Math.round(masteryScore(concept) * 100);
-        const confidence = Math.round(masteryConfidence(concept) * 100);
-        return (
-          <div
-            key={concept.conceptId}
-            className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900"
-          >
-            <div className="flex items-baseline justify-between gap-3">
-              <p className="text-sm font-medium capitalize text-gray-900 dark:text-gray-100">
-                {concept.conceptId}
-              </p>
-              <span className="text-sm font-semibold tabular-nums text-gray-700 dark:text-gray-300">
-                {score}%
-              </span>
-            </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+    <div>
+      <StudyPlanCard
+        route={route}
+        onOpenScene={openScene}
+        onStartFromBeginning={scenes.length > 0 ? () => openScene(scenes[0].id) : undefined}
+      />
+      {concepts.length > 0 && (
+        <div className="grid gap-3">
+          {concepts.map((concept) => {
+            const score = Math.round(masteryScore(concept) * 100);
+            const confidence = Math.round(masteryConfidence(concept) * 100);
+            return (
               <div
-                className="h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-500"
-                style={{ width: `${score}%` }}
-              />
-            </div>
-            <div className="mt-1.5 flex justify-between text-[11px] text-gray-400 dark:text-gray-500">
-              <span>{t('learning.confidence', { value: confidence })}</span>
-              <span>{t('learning.observations', { count: concept.evidenceCount })}</span>
-            </div>
-          </div>
-        );
-      })}
+                key={concept.conceptId}
+                className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900"
+              >
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="text-sm font-medium capitalize text-gray-900 dark:text-gray-100">
+                    {concept.conceptId}
+                  </p>
+                  <span className="text-sm font-semibold tabular-nums text-gray-700 dark:text-gray-300">
+                    {score}%
+                  </span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-500"
+                    style={{ width: `${score}%` }}
+                  />
+                </div>
+                <div className="mt-1.5 flex justify-between text-[11px] text-gray-400 dark:text-gray-500">
+                  <span>{t('learning.confidence', { value: confidence })}</span>
+                  <span>{t('learning.observations', { count: concept.evidenceCount })}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 
