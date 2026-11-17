@@ -572,7 +572,12 @@
       "referenceCommands": "Lệnh tham chiếu",
       "referenceCommandsDescription": "Chạy theo thứ tự; phải thỏa mọi kiểm tra. Không bao giờ hiển thị khi phát lại.",
       "addReferenceCommand": "Thêm lệnh",
-      "commandPlaceholder": "ví dụ: echo done > notes.txt"
+      "commandPlaceholder": "ví dụ: echo done > notes.txt",
+      "runtime": "Môi trường",
+      "runtimeSimulation": "Mô phỏng (trong trang)",
+      "runtimeServer": "Máy chủ cách ly (quản trị viên bật)",
+      "runtimeSimulationNote": "Shell tất định trong trang, không truy cập máy chủ. Phù hợp với kiến thức cơ bản về dòng lệnh.",
+      "runtimeServerNote": "Chạy trong container tạm thời, cách ly mạng. Cần quản trị viên bật ACTIVITY_SERVER_RUNTIME_ENABLED và cung cấp image sandbox."
     },
     "cue": {
       "speech": "Lời giảng",
@@ -897,7 +902,11 @@
     "terminalSession": "Phiên",
     "terminalEmpty": "Nhập lệnh và nhấn Enter. Các kiểm tra cập nhật trong khi bạn làm việc.",
     "terminalInput": "Lệnh",
-    "terminalPlaceholder": "Nhập lệnh…"
+    "terminalPlaceholder": "Nhập lệnh…",
+    "serverIsolated": "Máy chủ cách ly",
+    "serverScript": "Script lệnh (mỗi dòng một lệnh)",
+    "serverScriptPlaceholder": "echo done > notes.txt\npwd",
+    "serverNoOutput": "Chạy script để xem đầu ra tại đây."
   },
   "roundtable": {
     "teacher": "GIẢNG VIÊN",

@@ -11,6 +11,7 @@ import type {
 } from '@/lib/types/stage';
 import type { ActivityRunner } from '@/lib/activity/worker-runner';
 import { createTerminalRunner } from '@/lib/activity/terminal-runner';
+import { createServerTerminalRunner } from '@/lib/activity/server-runner';
 import { type ActivityVerification, verifyTerminalActivity } from '@/lib/activity/verify';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
@@ -33,6 +34,7 @@ import {
   removeActivityHintBound,
   removeTerminalCheckBound,
   removeTerminalReferenceCommandBound,
+  setTerminalRuntimeBound,
   switchActivityKindBound,
   updateActivityFileBound,
   updateActivityHintBound,
@@ -174,13 +176,14 @@ export function TerminalActivityEditor({ content }: { content: TerminalActivityC
   const [newCheckType, setNewCheckType] = useState<TerminalActivityCheck['type']>('expectState');
 
   useEffect(() => {
-    const runner = createTerminalRunner();
+    const runner =
+      content.runtime === 'server' ? createServerTerminalRunner() : createTerminalRunner();
     runnerRef.current = runner;
     return () => {
       runnerRef.current = null;
       runner.dispose();
     };
-  }, []);
+  }, [content.runtime]);
 
   useEffect(() => {
     setReport(null);
@@ -251,6 +254,24 @@ export function TerminalActivityEditor({ content }: { content: TerminalActivityC
                 />
               </label>
             </div>
+            <label className="grid gap-1">
+              <span className={LABEL}>{t('edit.activity.runtime')}</span>
+              <select
+                className={INPUT}
+                value={content.runtime ?? 'simulation'}
+                onChange={(event) =>
+                  setTerminalRuntimeBound(event.target.value === 'server' ? 'server' : 'simulation')
+                }
+              >
+                <option value="simulation">{t('edit.activity.runtimeSimulation')}</option>
+                <option value="server">{t('edit.activity.runtimeServer')}</option>
+              </select>
+              <span className="text-[11px] text-muted-foreground">
+                {content.runtime === 'server'
+                  ? t('edit.activity.runtimeServerNote')
+                  : t('edit.activity.runtimeSimulationNote')}
+              </span>
+            </label>
           </div>
         </Section>
 

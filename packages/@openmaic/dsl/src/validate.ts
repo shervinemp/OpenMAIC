@@ -17,7 +17,7 @@
  */
 import { isActionType } from './action.js';
 import type { ActionType } from './action.js';
-import { isActivityKind } from './activity.js';
+import { isActivityKind, isTerminalRuntime } from './activity.js';
 import { isWidgetType } from './interactive.js';
 import { isPBLProject } from './pbl.js';
 import { isSceneType } from './stage.js';
@@ -470,6 +470,18 @@ function checkActivityContent(doc: unknown, path: string, errors: ValidationIssu
     errors.push({
       path: `${path}/timeLimitSec`,
       message: '`timeLimitSec` must be a finite positive number',
+    });
+  }
+  if (doc.runtime !== undefined && doc.kind !== 'terminal') {
+    errors.push({
+      path: `${path}/runtime`,
+      message: '`runtime` is only valid on terminal activities',
+    });
+  }
+  if (doc.kind === 'terminal' && doc.runtime !== undefined && !isTerminalRuntime(doc.runtime)) {
+    errors.push({
+      path: `${path}/runtime`,
+      message: '`runtime` must be `simulation` or `server` when present',
     });
   }
 

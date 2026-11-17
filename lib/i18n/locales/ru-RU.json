@@ -572,7 +572,12 @@
       "referenceCommands": "Эталонные команды",
       "referenceCommandsDescription": "Выполняются по порядку; должны пройти все проверки. В воспроизведении не показываются.",
       "addReferenceCommand": "Добавить команду",
-      "commandPlaceholder": "например, echo done > notes.txt"
+      "commandPlaceholder": "например, echo done > notes.txt",
+      "runtime": "Среда",
+      "runtimeSimulation": "Симуляция (в странице)",
+      "runtimeServer": "Изолированный сервер (включает оператор)",
+      "runtimeSimulationNote": "Детерминированная оболочка в странице без доступа к хосту. Подходит для основ командной строки.",
+      "runtimeServerNote": "Выполняется в эфемерном контейнере с отключённой сетью. Требует, чтобы оператор включил ACTIVITY_SERVER_RUNTIME_ENABLED и указал образ песочницы."
     },
     "cue": {
       "speech": "Закадровый текст",
@@ -897,7 +902,11 @@
     "terminalSession": "Сессия",
     "terminalEmpty": "Введите команду и нажмите Enter. Проверки обновляются по мере работы.",
     "terminalInput": "Команда",
-    "terminalPlaceholder": "Введите команду…"
+    "terminalPlaceholder": "Введите команду…",
+    "serverIsolated": "Изолированный сервер",
+    "serverScript": "Сценарий команд (по одной в строке)",
+    "serverScriptPlaceholder": "echo done > notes.txt\npwd",
+    "serverNoOutput": "Запустите сценарий, чтобы увидеть вывод здесь."
   },
   "roundtable": {
     "teacher": "УЧИТЕЛЬ",

@@ -34,6 +34,7 @@ import {
   setSqlSetup,
   setSqlStarter,
   setTerminalReferenceCommands,
+  setTerminalRuntime,
   switchActivityKind,
   updateActivityBasics,
   updateActivityCheck,
@@ -272,6 +273,10 @@ export function updateTerminalCheckBound(
 
 export function removeTerminalCheckBound(index: number): void {
   commitActivity(removeTerminalCheck(resolvePresent(), index));
+}
+
+export function setTerminalRuntimeBound(runtime: Parameters<typeof setTerminalRuntime>[1]): void {
+  commitActivity(setTerminalRuntime(resolvePresent(), runtime));
 }
 
 // ---------------------------------------------------------------------------

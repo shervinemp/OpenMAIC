@@ -572,7 +572,12 @@
       "referenceCommands": "Referenzbefehle",
       "referenceCommandsDescription": "Laufen der Reihe nach und müssen jede Prüfung bestehen. Werden in der Wiedergabe nie angezeigt.",
       "addReferenceCommand": "Befehl hinzufügen",
-      "commandPlaceholder": "z. B. echo done > notes.txt"
+      "commandPlaceholder": "z. B. echo done > notes.txt",
+      "runtime": "Laufzeit",
+      "runtimeSimulation": "Simulation (im Browser)",
+      "runtimeServer": "Isolierter Server (durch Betrieb freigeschaltet)",
+      "runtimeSimulationNote": "Deterministische Shell im Browser; kein Host-Zugriff. Ideal für Kommandozeilen-Grundlagen.",
+      "runtimeServerNote": "Läuft in einem temporären, netzwerkisolierten Container. Erfordert ACTIVITY_SERVER_RUNTIME_ENABLED und ein Sandbox-Image durch den Betrieb."
     },
     "cue": {
       "speech": "Sprechertext",
@@ -897,7 +902,11 @@
     "terminalSession": "Sitzung",
     "terminalEmpty": "Gib einen Befehl ein und drücke Enter. Die Prüfungen aktualisieren sich beim Arbeiten.",
     "terminalInput": "Befehl",
-    "terminalPlaceholder": "Befehl eingeben …"
+    "terminalPlaceholder": "Befehl eingeben …",
+    "serverIsolated": "Isolierter Server",
+    "serverScript": "Befehlsskript (einer pro Zeile)",
+    "serverScriptPlaceholder": "echo done > notes.txt\npwd",
+    "serverNoOutput": "Führe das Skript aus, um die Ausgabe hier zu sehen."
   },
   "roundtable": {
     "teacher": "LEHRKRAFT",

@@ -572,7 +572,12 @@
       "referenceCommands": "أوامر مرجعية",
       "referenceCommandsDescription": "تُنفَّذ بالترتيب ويجب أن تحقق كل الفحوص. لا تظهر أثناء التشغيل.",
       "addReferenceCommand": "إضافة أمر",
-      "commandPlaceholder": "مثال: echo done > notes.txt"
+      "commandPlaceholder": "مثال: echo done > notes.txt",
+      "runtime": "بيئة التشغيل",
+      "runtimeSimulation": "محاكاة (داخل الصفحة)",
+      "runtimeServer": "خادم معزول (يُفعّله المشغّل)",
+      "runtimeSimulationNote": "صدفة حتمية داخل الصفحة دون وصول إلى المضيف. مناسبة لأساسيات سطر الأوامر.",
+      "runtimeServerNote": "يعمل في حاوية مؤقتة معزولة عن الشبكة. يتطلب أن يفعّل المشغّل ACTIVITY_SERVER_RUNTIME_ENABLED ويوفر صورة العزل."
     },
     "cue": {
       "speech": "السرد",
@@ -897,7 +902,11 @@
     "terminalSession": "الجلسة",
     "terminalEmpty": "اكتب أمرًا واضغط Enter. تتحدث الفحوص أثناء عملك.",
     "terminalInput": "الأمر",
-    "terminalPlaceholder": "اكتب أمرًا…"
+    "terminalPlaceholder": "اكتب أمرًا…",
+    "serverIsolated": "خادم معزول",
+    "serverScript": "سكربت الأوامر (أمر في كل سطر)",
+    "serverScriptPlaceholder": "echo done > notes.txt\npwd",
+    "serverNoOutput": "شغّل السكربت لعرض مخرجاته هنا."
   },
   "roundtable": {
     "teacher": "المعلم",

@@ -572,7 +572,12 @@
       "referenceCommands": "模範コマンド",
       "referenceCommandsDescription": "順番に実行され、すべてのチェックを満たす必要があります。再生時には表示されません。",
       "addReferenceCommand": "コマンドを追加",
-      "commandPlaceholder": "例: echo done > notes.txt"
+      "commandPlaceholder": "例: echo done > notes.txt",
+      "runtime": "実行環境",
+      "runtimeSimulation": "シミュレーション（ページ内）",
+      "runtimeServer": "分離サーバー（運用者による有効化）",
+      "runtimeSimulationNote": "ページ内で動く決定的なシェル。ホストにはアクセスできません。コマンドの基礎に最適です。",
+      "runtimeServerNote": "一時的でネットワーク分離されたコンテナで実行します。運用者が ACTIVITY_SERVER_RUNTIME_ENABLED とサンドボックスイメージを設定する必要があります。"
     },
     "cue": {
       "speech": "ナレーション",
@@ -897,7 +902,11 @@
     "terminalSession": "セッション",
     "terminalEmpty": "コマンドを入力して Enter を押してください。作業に合わせてチェックが更新されます。",
     "terminalInput": "コマンド",
-    "terminalPlaceholder": "コマンドを入力…"
+    "terminalPlaceholder": "コマンドを入力…",
+    "serverIsolated": "分離サーバー",
+    "serverScript": "コマンドスクリプト（1 行に 1 つ）",
+    "serverScriptPlaceholder": "echo done > notes.txt\npwd",
+    "serverNoOutput": "スクリプトを実行すると、ここに出力が表示されます。"
   },
   "roundtable": {
     "teacher": "教師",

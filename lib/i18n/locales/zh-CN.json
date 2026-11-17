@@ -572,7 +572,12 @@
       "referenceCommands": "参考命令",
       "referenceCommandsDescription": "按顺序执行；必须满足所有检查。不会在播放中显示。",
       "addReferenceCommand": "添加命令",
-      "commandPlaceholder": "例如 echo done > notes.txt"
+      "commandPlaceholder": "例如 echo done > notes.txt",
+      "runtime": "运行环境",
+      "runtimeSimulation": "模拟（页面内）",
+      "runtimeServer": "隔离服务器（需运维开启）",
+      "runtimeSimulationNote": "在页面内运行的确定性 shell，无法访问主机。适合命令行基础。",
+      "runtimeServerNote": "在临时、无网络的容器中运行。需要运维启用 ACTIVITY_SERVER_RUNTIME_ENABLED 并提供沙箱镜像。"
     },
     "cue": {
       "speech": "讲解",
@@ -897,7 +902,11 @@
     "terminalSession": "会话",
     "terminalEmpty": "输入命令并按回车。检查项会随操作更新。",
     "terminalInput": "命令",
-    "terminalPlaceholder": "输入命令…"
+    "terminalPlaceholder": "输入命令…",
+    "serverIsolated": "隔离服务器",
+    "serverScript": "命令脚本（每行一条）",
+    "serverScriptPlaceholder": "echo done > notes.txt\npwd",
+    "serverNoOutput": "运行脚本后，输出会显示在这里。"
   },
   "roundtable": {
     "teacher": "教师",

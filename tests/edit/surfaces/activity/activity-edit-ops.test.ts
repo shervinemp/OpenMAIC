@@ -34,6 +34,7 @@ import {
   setSqlSetup,
   setSqlStarter,
   setTerminalReferenceCommands,
+  setTerminalRuntime,
   switchActivityKind,
   updateSqlActivityBasics,
   updateSqlCheck,
@@ -382,5 +383,23 @@ describe('terminal labs', () => {
     expect(next).toMatchObject({ kind: 'terminal', instructions: 'Write add().' });
     expect(next.referenceCommands).toEqual([]);
     expect(validateActivityContent(next)).toEqual({ valid: true });
+  });
+});
+
+describe('terminal runtime tier', () => {
+  it('switches between simulation and the server tier without losing checks', () => {
+    const terminal: ActivityContent = {
+      type: 'activity',
+      kind: 'terminal',
+      instructions: 'Create a note.',
+      files: [{ path: 'README.txt', content: 'workspace\n' }],
+      checks: [{ id: 'c1', type: 'expectState', path: 'cwd', expected: '/home/learner' }],
+      referenceCommands: ['pwd'],
+    };
+    const server = setTerminalRuntime(terminal, 'server');
+    if (server.kind !== 'terminal') throw new Error('expected terminal');
+    expect(server.runtime).toBe('server');
+    expect(server.checks).toEqual(terminal.checks);
+    expect(validateActivityContent(server)).toEqual({ valid: true });
   });
 });

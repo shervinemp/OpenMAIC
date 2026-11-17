@@ -500,7 +500,12 @@
       "referenceCommands": "參考指令",
       "referenceCommandsDescription": "依序執行；必須滿足所有檢查。不會在播放中顯示。",
       "addReferenceCommand": "新增指令",
-      "commandPlaceholder": "例如 echo done > notes.txt"
+      "commandPlaceholder": "例如 echo done > notes.txt",
+      "runtime": "執行環境",
+      "runtimeSimulation": "模擬（頁面內）",
+      "runtimeServer": "隔離伺服器（需維運開啟）",
+      "runtimeSimulationNote": "在頁面內執行的確定性 shell，無法存取主機。適合命令列基礎。",
+      "runtimeServerNote": "在臨時、無網路的容器中執行。需要維運啟用 ACTIVITY_SERVER_RUNTIME_ENABLED 並提供沙箱映像。"
     },
     "cue": {
       "speech": "旁白",
@@ -874,7 +879,11 @@
     "terminalSession": "工作階段",
     "terminalEmpty": "輸入指令並按 Enter。檢查項目會隨操作更新。",
     "terminalInput": "指令",
-    "terminalPlaceholder": "輸入指令…"
+    "terminalPlaceholder": "輸入指令…",
+    "serverIsolated": "隔離伺服器",
+    "serverScript": "指令碼（每行一條）",
+    "serverScriptPlaceholder": "echo done > notes.txt\npwd",
+    "serverNoOutput": "執行指令碼後，輸出會顯示在這裡。"
   },
   "roundtable": {
     "teacher": "教師",

@@ -84,6 +84,28 @@ describe('activity contract', () => {
       ],
     };
     expect(validateScene(scene(terminal))).toEqual({ valid: true });
+    expect(validateScene(scene({ ...terminal, runtime: 'server' }))).toEqual({ valid: true });
+    expect(validateScene(scene({ ...terminal, runtime: 'simulation' }))).toEqual({
+      valid: true,
+    });
+  });
+
+  it('rejects an unknown terminal runtime and a runtime on another kind', () => {
+    const terminal = {
+      type: 'activity',
+      kind: 'terminal',
+      instructions: 'x',
+      files: [],
+      checks: [{ id: 'cwd', type: 'expectState', path: 'cwd', expected: '/home/learner' }],
+    };
+    const unknown = validateScene(scene({ ...terminal, runtime: 'container' }));
+    expect(unknown.valid).toBe(false);
+    if (!unknown.valid) {
+      expect(unknown.errors.map((error) => error.path)).toContain('/content/runtime');
+    }
+
+    const codeRuntime = validateScene(scene({ ...codeActivity, runtime: 'server' }));
+    expect(codeRuntime.valid).toBe(false);
   });
 
   it('rejects a code activity whose entry file is not in the workspace', () => {

@@ -199,6 +199,23 @@ export interface SqlActivityContent extends ActivityContentBase {
 }
 
 /**
+ * Where a terminal lab executes. `simulation` is the default: a deterministic
+ * in-page shell that cannot touch the host. `server` runs the session in an
+ * ephemeral, network-isolated container and is only offered when an operator
+ * explicitly enables the server runtime.
+ */
+export type TerminalRuntime = 'simulation' | 'server';
+
+export const TERMINAL_RUNTIMES = [
+  'simulation',
+  'server',
+] as const satisfies readonly TerminalRuntime[];
+
+export function isTerminalRuntime(value: unknown): value is TerminalRuntime {
+  return typeof value === 'string' && (TERMINAL_RUNTIMES as readonly string[]).includes(value);
+}
+
+/**
  * A terminal exercise executed against a simulated shell. Simulation is the
  * deliberate default for command-line basics: it is deterministic, needs no
  * container, and cannot touch the host. Real command execution belongs to the
@@ -206,6 +223,8 @@ export interface SqlActivityContent extends ActivityContentBase {
  */
 export interface TerminalActivityContent extends ActivityContentBase {
   kind: 'terminal';
+  /** Execution tier. Omitted means `simulation`. */
+  runtime?: TerminalRuntime;
   /** Initial simulated filesystem. */
   files: ActivityFile[];
   /** Authoring-only command sequence that satisfies every check. */

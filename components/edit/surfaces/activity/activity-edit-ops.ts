@@ -23,6 +23,7 @@ import type {
   SqlActivityContent,
   TerminalActivityCheck,
   TerminalActivityContent,
+  TerminalRuntime,
 } from '@/lib/types/stage';
 import { createElementId } from '@/lib/edit/element-id';
 
@@ -520,4 +521,13 @@ export function removeTerminalCheck(content: ActivityContent, index: number): Ac
   const current = terminal(content);
   if (!current || index < 0 || index >= current.checks.length) return content;
   return { ...current, checks: current.checks.filter((_, i) => i !== index) };
+}
+
+export function setTerminalRuntime(
+  content: ActivityContent,
+  runtime: TerminalRuntime,
+): ActivityContent {
+  const current = terminal(content);
+  if (!current) return content;
+  return { ...current, runtime };
 }

@@ -8,7 +8,7 @@
  * interpreting it. A runner that cannot produce a real result reports
  * `status: 'error'` instead of inventing output.
  */
-import type { ActivityKind, ActivityTest, SqlValue } from '@/lib/types/stage';
+import type { ActivityKind, ActivityTest, SqlValue, TerminalRuntime } from '@/lib/types/stage';
 
 /** One learner submission, discriminated by the activity family. */
 export type ActivitySubmission =
@@ -19,6 +19,8 @@ export type ActivitySubmission =
 /** Everything a runner needs for one attempt. */
 export interface ActivityRunRequest {
   kind: ActivityKind;
+  /** Terminal only: simulation (default) or the operator-gated server tier. */
+  runtime?: TerminalRuntime;
   /** Hard wall-clock cap. The runner kills execution when it expires. */
   timeLimitMs: number;
   /** Code: workspace files after the learner's edits, path -> content. */
@@ -104,7 +106,12 @@ export function buildActivityRunRequest(
         checks: { id: string; sql: string }[];
         timeLimitSec?: number;
       }
-    | { kind: 'terminal'; files: { path: string; content: string }[]; timeLimitSec?: number },
+    | {
+        kind: 'terminal';
+        files: { path: string; content: string }[];
+        timeLimitSec?: number;
+        runtime?: TerminalRuntime;
+      },
   submission: ActivitySubmission,
 ): ActivityRunRequest | null {
   if (activity.kind !== submission.kind) return null;
@@ -133,6 +140,7 @@ export function buildActivityRunRequest(
     for (const file of activity.files) initialFiles[file.path] = file.content;
     return {
       kind: 'terminal',
+      runtime: activity.runtime ?? 'simulation',
       timeLimitMs,
       initialFiles,
       commands: submission.commands,

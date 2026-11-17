@@ -572,7 +572,12 @@
       "referenceCommands": "Comandos de referencia",
       "referenceCommandsDescription": "Se ejecutan en orden; deben cumplir todas las comprobaciones. Nunca se muestran en la reproducción.",
       "addReferenceCommand": "Agregar comando",
-      "commandPlaceholder": "p. ej. echo done > notes.txt"
+      "commandPlaceholder": "p. ej. echo done > notes.txt",
+      "runtime": "Entorno",
+      "runtimeSimulation": "Simulación (en la página)",
+      "runtimeServer": "Servidor aislado (habilitado por el operador)",
+      "runtimeSimulationNote": "Shell determinista en la página; sin acceso al host. Ideal para fundamentos de línea de comandos.",
+      "runtimeServerNote": "Se ejecuta en un contenedor efímero y aislado de la red. Requiere que el operador habilite ACTIVITY_SERVER_RUNTIME_ENABLED y una imagen de sandbox."
     },
     "cue": {
       "speech": "Narración",
@@ -897,7 +902,11 @@
     "terminalSession": "Sesión",
     "terminalEmpty": "Escribe un comando y presiona Enter. Las comprobaciones se actualizan mientras trabajas.",
     "terminalInput": "Comando",
-    "terminalPlaceholder": "Escribe un comando…"
+    "terminalPlaceholder": "Escribe un comando…",
+    "serverIsolated": "Servidor aislado",
+    "serverScript": "Script de comandos (uno por línea)",
+    "serverScriptPlaceholder": "echo done > notes.txt\npwd",
+    "serverNoOutput": "Ejecuta el script para ver su salida aquí."
   },
   "roundtable": {
     "teacher": "DOCENTE",

@@ -409,6 +409,7 @@ export function projectActivityForLearner(activity: ActivityContent): ActivityCo
   return {
     ...common,
     kind: 'terminal',
+    runtime: activity.runtime,
     files: activity.files.map((file) => ({ ...file })),
     checks: activity.checks.map((check) => ({ ...check })),
   };

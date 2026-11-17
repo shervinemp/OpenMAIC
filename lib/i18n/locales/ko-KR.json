@@ -716,7 +716,12 @@
       "referenceCommands": "참조 명령",
       "referenceCommandsDescription": "순서대로 실행되며 모든 검사를 통과해야 합니다. 재생 중에는 표시되지 않습니다.",
       "addReferenceCommand": "명령 추가",
-      "commandPlaceholder": "예: echo done > notes.txt"
+      "commandPlaceholder": "예: echo done > notes.txt",
+      "runtime": "실행 환경",
+      "runtimeSimulation": "시뮬레이션(페이지 내)",
+      "runtimeServer": "격리 서버(운영자 활성화 필요)",
+      "runtimeSimulationNote": "페이지에서 실행되는 결정적 셸이며 호스트에 접근할 수 없습니다. 명령줄 기초에 적합합니다.",
+      "runtimeServerNote": "임시 네트워크 격리 컨테이너에서 실행됩니다. 운영자가 ACTIVITY_SERVER_RUNTIME_ENABLED와 샌드박스 이미지를 설정해야 합니다."
     },
     "zorder": {
       "toFront": "맨 앞으로 가져오기",
@@ -897,7 +902,11 @@
     "terminalSession": "세션",
     "terminalEmpty": "명령을 입력하고 Enter를 누르세요. 작업하면서 검사가 업데이트됩니다.",
     "terminalInput": "명령",
-    "terminalPlaceholder": "명령 입력…"
+    "terminalPlaceholder": "명령 입력…",
+    "serverIsolated": "격리 서버",
+    "serverScript": "명령 스크립트(한 줄에 하나)",
+    "serverScriptPlaceholder": "echo done > notes.txt\npwd",
+    "serverNoOutput": "스크립트를 실행하면 여기에 출력이 표시됩니다."
   },
   "roundtable": {
     "teacher": "선생님",

@@ -572,7 +572,12 @@
       "referenceCommands": "Reference commands",
       "referenceCommandsDescription": "Run in order; they must satisfy every check. Never shown in playback.",
       "addReferenceCommand": "Add command",
-      "commandPlaceholder": "e.g. echo done > notes.txt"
+      "commandPlaceholder": "e.g. echo done > notes.txt",
+      "runtime": "Runtime",
+      "runtimeSimulation": "Simulation (in-page)",
+      "runtimeServer": "Isolated server (operator-gated)",
+      "runtimeSimulationNote": "Deterministic shell in the page; no host access. Best for command basics.",
+      "runtimeServerNote": "Runs in an ephemeral, network-isolated container. Requires the operator to enable ACTIVITY_SERVER_RUNTIME_ENABLED and a sandbox image."
     },
     "cue": {
       "speech": "Narration",
@@ -897,7 +902,11 @@
     "terminalSession": "Session",
     "terminalEmpty": "Type a command and press Enter. Checks update as you work.",
     "terminalInput": "Command",
-    "terminalPlaceholder": "Type a command…"
+    "terminalPlaceholder": "Type a command…",
+    "serverIsolated": "Isolated server",
+    "serverScript": "Command script (one per line)",
+    "serverScriptPlaceholder": "echo done > notes.txt\npwd",
+    "serverNoOutput": "Run the script to see its output here."
   },
   "roundtable": {
     "teacher": "TEACHER",

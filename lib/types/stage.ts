@@ -50,6 +50,7 @@ export type {
   TerminalActivityCheck,
   CodeActivityContent,
   SqlActivityContent,
+  TerminalRuntime,
   TerminalActivityContent,
 } from '@openmaic/dsl';
 
@@ -63,6 +64,7 @@ export {
   isCodeActivityContent,
   isSqlActivityContent,
   isTerminalActivityContent,
+  isTerminalRuntime,
 } from '@openmaic/dsl';
 
 // `@openmaic/dsl` inlines the question-type union on `QuizQuestion.type` rather than
