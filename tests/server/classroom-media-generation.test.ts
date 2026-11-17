@@ -1,3 +1,4 @@
+import { promises as fs } from 'fs';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { replaceMediaPlaceholders } from '@/lib/server/classroom-media-generation';
 import type { Scene } from '@/lib/types/stage';
@@ -465,11 +466,15 @@ describe('generateMediaForClassroom model fallback', () => {
 
     const mediaMap = await generateMediaForClassroom(outlines, 'cls-dedupe', 'http://localhost');
 
-    // One provider call and one download, two served files.
+    // One provider call, one download, one stored file served for both ids.
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(mediaMap).toEqual({
       gen_img_a: 'http://localhost/api/classroom-media/cls-dedupe/media/gen_img_a.png',
-      gen_img_b: 'http://localhost/api/classroom-media/cls-dedupe/media/gen_img_b.png',
+      gen_img_b: 'http://localhost/api/classroom-media/cls-dedupe/media/gen_img_a.png',
     });
+    const written = vi.mocked(fs.writeFile).mock.calls.map(([file]) => String(file));
+    const dedupeWrites = written.filter((file) => /gen_img_[ab]\./.test(file));
+    expect(dedupeWrites).toHaveLength(1);
+    expect(dedupeWrites[0]).toContain('gen_img_a');
   });
 });

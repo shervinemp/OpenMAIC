@@ -71,6 +71,13 @@ export interface MediaFileRecord {
   stageId: string;
   /** Original gen_* reference retained after allocation for reload reconciliation. */
   placeholderRef?: string;
+  /**
+   * Other placeholders that resolve to these same bytes. Identical-promise
+   * generation requests share one allocated asset, so the row is stored once
+   * under that asset id; these aliases let a later rollback that restores a
+   * sibling placeholder adopt the bytes instead of buying them again.
+   */
+  placeholderAliases?: string[];
   type: 'image' | 'video';
   blob: Blob; // Media binary
   mimeType: string; // image/png, video/mp4

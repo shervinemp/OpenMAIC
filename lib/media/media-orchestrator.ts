@@ -163,6 +163,17 @@ interface RefusedMediaBytes {
 }
 
 /**
+ * What a commit actually stored.
+ *
+ * An identical request reuses this instead of uploading its own copy: one
+ * provider purchase and one pool asset serve every slot that asked for it.
+ */
+interface SharedMediaCommit {
+  readonly assetId: string;
+  readonly posterAssetId?: string;
+}
+
+/**
  * The structured code a failure should be remembered by, if it has one.
  *
  * A code is what makes a failure permanent: it is written to the local table,
@@ -489,10 +500,10 @@ async function collectAndGenerate(
     }
 
     // A duplicate rides its leader's outcome. When the leader bought bytes,
-    // each duplicate commits them under its own placeholder — a separate pool
-    // allocation and document write-back, but no provider call. When the
-    // leader failed, the outcome is shared: an identical prompt would only be
-    // refused (or bought twice) again.
+    // each duplicate points its own placeholder at the same stored asset — a
+    // document write-back per slot, but no provider call and no second copy of
+    // the bytes. When the leader failed, the outcome is shared: an identical
+    // prompt would only be refused (or bought twice) again.
     for (const duplicate of group.duplicates) {
       if (abortSignal?.aborted) break;
       const duplicateOutlineId = outlineByElement.get(duplicate.elementId);
@@ -505,7 +516,14 @@ async function collectAndGenerate(
 
       let outcome: MediaAttemptOutcome;
       if (attempt.bytes) {
-        outcome = await generateSingleMedia(duplicate, stageId, abortSignal, attempt.bytes, scan);
+        outcome = await generateSingleMedia(
+          duplicate,
+          stageId,
+          abortSignal,
+          attempt.bytes,
+          scan,
+          attempt.shared,
+        );
       } else if (attempt.failure) {
         await shareMediaFailure(duplicate, stageId, attempt.failure);
         outcome = ATTEMPT_FAILED;
@@ -871,7 +889,7 @@ async function commitPooledMedia(args: {
   mimeType: string;
   posterBlob?: Blob;
   posterMimeType?: string;
-}): Promise<void> {
+}): Promise<SharedMediaCommit> {
   const { req, stageId, paramsJson, blob, mimeType, posterBlob, posterMimeType } = args;
 
   const outcome = await commitToPool<GeneratedMediaPlacement>({
@@ -968,6 +986,10 @@ async function commitPooledMedia(args: {
   if (outcome.status === 'failed') throw outcome.error;
 
   const { result, objectUrl, posterObjectUrl, posterAssetId } = outcome.placement;
+  const shared: SharedMediaCommit = {
+    assetId: outcome.assetId,
+    ...(posterAssetId ? { posterAssetId } : {}),
+  };
   if (result === 'held') {
     // The slide this media belongs to has not been built yet, which during a
     // first pass is the ordinary case rather than an edge one. The funnel holds
@@ -975,12 +997,91 @@ async function commitPooledMedia(args: {
     // still carries, so the request reads as answered and the provider is not
     // asked a second time.
     useMediaGenerationStore.getState().markDone(req.elementId, objectUrl, posterObjectUrl);
-    return;
+    return shared;
   }
 
   useMediaGenerationStore
     .getState()
     .rekeyDone(req.elementId, outcome.assetId, objectUrl, posterObjectUrl, posterAssetId);
+  return shared;
+}
+
+/**
+ * Point one slot at bytes its group's leader already stored.
+ *
+ * The provider was called once and the pool accepted the bytes once. This
+ * element still needs its own document rewrite and its own task, but it must
+ * not upload a second copy of the same asset. The allocation is otherwise
+ * built exactly like a leader's: minted before the write-back, parked when the
+ * slide does not exist yet, and forgotten (with its object URL) only when the
+ * write-back could not retain it.
+ */
+async function commitSharedMedia(args: {
+  req: MediaGenerationRequest;
+  stageId: string;
+  commit: SharedMediaCommit;
+  bytes: RefusedMediaBytes;
+}): Promise<void> {
+  const { req, stageId, commit, bytes } = args;
+  const objectUrl = URL.createObjectURL(bytes.blob);
+  const posterObjectUrl = bytes.poster ? URL.createObjectURL(bytes.poster) : undefined;
+  const allocation: PendingMediaAllocation = {
+    stageId,
+    placeholderRef: req.elementId,
+    assetId: commit.assetId,
+    ...(commit.posterAssetId ? { posterAssetId: commit.posterAssetId } : {}),
+    objectUrl,
+    posterObjectUrl,
+  };
+
+  let result: MediaReferenceWriteBackResult;
+  try {
+    result = await persistGeneratedMediaReference(allocation);
+  } catch (error) {
+    if (error instanceof MediaReferenceWriteBackError && error.allocationRetained) throw error;
+    URL.revokeObjectURL(objectUrl);
+    if (posterObjectUrl) URL.revokeObjectURL(posterObjectUrl);
+    forgetMediaAllocation(stageId, req.elementId);
+    throw error;
+  }
+
+  // Keep the leader's cached row adoptable under this slot's placeholder too:
+  // a rollback that restores the placeholder must find paid-for bytes rather
+  // than buy the same prompt again. Best-effort, like the mirror itself.
+  await recordPlaceholderAlias(stageId, commit.assetId, req.elementId);
+
+  if (result === 'held') {
+    useMediaGenerationStore.getState().markDone(req.elementId, objectUrl, posterObjectUrl);
+    return;
+  }
+  useMediaGenerationStore
+    .getState()
+    .rekeyDone(req.elementId, commit.assetId, objectUrl, posterObjectUrl, commit.posterAssetId);
+}
+
+/**
+ * Record that a placeholder resolves to an asset another placeholder stored.
+ *
+ * The bytes stay in one row; the alias is metadata on that row. A missing row
+ * means the leader's mirror was best-effort and failed, so there is nothing to
+ * alias and no reason to fail the commit over it.
+ */
+async function recordPlaceholderAlias(
+  stageId: string,
+  assetId: string,
+  placeholderRef: string,
+): Promise<void> {
+  try {
+    const row = await db.mediaFiles.get(mediaFileKey(stageId, assetId));
+    if (!row) return;
+    const aliases = new Set(row.placeholderAliases ?? []);
+    if (row.placeholderRef) aliases.add(row.placeholderRef);
+    if (aliases.has(placeholderRef)) return;
+    aliases.add(placeholderRef);
+    await db.mediaFiles.put({ ...row, placeholderAliases: [...aliases] });
+  } catch (error) {
+    log.warn(`Could not record media alias ${placeholderRef} for ${assetId}:`, error);
+  }
 }
 
 /**
@@ -1070,10 +1171,14 @@ async function loadCachedMediaByPlaceholder(
     .catch(() => [] as MediaFileRecord[]);
   const index = new Map<string, MediaFileRecord[]>();
   for (const row of rows) {
-    if (!row.placeholderRef) continue;
-    const existing = index.get(row.placeholderRef);
-    if (existing) existing.push(row);
-    else index.set(row.placeholderRef, [row]);
+    const refs = new Set<string>(row.placeholderAliases ?? []);
+    if (row.placeholderRef) refs.add(row.placeholderRef);
+    for (const ref of refs) {
+      if (!ref) continue;
+      const existing = index.get(ref);
+      if (existing) existing.push(row);
+      else index.set(ref, [row]);
+    }
   }
   // Newest first. A regenerated element forks to a fresh id and its
   // predecessor's row is retained, so several rows can name the same
@@ -1107,7 +1212,7 @@ async function commitCachedMedia(
   paramsJson: string,
   abortSignal?: AbortSignal,
   scan?: CachedMediaScan,
-): Promise<RefusedMediaBytes | undefined> {
+): Promise<{ bytes: RefusedMediaBytes; shared: SharedMediaCommit } | undefined> {
   const cached = await adoptableCachedMedia(stageId, req.elementId, scan);
   const blob = cached?.blob;
   if (!cached || !blob || blob.size === 0) return undefined;
@@ -1125,7 +1230,7 @@ async function commitCachedMedia(
     ...(poster ? { poster, posterMimeType: storedMediaType(poster, 'image/jpeg') } : {}),
   };
   log.info(`Adopting locally cached bytes for ${req.elementId}; no provider call.`);
-  await commitPooledMedia({
+  const shared = await commitPooledMedia({
     req,
     stageId,
     paramsJson,
@@ -1134,7 +1239,7 @@ async function commitCachedMedia(
     ...(bytes.poster ? { posterBlob: bytes.poster } : {}),
     ...(bytes.posterMimeType ? { posterMimeType: bytes.posterMimeType } : {}),
   });
-  return bytes;
+  return { bytes, shared };
 }
 
 /**
@@ -1161,29 +1266,21 @@ interface MediaAttemptOutcome {
    * instead of buying the same prompt again.
    */
   readonly bytes?: RefusedMediaBytes;
+  /**
+   * The asset those bytes were stored as. An identical request points its own
+   * slot at this asset instead of uploading a second copy.
+   */
+  readonly shared?: SharedMediaCommit;
   /** Why the attempt failed, for identical requests to report without a call. */
   readonly failure?: { readonly message: string; readonly errorCode?: string };
 }
 
 const ATTEMPT_FAILED: MediaAttemptOutcome = { storageFull: false, committed: false };
 
-function committedWith(bytes: RefusedMediaBytes): MediaAttemptOutcome {
-  return { storageFull: false, committed: true, bytes };
+function committedWith(bytes: RefusedMediaBytes, shared?: SharedMediaCommit): MediaAttemptOutcome {
+  return { storageFull: false, committed: true, bytes, ...(shared ? { shared } : {}) };
 }
 
-/**
- * Generate (or re-store) one element, and say what happened.
- *
- * Both halves of the answer are read by callers that must not infer them from
- * anywhere else. The pass stops the deck on `storageFull`; a retry deletes the
- * row that was holding the only copy of the bytes only on `committed`, because
- * the obvious substitute -- "the task is no longer failed" -- is a fact about a
- * table a course switch clears out from under it.
- *
- * `providedBytes` short-circuits the provider entirely: it is what a Retry hands
- * back after a full store kept the bytes, and what an identical request hands
- * over after its group's leader already bought them.
- */
 /**
  * In-pass recovery for the provider call (the recovery policy's first layer):
  * a transient generation failure — a local backend restarting, a dropped
@@ -1218,12 +1315,27 @@ function withProviderRecovery<T>(
   });
 }
 
+/**
+ * Generate (or re-store) one element, and say what happened.
+ *
+ * Both halves of the answer are read by callers that must not infer them from
+ * anywhere else. The pass stops the deck on `storageFull`; a retry deletes the
+ * row that was holding the only copy of the bytes only on `committed`, because
+ * the obvious substitute -- "the task is no longer failed" -- is a fact about a
+ * table a course switch clears out from under it.
+ *
+ * `providedBytes` short-circuits the provider entirely: it is what a Retry hands
+ * back after a full store kept the bytes. An identical request also supplies
+ * those bytes, and `sharedCommit` adds the asset its group's leader already
+ * stored, so the slot is pointed at that asset instead of uploading a copy.
+ */
 async function generateSingleMedia(
   req: MediaGenerationRequest,
   stageId: string,
   abortSignal?: AbortSignal,
   providedBytes?: RefusedMediaBytes,
   scan?: CachedMediaScan,
+  sharedCommit?: SharedMediaCommit,
 ): Promise<MediaAttemptOutcome> {
   const store = useMediaGenerationStore.getState();
   store.markGenerating(req.elementId);
@@ -1234,8 +1346,16 @@ async function generateSingleMedia(
       style: req.style,
     });
 
+    if (sharedCommit) {
+      if (!providedBytes) {
+        throw new Error(`An identical request for ${req.elementId} was shared without its bytes.`);
+      }
+      await commitSharedMedia({ req, stageId, commit: sharedCommit, bytes: providedBytes });
+      return committedWith(providedBytes, sharedCommit);
+    }
+
     if (providedBytes) {
-      await commitPooledMedia({
+      const shared = await commitPooledMedia({
         req,
         stageId,
         paramsJson,
@@ -1244,14 +1364,14 @@ async function generateSingleMedia(
         ...(providedBytes.poster ? { posterBlob: providedBytes.poster } : {}),
         ...(providedBytes.posterMimeType ? { posterMimeType: providedBytes.posterMimeType } : {}),
       });
-      return committedWith(providedBytes);
+      return committedWith(providedBytes, shared);
     }
 
     // Bytes this browser already holds for the placeholder (a store that
     // refused them earlier kept them) are already paid for, so they are
     // committed instead of bought again.
     const adopted = await commitCachedMedia(req, stageId, paramsJson, abortSignal, scan);
-    if (adopted) return committedWith(adopted);
+    if (adopted) return committedWith(adopted.bytes, adopted.shared);
 
     if (req.type === 'image') {
       const result = await withProviderRecovery(req, abortSignal, () =>
@@ -1266,14 +1386,14 @@ async function generateSingleMedia(
         blob,
         mimeType: storedMediaType(blob, 'image/png'),
       };
-      await commitPooledMedia({
+      const shared = await commitPooledMedia({
         req,
         stageId,
         paramsJson,
         blob: bytes.blob,
         mimeType: bytes.mimeType,
       });
-      return committedWith(bytes);
+      return committedWith(bytes, shared);
     }
     const result = await withProviderRecovery(req, abortSignal, () =>
       callVideoApi(req, abortSignal),
@@ -1292,7 +1412,7 @@ async function generateSingleMedia(
         ? { poster: posterBlob, posterMimeType: storedMediaType(posterBlob, 'image/jpeg') }
         : {}),
     };
-    await commitPooledMedia({
+    const shared = await commitPooledMedia({
       req,
       stageId,
       paramsJson,
@@ -1301,7 +1421,7 @@ async function generateSingleMedia(
       ...(bytes.poster ? { posterBlob: bytes.poster } : {}),
       ...(bytes.posterMimeType ? { posterMimeType: bytes.posterMimeType } : {}),
     });
-    return committedWith(bytes);
+    return committedWith(bytes, shared);
   } catch (err) {
     if (abortSignal?.aborted) {
       // A submitted video MaaS task keeps running to a billable terminal state

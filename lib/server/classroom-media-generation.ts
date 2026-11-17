@@ -170,8 +170,8 @@ export async function generateMediaForClassroom(
   const videoRequests = requests.filter((r) => r.type === 'video' && videoProviderIds.length > 0);
 
   const generateImages = async () => {
-    // Identical prompts are one purchase; each element id gets its own file so
-    // placeholder replacement stays a per-slot lookup.
+    // Identical prompts are one purchase and one stored file; every element id
+    // in the group maps to that same serving URL.
     for (const group of groupIdenticalMediaRequests(imageRequests)) {
       const req = group.leader;
       try {
@@ -232,10 +232,11 @@ export async function generateMediaForClassroom(
           continue;
         }
 
+        const filename = `${req.elementId}.${ext}`;
+        await fs.writeFile(path.join(mediaDir, filename), buf);
+        const servingUrl = mediaServingUrl(baseUrl, classroomId, `media/${filename}`);
         for (const request of [req, ...group.duplicates]) {
-          const filename = `${request.elementId}.${ext}`;
-          await fs.writeFile(path.join(mediaDir, filename), buf);
-          mediaMap[request.elementId] = mediaServingUrl(baseUrl, classroomId, `media/${filename}`);
+          mediaMap[request.elementId] = servingUrl;
         }
         log.info(
           `Generated image: ${req.elementId}.${ext}` +
@@ -287,10 +288,11 @@ export async function generateMediaForClassroom(
         );
 
         const buf = await downloadToBuffer(result.url);
+        const filename = `${req.elementId}.mp4`;
+        await fs.writeFile(path.join(mediaDir, filename), buf);
+        const servingUrl = mediaServingUrl(baseUrl, classroomId, `media/${filename}`);
         for (const request of [req, ...group.duplicates]) {
-          const filename = `${request.elementId}.mp4`;
-          await fs.writeFile(path.join(mediaDir, filename), buf);
-          mediaMap[request.elementId] = mediaServingUrl(baseUrl, classroomId, `media/${filename}`);
+          mediaMap[request.elementId] = servingUrl;
         }
         log.info(
           `Generated video: ${req.elementId}.mp4` +

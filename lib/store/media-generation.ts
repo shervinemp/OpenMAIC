@@ -141,6 +141,13 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
       if (!task) return s;
       const tasks = { ...s.tasks };
       delete tasks[oldRef];
+      // Identical requests share one stored asset, so two placeholders can
+      // re-key onto the same id. Keep the task already there: its object URL
+      // names the same bytes, and the first slot's placeholder reference is
+      // still the one late reconciliation looks up. Overwriting it would also
+      // put a URL this entry does not own in front of a slot that does.
+      const existing = Object.hasOwn(tasks, newRef) ? tasks[newRef] : undefined;
+      if (existing?.status === 'done') return { tasks };
       tasks[newRef] = {
         ...task,
         elementId: newRef,

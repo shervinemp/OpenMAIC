@@ -343,12 +343,9 @@ describe('server-backed classic media orchestrator', () => {
     );
   });
 
-  it('buys an identical prompt once and reuses the bytes for the other slot', async () => {
+  it('buys and stores an identical prompt once and points both slots at the asset', async () => {
     serveImage();
-    mocks.putAsset
-      .mockReset()
-      .mockResolvedValueOnce('ast_first')
-      .mockResolvedValueOnce('ast_second');
+    mocks.putAsset.mockReset().mockResolvedValueOnce('ast_first');
     const secondRef = 'gen_img_server_second';
 
     await generateMediaForOutlines(
@@ -359,19 +356,46 @@ describe('server-backed classic media orchestrator', () => {
       stageId,
     );
 
-    // One provider purchase, two pool allocations and two document rewrites.
+    // One provider purchase, one stored asset, two document rewrites.
     expect(providerCallCount()).toBe(1);
-    expect(mocks.putAsset).toHaveBeenCalledTimes(2);
+    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
     expect(mocks.persistReference).toHaveBeenCalledTimes(2);
     expect(mocks.persistReference).toHaveBeenCalledWith(
       expect.objectContaining({ placeholderRef: imageRef, assetId: 'ast_first' }),
     );
     expect(mocks.persistReference).toHaveBeenCalledWith(
-      expect.objectContaining({ placeholderRef: secondRef, assetId: 'ast_second' }),
+      expect.objectContaining({ placeholderRef: secondRef, assetId: 'ast_first' }),
     );
+    // Both slots share the one asset-keyed task; no second asset id exists.
     const tasks = useMediaGenerationStore.getState().tasks;
-    expect(tasks.ast_first).toMatchObject({ status: 'done', placeholderRef: imageRef });
-    expect(tasks.ast_second).toMatchObject({ status: 'done', placeholderRef: secondRef });
+    expect(tasks.ast_first).toMatchObject({ status: 'done', elementId: 'ast_first' });
+    expect(tasks.ast_second).toBeUndefined();
+  });
+
+  it('records a duplicate placeholder on the shared asset row for later adoption', async () => {
+    serveImage();
+    const secondRef = 'gen_img_server_second';
+    const rows = new Map<string, Record<string, unknown>>();
+    mocks.mediaGet.mockImplementation(async (id: string) => rows.get(id));
+    mocks.mediaPut.mockImplementation(async (record: Record<string, unknown>) => {
+      rows.set(record.id as string, record);
+    });
+    mocks.putAsset.mockReset().mockResolvedValueOnce('ast_shared');
+
+    await generateMediaForOutlines(
+      [
+        outlineWith(1, { type: 'image', prompt: 'A diagram', elementId: imageRef }),
+        outlineWith(2, { type: 'image', prompt: 'A diagram', elementId: secondRef }),
+      ],
+      stageId,
+    );
+
+    expect(providerCallCount()).toBe(1);
+    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
+    // One row of bytes, with both placeholders able to find it.
+    const stored = rows.get(`${stageId}:ast_shared`);
+    expect(stored?.placeholderRef).toBe(imageRef);
+    expect(stored?.placeholderAliases).toEqual([imageRef, secondRef]);
   });
 
   it('shares a structured refusal instead of buying the same refusal twice', async () => {
@@ -669,6 +693,33 @@ describe('server-backed classic media orchestrator', () => {
     expect(providerCallCount()).toBe(0);
     const [stored] = mocks.putAsset.mock.calls[0] as [Blob];
     await expect(stored.text()).resolves.toBe('post-upgrade-bytes');
+    expect(mocks.persistReference).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId, placeholderRef: imageRef, assetId: 'ast_generated' }),
+    );
+  });
+
+  it('adopts cached bytes a sibling slot stored under an alias', async () => {
+    serveImage();
+    mocks.mediaGet.mockResolvedValue(undefined);
+    mocks.mediaRows.push({
+      id: `${stageId}:ast_shared`,
+      stageId,
+      type: 'image',
+      blob: new Blob(['shared-bytes'], { type: 'image/png' }),
+      mimeType: 'image/png',
+      size: 12,
+      placeholderRef: 'gen_img_leader',
+      placeholderAliases: [imageRef],
+      prompt: 'A diagram',
+      params: '{}',
+      createdAt: 0,
+    });
+
+    await runImageGeneration();
+
+    expect(providerCallCount()).toBe(0);
+    const [stored] = mocks.putAsset.mock.calls[0] as [Blob];
+    await expect(stored.text()).resolves.toBe('shared-bytes');
     expect(mocks.persistReference).toHaveBeenCalledWith(
       expect.objectContaining({ stageId, placeholderRef: imageRef, assetId: 'ast_generated' }),
     );
