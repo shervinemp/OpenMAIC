@@ -16,6 +16,7 @@ const PROMPT_IDS = [
   'requirements-to-outlines',
   'slide-content',
   'quiz-content',
+  'activity-content',
   'simulation-content',
   'diagram-content',
   'code-content',

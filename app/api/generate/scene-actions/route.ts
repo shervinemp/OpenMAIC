@@ -18,6 +18,7 @@ import {
 } from '@openmaic/generation';
 import type { SceneOutline } from '@/lib/types/generation';
 import type {
+  GeneratedActivityContent,
   GeneratedSlideContent,
   GeneratedQuizContent,
   GeneratedInteractiveContent,
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest) {
       content:
         | GeneratedSlideContent
         | GeneratedQuizContent
+        | GeneratedActivityContent
         | GeneratedInteractiveContent
         | GeneratedPBLContent
         | PBLContent;
@@ -169,6 +171,7 @@ export async function POST(req: NextRequest) {
     ) as
       | GeneratedSlideContent
       | GeneratedQuizContent
+      | GeneratedActivityContent
       | GeneratedInteractiveContent
       | GeneratedPBLContent;
 

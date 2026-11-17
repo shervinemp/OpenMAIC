@@ -6,6 +6,7 @@ import {
   comparisonOutline,
   tradeoffsOutline,
   dataReadingOutline,
+  activityOutline,
 } from './scene-fixtures.js';
 
 const content = {
@@ -68,4 +69,27 @@ describe('buildCompleteScene', () => {
       expect(validateScene(scene)).toEqual({ valid: true });
     },
   );
+
+  it('assembles an activity outline into a validated activity scene', () => {
+    const lab = {
+      type: 'activity' as const,
+      kind: 'code' as const,
+      language: 'python',
+      entryFile: 'main.py',
+      instructions: 'Write the helper.',
+      files: [{ path: 'main.py', content: 'def resolve(): pass\n' }],
+      tests: [],
+      checks: [{ id: 'tests', type: 'expectTests' as const }],
+    };
+    const scene = buildCompleteScene(activityOutline(), lab, [], 'stage-1');
+    expect(scene).not.toBeNull();
+    expect(scene?.type).toBe('activity');
+    expect(scene?.content).toEqual(lab);
+    expect(scene?.outlineId).toBe('activity-1');
+    expect(validateScene(scene)).toEqual({ valid: true });
+  });
+
+  it('refuses to assemble an activity scene from another content shape', () => {
+    expect(buildCompleteScene(activityOutline(), { questions: [] }, [], 'stage-1')).toBeNull();
+  });
 });

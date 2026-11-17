@@ -50,6 +50,7 @@ interface OutlinesEditorProps {
 const SCENE_TYPES: SceneType[] = [
   'slide',
   'quiz',
+  'activity',
   'interactive',
   'pbl',
   'exercise',
@@ -164,6 +165,8 @@ function useSceneTypeLabel() {
     switch (type) {
       case 'quiz':
         return t('generation.sceneTypeQuiz');
+      case 'activity':
+        return t('generation.sceneTypeActivity');
       case 'interactive':
         return t('generation.sceneTypeInteractive');
       case 'pbl':
@@ -707,6 +710,9 @@ function SceneRow({
                 {!disabled && outline.type === 'quiz' && (
                   <QuizConfigDisclosure outline={outline} onUpdate={onUpdate} theme={theme} />
                 )}
+                {!disabled && outline.type === 'activity' && (
+                  <ActivityConfigDisclosure outline={outline} onUpdate={onUpdate} theme={theme} />
+                )}
                 {!disabled && outline.type === 'interactive' && (
                   <InteractiveConfigDisclosure
                     outline={outline}
@@ -727,6 +733,7 @@ function SceneRow({
                   connected={
                     !disabled &&
                     (outline.type === 'quiz' ||
+                      outline.type === 'activity' ||
                       outline.type === 'interactive' ||
                       outline.type === 'pbl')
                   }
@@ -1222,6 +1229,55 @@ function QuizConfigDisclosure({
             })}
           </div>
         </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function ActivityConfigDisclosure({
+  outline,
+  onUpdate,
+  theme,
+}: {
+  outline: SceneOutline;
+  onUpdate: (updates: Partial<SceneOutline>) => void;
+  theme: (typeof TYPE_THEME)[SceneType];
+}) {
+  const { t } = useI18n();
+  const config = outline.activityConfig ?? { kind: 'code' as const, language: 'python' };
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className={cascadeSegmentClass(theme)}>
+          <span className="max-w-[8rem] truncate">
+            {t('generation.activityConfigSummary', {
+              language: config.language === 'python' ? 'Python' : config.language,
+            })}
+          </span>
+          <ChevronDown className="size-3 opacity-70" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" sideOffset={6} className="w-64 space-y-2.5 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t('generation.activityRuntime')}
+          </span>
+          <select
+            value={config.language || 'python'}
+            onChange={(event) =>
+              onUpdate({
+                activityConfig: { kind: 'code', language: event.target.value },
+              })
+            }
+            className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+          >
+            <option value="python">Python</option>
+          </select>
+        </div>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          {t('generation.activityRuntimeNote')}
+        </p>
       </PopoverContent>
     </Popover>
   );

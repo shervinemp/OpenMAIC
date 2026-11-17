@@ -44,6 +44,24 @@ describe('changeOutlineType', () => {
     });
   });
 
+  it('seeds a Python code-lab config when switching to activity', () => {
+    const r = changeOutlineType(base, 'activity');
+    expect(r.type).toBe('activity');
+    expect(r.activityConfig).toEqual({ kind: 'code', language: 'python' });
+  });
+
+  it('keeps an existing activityConfig and strips it when switching away', () => {
+    const configured = changeOutlineType(
+      { ...base, type: 'activity', activityConfig: { kind: 'code', language: 'python' } },
+      'activity',
+    );
+    expect(configured.activityConfig).toEqual({ kind: 'code', language: 'python' });
+
+    const slide = changeOutlineType(configured, 'slide');
+    expect(slide.type).toBe('slide');
+    expect(slide.activityConfig).toBeUndefined();
+  });
+
   it('keeps an existing valid pblConfig instead of overwriting', () => {
     const withPbl = changeOutlineType(
       {

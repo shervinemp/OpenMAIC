@@ -117,6 +117,58 @@ export function quizOutline(): SceneOutline {
   };
 }
 
+export function activityOutline(): SceneOutline {
+  return {
+    id: 'activity-1',
+    type: 'activity',
+    title: 'Build the Injection Helper',
+    description: 'Implement a helper that resolves a dependency from a registry.',
+    keyPoints: ['Return the registered instance', 'Reject an unknown key'],
+    order: 3,
+    activityConfig: { kind: 'code', language: 'python' },
+  };
+}
+
+/**
+ * A code-lab reply that satisfies the structural contract and the depth
+ * validator at the default depth: substantive instructions, two tests (one
+ * visible), one tests check, and a reference that differs from the starter.
+ */
+export function validActivityResponse(): Record<string, unknown> {
+  return {
+    instructions:
+      'Implement `resolve(registry, key)`. Return the instance stored under `key`. When the key is missing, raise `KeyError`. Do not mutate the registry. For example, `resolve({"db": 1}, "db")` returns `1`, while `resolve({}, "db")` raises `KeyError`.',
+    entryFile: 'main.py',
+    files: [
+      {
+        path: 'main.py',
+        content: 'def resolve(registry, key):\n    return None\n',
+      },
+    ],
+    tests: [
+      {
+        id: 'finds',
+        name: 'returns a registered instance',
+        code: 'from main import resolve\nassert resolve({"db": 1}, "db") == 1',
+      },
+      {
+        id: 'rejects',
+        name: 'raises for an unknown key',
+        code: 'from main import resolve\ntry:\n    resolve({}, "db")\nexcept KeyError:\n    pass\nelse:\n    raise AssertionError("expected KeyError")',
+      },
+    ],
+    checks: [{ id: 'tests', type: 'expectTests', label: 'All tests pass' }],
+    hints: ['Look the key up in the mapping.', 'Missing keys should raise KeyError.'],
+    debrief: 'A registry lookup returns the registered instance or fails loudly.',
+    referenceFiles: [
+      {
+        path: 'main.py',
+        content: 'def resolve(registry, key):\n    return registry[key]\n',
+      },
+    ],
+  };
+}
+
 export function widgetOutline(): SceneOutline {
   return {
     id: 'widget-1',

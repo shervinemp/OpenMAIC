@@ -28,6 +28,7 @@ import {
 import type { Action } from '@/lib/types/action';
 import type {
   SceneOutline,
+  GeneratedActivityContent,
   GeneratedSlideContent,
   GeneratedQuizContent,
   GeneratedInteractiveContent,
@@ -115,6 +116,7 @@ function toGenerationContent(
 ):
   | GeneratedSlideContent
   | GeneratedQuizContent
+  | GeneratedActivityContent
   | GeneratedInteractiveContent
   | GeneratedPBLContent {
   if (content.type === 'slide') {
@@ -125,8 +127,12 @@ function toGenerationContent(
       // remark is not stored in the runtime canvas; omit it
     } satisfies GeneratedSlideContent;
   }
-  // quiz, interactive, pbl runtime shapes already satisfy the generation type
-  return content as GeneratedQuizContent | GeneratedInteractiveContent | GeneratedPBLContent;
+  // quiz, activity, interactive, pbl runtime shapes already satisfy the generation type
+  return content as
+    | GeneratedQuizContent
+    | GeneratedActivityContent
+    | GeneratedInteractiveContent
+    | GeneratedPBLContent;
 }
 
 // ── Typebox parameter schema ─────────────────────────────────────────────────

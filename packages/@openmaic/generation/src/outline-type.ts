@@ -10,6 +10,15 @@ const DEFAULT_QUIZ_CONFIG = {
 const MAX_TARGET_SKILLS = 6;
 
 /**
+ * Default lab configuration. Python is the only executable runtime today, and
+ * `kind: 'code'` is the only authorable activity family.
+ */
+const DEFAULT_ACTIVITY_CONFIG = {
+  kind: 'code' as const,
+  language: 'python',
+};
+
+/**
  * Outline kinds that render as slide scenes (Phase 2 15.4b / 15.9).
  * derivation / glossary / reading and the analytic kinds
  * (comparison / dataReading / tradeoffs) generate structured content which is
@@ -90,6 +99,12 @@ export function changeOutlineType(outline: SceneOutline, newType: SceneType): Sc
         },
       };
     }
+
+    case 'activity':
+      return {
+        ...baseOutline,
+        activityConfig: outline.activityConfig ?? { ...DEFAULT_ACTIVITY_CONFIG },
+      };
 
     case 'slide':
     default:

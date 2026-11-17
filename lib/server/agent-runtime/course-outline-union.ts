@@ -77,7 +77,13 @@ export interface OutlineUnionInput {
   generationComplete?: boolean;
 }
 
-const OUTLINE_TYPES = new Set<SceneOutline['type']>(['slide', 'quiz', 'interactive', 'pbl']);
+const OUTLINE_TYPES = new Set<SceneOutline['type']>([
+  'slide',
+  'quiz',
+  'activity',
+  'interactive',
+  'pbl',
+]);
 
 function outlineTypeFromScene(type: string): SceneOutline['type'] {
   return OUTLINE_TYPES.has(type as SceneOutline['type']) ? (type as SceneOutline['type']) : 'slide';

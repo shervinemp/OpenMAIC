@@ -9,13 +9,17 @@ import { nanoid } from 'nanoid';
 import katex from 'katex';
 import type {
   Action,
+  ActivityFile,
+  ActivityTest,
+  CodeActivityCheck,
+  CodeActivityContent,
   PBLProject,
   PPTElement,
   QuizQuestion,
   SlideBackground,
   WidgetType,
 } from '@openmaic/dsl';
-import { isWidgetType, normalizeElement } from '@openmaic/dsl';
+import { isWidgetType, normalizeElement, validateActivityContent } from '@openmaic/dsl';
 import {
   COURSE_DEPTH_FLOORS,
   MAX_VISION_IMAGES,
@@ -32,6 +36,7 @@ import {
   recordSceneDepthReport,
   recordSceneDepthSummary,
   summarizeDepthFindings,
+  validateActivityDepth,
   validateDerivationDepth,
   validateExerciseDepth,
   validateFreeResponseDepth,
@@ -82,6 +87,7 @@ import {
 import type { PromptId } from './prompts/types.js';
 import { buildPrompt, PROMPT_IDS } from './prompts/index.js';
 import type {
+  GeneratedActivityContent,
   GeneratedDerivationContent,
   GeneratedExerciseContent,
   GeneratedFreeResponseContent,
@@ -321,6 +327,7 @@ export async function generateSceneContent(
 ): Promise<
   | GeneratedSlideContent
   | GeneratedQuizContent
+  | GeneratedActivityContent
   | GeneratedInteractiveContent
   | GeneratedPBLContent
   | null
@@ -400,6 +407,16 @@ export async function generateSceneContent(
         log,
         options.onFailure,
         options.verifyQuizAnswers,
+      );
+    case 'activity':
+      return generateActivityContent(
+        outline,
+        aiCall,
+        languageDirective,
+        retrievalContext,
+        unitContext,
+        log,
+        options.onFailure,
       );
     case 'freeResponse':
       return generateFreeResponseContent(
@@ -1101,6 +1118,314 @@ async function verifyQuizAnswersSafely(
     log.warn(`Quiz answer verifier failed for "${title}"; keeping the generated keys:`, error);
     return [];
   }
+}
+
+// ==================== Code labs ====================
+//
+// A generated lab is persisted verbatim: starter files, visible tests,
+// declarative checks and the authoring-only reference. The model cannot run
+// code, so generation enforces the structural half of the contract and the
+// authoring surface (`verifyCodeActivity`) re-runs the reference and the
+// starter through the real runtime before the lab ships.
+
+interface ActivityNormalization {
+  content?: CodeActivityContent;
+  issue?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function activityText(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+/** Tolerate the common wrappers a model puts around a single-object payload. */
+function unwrapActivityPayload(parsed: unknown): Record<string, unknown> | null {
+  if (Array.isArray(parsed)) {
+    return parsed.length === 1 && isRecord(parsed[0]) ? parsed[0] : null;
+  }
+  if (!isRecord(parsed)) return null;
+  for (const key of ['activity', 'content', 'lab']) {
+    if (isRecord(parsed[key])) return parsed[key];
+  }
+  return parsed;
+}
+
+function normalizeActivityFiles(
+  value: unknown,
+  label: string,
+): { files?: ActivityFile[]; issue?: string } {
+  if (value === undefined) return { files: [] };
+  if (!Array.isArray(value)) return { issue: `${label} must be an array of files` };
+  const files: ActivityFile[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) return { issue: `${label} contains a non-object entry` };
+    if (typeof entry.content !== 'string') {
+      return { issue: `every ${label} entry needs string content` };
+    }
+    const path = activityText(entry.path).trim();
+    if (!path) return { issue: `${label} contains a file without a path` };
+    const file: ActivityFile = { path, content: entry.content };
+    if (typeof entry.editable === 'boolean') file.editable = entry.editable;
+    files.push(file);
+  }
+  return { files };
+}
+
+function normalizeActivityTests(value: unknown): { tests?: ActivityTest[]; issue?: string } {
+  if (!Array.isArray(value) || value.length === 0) {
+    return { issue: 'tests must be a non-empty array' };
+  }
+  const tests: ActivityTest[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) return { issue: 'tests contains a non-object entry' };
+    const code = activityText(entry.code);
+    if (!code.trim()) return { issue: 'every test needs non-empty code' };
+    const test: ActivityTest = {
+      id: activityText(entry.id).trim() || `test_${nanoid(8)}`,
+      name: activityText(entry.name).trim() || 'Test',
+      code,
+    };
+    if (entry.hidden === true) test.hidden = true;
+    tests.push(test);
+  }
+  return { tests };
+}
+
+const CODE_CHECK_TYPES = new Set(['expectTests', 'expectStdout', 'expectFile']);
+
+function normalizeActivityChecks(value: unknown): { checks?: CodeActivityCheck[]; issue?: string } {
+  if (!Array.isArray(value) || value.length === 0) {
+    return { issue: 'checks must be a non-empty array' };
+  }
+  const checks: CodeActivityCheck[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) return { issue: 'checks contains a non-object entry' };
+    const type = activityText(entry.type);
+    if (!CODE_CHECK_TYPES.has(type)) {
+      return {
+        issue: `unsupported check type ${JSON.stringify(type)} (use expectTests, expectStdout or expectFile)`,
+      };
+    }
+    const id = activityText(entry.id).trim() || `check_${nanoid(8)}`;
+    const base: { id: string; label?: string; points?: number; hidden?: boolean } = { id };
+    const label = activityText(entry.label).trim();
+    if (label) base.label = label;
+    if (typeof entry.points === 'number' && Number.isFinite(entry.points) && entry.points >= 0) {
+      base.points = entry.points;
+    }
+    if (entry.hidden === true) base.hidden = true;
+
+    if (type === 'expectTests') {
+      const testIds = Array.isArray(entry.testIds)
+        ? entry.testIds
+            .filter((candidate): candidate is string => typeof candidate === 'string')
+            .map((candidate) => candidate.trim())
+            .filter(Boolean)
+        : [];
+      checks.push(
+        testIds.length > 0
+          ? { ...base, type: 'expectTests', testIds }
+          : { ...base, type: 'expectTests' },
+      );
+      continue;
+    }
+
+    if (typeof entry.expected !== 'string') {
+      return { issue: `check "${id}" needs string expected text` };
+    }
+    const mode = entry.mode === 'contains' ? 'contains' : 'exact';
+    if (type === 'expectFile') {
+      const path = activityText(entry.path).trim();
+      if (!path) return { issue: `check "${id}" needs a file path` };
+      checks.push({ ...base, type: 'expectFile', path, expected: entry.expected, mode });
+    } else {
+      checks.push({ ...base, type: 'expectStdout', expected: entry.expected, mode });
+    }
+  }
+  return { checks };
+}
+
+/** Normalize one model reply into the DSL contract, or explain why it cannot be. */
+function normalizeActivityContent(parsed: unknown, language: string): ActivityNormalization {
+  const payload = unwrapActivityPayload(parsed);
+  if (!payload) return { issue: 'expected one JSON object describing the lab' };
+
+  const files = normalizeActivityFiles(payload.files, 'files');
+  if (files.issue || !files.files) return { issue: files.issue };
+  if (files.files.length === 0) return { issue: 'files must contain at least the entry file' };
+
+  const tests = normalizeActivityTests(payload.tests);
+  if (tests.issue || !tests.tests) return { issue: tests.issue };
+
+  const checks = normalizeActivityChecks(payload.checks);
+  if (checks.issue || !checks.checks) return { issue: checks.issue };
+
+  const reference = normalizeActivityFiles(payload.referenceFiles, 'referenceFiles');
+  if (reference.issue || !reference.files) return { issue: reference.issue };
+
+  const requestedEntry = activityText(payload.entryFile).trim();
+  if (requestedEntry && !files.files.some((file) => file.path === requestedEntry)) {
+    return { issue: `entryFile "${requestedEntry}" is not in files` };
+  }
+  const entryFile = requestedEntry || files.files[0].path;
+
+  const hints = Array.isArray(payload.hints)
+    ? payload.hints
+        .filter((hint): hint is string => typeof hint === 'string')
+        .map((hint) => hint.trim())
+        .filter(Boolean)
+        .slice(0, 4)
+    : [];
+  const debrief = activityText(payload.debrief).trim();
+
+  const content: CodeActivityContent = {
+    type: 'activity',
+    kind: 'code',
+    language,
+    entryFile,
+    instructions: activityText(payload.instructions).trim(),
+    files: files.files,
+    tests: tests.tests,
+    checks: checks.checks,
+  };
+  if (hints.length > 0) content.hints = hints;
+  if (debrief) content.debrief = debrief;
+  if (typeof payload.timeLimitSec === 'number' && Number.isFinite(payload.timeLimitSec)) {
+    content.timeLimitSec = Math.min(Math.max(Math.round(payload.timeLimitSec), 1), 120);
+  }
+  if (reference.files.length > 0) content.referenceFiles = reference.files;
+  return { content };
+}
+
+/**
+ * Generate one code lab.
+ *
+ * The bounded loop re-prompts on unparseable JSON, on a DSL structural
+ * violation (path escapes, duplicate ids, missing entry file, wrong check
+ * family), and on depth findings. On exhaustion the scene is rejected and the
+ * report is recorded for the job model — never silently shipped as a broken
+ * lab.
+ */
+async function generateActivityContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  languageDirective?: string,
+  retrievalContext?: string,
+  unitContext?: string,
+  log: GenerationLogger = noopGenerationLogger,
+  onFailure?: (failure: SceneContentFailure) => void,
+): Promise<GeneratedActivityContent | null> {
+  const config = outline.activityConfig ?? { kind: 'code' as const, language: 'python' };
+  const requestedLanguage = config.language.trim().toLowerCase();
+  if (config.kind !== 'code' || !['python', 'python3', 'py'].includes(requestedLanguage)) {
+    log.error(
+      `Activity "${outline.title}" asks for ${config.kind}/${config.language}; the browser runner only executes Python code labs`,
+    );
+    onFailure?.({ code: 'invalid-model-output' });
+    return null;
+  }
+  const language = 'python';
+  const depthLevel = resolveDepthLevel(outline.depthLevel);
+
+  const prompts = buildPrompt(PROMPT_IDS.ACTIVITY_CONTENT, {
+    title: outline.title,
+    description: outline.description,
+    keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
+    language,
+    languageDirective: languageDirective || '',
+    depthDirective: renderDepthDirective(depthLevel),
+    unitContext: unitContext || '',
+  });
+  if (!prompts) {
+    onFailure?.({ code: 'prompt-unavailable' });
+    return null;
+  }
+
+  let baseUserPrompt = prompts.user;
+  if (retrievalContext) {
+    baseUserPrompt = `${prompts.user}\n\n## Source Material (ground the task scenario here; never invent facts the sources do not state)\n\n${retrievalContext}`;
+  }
+
+  const maxAttempts = readGenerationProfile().contentAttempts + 1;
+  let depthFeedback: string | undefined;
+  let parseFeedback: string | undefined;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let attemptUserPrompt = depthFeedback
+      ? `${baseUserPrompt}\n\n## Depth Correction Required\n\n${depthFeedback}`
+      : baseUserPrompt;
+    if (parseFeedback) {
+      attemptUserPrompt = `${attemptUserPrompt}\n\n## Output Format Correction Required\n\n${parseFeedback}`;
+    }
+
+    const response = await aiCall(prompts.system, attemptUserPrompt);
+    const parsed = parseJsonResponse<unknown>(response, { logger: log });
+    if (parsed === null || typeof parsed !== 'object') {
+      log.error(`Failed to parse activity response for: ${outline.title}`);
+      if (attempt < maxAttempts) {
+        parseFeedback =
+          'Your previous reply could not be parsed as one JSON object. Reply with ONLY the lab object: no markdown fences, no array, no prose before or after.';
+        continue;
+      }
+      onFailure?.({ code: 'invalid-model-output' });
+      return null;
+    }
+
+    const normalized = normalizeActivityContent(parsed, language);
+    if (!normalized.content) {
+      log.error(
+        `Activity payload rejected for "${outline.title}": ${normalized.issue ?? 'unknown shape'}`,
+      );
+      if (attempt < maxAttempts) {
+        parseFeedback = `Your previous reply broke the lab contract: ${normalized.issue ?? 'unknown shape'}. Return the corrected JSON object.`;
+        continue;
+      }
+      onFailure?.({ code: 'invalid-model-output' });
+      return null;
+    }
+
+    const validation = validateActivityContent(normalized.content);
+    if (!validation.valid) {
+      const detail = validation.errors
+        .slice(0, 6)
+        .map((error) => `${error.path || '/'} ${error.message}`)
+        .join('; ');
+      log.error(`Activity contract failed for "${outline.title}": ${detail}`);
+      if (attempt < maxAttempts) {
+        parseFeedback = `Your previous reply broke the structural lab contract: ${detail}. Fix every listed issue and return the corrected JSON object.`;
+        continue;
+      }
+      onFailure?.({ code: 'invalid-model-output' });
+      return null;
+    }
+
+    const depthReport = validateActivityDepth(outline, normalized.content);
+    if (depthReport.adequate) {
+      if (attempt > 1) {
+        recordSceneDepthSummary(outline.id, { reworked: true, attempts: attempt, findings: [] });
+      }
+      return normalized.content;
+    }
+
+    if (attempt < maxAttempts) {
+      depthFeedback = summarizeDepthFindings(depthReport);
+      log.warn(
+        `Activity depth contract not met for "${outline.title}" (attempt ${attempt}/${maxAttempts}); re-prompting with ${depthReport.findings.length} finding(s)`,
+      );
+      continue;
+    }
+
+    recordSceneDepthReport(outline.id, depthReport);
+    log.error(
+      `Activity depth contract not met for "${outline.title}" after ${maxAttempts} attempts: ${depthReport.findings.join('; ')}`,
+    );
+    return null;
+  }
+
+  return null;
 }
 
 /**
@@ -2508,6 +2833,7 @@ export async function generateSceneActions(
   content:
     | GeneratedSlideContent
     | GeneratedQuizContent
+    | GeneratedActivityContent
     | GeneratedInteractiveContent
     | GeneratedPBLContent,
   aiCall: AICallFn,
@@ -2556,6 +2882,13 @@ export async function generateSceneActions(
     }
 
     return generateDefaultSlideActions(outline, content.elements);
+  }
+
+  // A code lab is a self-contained practice surface: narration would compete
+  // with the editor and the checks. The playback engine dwells on a scene with
+  // no actions, so the lab stays playable without a scripted beat.
+  if (outline.type === 'activity' && 'kind' in content) {
+    return [];
   }
 
   if (outline.type === 'quiz' && 'questions' in content) {

@@ -320,10 +320,10 @@ function renderCourseStyleGuide(contract: CourseContract, courseType: CourseType
     courseType === 'exam-prep'
       ? 'Exam-prep: quiz-heavy mix — one quiz every 3rd scene (course-wide), exam-objective phrasing in keyPoints, distractors mirroring real exam traps.'
       : courseType === 'hands-on'
-        ? 'Hands-on: practice-led mix — coding/simulation/game interactive scenes and worked exercises throughout the course; at most 1 pbl per unit.'
+        ? 'Hands-on: practice-led mix - runnable code labs and coding/simulation/game interactive scenes, plus worked exercises throughout the course; at most 1 pbl per unit.'
         : 'Balanced: alternate concept slides with active practice — spread interactive scenes (code/simulation/game) and worked exercises across the course instead of limiting them to 1-2; at most 1 pbl per unit.';
 
-  const specialization = `\n- Specialized scene types:\n  * "exercise" — fully-worked problems (concrete statement + worked solution) for computational, quantitative, and coding lessons — use these liberally wherever the material is computational.${contract.depthLevel === 'university' ? ' At university depth each problem also needs an "analysis" (why the method works / common pitfalls).' : ''}\n  * "derivation" — step-by-step proof/derivation scenes with LaTeX formulas, for formula-heavy lessons.\n  * "glossary" — one per unit: the unit's key terms with complete definitions.\n  * "reading" — one per unit: annotated further-reading list (title + why-read).\n  * "freeResponse" - a writing task: a full prompt, framing guidance, a grading rubric (criteria with what-to-look-for), and a strong sample answer. Use one per unit where written explanation is the skill being taught.`;
+  const specialization = `\n- Specialized scene types:\n  * "activity" - a runnable code lab: a starter program that fails at least one check, visible tests, declarative checks, and a reference solution. Use one per practice-heavy lesson; every activity needs activityConfig { "kind": "code", "language": "python" }.\n  * "exercise" - fully-worked problems (concrete statement + worked solution) for computational, quantitative, and coding lessons - use these liberally wherever the material is computational.${contract.depthLevel === 'university' ? ' At university depth each problem also needs an "analysis" (why the method works / common pitfalls).' : ''}\n  * "derivation" — step-by-step proof/derivation scenes with LaTeX formulas, for formula-heavy lessons.\n  * "glossary" — one per unit: the unit's key terms with complete definitions.\n  * "reading" — one per unit: annotated further-reading list (title + why-read).\n  * "freeResponse" - a writing task: a full prompt, framing guidance, a grading rubric (criteria with what-to-look-for), and a strong sample answer. Use one per unit where written explanation is the skill being taught.`;
 
   return `- Scene types: ${typeMix}${specialization}`;
 }
@@ -592,6 +592,7 @@ export interface BlueprintValidationOptions {
 const VALID_OUTLINE_TYPES = new Set<SceneOutline['type']>([
   'slide',
   'quiz',
+  'activity',
   'interactive',
   'pbl',
   'exercise',
@@ -617,11 +618,14 @@ export function validateOutlineShape(outline: SceneOutline): string[] {
   // downstream — a deck that validates but cannot generate.
   if (!outline.type || !VALID_OUTLINE_TYPES.has(outline.type)) {
     errors.push(
-      `outline "${outline.title || outline.order}" has an invalid scene type (${String(outline.type ?? 'missing')}) — use one of: slide, quiz, interactive, pbl, exercise, derivation, glossary, reading, comparison, dataReading, tradeoffs`,
+      `outline "${outline.title || outline.order}" has an invalid scene type (${String(outline.type ?? 'missing')}) - use one of: slide, quiz, activity, interactive, pbl, exercise, derivation, glossary, reading, comparison, dataReading, tradeoffs`,
     );
   }
   if (outline.type === 'quiz' && !outline.quizConfig) {
     errors.push(`quiz outline "${outline.title || outline.order}" missing quizConfig`);
+  }
+  if (outline.type === 'activity' && !outline.activityConfig) {
+    errors.push(`activity outline "${outline.title || outline.order}" missing activityConfig`);
   }
   if (
     outline.type === 'interactive' &&

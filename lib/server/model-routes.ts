@@ -415,6 +415,7 @@ export const THINKING_PRESET_LEAN: Partial<Record<LlmStage, ThinkingConfig>> = {
   'scene-content': { enabled: false },
   'scene-content:slide': { enabled: false },
   'scene-content:quiz': { enabled: false },
+  'scene-content:activity': { enabled: false },
   'scene-content:pbl': { enabled: false },
   'scene-content:glossary': { enabled: false },
   'scene-content:reading': { enabled: false },

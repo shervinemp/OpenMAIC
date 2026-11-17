@@ -10,7 +10,7 @@ import {
 import type { LlmStage } from '@/lib/server/model-routes';
 import { resolveModel } from '@/lib/server/resolve-model';
 
-const CONTENT_TYPES = new Set(['slide', 'quiz', 'interactive', 'pbl']);
+const CONTENT_TYPES = new Set(['slide', 'quiz', 'activity', 'interactive', 'pbl']);
 
 export function sceneContentStage(type?: string): LlmStage {
   return type && CONTENT_TYPES.has(type) ? (`scene-content:${type}` as LlmStage) : 'scene-content';

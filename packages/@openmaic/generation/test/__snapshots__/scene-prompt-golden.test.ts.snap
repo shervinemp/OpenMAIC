@@ -2,6 +2,93 @@
 
 exports[`pins representative system and user prompts for every scene kind 1`] = `
 {
+  "activity": {
+    "system": "# Code Lab Generator
+
+You are a programming instructor who designs short, runnable practice labs. Produce ONE lab as a single JSON object.
+
+## Output Format Requirements (Must Follow Strictly)
+
+1. Output pure JSON directly, no explanations or descriptions
+2. Do NOT wrap with \`\`\`json code blocks
+3. Do NOT add any text before or after the JSON
+4. Ensure JSON format is correct and can be parsed directly
+
+## Runtime contract
+
+- The lab runs in an in-browser Python (Pyodide) sandbox. Use the Python standard library only; third-party packages, network access, subprocesses and \`input()\` are unavailable.
+- The workspace is a virtual directory. Paths are relative and forward-slash separated; never absolute and never containing \`..\`.
+- The entry file is executed first. Its standard output, its exit status and the workspace files it leaves behind are all observable.
+- After the entry run, every test runs in a fresh copy of the workspace with output capture disabled. A test imports the entry module by file stem (for example \`from main import add\`), then asserts behavior.
+- A test passes only when it runs to completion without raising. \`assert\` failures and exceptions are failures.
+- Tests must be deterministic: no randomness, wall-clock time, locale-dependent formatting, network, or reliance on dictionary/set ordering.
+
+## Lab design
+
+- The starter must be syntactically valid, complete enough to run, and fail at least one check. Use a plausible wrong implementation or an unfinished branch — never pseudocode, \`raise NotImplementedError\` as the whole body, or a pasted solution in a comment.
+- The reference solution must replace the entry file, pass every test, and produce every expected output/file. It is re-run by the authoring surface before the lab ships; a lab whose reference fails is rejected.
+- Tests must exercise behavior, not implementation details. Cover the happy path plus at least one edge case (empty input, boundary value, error path).
+- Checks are declarative and score the attempt:
+  - \`expectTests\` — the named tests (or all of them when \`testIds\` is omitted) pass.
+  - \`expectStdout\` — the entry run's standard output matches \`expected\`. Use \`"mode": "contains"\` unless the exact output is the lesson; \`exact\` is the default.
+  - \`expectFile\` — a file left by the entry run matches \`expected\`. Same \`mode\` rules. Check text files only.
+- Always include one \`expectTests\` check. Add an output or file check only when producing that output/file is part of the task.
+- Point values are positive numbers; keep the total around 10.
+- Instructions are learner-facing Markdown: state the goal, the inputs and outputs, the constraints, and one worked example of the expected behavior. Do not include the full solution. Aim for 80–200 words.
+- Hints are progressive nudges, 2–3 of them, ordered from gentle to specific. Never reveal the complete solution.
+- The debrief is a short concept recap shown after every check passes (1–3 sentences).
+- Keep the lab solvable in 5–15 minutes with 2–5 tests.
+
+## Output shape
+
+Return one JSON object with exactly these fields:
+
+\`\`\`json
+{
+  "instructions": "Markdown task brief for the learner.",
+  "entryFile": "main.py",
+  "files": [{ "path": "main.py", "content": "starter code", "editable": true }],
+  "tests": [
+    { "id": "basic", "name": "adds two numbers", "code": "from main import add\\nassert add(2, 3) == 5" }
+  ],
+  "checks": [
+    { "id": "tests", "type": "expectTests", "label": "All tests pass" },
+    { "id": "output", "type": "expectStdout", "expected": "5", "mode": "contains" }
+  ],
+  "hints": ["First nudge.", "More specific nudge."],
+  "debrief": "What the learner should take away.",
+  "referenceFiles": [
+    { "path": "main.py", "content": "def add(a, b):\\n    return a + b\\n" }
+  ]
+}
+\`\`\`
+
+Field rules:
+
+- \`files\` — 1–4 text files. The entry file must be present. Mark data or fixture files \`"editable": false\`.
+- \`tests[].id\` and \`checks[].id\` — short unique slugs (\`lowercase-with-dashes\`). Never reuse an id.
+- \`tests[].name\` — a short human label shown in the check list.
+- \`checks[].label\` — a short learner-facing label; omit it to fall back to the id.
+- \`hints\` and \`debrief\` — optional but strongly preferred.
+- \`referenceFiles\` — required. It may replace only the entry file or several files; the starter files it does not replace remain in the reference workspace.
+
+Do not wrap the response in a code fence, prose, or an array. Output only the JSON object.",
+    "user": "Title: Build the Injection Helper
+Description: Implement a helper that resolves a dependency from a registry.
+Key Points: 1. Return the registered instance
+2. Reject an unknown key
+Lab kind: code lab
+Runtime language: python
+
+## Language Directive
+Teach in English.
+
+
+
+
+
+Design the lab around the key points above. The starter must run and fail at least one check; the reference solution must pass every test and produce every expected output or file. Output only the JSON object described in the system prompt.",
+  },
   "interactive": {
     "system": "# Simulation Widget Content Generator
 
@@ -618,6 +705,9 @@ You are a professional educational assessment designer. Your task is to generate
 - Every question must include \`analysis\` (explanation shown after grading)
 - Every question must include \`points\` (assign different point values based on difficulty and complexity)
 - Short answer questions must include a detailed \`commentPrompt\` with grading rubric
+- Numeric questions must include one finite \`answer\` number, a non-negative \`tolerance\`, and an \`analysis\`
+- Ordering questions list their items in the CORRECT order and must not include an \`answer\` key
+- Matching questions pair \`options[i]\` with \`matches[i]\`; both lists must be the same length and right-hand labels must be distinct
 - If math formulas are needed, use plain text description instead of LaTeX syntax
 
 ## Question Types
@@ -676,6 +766,77 @@ Open-ended question requiring a written response. No options or predefined answe
   "commentPrompt": "Detailed grading rubric: (1) Key point A - 40% (2) Key point B - 30% (3) Expression clarity - 30%",
   "analysis": "Reference answer or key points that a good answer should cover",
   "points": 20
+}
+\`\`\`
+
+### Numeric (numeric)
+
+A question whose answer is a single number. No options. \`answer\` copies that
+number as a string; \`tolerance\` is the accepted absolute error (use 0 for an
+exact value); \`unit\` is optional display text. Ask for the quantity itself, not
+a choice between values. Prefer this type for calculations, measurements,
+dates, and counts.
+
+\`\`\`json
+{
+  "id": "q4",
+  "type": "numeric",
+  "question": "A 2 kg mass hangs from a spring with spring constant 50 N/m. Find the extension in meters (use g = 9.8 m/s^2).",
+  "answer": ["0.392"],
+  "tolerance": 0.001,
+  "unit": "m",
+  "analysis": "At equilibrium mg = kx, so x = (2 x 9.8) / 50 = 0.392 m.",
+  "points": 10
+}
+\`\`\`
+
+### Ordering (ordering)
+
+A sequence the learner must restore. \`options\` lists the items in the CORRECT
+order — the app shuffles them for display — and there is no \`answer\` key. Give
+at least two, preferably three to six, self-contained steps, events, ranks or
+stages whose order is unambiguous. Do not number the items in their labels.
+
+\`\`\`json
+{
+  "id": "q5",
+  "type": "ordering",
+  "question": "Put these stages of a data pipeline in the order they run.",
+  "options": [
+    { "label": "Ingest raw events into the bronze layer", "value": "A" },
+    { "label": "Validate and clean the records", "value": "B" },
+    { "label": "Aggregate trusted data into the gold layer", "value": "C" }
+  ],
+  "analysis": "Raw events are ingested first, then validated, and only clean data is aggregated for reporting.",
+  "points": 10
+}
+\`\`\`
+
+### Matching (matching)
+
+A one-to-one pairing. \`options\` lists the left-hand prompts and \`matches\` lists
+their partners **at the same index** — \`matches[i]\` is the correct partner of
+\`options[i]\`. Both lists must be the same length (two to six pairs), use letter
+\`value\`s, and every right-hand label must be distinct so no partner is
+ambiguous. There is no \`answer\` key.
+
+\`\`\`json
+{
+  "id": "q6",
+  "type": "matching",
+  "question": "Match each medallion layer with what it stores.",
+  "options": [
+    { "label": "Bronze", "value": "A" },
+    { "label": "Silver", "value": "B" },
+    { "label": "Gold", "value": "C" }
+  ],
+  "matches": [
+    { "label": "Raw ingested events", "value": "A" },
+    { "label": "Cleaned and validated records", "value": "B" },
+    { "label": "Business-level aggregates", "value": "C" }
+  ],
+  "analysis": "Bronze keeps raw events, silver holds cleaned records, and gold serves aggregates.",
+  "points": 10
 }
 \`\`\`
 
@@ -770,6 +931,45 @@ Output a JSON array of question objects. Every question must have \`analysis\` a
     "commentPrompt": "Rubric: (1) Key concept A - 40% (2) Key concept B - 30% (3) Clarity - 30%",
     "analysis": "Reference answer covering the key points...",
     "points": 20
+  },
+  {
+    "id": "q4",
+    "type": "numeric",
+    "question": "Numeric question text that asks for one quantity",
+    "answer": ["0.392"],
+    "tolerance": 0.001,
+    "unit": "m",
+    "analysis": "The calculation and the final value...",
+    "points": 10
+  },
+  {
+    "id": "q5",
+    "type": "ordering",
+    "question": "Put these steps in the correct order",
+    "options": [
+      { "label": "First step content", "value": "A" },
+      { "label": "Second step content", "value": "B" },
+      { "label": "Third step content", "value": "C" }
+    ],
+    "analysis": "Why this sequence is the correct one...",
+    "points": 10
+  },
+  {
+    "id": "q6",
+    "type": "matching",
+    "question": "Match each term with its definition",
+    "options": [
+      { "label": "Term A", "value": "A" },
+      { "label": "Term B", "value": "B" },
+      { "label": "Term C", "value": "C" }
+    ],
+    "matches": [
+      { "label": "Definition of term A", "value": "A" },
+      { "label": "Definition of term B", "value": "B" },
+      { "label": "Definition of term C", "value": "C" }
+    ],
+    "analysis": "Why each pairing is correct...",
+    "points": 10
   }
 ]
 \`\`\`",
@@ -785,8 +985,8 @@ Teach in English.
 
 
 
-Output a JSON array directly (no explanation, no code blocks, no LaTeX). Each choice option MUST be \`{ "label": "<content text>", "value": "<one ASCII uppercase letter A-Z>" }\`. \`value\` is an enum A-Z and is never the option content; \`label\` is the content text and is never just the letter. Never reverse them (invalid: \`{ "value": "(6, 2)", "label": "A" }\`). \`answer\` MUST be an array of those \`value\` letters, never the content text:
-[{"id":"q1","type":"single","question":"Question text","options":[{"label":"Option A content","value":"A"},{"label":"Option B content","value":"B"},{"label":"Option C content","value":"C"},{"label":"Option D content","value":"D"}],"answer":["A"]}]",
+Output a JSON array directly (no explanation, no code blocks, no LaTeX). Each choice option MUST be \`{ "label": "<content text>", "value": "<one ASCII uppercase letter A-Z>" }\`. \`value\` is an enum A-Z and is never the option content; \`label\` is the content text and is never just the letter. Never reverse them (invalid: \`{ "value": "(6, 2)", "label": "A" }\`). \`answer\` MUST be an array of those \`value\` letters, never the content text. A numeric question has no options; its \`answer\` is \`["<number>"]\` with an optional non-negative \`tolerance\` and display \`unit\`. An ordering question lists its items in the correct order in \`options\` (at least two distinct items) and has NO \`answer\` key. A matching question has one left item in \`options\` and its partner at the same index in \`matches\` (equal length, at least two pairs, distinct right-hand labels) and NO \`answer\` key:
+[{"id":"q1","type":"single","question":"Question text","options":[{"label":"Option A content","value":"A"},{"label":"Option B content","value":"B"},{"label":"Option C content","value":"C"},{"label":"Option D content","value":"D"}],"answer":["A"]},{"id":"q2","type":"numeric","question":"Question text asking for one quantity","answer":["0.392"],"tolerance":0.001,"unit":"m","analysis":"How the value is obtained.","points":10},{"id":"q3","type":"ordering","question":"Put these steps in the correct order","options":[{"label":"First step content","value":"A"},{"label":"Second step content","value":"B"},{"label":"Third step content","value":"C"}],"analysis":"Why this sequence is correct.","points":10},{"id":"q4","type":"matching","question":"Match each term with its definition","options":[{"label":"Term A","value":"A"},{"label":"Term B","value":"B"}],"matches":[{"label":"Definition of term A","value":"A"},{"label":"Definition of term B","value":"B"}],"analysis":"Why each pairing is correct.","points":10}]",
   },
   "slide": {
     "system": "# Slide Content Generator

@@ -1,4 +1,5 @@
 import type {
+  GeneratedActivityContent,
   GeneratedInteractiveContent,
   GeneratedPBLContent,
   GeneratedQuizContent,
@@ -18,6 +19,7 @@ export function toGenerationContent(
 ):
   | GeneratedSlideContent
   | GeneratedQuizContent
+  | GeneratedActivityContent
   | GeneratedInteractiveContent
   | GeneratedPBLContent {
   if (content.type === 'slide') {
@@ -29,5 +31,5 @@ export function toGenerationContent(
   if (content.type === 'pbl') {
     return normalizeLegacyPBLContent(content) as GeneratedPBLContent;
   }
-  return content as GeneratedQuizContent | GeneratedInteractiveContent;
+  return content as GeneratedQuizContent | GeneratedActivityContent | GeneratedInteractiveContent;
 }

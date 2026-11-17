@@ -132,6 +132,16 @@ export interface SceneOutline {
     scenarioRoleplay?: boolean;
     scenarioBrief?: string;
   };
+  /**
+   * Hands-on lab configuration. `kind` selects the activity family; `language`
+   * selects the runtime (only `python` is executable today). The content stage
+   * emits a runnable starter, visible tests, declarative checks and an
+   * authoring-only reference solution.
+   */
+  activityConfig?: {
+    kind: 'code';
+    language: string;
+  };
   widgetType?: WidgetType;
   widgetOutline?: WidgetOutline;
 }

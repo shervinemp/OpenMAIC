@@ -4,6 +4,7 @@ import type { SceneOutline } from './outline-types.js';
 import { isSlideLikeOutline } from './outline-type.js';
 import type {
   CompleteScene,
+  GeneratedActivityContent,
   GeneratedInteractiveContent,
   GeneratedPBLContent,
   GeneratedQuizContent,
@@ -25,6 +26,7 @@ export function buildCompleteScene(
   content:
     | GeneratedSlideContent
     | GeneratedQuizContent
+    | GeneratedActivityContent
     | GeneratedInteractiveContent
     | GeneratedPBLContent,
   actions: Action[],
@@ -77,6 +79,20 @@ export function buildCompleteScene(
       title: outline.title,
       order: outline.order,
       content: { type: 'quiz', questions: content.questions },
+      actions,
+      ...timestamps,
+    };
+  }
+
+  if (outline.type === 'activity' && 'kind' in content && content.type === 'activity') {
+    return {
+      id: sceneId,
+      outlineId: outline.id,
+      stageId,
+      type: 'activity',
+      title: outline.title,
+      order: outline.order,
+      content,
       actions,
       ...timestamps,
     };

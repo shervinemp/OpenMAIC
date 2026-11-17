@@ -75,6 +75,7 @@ export * from './pbl/operations/kernel/task-completion.js';
 export type {
   CompleteScene,
   CompleteSceneContent,
+  GeneratedActivityContent,
   GeneratedInteractiveContent,
   GeneratedPBLContent,
   GeneratedQuizContent,
@@ -165,6 +166,7 @@ export {
   takeSceneDepthReport,
   recordSceneDepthSummary,
   takeSceneDepthSummary,
+  validateActivityDepth,
   validateDerivationDepth,
   validateExerciseDepth,
   validateFreeResponseDepth,

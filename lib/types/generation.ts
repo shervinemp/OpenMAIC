@@ -290,6 +290,11 @@ export interface SceneOutline {
     /** Optional scenario brief used only when scenarioRoleplay is true. */
     scenarioBrief?: string;
   };
+  /** Hands-on lab config. Python is the only executable runtime today. */
+  activityConfig?: {
+    kind: 'code';
+    language: string;
+  };
   // Widget fields (required for type === 'interactive' in unified mode)
   widgetType?: WidgetType;
   widgetOutline?: WidgetOutline;
@@ -382,7 +387,7 @@ export interface CourseBlueprint {
 // ==================== Stage 3 Output: Generated Content ====================
 
 import type { PPTElement, SlideBackground } from '@openmaic/dsl';
-import type { QuizQuestion } from './stage';
+import type { CodeActivityContent, QuizQuestion } from './stage';
 
 /**
  * AI-generated slide content
@@ -399,6 +404,12 @@ export interface GeneratedSlideContent {
 export interface GeneratedQuizContent {
   questions: QuizQuestion[];
 }
+
+/**
+ * AI-generated code lab. The lab's starter, tests, checks and reference are
+ * authored wholesale by the model, so this payload is the persisted content.
+ */
+export type GeneratedActivityContent = CodeActivityContent;
 
 // ==================== Specialized Scene Content (Phase 2 §15.4b) ====================
 //

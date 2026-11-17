@@ -244,7 +244,7 @@ describe('generateSceneContent quiz option contract', () => {
     expect(failures).toEqual([{ code: 'invalid-model-output' }]);
     expect(errors).toEqual(
       Array(CONTENT_ATTEMPTS).fill(
-        'Quiz option contract failed for "Dependency Injection Check": question 1 (q1): option 1 value "(6, 2)" is not a single letter A-Z',
+        'Quiz question contract failed for "Dependency Injection Check": question 1 (q1): option 1 value "(6, 2)" is not a single letter A-Z',
       ),
     );
   });

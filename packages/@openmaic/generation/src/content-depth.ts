@@ -19,7 +19,7 @@
  * why the scene failed.
  */
 
-import type { PPTElement, QuizQuestion } from '@openmaic/dsl';
+import type { CodeActivityContent, PPTElement, QuizQuestion } from '@openmaic/dsl';
 import {
   COURSE_DEPTH_FLOORS,
   SPECIALTY_DEPTH_FLOORS,
@@ -726,6 +726,104 @@ export function validateQuizDepth(
     exampleCount: 0,
     findings,
   };
+}
+
+// ==================== Activity (code lab) validation ====================
+
+/**
+ * A generated lab must be runnable, must demand real work, and must ship the
+ * reference solution that proves its checks are satisfiable. These are
+ * structural facts only: the authoring surface re-runs the reference and the
+ * starter through the real runtime before the lab is published.
+ */
+export function validateActivityDepth(
+  outline: SceneOutline,
+  activity: CodeActivityContent,
+): DepthReport {
+  const depthLevel = resolveDepthLevel(outline.depthLevel);
+  const findings: string[] = [];
+  const minTests = depthLevel === 'intro' ? 2 : depthLevel === 'intermediate' ? 3 : 4;
+
+  const instructionWords = wordCount(activity.instructions.trim());
+  if (instructionWords < 30) {
+    findings.push(
+      `instructions are ${instructionWords} word(s) — explain the goal, the inputs and outputs, and the constraints in at least 30 words`,
+    );
+  }
+
+  if (activity.files.length === 0) {
+    findings.push('the starter workspace has no files');
+  }
+
+  const visibleTests = activity.tests.filter((test) => !test.hidden);
+  if (activity.tests.length < minTests) {
+    findings.push(
+      `the lab declares ${activity.tests.length} test(s); need at least ${minTests} (a happy path plus edge cases)`,
+    );
+  }
+  if (activity.tests.length > 0 && visibleTests.length === 0) {
+    findings.push(
+      'every test is hidden — keep at least one visible test so the learner gets feedback before submitting',
+    );
+  }
+  for (const test of activity.tests) {
+    const code = test.code.trim();
+    if (!code) {
+      findings.push(`test "${test.id}" has no code`);
+    } else if (/^assert\s+(True|1)\s*$/i.test(code)) {
+      findings.push(`test "${test.id}" is a placeholder that always passes`);
+    }
+  }
+
+  if (!activity.checks.some((check) => check.type === 'expectTests')) {
+    findings.push('no expectTests check — the learner’s tests must count toward the score');
+  }
+  const declaredTestIds = new Set(activity.tests.map((test) => test.id));
+  for (const check of activity.checks) {
+    if (check.type === 'expectTests' && check.testIds) {
+      const unknown = check.testIds.filter((id) => !declaredTestIds.has(id));
+      if (unknown.length > 0) {
+        findings.push(
+          `check "${check.id}" names undeclared tests: ${unknown.map((id) => JSON.stringify(id)).join(', ')}`,
+        );
+      }
+    }
+    if (
+      (check.type === 'expectStdout' || check.type === 'expectFile') &&
+      check.expected.trim() === ''
+    ) {
+      findings.push(`check "${check.id}" expects empty text, which passes without any work`);
+    }
+    if (check.type === 'expectFile') {
+      const seed = activity.files.find((file) => file.path === check.path);
+      if (seed && seed.editable === false && seed.content.trim() === check.expected.trim()) {
+        findings.push(
+          `check "${check.id}" expects an unchanged read-only input, so it can never fail`,
+        );
+      }
+    }
+  }
+
+  const starter = activity.files.find((file) => file.path === activity.entryFile)?.content.trim();
+  if (starter === undefined) {
+    findings.push(`the starter workspace has no entry file "${activity.entryFile}"`);
+  }
+  const reference = activity.referenceFiles
+    ?.find((file) => file.path === activity.entryFile)
+    ?.content.trim();
+  if (!reference) {
+    findings.push(`referenceFiles does not provide the entry file "${activity.entryFile}"`);
+  } else if (starter !== undefined) {
+    if (reference === starter) {
+      findings.push(
+        'the reference entry file is identical to the starter — the lab asks the learner to do nothing',
+      );
+    } else if (starter.includes(reference)) {
+      findings.push('the starter embeds the reference solution');
+    }
+  }
+
+  return blankFindingsReport(activity.files.length + activity.tests.length, findings);
 }
 
 // ==================== Specialized scene validation (Phase 2 §15.4b) ====================

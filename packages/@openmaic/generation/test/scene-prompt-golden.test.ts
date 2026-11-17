@@ -2,9 +2,11 @@ import { expect, it } from 'vitest';
 import type { AICallFn } from '@openmaic/generation';
 import { generateSceneContent } from '@openmaic/generation';
 import {
+  activityOutline,
   pblOutline,
   quizOutline,
   slideOutline,
+  validActivityResponse,
   validPBLResponse,
   widgetOutline,
 } from './scene-fixtures.js';
@@ -32,6 +34,11 @@ it('pins representative system and user prompts for every scene kind', async () 
   await generateSceneContent(quizOutline(), capture('quiz', '[]'), {
     languageDirective: 'Teach in English.',
   });
+  await generateSceneContent(
+    activityOutline(),
+    capture('activity', JSON.stringify(validActivityResponse())),
+    { languageDirective: 'Teach in English.' },
+  );
   await generateSceneContent(
     widgetOutline(),
     capture('interactive', '<!DOCTYPE html><html><head></head><body></body></html>'),

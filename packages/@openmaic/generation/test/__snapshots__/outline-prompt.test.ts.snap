@@ -65,9 +65,10 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 
 ### MAIC Platform Technical Constraints
 
-- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
+- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`activity\` (runnable code lab), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
 - **Slide Scene**: Static PPT pages supporting text, charts, formulas, and other visual components.
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
+- **Activity Scene**: A runnable code lab where the learner edits a starter program and submits it; declarative checks score the result
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
 - **PBL Scene**: Complete project-based learning module with roles, issues, and collaboration workflow. Ideal for complex projects, engineering practice, and research tasks
 - **Duration Control**: Each scene should be 1-3 minutes (PBL scenes are longer, typically 15-30 minutes)
@@ -150,8 +151,18 @@ When comparing or listing information, specify in keyPoints:
 
 
 
-### Interactive Scene Guidelines
+### Activity Scene Guidelines
 
+Use \`activity\` when the learner must write and run code, not just read or choose. Good candidates: implementing a function, fixing a bug, processing a data file, or exercising an API from a small program.
+
+**Constraints**:
+
+- Each activity **requires** an \`activityConfig\` object with \`{ "kind": "code", "language": "python" }\`.
+- The content stage ships a runnable starter that fails at least one check, visible tests, declarative checks, and a reference solution that passes everything. Put the task in \`description\` and the observable behavior in \`keyPoints\` (inputs, outputs, edge cases).
+- Keep at most one lab per practice-heavy lesson; do not turn every lesson into a lab.
+- Do NOT use \`activity\` for a quiz, a worked example (\`exercise\`), or a simulation (\`interactive\`).
+
+### Interactive Scene Guidelines
 Use \`interactive\` type when a concept benefits significantly from hands-on interaction and visualization. Good candidates include:
 
 - **Physics simulations**: Force composition, projectile motion, wave interference, circuits
@@ -264,7 +275,7 @@ Rules:
 - **Never** return a bare array. The top level is an object, not an array.
 - **Never** omit \`languageDirective\` or \`courseTitle\`. Both are required even if you think they are obvious.
 - **Never** wrap the response in any other structure, prose, or code fence.
-- **Every** object in \`outlines\` MUST carry a \`type\` field — one of: \`slide\`, \`quiz\`, \`interactive\`, \`pbl\`, \`exercise\`, \`derivation\`, \`glossary\`, \`reading\`, \`comparison\`, \`dataReading\`, \`tradeoffs\`. Outlines without \`type\` are rejected.
+- **Every** object in \`outlines\` MUST carry a \`type\` field — one of: \`slide\`, \`quiz\`, \`activity\`, \`interactive\`, \`pbl\`, \`exercise\`, \`derivation\`, \`glossary\`, \`reading\`, \`comparison\`, \`dataReading\`, \`tradeoffs\`. Outlines without \`type\` are rejected.
 - \`outlines\` holds scene records ONLY — never lesson headers or summaries (those go in \`lessons\`).
 
 ### Minimal complete example
@@ -305,7 +316,7 @@ Rules:
       "quizConfig": {
         "questionCount": 2,
         "difficulty": "medium",
-        "questionTypes": ["single", "multiple"]
+        "questionTypes": ["single", "multiple", "numeric"]
       }
     }
   ]
@@ -317,7 +328,7 @@ Rules:
 | Field             | Type                     | Required | Description                                                                                      |
 | ----------------- | ------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
 | id                | string                   | ✅       | Unique identifier, format: \`scene_1\`, \`scene_2\`...                                               |
-| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, or \`"tradeoffs"\` |
+| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"activity"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, or \`"tradeoffs"\` |
 | title             | string                   | ✅       | Scene title, concise and clear                                                                   |
 | description       | string                   | ✅       | 1-2 sentences describing teaching purpose                                                        |
 | keyPoints         | string[]                 | ✅       | 3-5 core points                                                                                  |
@@ -327,6 +338,7 @@ Rules:
 
 
 | quizConfig        | object                   | ❌       | Required for quiz type, contains questionCount/difficulty/questionTypes                          |
+| activityConfig    | object                   | ❌       | Required for activity type, contains kind ("code") and language ("python")                       |
 | interactiveConfig | object                   | ❌ (deprecated) | Legacy: use widgetType + widgetOutline instead                                                                                       |
 | widgetType        | string                   | ✅ (for interactive) | Widget type: "simulation", "diagram", "code", "game", "visualization3d"                                                 |
 | widgetOutline     | object                   | ✅ (for interactive) | Widget-specific configuration (see Widget Type Selection)                                                               |
@@ -338,9 +350,22 @@ Rules:
 {
   "questionCount": 2,
   "difficulty": "easy" | "medium" | "hard",
-  "questionTypes": ["single", "multiple", "short_answer"]
+  "questionTypes": ["single", "multiple", "short_answer", "numeric", "ordering", "matching"]
 }
 \`\`\`
+
+\`numeric\` questions ask for one computed number (with an optional tolerance and unit); use them for calculations, measurements, dates and counts. \`ordering\` questions ask the learner to restore a sequence; use them for processes, timelines, precedence and ranked steps. \`matching\` questions ask the learner to pair items with partners; use them for terms and definitions, causes and effects, or examples and concepts.
+
+### activityConfig Structure
+
+\`\`\`json
+{
+  "kind": "code",
+  "language": "python"
+}
+\`\`\`
+
+An \`activity\` lab runs Python in the browser. Describe one self-contained task whose behavior can be checked by running tests and inspecting output or files.
 
 ### interactiveConfig Structure
 
@@ -590,9 +615,10 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 
 ### MAIC Platform Technical Constraints
 
-- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
+- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`activity\` (runnable code lab), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
 - **Slide Scene**: Static PPT pages supporting text, charts, formulas, and other visual components.
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
+- **Activity Scene**: A runnable code lab where the learner edits a starter program and submits it; declarative checks score the result
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
 - **PBL Scene**: Complete project-based learning module with roles, issues, and collaboration workflow. Ideal for complex projects, engineering practice, and research tasks
 - **Duration Control**: Each scene should be 1-3 minutes (PBL scenes are longer, typically 15-30 minutes)
@@ -741,8 +767,18 @@ To avoid blocked requests from the generation model:
 - Keep all prompts academic and education-oriented in tone
 
 
-### Interactive Scene Guidelines
+### Activity Scene Guidelines
 
+Use \`activity\` when the learner must write and run code, not just read or choose. Good candidates: implementing a function, fixing a bug, processing a data file, or exercising an API from a small program.
+
+**Constraints**:
+
+- Each activity **requires** an \`activityConfig\` object with \`{ "kind": "code", "language": "python" }\`.
+- The content stage ships a runnable starter that fails at least one check, visible tests, declarative checks, and a reference solution that passes everything. Put the task in \`description\` and the observable behavior in \`keyPoints\` (inputs, outputs, edge cases).
+- Keep at most one lab per practice-heavy lesson; do not turn every lesson into a lab.
+- Do NOT use \`activity\` for a quiz, a worked example (\`exercise\`), or a simulation (\`interactive\`).
+
+### Interactive Scene Guidelines
 Use \`interactive\` type when a concept benefits significantly from hands-on interaction and visualization. Good candidates include:
 
 - **Physics simulations**: Force composition, projectile motion, wave interference, circuits
@@ -855,7 +891,7 @@ Rules:
 - **Never** return a bare array. The top level is an object, not an array.
 - **Never** omit \`languageDirective\` or \`courseTitle\`. Both are required even if you think they are obvious.
 - **Never** wrap the response in any other structure, prose, or code fence.
-- **Every** object in \`outlines\` MUST carry a \`type\` field — one of: \`slide\`, \`quiz\`, \`interactive\`, \`pbl\`, \`exercise\`, \`derivation\`, \`glossary\`, \`reading\`, \`comparison\`, \`dataReading\`, \`tradeoffs\`. Outlines without \`type\` are rejected.
+- **Every** object in \`outlines\` MUST carry a \`type\` field — one of: \`slide\`, \`quiz\`, \`activity\`, \`interactive\`, \`pbl\`, \`exercise\`, \`derivation\`, \`glossary\`, \`reading\`, \`comparison\`, \`dataReading\`, \`tradeoffs\`. Outlines without \`type\` are rejected.
 - \`outlines\` holds scene records ONLY — never lesson headers or summaries (those go in \`lessons\`).
 
 ### Minimal complete example
@@ -896,7 +932,7 @@ Rules:
       "quizConfig": {
         "questionCount": 2,
         "difficulty": "medium",
-        "questionTypes": ["single", "multiple"]
+        "questionTypes": ["single", "multiple", "numeric"]
       }
     }
   ]
@@ -908,7 +944,7 @@ Rules:
 | Field             | Type                     | Required | Description                                                                                      |
 | ----------------- | ------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
 | id                | string                   | ✅       | Unique identifier, format: \`scene_1\`, \`scene_2\`...                                               |
-| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, or \`"tradeoffs"\` |
+| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"activity"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, or \`"tradeoffs"\` |
 | title             | string                   | ✅       | Scene title, concise and clear                                                                   |
 | description       | string                   | ✅       | 1-2 sentences describing teaching purpose                                                        |
 | keyPoints         | string[]                 | ✅       | 3-5 core points                                                                                  |
@@ -922,6 +958,7 @@ Rules:
 | mediaGenerations  | MediaGenerationRequest[] | ❌       | AI-generated media requests when generated media would enhance a slide scene                     |
 
 | quizConfig        | object                   | ❌       | Required for quiz type, contains questionCount/difficulty/questionTypes                          |
+| activityConfig    | object                   | ❌       | Required for activity type, contains kind ("code") and language ("python")                       |
 | interactiveConfig | object                   | ❌ (deprecated) | Legacy: use widgetType + widgetOutline instead                                                                                       |
 | widgetType        | string                   | ✅ (for interactive) | Widget type: "simulation", "diagram", "code", "game", "visualization3d"                                                 |
 | widgetOutline     | object                   | ✅ (for interactive) | Widget-specific configuration (see Widget Type Selection)                                                               |
@@ -933,9 +970,22 @@ Rules:
 {
   "questionCount": 2,
   "difficulty": "easy" | "medium" | "hard",
-  "questionTypes": ["single", "multiple", "short_answer"]
+  "questionTypes": ["single", "multiple", "short_answer", "numeric", "ordering", "matching"]
 }
 \`\`\`
+
+\`numeric\` questions ask for one computed number (with an optional tolerance and unit); use them for calculations, measurements, dates and counts. \`ordering\` questions ask the learner to restore a sequence; use them for processes, timelines, precedence and ranked steps. \`matching\` questions ask the learner to pair items with partners; use them for terms and definitions, causes and effects, or examples and concepts.
+
+### activityConfig Structure
+
+\`\`\`json
+{
+  "kind": "code",
+  "language": "python"
+}
+\`\`\`
+
+An \`activity\` lab runs Python in the browser. Describe one self-contained task whose behavior can be checked by running tests and inspecting output or files.
 
 ### interactiveConfig Structure
 
@@ -1194,9 +1244,10 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 
 ### MAIC Platform Technical Constraints
 
-- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
+- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`activity\` (runnable code lab), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
 - **Slide Scene**: Static PPT pages supporting text, charts, formulas, and other visual components.
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
+- **Activity Scene**: A runnable code lab where the learner edits a starter program and submits it; declarative checks score the result
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
 - **PBL Scene**: Complete project-based learning module with roles, issues, and collaboration workflow. Ideal for complex projects, engineering practice, and research tasks
 - **Duration Control**: Each scene should be 1-3 minutes (PBL scenes are longer, typically 15-30 minutes)
@@ -1318,8 +1369,18 @@ To avoid blocked requests from the generation model:
 - Keep all prompts academic and education-oriented in tone
 
 
-### Interactive Scene Guidelines
+### Activity Scene Guidelines
 
+Use \`activity\` when the learner must write and run code, not just read or choose. Good candidates: implementing a function, fixing a bug, processing a data file, or exercising an API from a small program.
+
+**Constraints**:
+
+- Each activity **requires** an \`activityConfig\` object with \`{ "kind": "code", "language": "python" }\`.
+- The content stage ships a runnable starter that fails at least one check, visible tests, declarative checks, and a reference solution that passes everything. Put the task in \`description\` and the observable behavior in \`keyPoints\` (inputs, outputs, edge cases).
+- Keep at most one lab per practice-heavy lesson; do not turn every lesson into a lab.
+- Do NOT use \`activity\` for a quiz, a worked example (\`exercise\`), or a simulation (\`interactive\`).
+
+### Interactive Scene Guidelines
 Use \`interactive\` type when a concept benefits significantly from hands-on interaction and visualization. Good candidates include:
 
 - **Physics simulations**: Force composition, projectile motion, wave interference, circuits
@@ -1432,7 +1493,7 @@ Rules:
 - **Never** return a bare array. The top level is an object, not an array.
 - **Never** omit \`languageDirective\` or \`courseTitle\`. Both are required even if you think they are obvious.
 - **Never** wrap the response in any other structure, prose, or code fence.
-- **Every** object in \`outlines\` MUST carry a \`type\` field — one of: \`slide\`, \`quiz\`, \`interactive\`, \`pbl\`, \`exercise\`, \`derivation\`, \`glossary\`, \`reading\`, \`comparison\`, \`dataReading\`, \`tradeoffs\`. Outlines without \`type\` are rejected.
+- **Every** object in \`outlines\` MUST carry a \`type\` field — one of: \`slide\`, \`quiz\`, \`activity\`, \`interactive\`, \`pbl\`, \`exercise\`, \`derivation\`, \`glossary\`, \`reading\`, \`comparison\`, \`dataReading\`, \`tradeoffs\`. Outlines without \`type\` are rejected.
 - \`outlines\` holds scene records ONLY — never lesson headers or summaries (those go in \`lessons\`).
 
 ### Minimal complete example
@@ -1473,7 +1534,7 @@ Rules:
       "quizConfig": {
         "questionCount": 2,
         "difficulty": "medium",
-        "questionTypes": ["single", "multiple"]
+        "questionTypes": ["single", "multiple", "numeric"]
       }
     }
   ]
@@ -1485,7 +1546,7 @@ Rules:
 | Field             | Type                     | Required | Description                                                                                      |
 | ----------------- | ------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
 | id                | string                   | ✅       | Unique identifier, format: \`scene_1\`, \`scene_2\`...                                               |
-| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, or \`"tradeoffs"\` |
+| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"activity"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, or \`"tradeoffs"\` |
 | title             | string                   | ✅       | Scene title, concise and clear                                                                   |
 | description       | string                   | ✅       | 1-2 sentences describing teaching purpose                                                        |
 | keyPoints         | string[]                 | ✅       | 3-5 core points                                                                                  |
@@ -1497,6 +1558,7 @@ Rules:
 | mediaGenerations  | MediaGenerationRequest[] | ❌       | AI-generated media requests when generated media would enhance a slide scene                     |
 
 | quizConfig        | object                   | ❌       | Required for quiz type, contains questionCount/difficulty/questionTypes                          |
+| activityConfig    | object                   | ❌       | Required for activity type, contains kind ("code") and language ("python")                       |
 | interactiveConfig | object                   | ❌ (deprecated) | Legacy: use widgetType + widgetOutline instead                                                                                       |
 | widgetType        | string                   | ✅ (for interactive) | Widget type: "simulation", "diagram", "code", "game", "visualization3d"                                                 |
 | widgetOutline     | object                   | ✅ (for interactive) | Widget-specific configuration (see Widget Type Selection)                                                               |
@@ -1508,9 +1570,22 @@ Rules:
 {
   "questionCount": 2,
   "difficulty": "easy" | "medium" | "hard",
-  "questionTypes": ["single", "multiple", "short_answer"]
+  "questionTypes": ["single", "multiple", "short_answer", "numeric", "ordering", "matching"]
 }
 \`\`\`
+
+\`numeric\` questions ask for one computed number (with an optional tolerance and unit); use them for calculations, measurements, dates and counts. \`ordering\` questions ask the learner to restore a sequence; use them for processes, timelines, precedence and ranked steps. \`matching\` questions ask the learner to pair items with partners; use them for terms and definitions, causes and effects, or examples and concepts.
+
+### activityConfig Structure
+
+\`\`\`json
+{
+  "kind": "code",
+  "language": "python"
+}
+\`\`\`
+
+An \`activity\` lab runs Python in the browser. Describe one self-contained task whose behavior can be checked by running tests and inspecting output or files.
 
 ### interactiveConfig Structure
 
@@ -1760,9 +1835,10 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 
 ### MAIC Platform Technical Constraints
 
-- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
+- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`activity\` (runnable code lab), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
 - **Slide Scene**: Static PPT pages supporting text, charts, formulas, and other visual components.
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
+- **Activity Scene**: A runnable code lab where the learner edits a starter program and submits it; declarative checks score the result
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
 - **PBL Scene**: Complete project-based learning module with roles, issues, and collaboration workflow. Ideal for complex projects, engineering practice, and research tasks
 - **Duration Control**: Each scene should be 1-3 minutes (PBL scenes are longer, typically 15-30 minutes)
@@ -1845,8 +1921,18 @@ When comparing or listing information, specify in keyPoints:
 
 
 
-### Interactive Scene Guidelines
+### Activity Scene Guidelines
 
+Use \`activity\` when the learner must write and run code, not just read or choose. Good candidates: implementing a function, fixing a bug, processing a data file, or exercising an API from a small program.
+
+**Constraints**:
+
+- Each activity **requires** an \`activityConfig\` object with \`{ "kind": "code", "language": "python" }\`.
+- The content stage ships a runnable starter that fails at least one check, visible tests, declarative checks, and a reference solution that passes everything. Put the task in \`description\` and the observable behavior in \`keyPoints\` (inputs, outputs, edge cases).
+- Keep at most one lab per practice-heavy lesson; do not turn every lesson into a lab.
+- Do NOT use \`activity\` for a quiz, a worked example (\`exercise\`), or a simulation (\`interactive\`).
+
+### Interactive Scene Guidelines
 Use \`interactive\` type when a concept benefits significantly from hands-on interaction and visualization. Good candidates include:
 
 - **Physics simulations**: Force composition, projectile motion, wave interference, circuits
@@ -1959,7 +2045,7 @@ Rules:
 - **Never** return a bare array. The top level is an object, not an array.
 - **Never** omit \`languageDirective\` or \`courseTitle\`. Both are required even if you think they are obvious.
 - **Never** wrap the response in any other structure, prose, or code fence.
-- **Every** object in \`outlines\` MUST carry a \`type\` field — one of: \`slide\`, \`quiz\`, \`interactive\`, \`pbl\`, \`exercise\`, \`derivation\`, \`glossary\`, \`reading\`, \`comparison\`, \`dataReading\`, \`tradeoffs\`. Outlines without \`type\` are rejected.
+- **Every** object in \`outlines\` MUST carry a \`type\` field — one of: \`slide\`, \`quiz\`, \`activity\`, \`interactive\`, \`pbl\`, \`exercise\`, \`derivation\`, \`glossary\`, \`reading\`, \`comparison\`, \`dataReading\`, \`tradeoffs\`. Outlines without \`type\` are rejected.
 - \`outlines\` holds scene records ONLY — never lesson headers or summaries (those go in \`lessons\`).
 
 ### Minimal complete example
@@ -2000,7 +2086,7 @@ Rules:
       "quizConfig": {
         "questionCount": 2,
         "difficulty": "medium",
-        "questionTypes": ["single", "multiple"]
+        "questionTypes": ["single", "multiple", "numeric"]
       }
     }
   ]
@@ -2012,7 +2098,7 @@ Rules:
 | Field             | Type                     | Required | Description                                                                                      |
 | ----------------- | ------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
 | id                | string                   | ✅       | Unique identifier, format: \`scene_1\`, \`scene_2\`...                                               |
-| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, or \`"tradeoffs"\` |
+| type              | string                   | ✅       | \`"slide"\`, \`"quiz"\`, \`"activity"\`, \`"interactive"\`, \`"pbl"\`, \`"exercise"\`, \`"derivation"\`, \`"glossary"\`, \`"reading"\`, \`"comparison"\`, \`"dataReading"\`, or \`"tradeoffs"\` |
 | title             | string                   | ✅       | Scene title, concise and clear                                                                   |
 | description       | string                   | ✅       | 1-2 sentences describing teaching purpose                                                        |
 | keyPoints         | string[]                 | ✅       | 3-5 core points                                                                                  |
@@ -2024,6 +2110,7 @@ Rules:
 
 
 | quizConfig        | object                   | ❌       | Required for quiz type, contains questionCount/difficulty/questionTypes                          |
+| activityConfig    | object                   | ❌       | Required for activity type, contains kind ("code") and language ("python")                       |
 | interactiveConfig | object                   | ❌ (deprecated) | Legacy: use widgetType + widgetOutline instead                                                                                       |
 | widgetType        | string                   | ✅ (for interactive) | Widget type: "simulation", "diagram", "code", "game", "visualization3d"                                                 |
 | widgetOutline     | object                   | ✅ (for interactive) | Widget-specific configuration (see Widget Type Selection)                                                               |
@@ -2035,9 +2122,22 @@ Rules:
 {
   "questionCount": 2,
   "difficulty": "easy" | "medium" | "hard",
-  "questionTypes": ["single", "multiple", "short_answer"]
+  "questionTypes": ["single", "multiple", "short_answer", "numeric", "ordering", "matching"]
 }
 \`\`\`
+
+\`numeric\` questions ask for one computed number (with an optional tolerance and unit); use them for calculations, measurements, dates and counts. \`ordering\` questions ask the learner to restore a sequence; use them for processes, timelines, precedence and ranked steps. \`matching\` questions ask the learner to pair items with partners; use them for terms and definitions, causes and effects, or examples and concepts.
+
+### activityConfig Structure
+
+\`\`\`json
+{
+  "kind": "code",
+  "language": "python"
+}
+\`\`\`
+
+An \`activity\` lab runs Python in the browser. Describe one self-contained task whose behavior can be checked by running tests and inspecting output or files.
 
 ### interactiveConfig Structure
 
