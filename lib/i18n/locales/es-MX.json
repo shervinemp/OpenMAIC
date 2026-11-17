@@ -544,7 +544,8 @@
         "setupMissing": "Agrega SQL de inicialización para que cada intento parta del mismo esquema.",
         "starterMissing": "Agrega una consulta inicial que se ejecute pero falle al menos una comprobación.",
         "noReferenceSql": "Agrega SQL de referencia y luego verifica el laboratorio.",
-        "referenceMatchesStarter": "El SQL de referencia es idéntico al inicial."
+        "referenceMatchesStarter": "El SQL de referencia es idéntico al inicial.",
+        "noReferenceCommands": "Agrega comandos de referencia para que las comprobaciones se puedan verificar."
       },
       "expectedRows": "Filas esperadas (JSON)",
       "invalidRows": "Escribe un arreglo JSON de filas, por ejemplo [[\"Ada\", 24]].",
@@ -560,7 +561,18 @@
       "kind": "Tipo de laboratorio",
       "kindDescription": "Cambiar de tipo restablece los campos propios del otro tipo; deshacer los recupera.",
       "kindCode": "Código",
-      "kindSql": "SQL"
+      "kindSql": "SQL",
+      "kindTerminal": "Terminal",
+      "terminalFilesDescription": "Archivos sembrados en el directorio personal del estudiante. Los comandos pueden editarlos.",
+      "terminalChecksDescription": "Las comprobaciones inspeccionan la sesión simulada: salida, archivos y estado final.",
+      "checkState": "Estado final",
+      "statePath": "Ruta de estado",
+      "statePathHint": "cwd, env.NAME o file:path",
+      "stdout": "Salida estándar",
+      "referenceCommands": "Comandos de referencia",
+      "referenceCommandsDescription": "Se ejecutan en orden; deben cumplir todas las comprobaciones. Nunca se muestran en la reproducción.",
+      "addReferenceCommand": "Agregar comando",
+      "commandPlaceholder": "p. ej. echo done > notes.txt"
     },
     "cue": {
       "speech": "Narración",
@@ -881,7 +893,11 @@
     "sqlEmptyOutput": "La consulta terminó sin un resultado que mostrar.",
     "sqlError": "Error de SQL",
     "sqlProbeError": "Falló la consulta de comprobación: {{id}}",
-    "sqlEmptyResult": "No se devolvieron filas."
+    "sqlEmptyResult": "No se devolvieron filas.",
+    "terminalSession": "Sesión",
+    "terminalEmpty": "Escribe un comando y presiona Enter. Las comprobaciones se actualizan mientras trabajas.",
+    "terminalInput": "Comando",
+    "terminalPlaceholder": "Escribe un comando…"
   },
   "roundtable": {
     "teacher": "DOCENTE",

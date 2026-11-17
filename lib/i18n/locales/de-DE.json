@@ -544,7 +544,8 @@
         "setupMissing": "Füge Setup-SQL hinzu, damit jeder Versuch mit demselben Schema beginnt.",
         "starterMissing": "Füge eine Starter-Abfrage hinzu, die läuft, aber mindestens eine Prüfung verfehlt.",
         "noReferenceSql": "Füge Referenz-SQL hinzu und prüfe dann das Lab.",
-        "referenceMatchesStarter": "Das Referenz-SQL ist identisch mit dem Starter."
+        "referenceMatchesStarter": "Das Referenz-SQL ist identisch mit dem Starter.",
+        "noReferenceCommands": "Füge Referenzbefehle hinzu, damit die Prüfungen verifiziert werden können."
       },
       "expectedRows": "Erwartete Zeilen (JSON)",
       "invalidRows": "Gib ein JSON-Array von Zeilen ein, z. B. [[\"Ada\", 24]].",
@@ -560,7 +561,18 @@
       "kind": "Lab-Typ",
       "kindDescription": "Beim Wechsel werden die typspezifischen Felder zurückgesetzt; Rückgängig stellt sie wieder her.",
       "kindCode": "Code",
-      "kindSql": "SQL"
+      "kindSql": "SQL",
+      "kindTerminal": "Terminal",
+      "terminalFilesDescription": "Dateien im Home-Verzeichnis der Lernenden. Befehle können sie bearbeiten.",
+      "terminalChecksDescription": "Prüfungen untersuchen die simulierte Sitzung: Ausgabe, Dateien und Endzustand.",
+      "checkState": "Endzustand",
+      "statePath": "Zustandspfad",
+      "statePathHint": "cwd, env.NAME oder file:path",
+      "stdout": "Standardausgabe",
+      "referenceCommands": "Referenzbefehle",
+      "referenceCommandsDescription": "Laufen der Reihe nach und müssen jede Prüfung bestehen. Werden in der Wiedergabe nie angezeigt.",
+      "addReferenceCommand": "Befehl hinzufügen",
+      "commandPlaceholder": "z. B. echo done > notes.txt"
     },
     "cue": {
       "speech": "Sprechertext",
@@ -881,7 +893,11 @@
     "sqlEmptyOutput": "Die Abfrage endete ohne anzeigbares Ergebnis.",
     "sqlError": "SQL-Fehler",
     "sqlProbeError": "Prüfabfrage fehlgeschlagen: {{id}}",
-    "sqlEmptyResult": "Keine Zeilen zurückgegeben."
+    "sqlEmptyResult": "Keine Zeilen zurückgegeben.",
+    "terminalSession": "Sitzung",
+    "terminalEmpty": "Gib einen Befehl ein und drücke Enter. Die Prüfungen aktualisieren sich beim Arbeiten.",
+    "terminalInput": "Befehl",
+    "terminalPlaceholder": "Befehl eingeben …"
   },
   "roundtable": {
     "teacher": "LEHRKRAFT",

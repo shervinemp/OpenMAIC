@@ -25,13 +25,21 @@ import {
   redoActivity,
   undoActivity,
   addSqlCheck,
+  addTerminalCheck,
+  addTerminalReferenceCommand,
   removeSqlCheck,
+  removeTerminalCheck,
+  removeTerminalReferenceCommand,
   setSqlReference,
   setSqlSetup,
   setSqlStarter,
+  setTerminalReferenceCommands,
   switchActivityKind,
   updateSqlActivityBasics,
   updateSqlCheck,
+  updateTerminalBasics,
+  updateTerminalCheck,
+  updateTerminalReferenceCommand,
 } from '@/components/edit/surfaces/activity/activity-edit-ops';
 
 function activity(overrides: Partial<CodeActivityContent> = {}): CodeActivityContent {
@@ -288,5 +296,91 @@ describe('switchActivityKind', () => {
   it('returns the same content for the current kind', () => {
     const source = activity();
     expect(switchActivityKind(source, 'code')).toBe(source);
+  });
+});
+
+describe('terminal labs', () => {
+  const terminal: ActivityContent = {
+    type: 'activity',
+    kind: 'terminal',
+    instructions: 'Create a note.',
+    files: [{ path: 'README.txt', content: 'workspace\n' }],
+    checks: [{ id: 'c1', type: 'expectState', path: 'cwd', expected: '/home/learner' }],
+    referenceCommands: ['echo done > notes.txt'],
+  };
+
+  it('updates basics and reference commands', () => {
+    let next = updateTerminalBasics(terminal, {
+      instructions: 'Create notes.txt.',
+      timeLimitSec: 30,
+      debrief: 'Redirection writes output to a file.',
+    });
+    expect(next).toMatchObject({
+      kind: 'terminal',
+      instructions: 'Create notes.txt.',
+      timeLimitSec: 30,
+    });
+
+    next = addTerminalReferenceCommand(next);
+    if (next.kind !== 'terminal') throw new Error('expected terminal');
+    expect(next.referenceCommands).toEqual(['echo done > notes.txt', '']);
+
+    next = updateTerminalReferenceCommand(next, 1, 'pwd');
+    if (next.kind !== 'terminal') throw new Error('expected terminal');
+    expect(next.referenceCommands).toEqual(['echo done > notes.txt', 'pwd']);
+
+    next = removeTerminalReferenceCommand(next, 0);
+    if (next.kind !== 'terminal') throw new Error('expected terminal');
+    expect(next.referenceCommands).toEqual(['pwd']);
+
+    next = setTerminalReferenceCommands(next, ['ls']);
+    if (next.kind !== 'terminal') throw new Error('expected terminal');
+    expect(next.referenceCommands).toEqual(['ls']);
+  });
+
+  it('adds, updates and removes terminal checks of every family', () => {
+    let next = addTerminalCheck(terminal, 'expectStdout');
+    if (next.kind !== 'terminal') throw new Error('expected terminal');
+    expect(next.checks[1]).toMatchObject({ type: 'expectStdout', expected: '', mode: 'exact' });
+
+    next = addTerminalCheck(next, 'expectFile');
+    if (next.kind !== 'terminal') throw new Error('expected terminal');
+    expect(next.checks[2]).toMatchObject({
+      type: 'expectFile',
+      path: 'notes.txt',
+      expected: '',
+    });
+
+    next = addTerminalCheck(next, 'expectState');
+    if (next.kind !== 'terminal') throw new Error('expected terminal');
+    expect(next.checks[3]).toMatchObject({ type: 'expectState', path: 'cwd' });
+
+    next = updateTerminalCheck(next, 1, { expected: 'done', mode: 'contains' });
+    if (next.kind !== 'terminal') throw new Error('expected terminal');
+    expect(next.checks[1]).toMatchObject({ expected: 'done', mode: 'contains' });
+
+    next = removeTerminalCheck(next, 1);
+    if (next.kind !== 'terminal') throw new Error('expected terminal');
+    expect(next.checks).toHaveLength(3);
+  });
+
+  it('adds and edits terminal workspace files', () => {
+    let next = addActivityFile(terminal);
+    if (next.kind !== 'terminal') throw new Error('expected terminal');
+    expect(next.files[1].path).toBe('file2.txt');
+    next = updateActivityFile(next, 1, { content: 'notes' });
+    if (next.kind !== 'terminal') throw new Error('expected terminal');
+    expect(next.files[1].content).toBe('notes');
+    next = removeActivityFile(next, 1);
+    if (next.kind !== 'terminal') throw new Error('expected terminal');
+    expect(next.files).toHaveLength(1);
+  });
+
+  it('creates a valid terminal stub from another lab kind', () => {
+    const next = switchActivityKind(activity(), 'terminal');
+    if (next.kind !== 'terminal') throw new Error('expected terminal');
+    expect(next).toMatchObject({ kind: 'terminal', instructions: 'Write add().' });
+    expect(next.referenceCommands).toEqual([]);
+    expect(validateActivityContent(next)).toEqual({ valid: true });
   });
 });

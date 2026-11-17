@@ -544,7 +544,8 @@
         "setupMissing": "أضف SQL التهيئة لتبدأ كل محاولة من المخطط نفسه.",
         "starterMissing": "أضف استعلامًا مبدئيًا يعمل لكنه يفشل في فحص واحد على الأقل.",
         "noReferenceSql": "أضف SQL المرجعي ثم تحقق من المختبر.",
-        "referenceMatchesStarter": "SQL المرجعي مطابق لـ SQL المبدئي."
+        "referenceMatchesStarter": "SQL المرجعي مطابق لـ SQL المبدئي.",
+        "noReferenceCommands": "أضف أوامر مرجعية حتى يمكن التحقق من الفحوص."
       },
       "expectedRows": "الصفوف المتوقعة (JSON)",
       "invalidRows": "أدخل مصفوفة JSON من الصفوف، مثل [[\"Ada\", 24]].",
@@ -560,7 +561,18 @@
       "kind": "نوع المختبر",
       "kindDescription": "يؤدي التبديل إلى إعادة ضبط الحقول الخاصة بالنوع الآخر؛ ويمكن للإلغاء استعادتها.",
       "kindCode": "كود",
-      "kindSql": "SQL"
+      "kindSql": "SQL",
+      "kindTerminal": "الطرفية",
+      "terminalFilesDescription": "ملفات تُزرع في المجلد الرئيسي للمتعلم، ويمكن للأوامر تعديلها.",
+      "terminalChecksDescription": "تفحص الفحوص الجلسة المحاكاة: المخرجات والملفات والحالة النهائية.",
+      "checkState": "الحالة النهائية",
+      "statePath": "مسار الحالة",
+      "statePathHint": "cwd أو env.NAME أو file:path",
+      "stdout": "الخرج القياسي",
+      "referenceCommands": "أوامر مرجعية",
+      "referenceCommandsDescription": "تُنفَّذ بالترتيب ويجب أن تحقق كل الفحوص. لا تظهر أثناء التشغيل.",
+      "addReferenceCommand": "إضافة أمر",
+      "commandPlaceholder": "مثال: echo done > notes.txt"
     },
     "cue": {
       "speech": "السرد",
@@ -881,7 +893,11 @@
     "sqlEmptyOutput": "انتهى الاستعلام دون نتيجة للعرض.",
     "sqlError": "خطأ SQL",
     "sqlProbeError": "فشل استعلام الفحص: {{id}}",
-    "sqlEmptyResult": "لم تُرجع أي صفوف."
+    "sqlEmptyResult": "لم تُرجع أي صفوف.",
+    "terminalSession": "الجلسة",
+    "terminalEmpty": "اكتب أمرًا واضغط Enter. تتحدث الفحوص أثناء عملك.",
+    "terminalInput": "الأمر",
+    "terminalPlaceholder": "اكتب أمرًا…"
   },
   "roundtable": {
     "teacher": "المعلم",

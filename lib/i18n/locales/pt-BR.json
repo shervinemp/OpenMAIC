@@ -520,7 +520,8 @@
         "setupMissing": "Adicione SQL de inicialização para que cada tentativa comece do mesmo esquema.",
         "starterMissing": "Adicione uma consulta inicial que execute mas falhe em pelo menos uma verificação.",
         "noReferenceSql": "Adicione o SQL de referência e depois verifique o laboratório.",
-        "referenceMatchesStarter": "O SQL de referência é idêntico ao inicial."
+        "referenceMatchesStarter": "O SQL de referência é idêntico ao inicial.",
+        "noReferenceCommands": "Adicione comandos de referência para que as verificações possam ser validadas."
       },
       "expectedRows": "Linhas esperadas (JSON)",
       "invalidRows": "Digite um array JSON de linhas, por exemplo [[\"Ada\", 24]].",
@@ -536,7 +537,18 @@
       "kind": "Tipo de laboratório",
       "kindDescription": "Trocar o tipo redefine os campos específicos do outro tipo; desfazer os restaura.",
       "kindCode": "Código",
-      "kindSql": "SQL"
+      "kindSql": "SQL",
+      "kindTerminal": "Terminal",
+      "terminalFilesDescription": "Arquivos colocados no diretório pessoal do aluno. Os comandos podem editá-los.",
+      "terminalChecksDescription": "As verificações inspecionam a sessão simulada: saída, arquivos e estado final.",
+      "checkState": "Estado final",
+      "statePath": "Caminho de estado",
+      "statePathHint": "cwd, env.NAME ou file:path",
+      "stdout": "Saída padrão",
+      "referenceCommands": "Comandos de referência",
+      "referenceCommandsDescription": "Executados em ordem; precisam satisfazer todas as verificações. Nunca aparecem na reprodução.",
+      "addReferenceCommand": "Adicionar comando",
+      "commandPlaceholder": "ex.: echo done > notes.txt"
     },
     "cue": {
       "speech": "Narração",
@@ -881,7 +893,11 @@
     "sqlEmptyOutput": "A consulta terminou sem um resultado para mostrar.",
     "sqlError": "Erro de SQL",
     "sqlProbeError": "Falha na consulta de verificação: {{id}}",
-    "sqlEmptyResult": "Nenhuma linha retornada."
+    "sqlEmptyResult": "Nenhuma linha retornada.",
+    "terminalSession": "Sessão",
+    "terminalEmpty": "Digite um comando e pressione Enter. As verificações são atualizadas conforme você trabalha.",
+    "terminalInput": "Comando",
+    "terminalPlaceholder": "Digite um comando…"
   },
   "roundtable": {
     "teacher": "PROFESSOR",

@@ -111,15 +111,15 @@ export function VerificationPanel({ report }: { report: ActivityVerification }) 
 
 /**
  * Lab-family switch. Changing it resets the kind-specific fields to a valid
- * stub (undo restores them), so an author can start a SQL lab from the rail's
- * default code lab.
+ * stub (undo restores them), so an author can start a SQL or terminal lab from
+ * the rail's default code lab.
  */
 export function ActivityKindSelect({
   value,
   onChange,
 }: {
-  value: 'code' | 'sql';
-  onChange: (kind: 'code' | 'sql') => void;
+  value: 'code' | 'sql' | 'terminal';
+  onChange: (kind: 'code' | 'sql' | 'terminal') => void;
 }) {
   const { t } = useI18n();
   return (
@@ -130,11 +130,15 @@ export function ActivityKindSelect({
       </div>
       <select
         value={value}
-        onChange={(event) => onChange(event.target.value === 'sql' ? 'sql' : 'code')}
+        onChange={(event) => {
+          const next = event.target.value;
+          onChange(next === 'sql' ? 'sql' : next === 'terminal' ? 'terminal' : 'code');
+        }}
         className="rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
       >
         <option value="code">{t('edit.activity.kindCode')}</option>
         <option value="sql">{t('edit.activity.kindSql')}</option>
+        <option value="terminal">{t('edit.activity.kindTerminal')}</option>
       </select>
     </div>
   );

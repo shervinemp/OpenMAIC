@@ -544,7 +544,8 @@
         "setupMissing": "Thêm SQL khởi tạo để mỗi lần thử bắt đầu từ cùng một lược đồ.",
         "starterMissing": "Thêm truy vấn khởi đầu chạy được nhưng trượt ít nhất một kiểm tra.",
         "noReferenceSql": "Thêm SQL tham chiếu rồi xác minh phòng thực hành.",
-        "referenceMatchesStarter": "SQL tham chiếu giống hệt SQL khởi đầu."
+        "referenceMatchesStarter": "SQL tham chiếu giống hệt SQL khởi đầu.",
+        "noReferenceCommands": "Thêm lệnh tham chiếu để có thể xác minh các kiểm tra."
       },
       "expectedRows": "Các hàng kỳ vọng (JSON)",
       "invalidRows": "Nhập mảng JSON các hàng, ví dụ [[\"Ada\", 24]].",
@@ -560,7 +561,18 @@
       "kind": "Loại phòng thực hành",
       "kindDescription": "Chuyển loại sẽ đặt lại các trường riêng của loại kia; hoàn tác sẽ khôi phục chúng.",
       "kindCode": "Mã",
-      "kindSql": "SQL"
+      "kindSql": "SQL",
+      "kindTerminal": "Dòng lệnh",
+      "terminalFilesDescription": "Các tệp được đặt trong thư mục chính của người học. Lệnh có thể sửa chúng.",
+      "terminalChecksDescription": "Kiểm tra xem phiên mô phỏng: đầu ra, tệp và trạng thái cuối cùng.",
+      "checkState": "Trạng thái cuối",
+      "statePath": "Đường dẫn trạng thái",
+      "statePathHint": "cwd, env.NAME hoặc file:path",
+      "stdout": "Đầu ra chuẩn",
+      "referenceCommands": "Lệnh tham chiếu",
+      "referenceCommandsDescription": "Chạy theo thứ tự; phải thỏa mọi kiểm tra. Không bao giờ hiển thị khi phát lại.",
+      "addReferenceCommand": "Thêm lệnh",
+      "commandPlaceholder": "ví dụ: echo done > notes.txt"
     },
     "cue": {
       "speech": "Lời giảng",
@@ -881,7 +893,11 @@
     "sqlEmptyOutput": "Truy vấn kết thúc mà không có kết quả để hiển thị.",
     "sqlError": "Lỗi SQL",
     "sqlProbeError": "Truy vấn kiểm tra thất bại: {{id}}",
-    "sqlEmptyResult": "Không trả về hàng nào."
+    "sqlEmptyResult": "Không trả về hàng nào.",
+    "terminalSession": "Phiên",
+    "terminalEmpty": "Nhập lệnh và nhấn Enter. Các kiểm tra cập nhật trong khi bạn làm việc.",
+    "terminalInput": "Lệnh",
+    "terminalPlaceholder": "Nhập lệnh…"
   },
   "roundtable": {
     "teacher": "GIẢNG VIÊN",

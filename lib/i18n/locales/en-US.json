@@ -544,7 +544,8 @@
         "setupMissing": "Add setup SQL so every attempt starts from the same schema.",
         "starterMissing": "Add a starter query that runs but fails at least one check.",
         "noReferenceSql": "Add reference SQL, then verify the lab.",
-        "referenceMatchesStarter": "The reference SQL is identical to the starter."
+        "referenceMatchesStarter": "The reference SQL is identical to the starter.",
+        "noReferenceCommands": "Add reference commands so the checks can be verified."
       },
       "expectedRows": "Expected rows (JSON)",
       "invalidRows": "Enter a JSON array of rows, e.g. [[\"Ada\", 24]].",
@@ -560,7 +561,18 @@
       "kind": "Lab type",
       "kindDescription": "Switching resets the fields specific to the other lab type; undo restores them.",
       "kindCode": "Code",
-      "kindSql": "SQL"
+      "kindSql": "SQL",
+      "kindTerminal": "Terminal",
+      "terminalFilesDescription": "Files seeded in the learner's home directory. Commands can edit them.",
+      "terminalChecksDescription": "Checks inspect the simulated session: output, files, and final state.",
+      "checkState": "Final state",
+      "statePath": "State path",
+      "statePathHint": "cwd, env.NAME, or file:path",
+      "stdout": "Standard output",
+      "referenceCommands": "Reference commands",
+      "referenceCommandsDescription": "Run in order; they must satisfy every check. Never shown in playback.",
+      "addReferenceCommand": "Add command",
+      "commandPlaceholder": "e.g. echo done > notes.txt"
     },
     "cue": {
       "speech": "Narration",
@@ -881,7 +893,11 @@
     "sqlEmptyOutput": "The query ran without a result to show.",
     "sqlError": "SQL error",
     "sqlProbeError": "Probe failed: {{id}}",
-    "sqlEmptyResult": "No rows returned."
+    "sqlEmptyResult": "No rows returned.",
+    "terminalSession": "Session",
+    "terminalEmpty": "Type a command and press Enter. Checks update as you work.",
+    "terminalInput": "Command",
+    "terminalPlaceholder": "Type a command…"
   },
   "roundtable": {
     "teacher": "TEACHER",

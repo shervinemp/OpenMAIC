@@ -544,7 +544,8 @@
         "setupMissing": "Ajoutez le SQL d’initialisation pour que chaque tentative parte du même schéma.",
         "starterMissing": "Ajoutez une requête de départ qui s’exécute mais échoue à au moins une vérification.",
         "noReferenceSql": "Ajoutez le SQL de référence, puis vérifiez l'atelier.",
-        "referenceMatchesStarter": "Le SQL de référence est identique au SQL de départ."
+        "referenceMatchesStarter": "Le SQL de référence est identique au SQL de départ.",
+        "noReferenceCommands": "Ajoutez des commandes de référence pour pouvoir vérifier les contrôles."
       },
       "expectedRows": "Lignes attendues (JSON)",
       "invalidRows": "Saisissez un tableau JSON de lignes, par ex. [[\"Ada\", 24]].",
@@ -560,7 +561,18 @@
       "kind": "Type d'atelier",
       "kindDescription": "Le changement réinitialise les champs propres à l'autre type ; annuler les restaure.",
       "kindCode": "Code",
-      "kindSql": "SQL"
+      "kindSql": "SQL",
+      "kindTerminal": "Terminal",
+      "terminalFilesDescription": "Fichiers placés dans le dossier personnel de l'apprenant. Les commandes peuvent les modifier.",
+      "terminalChecksDescription": "Les vérifications inspectent la session simulée : sortie, fichiers et état final.",
+      "checkState": "État final",
+      "statePath": "Chemin d’état",
+      "statePathHint": "cwd, env.NAME ou file:path",
+      "stdout": "Sortie standard",
+      "referenceCommands": "Commandes de référence",
+      "referenceCommandsDescription": "Exécutées dans l'ordre ; elles doivent satisfaire toutes les vérifications. Jamais affichées en lecture.",
+      "addReferenceCommand": "Ajouter une commande",
+      "commandPlaceholder": "ex. echo done > notes.txt"
     },
     "cue": {
       "speech": "Narration",
@@ -881,7 +893,11 @@
     "sqlEmptyOutput": "La requête s'est terminée sans résultat à afficher.",
     "sqlError": "Erreur SQL",
     "sqlProbeError": "Échec de la requête de vérification : {{id}}",
-    "sqlEmptyResult": "Aucune ligne renvoyée."
+    "sqlEmptyResult": "Aucune ligne renvoyée.",
+    "terminalSession": "Session",
+    "terminalEmpty": "Saisissez une commande et appuyez sur Entrée. Les vérifications se mettent à jour au fil de votre travail.",
+    "terminalInput": "Commande",
+    "terminalPlaceholder": "Saisir une commande…"
   },
   "roundtable": {
     "teacher": "PROFESSEUR",

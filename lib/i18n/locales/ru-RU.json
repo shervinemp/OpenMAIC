@@ -544,7 +544,8 @@
         "setupMissing": "Добавьте SQL инициализации, чтобы каждая попытка начиналась с одной схемы.",
         "starterMissing": "Добавьте стартовый запрос, который выполняется, но проваливает хотя бы одну проверку.",
         "noReferenceSql": "Добавьте эталонный SQL и затем проверьте практикум.",
-        "referenceMatchesStarter": "Эталонный SQL совпадает со стартовым."
+        "referenceMatchesStarter": "Эталонный SQL совпадает со стартовым.",
+        "noReferenceCommands": "Добавьте эталонные команды, чтобы проверки можно было подтвердить."
       },
       "expectedRows": "Ожидаемые строки (JSON)",
       "invalidRows": "Введите JSON-массив строк, например [[\"Ada\", 24]].",
@@ -560,7 +561,18 @@
       "kind": "Тип практикума",
       "kindDescription": "При переключении поля другого типа сбрасываются; отмена их восстановит.",
       "kindCode": "Код",
-      "kindSql": "SQL"
+      "kindSql": "SQL",
+      "kindTerminal": "Терминал",
+      "terminalFilesDescription": "Файлы в домашнем каталоге учащегося. Команды могут их изменять.",
+      "terminalChecksDescription": "Проверки смотрят на смоделированную сессию: вывод, файлы и итоговое состояние.",
+      "checkState": "Итоговое состояние",
+      "statePath": "Путь состояния",
+      "statePathHint": "cwd, env.NAME или file:path",
+      "stdout": "Стандартный вывод",
+      "referenceCommands": "Эталонные команды",
+      "referenceCommandsDescription": "Выполняются по порядку; должны пройти все проверки. В воспроизведении не показываются.",
+      "addReferenceCommand": "Добавить команду",
+      "commandPlaceholder": "например, echo done > notes.txt"
     },
     "cue": {
       "speech": "Закадровый текст",
@@ -881,7 +893,11 @@
     "sqlEmptyOutput": "Запрос завершился без результата.",
     "sqlError": "Ошибка SQL",
     "sqlProbeError": "Проверочный запрос не выполнен: {{id}}",
-    "sqlEmptyResult": "Строки не возвращены."
+    "sqlEmptyResult": "Строки не возвращены.",
+    "terminalSession": "Сессия",
+    "terminalEmpty": "Введите команду и нажмите Enter. Проверки обновляются по мере работы.",
+    "terminalInput": "Команда",
+    "terminalPlaceholder": "Введите команду…"
   },
   "roundtable": {
     "teacher": "УЧИТЕЛЬ",

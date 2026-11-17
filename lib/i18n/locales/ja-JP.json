@@ -544,7 +544,8 @@
         "setupMissing": "初期化 SQL を追加し、毎回同じスキーマから始まるようにしてください。",
         "starterMissing": "実行できて、少なくとも 1 つのチェックに失敗するスターターを追加してください。",
         "noReferenceSql": "模範 SQL を追加してからラボを検証してください。",
-        "referenceMatchesStarter": "模範 SQL がスターターと同一です。"
+        "referenceMatchesStarter": "模範 SQL がスターターと同一です。",
+        "noReferenceCommands": "チェックを検証するために模範コマンドを追加してください。"
       },
       "expectedRows": "期待する行（JSON）",
       "invalidRows": "行の JSON 配列を入力してください（例: [[\"Ada\", 24]]）。",
@@ -560,7 +561,18 @@
       "kind": "ラボの種類",
       "kindDescription": "切り替えると、もう一方の種類に固有のフィールドがリセットされます。元に戻すと復元できます。",
       "kindCode": "コード",
-      "kindSql": "SQL"
+      "kindSql": "SQL",
+      "kindTerminal": "ターミナル",
+      "terminalFilesDescription": "学習者のホームディレクトリに配置されるファイルです。コマンドで編集できます。",
+      "terminalChecksDescription": "チェックはシミュレーションされたセッションの出力・ファイル・最終状態を確認します。",
+      "checkState": "最終状態",
+      "statePath": "状態パス",
+      "statePathHint": "cwd、env.NAME、file:path のいずれか",
+      "stdout": "標準出力",
+      "referenceCommands": "模範コマンド",
+      "referenceCommandsDescription": "順番に実行され、すべてのチェックを満たす必要があります。再生時には表示されません。",
+      "addReferenceCommand": "コマンドを追加",
+      "commandPlaceholder": "例: echo done > notes.txt"
     },
     "cue": {
       "speech": "ナレーション",
@@ -881,7 +893,11 @@
     "sqlEmptyOutput": "クエリは結果なしで終了しました。",
     "sqlError": "SQL エラー",
     "sqlProbeError": "プローブが失敗しました: {{id}}",
-    "sqlEmptyResult": "行は返されませんでした。"
+    "sqlEmptyResult": "行は返されませんでした。",
+    "terminalSession": "セッション",
+    "terminalEmpty": "コマンドを入力して Enter を押してください。作業に合わせてチェックが更新されます。",
+    "terminalInput": "コマンド",
+    "terminalPlaceholder": "コマンドを入力…"
   },
   "roundtable": {
     "teacher": "教師",

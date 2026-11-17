@@ -18,6 +18,8 @@ import {
   addActivityReferenceFile,
   addActivityTest,
   addSqlCheck,
+  addTerminalCheck,
+  addTerminalReferenceCommand,
   moveActivityTest,
   removeActivityCheck,
   removeActivityFile,
@@ -25,10 +27,13 @@ import {
   removeActivityReferenceFile,
   removeActivityTest,
   removeSqlCheck,
+  removeTerminalCheck,
+  removeTerminalReferenceCommand,
   setActivityHints,
   setSqlReference,
   setSqlSetup,
   setSqlStarter,
+  setTerminalReferenceCommands,
   switchActivityKind,
   updateActivityBasics,
   updateActivityCheck,
@@ -38,6 +43,9 @@ import {
   updateActivityTest,
   updateSqlActivityBasics,
   updateSqlCheck,
+  updateTerminalBasics,
+  updateTerminalCheck,
+  updateTerminalReferenceCommand,
 } from './activity-edit-ops';
 import { useActivityEditSession } from './activity-edit-session';
 
@@ -211,8 +219,59 @@ export function removeSqlCheckBound(index: number): void {
   commitActivity(removeSqlCheck(resolvePresent(), index));
 }
 
-export function switchActivityKindBound(kind: 'code' | 'sql'): void {
+export function switchActivityKindBound(kind: 'code' | 'sql' | 'terminal'): void {
   commitActivity(switchActivityKind(resolvePresent(), kind));
+}
+
+export function updateTerminalBasicsBound(
+  patch: Parameters<typeof updateTerminalBasics>[1],
+  coalesceKey: string,
+): void {
+  useActivityEditSession
+    .getState()
+    .commitText(updateTerminalBasics(resolvePresent(), patch), coalesceKey);
+}
+
+export function setTerminalReferenceCommandsBound(commands: string[]): void {
+  commitActivity(setTerminalReferenceCommands(resolvePresent(), commands));
+}
+
+export function addTerminalReferenceCommandBound(): void {
+  commitActivity(addTerminalReferenceCommand(resolvePresent()));
+}
+
+export function updateTerminalReferenceCommandBound(index: number, value: string): void {
+  useActivityEditSession
+    .getState()
+    .commitText(
+      updateTerminalReferenceCommand(resolvePresent(), index, value),
+      `terminal-ref:${index}`,
+    );
+}
+
+export function removeTerminalReferenceCommandBound(index: number): void {
+  commitActivity(removeTerminalReferenceCommand(resolvePresent(), index));
+}
+
+export function addTerminalCheckBound(type: Parameters<typeof addTerminalCheck>[1]): void {
+  commitActivity(addTerminalCheck(resolvePresent(), type));
+}
+
+export function updateTerminalCheckBound(
+  index: number,
+  patch: Parameters<typeof updateTerminalCheck>[2],
+  field: string,
+): void {
+  useActivityEditSession
+    .getState()
+    .commitText(
+      updateTerminalCheck(resolvePresent(), index, patch),
+      `terminalcheck:${index}:${field}`,
+    );
+}
+
+export function removeTerminalCheckBound(index: number): void {
+  commitActivity(removeTerminalCheck(resolvePresent(), index));
 }
 
 // ---------------------------------------------------------------------------
@@ -231,13 +290,19 @@ export function buildActivityHints(
     hints.push({ id, severity, message: t(`edit.activity.hint.${key}`) });
   };
 
-  const current = content.kind === 'code' || content.kind === 'sql' ? content : null;
-  if (!current) {
-    add('unsupported', 'info', 'unsupportedKind');
+  const current = content;
+  if (!current.instructions.trim()) add('instructions', 'suggestion', 'emptyInstructions');
+
+  if (current.kind === 'terminal') {
+    if (current.checks.length === 0) add('checks', 'warning', 'noChecks');
+    if (!current.referenceCommands || current.referenceCommands.length === 0) {
+      add('reference', 'suggestion', 'noReferenceCommands');
+    }
+    if (new Set(current.checks.map((check) => check.id)).size !== current.checks.length) {
+      add('duplicateChecks', 'warning', 'duplicateCheckIds');
+    }
     return hints;
   }
-
-  if (!current.instructions.trim()) add('instructions', 'suggestion', 'emptyInstructions');
 
   if (current.kind === 'sql') {
     if (!current.setupSql.trim()) add('setup', 'warning', 'setupMissing');

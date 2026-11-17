@@ -2,12 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, Loader2, ShieldCheck } from 'lucide-react';
-import type {
-  ActivityCheck,
-  ActivityContent,
-  CodeActivityCheck,
-  CodeActivityContent,
-} from '@/lib/types/stage';
+import type { ActivityCheck, CodeActivityCheck, CodeActivityContent } from '@/lib/types/stage';
 import type { ActivityRunner } from '@/lib/activity/code-runner';
 import { createPythonCodeRunner } from '@/lib/activity/code-runner';
 import { type ActivityVerification, verifyCodeActivity } from '@/lib/activity/verify';
@@ -25,6 +20,7 @@ import {
   VerificationPanel,
 } from './activity-form-ui';
 import { SqlActivityEditor } from './SqlActivityForm';
+import { TerminalActivityEditor } from './TerminalActivityForm';
 import {
   addActivityCheckBound,
   addActivityFileBound,
@@ -541,23 +537,6 @@ function CodeActivityEditor({ content }: { content: CodeActivityContent }) {
   );
 }
 
-function UnsupportedKind({ content }: { content: Exclude<ActivityContent, CodeActivityContent> }) {
-  const { t } = useI18n();
-  return (
-    <div className="flex h-full items-center justify-center bg-background p-6">
-      <div className="max-w-md rounded-xl border border-border/70 bg-card p-6 text-center">
-        <h2 className="text-base font-semibold">{t('edit.activity.unsupportedTitle')}</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {t('edit.activity.unsupportedBody', { kind: content.kind })}
-        </p>
-        <div className="mt-4 text-left text-sm">
-          <MarkdownText content={content.instructions} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function ActivityForm() {
   const sceneId = useActivitySurfaceLifecycle();
   const content = useResolvedActivityContent();
@@ -572,7 +551,7 @@ export function ActivityForm() {
       ) : content.kind === 'sql' ? (
         <SqlActivityEditor content={content} />
       ) : (
-        <UnsupportedKind content={content} />
+        <TerminalActivityEditor content={content} />
       )}
     </div>
   );

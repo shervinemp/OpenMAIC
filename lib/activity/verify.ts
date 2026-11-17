@@ -16,6 +16,7 @@ import type {
   ActivityFile,
   CodeActivityContent,
   SqlActivityContent,
+  TerminalActivityContent,
 } from '@/lib/types/stage';
 import { evaluateActivityChecks, type ActivityEvaluation } from './checks';
 import {
@@ -42,6 +43,7 @@ export interface ActivityVerification {
 
 export type CodeActivityVerification = ActivityVerification;
 export type SqlActivityVerification = ActivityVerification;
+export type TerminalActivityVerification = ActivityVerification;
 
 export interface ActivityVerificationOptions {
   /** Skip the starter mutation run (reference-only check). Defaults to false. */
@@ -50,6 +52,7 @@ export interface ActivityVerificationOptions {
 
 export type CodeActivityVerificationOptions = ActivityVerificationOptions;
 export type SqlActivityVerificationOptions = ActivityVerificationOptions;
+export type TerminalActivityVerificationOptions = ActivityVerificationOptions;
 
 /** Merge reference files over the starter workspace without mutating either. */
 export function referenceWorkspaceFiles(
@@ -247,5 +250,61 @@ export async function verifySqlActivity(
     starterRequest,
     options,
     'Reference SQL',
+  );
+}
+
+/**
+ * Verify a terminal activity. The reference command sequence and an empty
+ * starter session run against the same deterministic shell; the checks must be
+ * satisfiable by the reference and not already met by the seeded workspace.
+ */
+export async function verifyTerminalActivity(
+  activity: TerminalActivityContent,
+  runner: ActivityRunner,
+  options: ActivityVerificationOptions = {},
+): Promise<ActivityVerification> {
+  if (activity.checks.length === 0) {
+    return { ok: false, issues: ['The lab has no checks, so there is nothing to verify.'] };
+  }
+  const referenceCommands = (activity.referenceCommands ?? [])
+    .map((command) => command.trim())
+    .filter(Boolean);
+  if (referenceCommands.length === 0) {
+    return {
+      ok: false,
+      issues: [
+        'The lab has no reference commands. Add a command sequence so its checks can be proven satisfiable.',
+      ],
+    };
+  }
+
+  const referenceRequest = buildActivityRunRequest(activity, {
+    kind: 'terminal',
+    commands: referenceCommands,
+  });
+  if (!referenceRequest) {
+    return {
+      ok: false,
+      issues: ['The reference commands could not be submitted to the terminal runner.'],
+    };
+  }
+  const starterRequest = buildActivityRunRequest(activity, {
+    kind: 'terminal',
+    commands: [],
+  });
+  if (!starterRequest) {
+    return {
+      ok: false,
+      issues: ['The starter session could not be submitted to the terminal runner.'],
+    };
+  }
+
+  return verifyWithRequests(
+    activity,
+    runner,
+    referenceRequest,
+    starterRequest,
+    options,
+    'Reference commands',
   );
 }

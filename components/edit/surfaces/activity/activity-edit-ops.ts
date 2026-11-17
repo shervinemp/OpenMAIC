@@ -12,12 +12,17 @@
 import type {
   ActivityCheck,
   ActivityContent,
+  ActivityExpectFileCheck,
   ActivityExpectSqlRowsCheck,
+  ActivityExpectStateCheck,
+  ActivityExpectStdoutCheck,
   ActivityFile,
   ActivityTest,
   CodeActivityCheck,
   CodeActivityContent,
   SqlActivityContent,
+  TerminalActivityCheck,
+  TerminalActivityContent,
 } from '@/lib/types/stage';
 import { createElementId } from '@/lib/edit/element-id';
 
@@ -105,13 +110,21 @@ export function removeActivityHint(content: ActivityContent, index: number): Act
 // Workspace files
 // ---------------------------------------------------------------------------
 
+type FileBearingActivity = CodeActivityContent | TerminalActivityContent;
+
+/** Code and terminal labs both own a workspace file list; SQL does not. */
+function filesOf(content: ActivityContent): FileBearingActivity | null {
+  return content.kind === 'code' || content.kind === 'terminal' ? content : null;
+}
+
 export function addActivityFile(content: ActivityContent): ActivityContent {
-  const current = code(content);
+  const current = filesOf(content);
   if (!current) return content;
+  const extension = content.kind === 'code' ? 'py' : 'txt';
   const used = new Set(current.files.map((file) => file.path));
   let ordinal = current.files.length + 1;
-  let path = `file${ordinal}.py`;
-  while (used.has(path)) path = `file${++ordinal}.py`;
+  let path = `file${ordinal}.${extension}`;
+  while (used.has(path)) path = `file${++ordinal}.${extension}`;
   return {
     ...current,
     files: [...current.files, { path, content: '' }],
@@ -123,14 +136,14 @@ export function updateActivityFile(
   index: number,
   patch: Partial<ActivityFile>,
 ): ActivityContent {
-  const current = code(content);
+  const current = filesOf(content);
   if (!current || index < 0 || index >= current.files.length) return content;
   const files = current.files.map((file, i) => (i === index ? { ...file, ...patch } : file));
   return { ...current, files };
 }
 
 export function removeActivityFile(content: ActivityContent, index: number): ActivityContent {
-  const current = code(content);
+  const current = filesOf(content);
   if (!current || index < 0 || index >= current.files.length) return content;
   return { ...current, files: current.files.filter((_, i) => i !== index) };
 }
@@ -340,7 +353,7 @@ export function removeSqlCheck(content: ActivityContent, index: number): Activit
  */
 export function switchActivityKind(
   content: ActivityContent,
-  kind: 'code' | 'sql',
+  kind: 'code' | 'sql' | 'terminal',
 ): ActivityContent {
   if (content.kind === kind) return content;
   const common = {
@@ -361,6 +374,22 @@ export function switchActivityKind(
       checks: [{ id: createElementId('check'), type: 'expectTests' }],
     };
   }
+  if (kind === 'terminal') {
+    return {
+      ...common,
+      kind: 'terminal',
+      files: [{ path: 'README.txt', content: 'Workspace files appear here.\n' }],
+      referenceCommands: [],
+      checks: [
+        {
+          id: createElementId('check'),
+          type: 'expectFile',
+          path: 'notes.txt',
+          expected: 'done',
+        },
+      ],
+    };
+  }
   return {
     ...common,
     kind: 'sql',
@@ -375,4 +404,120 @@ export function switchActivityKind(
       },
     ],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Terminal labs
+// ---------------------------------------------------------------------------
+
+function terminal(content: ActivityContent): TerminalActivityContent | null {
+  return content.kind === 'terminal' ? content : null;
+}
+
+export function updateTerminalBasics(
+  content: ActivityContent,
+  patch: Partial<Pick<TerminalActivityContent, 'instructions' | 'timeLimitSec' | 'debrief'>>,
+): ActivityContent {
+  const current = terminal(content);
+  if (!current) return content;
+  return { ...current, ...patch };
+}
+
+export function setTerminalReferenceCommands(
+  content: ActivityContent,
+  commands: string[],
+): ActivityContent {
+  const current = terminal(content);
+  if (!current) return content;
+  return { ...current, referenceCommands: commands };
+}
+
+export function addTerminalReferenceCommand(content: ActivityContent): ActivityContent {
+  const current = terminal(content);
+  if (!current) return content;
+  return { ...current, referenceCommands: [...(current.referenceCommands ?? []), ''] };
+}
+
+export function updateTerminalReferenceCommand(
+  content: ActivityContent,
+  index: number,
+  value: string,
+): ActivityContent {
+  const current = terminal(content);
+  const commands = current?.referenceCommands;
+  if (!current || !commands || index < 0 || index >= commands.length) return content;
+  return {
+    ...current,
+    referenceCommands: commands.map((command, i) => (i === index ? value : command)),
+  };
+}
+
+export function removeTerminalReferenceCommand(
+  content: ActivityContent,
+  index: number,
+): ActivityContent {
+  const current = terminal(content);
+  const commands = current?.referenceCommands;
+  if (!current || !commands || index < 0 || index >= commands.length) return content;
+  return { ...current, referenceCommands: commands.filter((_, i) => i !== index) };
+}
+
+export function createTerminalCheck(type: TerminalActivityCheck['type']): TerminalActivityCheck {
+  const id = createElementId('check');
+  if (type === 'expectStdout') {
+    return {
+      id,
+      type: 'expectStdout',
+      expected: '',
+      mode: 'exact',
+    } satisfies ActivityExpectStdoutCheck;
+  }
+  if (type === 'expectFile') {
+    return {
+      id,
+      type: 'expectFile',
+      path: 'notes.txt',
+      expected: '',
+      mode: 'exact',
+    } satisfies ActivityExpectFileCheck;
+  }
+  return {
+    id,
+    type: 'expectState',
+    path: 'cwd',
+    expected: '/home/learner',
+  } satisfies ActivityExpectStateCheck;
+}
+
+export function addTerminalCheck(
+  content: ActivityContent,
+  type: TerminalActivityCheck['type'],
+): ActivityContent {
+  const current = terminal(content);
+  if (!current) return content;
+  return { ...current, checks: [...current.checks, createTerminalCheck(type)] };
+}
+
+export function updateTerminalCheck(
+  content: ActivityContent,
+  index: number,
+  patch:
+    | Partial<ActivityExpectStdoutCheck>
+    | Partial<ActivityExpectFileCheck>
+    | Partial<ActivityExpectStateCheck>,
+): ActivityContent {
+  const current = terminal(content);
+  if (!current || index < 0 || index >= current.checks.length) return content;
+  return {
+    ...current,
+    checks: current.checks.map((check, i) =>
+      i === index ? ({ ...check, ...patch } as TerminalActivityCheck) : check,
+    ),
+  };
+}
+
+export function removeTerminalCheck(content: ActivityContent, index: number): ActivityContent {
+  const current = terminal(content);
+  if (!current || index < 0 || index >= current.checks.length) return content;
+  return { ...current, checks: current.checks.filter((_, i) => i !== index) };
 }

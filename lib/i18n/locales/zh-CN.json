@@ -544,7 +544,8 @@
         "setupMissing": "添加初始化 SQL，让每次尝试都从相同的表结构开始。",
         "starterMissing": "添加一个能运行但至少有一项检查失败的初始查询。",
         "noReferenceSql": "添加参考 SQL，然后验证实验。",
-        "referenceMatchesStarter": "参考 SQL 与初始 SQL 完全相同。"
+        "referenceMatchesStarter": "参考 SQL 与初始 SQL 完全相同。",
+        "noReferenceCommands": "添加参考命令，以便验证检查项。"
       },
       "expectedRows": "期望结果行（JSON）",
       "invalidRows": "请输入行的 JSON 数组，例如 [[\"Ada\", 24]]。",
@@ -560,7 +561,18 @@
       "kind": "实验类型",
       "kindDescription": "切换会重置另一种实验类型特有的字段；撤销可恢复。",
       "kindCode": "代码",
-      "kindSql": "SQL"
+      "kindSql": "SQL",
+      "kindTerminal": "终端",
+      "terminalFilesDescription": "播种到学习者主目录的文件，命令可以编辑它们。",
+      "terminalChecksDescription": "检查项会查看模拟会话：输出、文件和最终状态。",
+      "checkState": "最终状态",
+      "statePath": "状态路径",
+      "statePathHint": "cwd、env.NAME 或 file:path",
+      "stdout": "标准输出",
+      "referenceCommands": "参考命令",
+      "referenceCommandsDescription": "按顺序执行；必须满足所有检查。不会在播放中显示。",
+      "addReferenceCommand": "添加命令",
+      "commandPlaceholder": "例如 echo done > notes.txt"
     },
     "cue": {
       "speech": "讲解",
@@ -881,7 +893,11 @@
     "sqlEmptyOutput": "查询已运行，但没有可显示的结果。",
     "sqlError": "SQL 错误",
     "sqlProbeError": "检查查询失败：{{id}}",
-    "sqlEmptyResult": "没有返回任何行。"
+    "sqlEmptyResult": "没有返回任何行。",
+    "terminalSession": "会话",
+    "terminalEmpty": "输入命令并按回车。检查项会随操作更新。",
+    "terminalInput": "命令",
+    "terminalPlaceholder": "输入命令…"
   },
   "roundtable": {
     "teacher": "教师",

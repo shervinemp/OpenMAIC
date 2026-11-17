@@ -233,4 +233,88 @@ test.describe('Activity content surface', () => {
       contentType: 'image/png',
     });
   });
+
+  test('verify the terminal reference, then complete the shell session', async ({
+    page,
+  }, testInfo) => {
+    const STAGE = await seedTerminalActivity(page, 'e2e-terminal-activity');
+
+    const classroom = new ClassroomPage(page);
+    await classroom.goto(STAGE);
+    await classroom.waitForLoaded();
+
+    const { editor, setProMode } = activityEditor(page);
+    await setProMode(true);
+    await expect(editor).toBeVisible({ timeout: 10_000 });
+
+    await expect(page.getByTestId('activity-instructions')).toHaveValue(
+      /Create notes.txt containing done/,
+    );
+    await page.getByTestId('activity-verify').click();
+    await expect(page.getByTestId('activity-verification')).toContainText('Lab verified', {
+      timeout: 30_000,
+    });
+
+    await testInfo.attach('terminal-activity-editor-verified', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+
+    await setProMode(false);
+
+    const input = page.getByTestId('activity-terminal');
+    await input.fill('echo done > notes.txt');
+    await input.press('Enter');
+    await expect(page.getByTestId('activity-status')).toContainText(
+      'Some checks need another look',
+      { timeout: 10_000 },
+    );
+
+    await input.fill('pwd');
+    await input.press('Enter');
+    await expect(page.getByTestId('activity-status')).toContainText('All checks passed', {
+      timeout: 10_000,
+    });
+    await expect(page.getByText('/home/learner')).toBeVisible();
+
+    await testInfo.attach('terminal-activity-playback-passed', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+  });
 });
+
+async function seedTerminalActivity(page: Page, prefix: string): Promise<string> {
+  await page.addInitScript((settings) => {
+    localStorage.setItem('maic:account:settings-storage', settings);
+  }, SETTINGS_STORAGE);
+  await page.goto('/', { waitUntil: 'networkidle' });
+  const stageId = uniqueStageId(prefix);
+  const now = Date.now();
+  await seedDocument(page, stageId, {
+    id: 'scene-terminal',
+    stageId,
+    type: 'activity',
+    title: 'Write a note in the shell',
+    order: 0,
+    content: {
+      type: 'activity',
+      kind: 'terminal',
+      instructions: 'Create notes.txt containing done, then print the working directory.',
+      files: [{ path: 'README.txt', content: 'workspace\n' }],
+      checks: [
+        { id: 'file', type: 'expectFile', path: 'notes.txt', expected: 'done' },
+        {
+          id: 'cwd',
+          type: 'expectStdout',
+          expected: '/home/learner',
+          mode: 'contains',
+        },
+      ],
+      referenceCommands: ['echo done > notes.txt', 'pwd'],
+    },
+    createdAt: now,
+    updatedAt: now,
+  });
+  return stageId;
+}

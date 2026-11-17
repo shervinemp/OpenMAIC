@@ -472,7 +472,8 @@
         "setupMissing": "新增初始化 SQL，讓每次嘗試都從相同的資料表結構開始。",
         "starterMissing": "新增一個能執行但至少有一項檢查失敗的初始查詢。",
         "noReferenceSql": "新增參考 SQL，然後驗證實驗。",
-        "referenceMatchesStarter": "參考 SQL 與初始 SQL 完全相同。"
+        "referenceMatchesStarter": "參考 SQL 與初始 SQL 完全相同。",
+        "noReferenceCommands": "新增參考指令，以便驗證檢查項目。"
       },
       "expectedRows": "預期結果列（JSON）",
       "invalidRows": "請輸入資料列的 JSON 陣列，例如 [[\"Ada\", 24]]。",
@@ -488,7 +489,18 @@
       "kind": "實驗類型",
       "kindDescription": "切換會重設另一種實驗類型特有的欄位；復原可還原。",
       "kindCode": "程式碼",
-      "kindSql": "SQL"
+      "kindSql": "SQL",
+      "kindTerminal": "終端機",
+      "terminalFilesDescription": "植入學習者主目錄的檔案，指令可以編輯它們。",
+      "terminalChecksDescription": "檢查項目會檢視模擬工作階段：輸出、檔案和最終狀態。",
+      "checkState": "最終狀態",
+      "statePath": "狀態路徑",
+      "statePathHint": "cwd、env.NAME 或 file:path",
+      "stdout": "標準輸出",
+      "referenceCommands": "參考指令",
+      "referenceCommandsDescription": "依序執行；必須滿足所有檢查。不會在播放中顯示。",
+      "addReferenceCommand": "新增指令",
+      "commandPlaceholder": "例如 echo done > notes.txt"
     },
     "cue": {
       "speech": "旁白",
@@ -858,7 +870,11 @@
     "sqlEmptyOutput": "查詢已執行，但沒有可顯示的結果。",
     "sqlError": "SQL 錯誤",
     "sqlProbeError": "檢查查詢失敗：{{id}}",
-    "sqlEmptyResult": "沒有傳回任何資料列。"
+    "sqlEmptyResult": "沒有傳回任何資料列。",
+    "terminalSession": "工作階段",
+    "terminalEmpty": "輸入指令並按 Enter。檢查項目會隨操作更新。",
+    "terminalInput": "指令",
+    "terminalPlaceholder": "輸入指令…"
   },
   "roundtable": {
     "teacher": "教師",

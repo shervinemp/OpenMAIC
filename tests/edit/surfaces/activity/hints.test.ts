@@ -94,21 +94,29 @@ describe('buildActivityHints', () => {
     expect(hints).toHaveLength(5);
   });
 
-  it('marks a terminal lab as not editable', () => {
+  it('flags a terminal lab without checks or reference commands', () => {
     const terminal: ActivityContent = {
       type: 'activity',
       kind: 'terminal',
-      instructions: 'x',
-      files: [],
-      checks: [{ id: 'cwd', type: 'expectState', path: 'cwd', expected: '/home/learner' }],
+      instructions: 'Create notes.txt containing the word done, then print the working directory.',
+      files: [{ path: 'README.txt', content: 'workspace\n' }],
+      checks: [],
     };
-    expect(buildActivityHints(terminal, t)).toEqual([
-      {
-        id: 'unsupported',
-        severity: 'info',
-        message: 'edit.activity.hint.unsupportedKind',
-      },
-    ]);
+    const messages = buildActivityHints(terminal, t).map((hint) => hint.message);
+    expect(messages).toContain('edit.activity.hint.noChecks');
+    expect(messages).toContain('edit.activity.hint.noReferenceCommands');
+  });
+
+  it('emits nothing for a fully configured terminal lab', () => {
+    const terminal: ActivityContent = {
+      type: 'activity',
+      kind: 'terminal',
+      instructions: 'Create notes.txt containing the word done, then print the working directory.',
+      files: [{ path: 'README.txt', content: 'workspace\n' }],
+      checks: [{ id: 'file', type: 'expectFile', path: 'notes.txt', expected: 'done' }],
+      referenceCommands: ['echo done > notes.txt'],
+    };
+    expect(buildActivityHints(terminal, t)).toEqual([]);
   });
 
   it('flags a SQL lab without setup, starter or reference SQL', () => {

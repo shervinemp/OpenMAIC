@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import type { CodeActivityContent, SqlActivityContent, SqlValue } from '@/lib/types/stage';
+import type {
+  CodeActivityContent,
+  SqlActivityContent,
+  SqlValue,
+  TerminalActivityContent,
+} from '@/lib/types/stage';
 import type { ActivityRunner } from '@/lib/activity/code-runner';
 import type { ActivityRunRequest, ActivityRunResult } from '@/lib/activity/protocol';
 import {
   referenceWorkspaceFiles,
   verifyCodeActivity,
   verifySqlActivity,
+  verifyTerminalActivity,
   workspaceFiles,
 } from '@/lib/activity/verify';
 
@@ -251,6 +257,69 @@ describe('verifySqlActivity', () => {
   it('supports a reference-only run', async () => {
     const runner = new FakeRunner(() => sqlRows([['Ada']]));
     const report = await verifySqlActivity(sqlActivity(), runner, { referenceOnly: true });
+    expect(report.ok).toBe(true);
+    expect(report.starter).toBeUndefined();
+    expect(runner.requests).toHaveLength(1);
+  });
+});
+
+function terminalActivity(
+  overrides: Partial<TerminalActivityContent> = {},
+): TerminalActivityContent {
+  return {
+    type: 'activity',
+    kind: 'terminal',
+    instructions: 'Create notes.txt containing done.',
+    files: [{ path: 'README.txt', content: 'workspace\n' }],
+    checks: [{ id: 'file', type: 'expectFile', path: 'notes.txt', expected: 'done' }],
+    referenceCommands: ['echo done > notes.txt'],
+    ...overrides,
+  };
+}
+
+describe('verifyTerminalActivity', () => {
+  it('passes when the reference creates the file and an empty session does not', async () => {
+    const runner = new FakeRunner((request) =>
+      request.commands && request.commands.length > 0
+        ? result({ files: { 'README.txt': 'workspace\n', 'notes.txt': 'done' } })
+        : result({ files: { 'README.txt': 'workspace\n' } }),
+    );
+    const report = await verifyTerminalActivity(terminalActivity(), runner);
+    expect(report.ok).toBe(true);
+    expect(report.reference?.evaluation.passed).toBe(true);
+    expect(report.starter?.evaluation.passed).toBe(false);
+    expect(runner.requests).toHaveLength(2);
+    expect(runner.requests[1].commands).toEqual([]);
+  });
+
+  it('refuses a lab without reference commands', async () => {
+    const runner = new FakeRunner(() => result());
+    const report = await verifyTerminalActivity(
+      terminalActivity({ referenceCommands: [] }),
+      runner,
+    );
+    expect(report.ok).toBe(false);
+    expect(report.issues[0]).toContain('no reference commands');
+    expect(runner.requests).toHaveLength(0);
+  });
+
+  it('rejects checks the seeded workspace already satisfies', async () => {
+    const runner = new FakeRunner(() => result({ files: { 'README.txt': 'workspace\n' } }));
+    const report = await verifyTerminalActivity(
+      terminalActivity({
+        checks: [{ id: 'seed', type: 'expectFile', path: 'README.txt', expected: 'workspace' }],
+      }),
+      runner,
+    );
+    expect(report.ok).toBe(false);
+    expect(report.issues.join(' ')).toContain('asks the learner to do nothing');
+  });
+
+  it('supports a reference-only run', async () => {
+    const runner = new FakeRunner(() => result({ files: { 'notes.txt': 'done' } }));
+    const report = await verifyTerminalActivity(terminalActivity(), runner, {
+      referenceOnly: true,
+    });
     expect(report.ok).toBe(true);
     expect(report.starter).toBeUndefined();
     expect(runner.requests).toHaveLength(1);
