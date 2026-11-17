@@ -37,4 +37,31 @@ export {
   quizGradeFromResult,
   type QuizDecisionInput,
 } from './sites/quiz-grade';
-export { readDecisionTelemetry, resetDecisionTelemetryForTests } from './telemetry';
+export {
+  mergeDecisionTelemetry,
+  readDecisionTelemetry,
+  readShadowAgreement,
+  resetDecisionTelemetryForTests,
+  snapshotDecisionTelemetry,
+  type DecisionTelemetryCounter,
+  type DecisionTelemetrySnapshot,
+  type ShadowAgreementRow,
+} from './telemetry';
+export {
+  decisionTelemetryFile,
+  flushDecisionTelemetry,
+  loadDecisionTelemetryFromDisk,
+  scheduleDecisionTelemetryFlush,
+} from './telemetry-file';
+export {
+  probeDecisionSites,
+  type DecisionProbeStatus,
+  type DecisionSiteProbe,
+  type ProbeDecisionSitesOptions,
+} from './probe';
+export {
+  createTypedHttpProvider,
+  MAX_DECISION_RESPONSE_BYTES,
+  TypedDecisionResponseError,
+  type TypedHttpProviderOptions,
+} from './providers/laya';

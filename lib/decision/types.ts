@@ -79,6 +79,12 @@ export interface DecisionResult {
   /** Question ids the provider explicitly refused or could not answer. */
   abstained: ReadonlySet<string>;
   latencyMs: number;
+  /**
+   * Wire attempts a network adapter made before answering. Absent for
+   * in-process adapters (or when the provider does not report it), where the
+   * notion does not apply.
+   */
+  attempts?: number;
 }
 
 export interface DecisionProvider {

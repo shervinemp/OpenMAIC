@@ -10,7 +10,8 @@
 import { getDecisionSiteConfig } from './config';
 import { createChatDecisionProvider } from './providers/chat';
 import { createTypedHttpProvider } from './providers/laya';
-import { recordDecisionEvent } from './telemetry';
+import { recordDecisionEvent, type DecisionTelemetryEvent } from './telemetry';
+import { scheduleDecisionTelemetryFlush } from './telemetry-file';
 import type {
   DecisionProvider,
   DecisionRequest,
@@ -57,6 +58,12 @@ function providerFor(config: DecisionSiteConfig, deps: DecisionRunDeps): Decisio
     : createTypedHttpProvider(config);
 }
 
+/** Record in-process and schedule the best-effort snapshot write. */
+function record(event: DecisionTelemetryEvent): void {
+  recordDecisionEvent(event);
+  scheduleDecisionTelemetryFlush();
+}
+
 function safeFromResult<T>(
   input: DecisionRunInput<T>,
   result: DecisionResult,
@@ -89,6 +96,15 @@ async function fallback<T>(
   return { source: 'baseline', value: await input.baseline() };
 }
 
+/** A short machine code; an HTTP status is more useful than a class name. */
+function errorReason(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const status = (error as { status?: unknown }).status;
+    if (typeof status === 'number' && Number.isFinite(status)) return `http-${status}`;
+  }
+  return error instanceof Error ? error.name : 'unknown';
+}
+
 async function runProvider<T>(
   provider: DecisionProvider,
   input: DecisionRunInput<T>,
@@ -97,12 +113,12 @@ async function runProvider<T>(
   try {
     return await provider.decide(input.request, input.signal);
   } catch (error) {
-    recordDecisionEvent({
+    record({
       site: input.site,
       provider: provider.id,
       mode: config.mode,
       outcome: 'error',
-      reason: error instanceof Error ? error.name : 'unknown',
+      reason: errorReason(error),
     });
     return null;
   }
@@ -130,7 +146,7 @@ export async function runDecisionSite<T>(
   }
 
   if (input.inputChars > config.maxInputChars) {
-    recordDecisionEvent({
+    record({
       site: input.site,
       provider: deps.provider?.id ?? config.provider,
       mode: config.mode,
@@ -141,7 +157,7 @@ export async function runDecisionSite<T>(
   }
 
   if (input.request.questions.length === 0) {
-    recordDecisionEvent({
+    record({
       site: input.site,
       provider: deps.provider?.id ?? config.provider,
       mode: config.mode,
@@ -155,7 +171,7 @@ export async function runDecisionSite<T>(
   // always fall back after paying for the call, so skip the call entirely and
   // let the boot warning point the operator at `replace` or `shadow`.
   if (config.mode === 'triage' && config.provider === 'chat') {
-    recordDecisionEvent({
+    record({
       site: input.site,
       provider: deps.provider?.id ?? config.provider,
       mode: config.mode,
@@ -171,7 +187,7 @@ export async function runDecisionSite<T>(
   } catch {
     // A malformed injected config or a missing endpoint must fall back, not
     // fail the learner request. Env parsing normally catches this earlier.
-    recordDecisionEvent({
+    record({
       site: input.site,
       provider: config.provider,
       mode: config.mode,
@@ -185,7 +201,7 @@ export async function runDecisionSite<T>(
     // Shadow is a validation mode, not a hot path. Without a baseline there is
     // nothing to compare, so skip the extra call entirely.
     if (!input.baseline) {
-      recordDecisionEvent({
+      record({
         site: input.site,
         provider: provider.id,
         mode: config.mode,
@@ -204,12 +220,12 @@ export async function runDecisionSite<T>(
     const baselineValue = baselineSettled.value;
 
     if (decisionSettled.status === 'rejected') {
-      recordDecisionEvent({
+      record({
         site: input.site,
         provider: provider.id,
         mode: config.mode,
         outcome: 'error',
-        reason: decisionSettled.reason instanceof Error ? decisionSettled.reason.name : 'unknown',
+        reason: errorReason(decisionSettled.reason),
       });
       return { source: 'baseline', value: baselineValue };
     }
@@ -217,19 +233,20 @@ export async function runDecisionSite<T>(
     const result = decisionSettled.value;
     const mapped = safeFromResult(input, result, config);
     if (!mapped) {
-      recordDecisionEvent({
+      record({
         site: input.site,
         provider: provider.id,
         mode: config.mode,
         outcome: 'abstain',
         reason: 'no-answer',
         latencyMs: result.latencyMs,
+        attempts: result.attempts,
       });
       return { source: 'baseline', value: baselineValue };
     }
 
     const agreement = safeCompare(input, mapped.value, baselineValue);
-    recordDecisionEvent({
+    record({
       site: input.site,
       provider: provider.id,
       mode: config.mode,
@@ -241,6 +258,7 @@ export async function runDecisionSite<T>(
             : 'shadow-skip',
       confidence: mapped.confidence,
       latencyMs: result.latencyMs,
+      attempts: result.attempts,
     });
     return { source: 'baseline', value: baselineValue };
   }
@@ -250,19 +268,20 @@ export async function runDecisionSite<T>(
 
   const mapped = safeFromResult(input, result, config);
   if (!mapped) {
-    recordDecisionEvent({
+    record({
       site: input.site,
       provider: provider.id,
       mode: config.mode,
       outcome: 'abstain',
       reason: 'no-answer',
       latencyMs: result.latencyMs,
+      attempts: result.attempts,
     });
     return fallback(input, config, 'no-answer');
   }
 
   if (config.mode === 'triage' && mapped.confidence < config.minConfidence) {
-    recordDecisionEvent({
+    record({
       site: input.site,
       provider: provider.id,
       mode: config.mode,
@@ -270,17 +289,19 @@ export async function runDecisionSite<T>(
       reason: 'low-confidence',
       confidence: mapped.confidence,
       latencyMs: result.latencyMs,
+      attempts: result.attempts,
     });
     return fallback(input, config, 'low-confidence');
   }
 
-  recordDecisionEvent({
+  record({
     site: input.site,
     provider: provider.id,
     mode: config.mode,
     outcome: 'decision',
     confidence: mapped.confidence,
     latencyMs: result.latencyMs,
+    attempts: result.attempts,
   });
   return { source: 'decision', value: mapped.value, confidence: mapped.confidence };
 }

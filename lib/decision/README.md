@@ -112,6 +112,14 @@ and reads:
 confidence is treated as `0`, so a server that does not report calibration
 cannot drive `triage`. `prompt` is also sent as `question` for older servers.
 
+A typed adapter retries **once** on a transient failure (transport error,
+timeout, `408`/`425`/`429`, `5xx`, or malformed JSON) and only while the
+configured `timeoutMs` still has at least 250ms left. Both attempts share that
+one budget, so a server that already spent the whole deadline is not retried.
+A deterministic failure — `4xx`, an HTML/non-JSON content type, or a body over
+the 512 KiB cap — fails immediately. Response bodies are read with a streaming
+byte cap; the error never includes the body because it can echo learner text.
+
 ### Chat (`chat`)
 
 Any model already in the registry — OpenAI, Gemini, Ollama, Lemonade, vLLM —
@@ -146,6 +154,30 @@ future extension; the normalizer already accepts the resulting JSON.
 - **`quiz-grade`** — one bounded score. `triage` accepts only a clear zero or a
   clear full score; `replace` accepts any bounded score. Comment is empty.
 
+## Telemetry and diagnostics
+
+The router keeps process-local counters per site/provider/mode/outcome plus a
+shadow-agreement aggregate. Shadow rows expose `agree`, `disagree`, `skipped`,
+`decided`, and `agreementRate`; the rate is `null` until at least one
+comparable pair exists, never a fabricated `0%`. A probe request is kept out of
+these counters, so a health check cannot flatter the statistics.
+
+Counters are written to a snapshot after events settle (debounced, atomic) and
+merged once at boot, so a restart does not erase the shadow evidence that makes
+the mode useful. The file is `<DECISION_TELEMETRY_FILE>` when set, otherwise
+`<PERSISTENCE_DIR>/decision-telemetry.json`, otherwise
+`data/decision-telemetry.json`. This is best-effort diagnostics: a write
+failure only warns, and multiple processes sharing one file are
+last-writer-wins.
+
+`GET /api/decision/status` returns the enabled flag, configured sites (never
+the API key), the counters, and the agreement report.
+`POST /api/decision/status` probes each configured typed site with a fixed,
+learner-free `noul` question; chat sites are reported as `configured` because
+probing one would spend a model call. Both methods require the
+`PERSISTENCE_DEV_TOKEN` bearer credential used by the course-maintenance
+routes; with no token configured they refuse every request.
+
 ### Deliberately not wired
 
 The PBL evaluator streams a narrative reflection plus a JSON tail. Its value is
@@ -165,12 +197,14 @@ design, not a triage flag.
 - The LLM remains the default and the permanent fallback.
 - `quiz-verify` remains operator-only; a station model selection cannot turn it
   on.
-- Telemetry logs only site/provider/mode/outcome/confidence/latency — never
-  learner text.
+- Telemetry logs only site/provider/mode/outcome/confidence/latency/attempts —
+  never learner text. A probe request never enters the agreement counters.
 
 ## Tests
 
 `tests/decision/` covers config parsing, provider normalization, the typed HTTP
-adapter, router modes and fallbacks, and each site's mapping.
+adapter's retry and response guards, telemetry and shadow reporting, the
+connectivity probe, router modes and fallbacks, and each site's mapping.
 `tests/api/decision-grading.test.ts` exercises the real routes with a stubbed
-decision server.
+decision server; `tests/api/decision-status.test.ts` covers the operator
+diagnostics route and its token gate.

@@ -79,10 +79,111 @@ describe('typed decision HTTP provider', () => {
     const fetchImpl = vi.fn<typeof fetch>(
       async () => new Response('learner answer leaked', { status: 500 }),
     );
-    const provider = createTypedHttpProvider(config(), { fetchImpl });
+    const provider = createTypedHttpProvider(config(), { fetchImpl, retryDelayMs: 0 });
 
     await expect(provider.decide({ state: 'x', questions: [] })).rejects.toThrow(
       'Decision server returned HTTP 500',
     );
+  });
+
+  it('retries one transient failure inside the same budget', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (_url, init) => {
+      if (fetchImpl.mock.calls.length === 1) return new Response('', { status: 503 });
+      const body = JSON.parse(String(init?.body)) as { questions: Array<{ id: string }> };
+      return Response.json({
+        answers: { [body.questions[0]!.id]: { noul: 0.5, confidence: 0.9 } },
+      });
+    });
+    const provider = createTypedHttpProvider(config(), { fetchImpl, retryDelayMs: 0 });
+
+    const result = await provider.decide({
+      state: 'x',
+      questions: [{ id: 'q1', kind: 'noul', prompt: 'Is it?' }],
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.attempts).toBe(2);
+    expect(result.answers.get('q1')).toMatchObject({ kind: 'noul', probability: 0.5 });
+  });
+
+  it('gives a repeated transient failure exactly one retry', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response('', { status: 503 }));
+    const provider = createTypedHttpProvider(config(), { fetchImpl, retryDelayMs: 0 });
+
+    await expect(
+      provider.decide({ state: 'x', questions: [{ id: 'q1', kind: 'noul', prompt: 'Is it?' }] }),
+    ).rejects.toThrow('Decision server returned HTTP 503');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a deterministic 4xx', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response('', { status: 400 }));
+    const provider = createTypedHttpProvider(config(), { fetchImpl, retryDelayMs: 0 });
+
+    await expect(provider.decide({ state: 'x', questions: [] })).rejects.toThrow(
+      'Decision server returned HTTP 400',
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an HTML response without retrying', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () =>
+        new Response('<html>not here</html>', { headers: { 'content-type': 'text/html' } }),
+    );
+    const provider = createTypedHttpProvider(config(), { fetchImpl, retryDelayMs: 0 });
+
+    await expect(provider.decide({ state: 'x', questions: [] })).rejects.toThrow(
+      'Decision server returned text/html instead of JSON',
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an oversized declared body before reading it', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () =>
+        new Response('{}', {
+          headers: { 'content-type': 'application/json', 'content-length': '2048' },
+        }),
+    );
+    const provider = createTypedHttpProvider(config(), {
+      fetchImpl,
+      retryDelayMs: 0,
+      maxResponseBytes: 1024,
+    });
+
+    await expect(provider.decide({ state: 'x', questions: [] })).rejects.toThrow(
+      'Decision response exceeded the size cap',
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an oversized streamed body with no content-length', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () =>
+        new Response('x'.repeat(2_048), { headers: { 'content-type': 'application/json' } }),
+    );
+    const provider = createTypedHttpProvider(config(), {
+      fetchImpl,
+      retryDelayMs: 0,
+      maxResponseBytes: 1024,
+    });
+
+    await expect(provider.decide({ state: 'x', questions: [] })).rejects.toThrow(
+      'Decision response exceeded the size cap',
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries malformed JSON once, then fails', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () => new Response('{not json', { headers: { 'content-type': 'application/json' } }),
+    );
+    const provider = createTypedHttpProvider(config(), { fetchImpl, retryDelayMs: 0 });
+
+    await expect(provider.decide({ state: 'x', questions: [] })).rejects.toThrow(
+      'Decision server returned invalid JSON',
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });

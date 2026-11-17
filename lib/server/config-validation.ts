@@ -25,6 +25,7 @@
 import { getProvider, warnBareModelIdDeprecation } from '@/lib/ai/providers';
 import { isAgentRuntimeEnabled } from '@/lib/config/feature-flags';
 import { decisionModelsEnabled, loadDecisionConfigs } from '@/lib/decision/config';
+import { loadDecisionTelemetryFromDisk } from '@/lib/decision/telemetry-file';
 import { LLM_STAGES } from '@/lib/server/model-routes';
 import {
   isServerConfiguredProvider,
@@ -186,6 +187,9 @@ function validateDecisionRoutes(): void {
     warn('DECISION_ROUTES is set but no usable site entry was found; the decision layer is off.');
     return;
   }
+  // Merge the previous process's shadow counts before serving traffic, so a
+  // restart does not erase the evidence shadow mode exists to collect.
+  loadDecisionTelemetryFromDisk();
   for (const config of routes.values()) {
     if (config.provider !== 'chat' || !config.model) continue;
     checkModelString(config.model, `DECISION_ROUTES.${config.site}.model`, true);

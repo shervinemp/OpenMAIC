@@ -166,6 +166,17 @@ export async function register(): Promise<void> {
       } catch (error) {
         console.error('[instrumentation] Asset collector drain failed', error);
       }
+      // Shadow agreement is only useful across restarts; write the final
+      // snapshot before the process goes away. No-op when no site is set.
+      try {
+        const { loadDecisionConfigs } = await import('@/lib/decision/config');
+        if (loadDecisionConfigs().size > 0) {
+          const { flushDecisionTelemetry } = await import('@/lib/decision/telemetry-file');
+          await flushDecisionTelemetry();
+        }
+      } catch (error) {
+        console.error('[instrumentation] Decision telemetry flush failed', error);
+      }
       const connectionString = process.env.DATABASE_URL?.trim();
       if (connectionString) {
         try {
