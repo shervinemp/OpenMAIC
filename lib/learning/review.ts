@@ -71,6 +71,54 @@ export function newReviewCard(
   };
 }
 
+/** Keep one card from claiming an unbounded set of concepts. */
+const MAX_CARD_CONCEPTS = 16;
+
+/**
+ * Normalize one untrusted stored card, or return `null` when it carries no
+ * usable schedule. A corrupt card must be dropped, not repaired into a bogus
+ * due date: the review queue is the one place where a wrong timestamp would
+ * actively mislead the learner.
+ */
+export function normalizeReviewCard(value: unknown): ReviewCard | null {
+  if (!value || typeof value !== 'object') return null;
+  const card = value as Partial<ReviewCard>;
+
+  const cardId = typeof card.cardId === 'string' ? card.cardId.trim() : '';
+  if (!cardId) return null;
+
+  const numbers = [card.ease, card.intervalDays, card.repetitions, card.lapses, card.dueAt];
+  if (numbers.some((entry) => typeof entry !== 'number' || !Number.isFinite(entry))) {
+    return null;
+  }
+  if ((card.dueAt as number) < 0) return null;
+
+  const conceptIds: string[] = [];
+  if (Array.isArray(card.conceptIds)) {
+    for (const entry of card.conceptIds) {
+      if (typeof entry !== 'string') continue;
+      const conceptId = entry.trim();
+      if (!conceptId || conceptIds.includes(conceptId)) continue;
+      conceptIds.push(conceptId);
+      if (conceptIds.length >= MAX_CARD_CONCEPTS) break;
+    }
+  }
+
+  const lastReviewedAt = card.lastReviewedAt;
+  return {
+    cardId,
+    conceptIds,
+    ease: Math.max(MIN_REVIEW_EASE, card.ease as number),
+    intervalDays: Math.max(0, Math.round(card.intervalDays as number)),
+    repetitions: Math.max(0, Math.floor(card.repetitions as number)),
+    lapses: Math.max(0, Math.floor(card.lapses as number)),
+    dueAt: card.dueAt as number,
+    ...(typeof lastReviewedAt === 'number' && Number.isFinite(lastReviewedAt) && lastReviewedAt >= 0
+      ? { lastReviewedAt }
+      : {}),
+  };
+}
+
 /**
  * Apply one rating. The interval grows using the ease the card had going into
  * the review; the rating then adjusts ease for the next interval. A lapse

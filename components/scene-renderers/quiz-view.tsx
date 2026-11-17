@@ -25,6 +25,7 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('QuizView');
 import type { QuizQuestion } from '@/lib/types/stage';
+import { recordQuizLearning } from '@/lib/learning/record-quiz';
 import { SpeechButton } from '@/components/audio/speech-button';
 import {
   gradeChoiceQuestions,
@@ -1553,6 +1554,22 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
       cancelled = true;
     };
   }, [phase, questions, answers, locale, sceneId, stageId, attemptId, runtimeWriter]);
+
+  // A reviewed attempt is reachable after a reload as well as immediately after
+  // grading, so the learning write lives on the phase rather than inside the
+  // grading transition. Evidence ids are idempotent; a second run is harmless.
+  useEffect(() => {
+    if (phase !== 'reviewing' || !attemptId || results.length === 0) return;
+    void recordQuizLearning({
+      stageId,
+      sceneId,
+      attemptId,
+      questions,
+      results,
+    }).catch((error) => {
+      log.warn('Failed to record quiz learning evidence:', error);
+    });
+  }, [phase, results, attemptId, questions, sceneId, stageId]);
 
   const handleRetry = useCallback(async () => {
     if (!attemptId || retrying) return;

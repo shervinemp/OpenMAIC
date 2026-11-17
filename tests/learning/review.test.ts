@@ -8,6 +8,7 @@ import {
   dueReviewCards,
   evidenceFromReview,
   newReviewCard,
+  normalizeReviewCard,
   reviewCard,
   reviewSummary,
 } from '@/lib/learning/review';
@@ -161,5 +162,36 @@ describe('review scheduling', () => {
         recordedAt: now,
       }).score,
     ).toBe(1);
+  });
+
+  it('normalizes a stored card and refuses a corrupt schedule', () => {
+    expect(
+      normalizeReviewCard({
+        cardId: ' stage-1:scene-1:q1 ',
+        conceptIds: [' recursion ', 'recursion', '', 7],
+        ease: 0.4,
+        intervalDays: 2.6,
+        repetitions: 3.9,
+        lapses: -2,
+        dueAt: 5_000,
+        lastReviewedAt: 4_000,
+      }),
+    ).toEqual({
+      cardId: 'stage-1:scene-1:q1',
+      conceptIds: ['recursion'],
+      ease: MIN_REVIEW_EASE,
+      intervalDays: 3,
+      repetitions: 3,
+      lapses: 0,
+      dueAt: 5_000,
+      lastReviewedAt: 4_000,
+    });
+
+    expect(
+      normalizeReviewCard({ ...newReviewCard('card', [], now), dueAt: Number.NaN }),
+    ).toBeNull();
+    expect(normalizeReviewCard({ ...newReviewCard('card', [], now), dueAt: -1 })).toBeNull();
+    expect(normalizeReviewCard({ ...newReviewCard('card', [], now), cardId: '' })).toBeNull();
+    expect(normalizeReviewCard(null)).toBeNull();
   });
 });

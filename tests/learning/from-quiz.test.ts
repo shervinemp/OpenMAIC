@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { evidenceFromQuizAttempt } from '@/lib/learning/from-quiz';
+import { evidenceFromQuizAttempt, quizEvidenceItems } from '@/lib/learning/from-quiz';
 import type { QuestionResult } from '@/lib/quiz/grading';
+import type { QuizQuestion } from '@/lib/types/stage';
 
 function result(overrides: Partial<QuestionResult> = {}): QuestionResult {
   return {
@@ -130,5 +131,29 @@ describe('quiz evidence adapter', () => {
     });
 
     expect(record.conceptIds).toEqual([]);
+  });
+
+  it('builds evidence items with normalized concepts and display points', () => {
+    const questions = [
+      {
+        id: 'q1',
+        type: 'single',
+        question: 'What stops recursion?',
+        concepts: [' Recursion ', 'recursion.', 'Quiz', 'Base Case'],
+        points: undefined,
+      },
+      {
+        id: 'q2',
+        type: 'numeric',
+        question: 'How many frames?',
+        concepts: 'recursion',
+        points: 0,
+      },
+    ] as unknown as QuizQuestion[];
+
+    expect(quizEvidenceItems(questions)).toEqual([
+      { questionId: 'q1', points: 1, conceptIds: ['recursion', 'base case'] },
+      { questionId: 'q2', points: 0 },
+    ]);
   });
 });

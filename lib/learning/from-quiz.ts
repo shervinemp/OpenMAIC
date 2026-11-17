@@ -14,7 +14,10 @@
  * Status is the fallback for items whose points are unknown.
  */
 
-import type { QuestionResult } from '@/lib/quiz/grading';
+import { normalizeConceptTags } from '@openmaic/dsl';
+import { quizQuestionPoints, type QuestionResult } from '@/lib/quiz/grading';
+import type { QuizQuestion } from '@/lib/types/stage';
+
 import type { ConceptId, LearningEvidence } from './types';
 
 export interface QuizEvidenceItem {
@@ -34,6 +37,26 @@ export interface QuizEvidenceInput {
   recordedAt: number;
   items: readonly QuizEvidenceItem[];
   results: readonly QuestionResult[];
+}
+
+/**
+ * Build the item descriptions the adapter needs from the quiz content.
+ *
+ * Tags are normalized here, not at generation time alone, because imported
+ * classrooms and hand-edited scenes can carry the same field with sloppy
+ * casing. Points use the same default the UI and grader use, so an untagged
+ * `points` value does not change the denominator of partial credit.
+ */
+export function quizEvidenceItems(questions: readonly QuizQuestion[]): QuizEvidenceItem[] {
+  return questions.map((question) => {
+    const item: QuizEvidenceItem = {
+      questionId: question.id,
+      points: quizQuestionPoints(question.points),
+    };
+    const conceptIds = normalizeConceptTags(question.concepts);
+    if (conceptIds) item.conceptIds = conceptIds;
+    return item;
+  });
 }
 
 function clamp01(value: number): number {

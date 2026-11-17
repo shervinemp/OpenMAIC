@@ -76,7 +76,11 @@ export type ReviewRating = 'again' | 'hard' | 'good' | 'easy';
  * `intervalDays` is zero while a lapsed card is in short-term relearning.
  */
 export interface ReviewCard {
-  /** Usually `stageId:itemId`, stable across attempts. */
+  /**
+   * Usually `stageId:sceneId:itemId`: item ids are only unique inside a scene,
+   * so a course-wide card needs the scene segment to stay stable across
+   * attempts and avoid colliding with another quiz's `q1`.
+   */
   cardId: string;
   conceptIds: readonly ConceptId[];
   /** SM-2 ease factor, never below `MIN_REVIEW_EASE`. */
