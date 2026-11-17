@@ -127,6 +127,25 @@ describe('numeric grading', () => {
     expect(result).toMatchObject({ status: 'ungraded', correct: null, earned: 0 });
   });
 
+  it('normalizes a grouped numeric key instead of leaving it ungraded', () => {
+    const grouped = numeric({ answer: ['1,234'] });
+    expect(gradeChoiceQuestions([grouped], { q1: '1234' })[0]).toMatchObject({
+      status: 'correct',
+      correct: true,
+    });
+
+    const decimalComma = numeric({ answer: ['1.234,5'], tolerance: 0 });
+    expect(gradeChoiceQuestions([decimalComma], { q1: '1,234.5' })[0]).toMatchObject({
+      status: 'correct',
+      correct: true,
+    });
+  });
+
+  it('keeps a prose key ungraded rather than reading a number out of it', () => {
+    const [result] = gradeChoiceQuestions([numeric({ answer: ['3 to 5'] })], { q1: '3' });
+    expect(result).toMatchObject({ status: 'ungraded', correct: null, earned: 0 });
+  });
+
   it('does not treat an empty key as zero', () => {
     const [result] = gradeChoiceQuestions([numeric({ answer: [''] })], { q1: '0' });
     expect(result).toMatchObject({ status: 'ungraded', earned: 0 });

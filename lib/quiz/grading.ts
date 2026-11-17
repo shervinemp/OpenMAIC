@@ -209,11 +209,24 @@ function normalizeGroupedInteger(text: string, grouping: '.' | ','): string | nu
   return groups.join('');
 }
 
+/**
+ * Parse a numeric answer key. The whole key must be one unambiguous number:
+ * grouping and decimal commas are accepted (the learner parser's job is to
+ * read what a learner types, but the key is data, and prose like "3 to 5"
+ * must stay ungraded rather than silently become 3). A trailing unit belongs
+ * in the question's `unit` field, not in the key.
+ */
+function parseNumericKey(key: string | undefined): number | null {
+  if (key === undefined) return null;
+  const text = key.trim().toLowerCase();
+  if (!/^[+-]?\d(?:[\d.,]*\d)?(?:e[+-]?\d+)?$/.test(text)) return null;
+  return parseNumericToken(text.startsWith('+') ? text.slice(1) : text);
+}
+
 function gradeNumericAnswer(q: QuizQuestion, raw: string): QuestionResult {
   const points = q.points ?? 1;
-  const key = q.answer?.[0];
-  const expected = Number(key);
-  if (key === undefined || key.trim() === '' || !Number.isFinite(expected)) {
+  const expected = parseNumericKey(q.answer?.[0]);
+  if (expected === null) {
     // A malformed key is a data error, not a learner mistake: do not score it.
     return {
       questionId: q.id,
