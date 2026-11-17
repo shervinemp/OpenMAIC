@@ -345,6 +345,12 @@ describe('server-backed classic media orchestrator', () => {
 
   it('buys and stores an identical prompt once and points both slots at the asset', async () => {
     serveImage();
+    // Nothing materialized yet, so both declared requests are collected.
+    mocks.stageState.mockReturnValue({
+      stage: { id: stageId },
+      scenes: [],
+      generationComplete: false,
+    });
     mocks.putAsset.mockReset().mockResolvedValueOnce('ast_first');
     const secondRef = 'gen_img_server_second';
 
@@ -372,8 +378,61 @@ describe('server-backed classic media orchestrator', () => {
     expect(tasks.ast_second).toBeUndefined();
   });
 
+  it('shares one stored video and poster across identical slots', async () => {
+    serveVideo();
+    // Nothing materialized yet, so both declared requests are collected.
+    mocks.stageState.mockReturnValue({
+      stage: { id: stageId },
+      scenes: [],
+      generationComplete: false,
+    });
+    mocks.putAsset
+      .mockReset()
+      .mockResolvedValueOnce('ast_video')
+      .mockResolvedValueOnce('ast_poster');
+    const secondRef = 'gen_vid_server_second';
+
+    await generateMediaForOutlines(
+      [
+        outlineWith(1, { type: 'video', prompt: 'A clip', elementId: videoRef }),
+        outlineWith(2, { type: 'video', prompt: 'a CLIP', elementId: secondRef }),
+      ],
+      stageId,
+    );
+
+    const providerCalls = fetchMock.mock.calls.filter(
+      ([input]) => String(input) === '/api/generate/video',
+    );
+    expect(providerCalls).toHaveLength(1);
+    // The video and its poster, once each — never a second copy for the
+    // duplicate slot.
+    expect(mocks.putAsset).toHaveBeenCalledTimes(2);
+    expect(mocks.persistReference).toHaveBeenCalledTimes(2);
+    expect(mocks.persistReference).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        placeholderRef: videoRef,
+        assetId: 'ast_video',
+        posterAssetId: 'ast_poster',
+      }),
+    );
+    expect(mocks.persistReference).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        placeholderRef: secondRef,
+        assetId: 'ast_video',
+        posterAssetId: 'ast_poster',
+      }),
+    );
+  });
+
   it('records a duplicate placeholder on the shared asset row for later adoption', async () => {
     serveImage();
+    mocks.stageState.mockReturnValue({
+      stage: { id: stageId },
+      scenes: [],
+      generationComplete: false,
+    });
     const secondRef = 'gen_img_server_second';
     const rows = new Map<string, Record<string, unknown>>();
     mocks.mediaGet.mockImplementation(async (id: string) => rows.get(id));
