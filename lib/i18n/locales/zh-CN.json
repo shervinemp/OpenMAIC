@@ -1382,7 +1382,13 @@
     },
     "phaseContent": "正在撰写内容",
     "phaseActions": "正在排版幻灯片",
-    "phaseNarration": "正在录制旁白"
+    "phaseNarration": "正在录制旁白",
+    "activityKind": "实验类型",
+    "activityKindCode": "代码",
+    "activityKindSql": "SQL",
+    "activityKindTerminal": "终端",
+    "activitySqlNote": "学习者编写一段 PostgreSQL 脚本，检查查询会比较结果行。",
+    "activityTerminalNote": "学习者在模拟 shell 中练习命令行基础。服务器隔离需运维开启，不会自动生成。"
   },
   "settings": {
     "title": "设置",

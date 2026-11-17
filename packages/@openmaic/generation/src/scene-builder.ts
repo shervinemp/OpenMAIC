@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { isActivityContent } from '@openmaic/dsl';
 import type { Action, Slide, SlideTheme } from '@openmaic/dsl';
 import type { SceneOutline } from './outline-types.js';
 import { isSlideLikeOutline } from './outline-type.js';
@@ -84,18 +85,19 @@ export function buildCompleteScene(
     };
   }
 
-  if (outline.type === 'activity' && 'kind' in content && content.type === 'activity') {
-    return {
+  if (outline.type === 'activity' && isActivityContent(content)) {
+    const base = {
       id: sceneId,
       outlineId: outline.id,
       stageId,
-      type: 'activity',
       title: outline.title,
       order: outline.order,
-      content,
       actions,
       ...timestamps,
     };
+    if (content.kind === 'code') return { ...base, type: 'activity', content };
+    if (content.kind === 'sql') return { ...base, type: 'activity', content };
+    return { ...base, type: 'activity', content };
   }
 
   if (outline.type === 'interactive' && 'html' in content) {

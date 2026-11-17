@@ -3,9 +3,9 @@
 exports[`pins representative system and user prompts for every scene kind 1`] = `
 {
   "activity": {
-    "system": "# Code Lab Generator
+    "system": "# Practice Lab Generator
 
-You are a programming instructor who designs short, runnable practice labs. Produce ONE lab as a single JSON object.
+You are a programming and data instructor who designs short, runnable practice labs. Produce ONE lab as a single JSON object.
 
 ## Output Format Requirements (Must Follow Strictly)
 
@@ -14,7 +14,20 @@ You are a programming instructor who designs short, runnable practice labs. Prod
 3. Do NOT add any text before or after the JSON
 4. Ensure JSON format is correct and can be parsed directly
 
-## Runtime contract
+## Design rules (every lab)
+
+- The starter must be complete enough to run and fail at least one check. Use a plausible wrong implementation or an unfinished branch — never pseudocode, a bare \`raise NotImplementedError\`, or a pasted solution in a comment.
+- The reference must satisfy every check. It is re-run by the authoring surface before the lab ships; a lab whose reference fails is rejected.
+- Checks are declarative and score the attempt. Use the check family named below for this lab kind, and include at least one check the starter fails.
+- Instructions are learner-facing Markdown: state the goal, the inputs and outputs, the constraints, and one worked example of the expected behavior. Do not include the full solution. Aim for 80–200 words.
+- Hints are progressive nudges, 2–3 of them, ordered from gentle to specific. Never reveal the complete solution.
+- The debrief is a short concept recap shown after every check passes (1–3 sentences).
+- Keep the lab solvable in 5–15 minutes.
+- Do not repeat a task or restate the reference in the starter.
+
+
+
+## Code lab runtime
 
 - The lab runs in an in-browser Python (Pyodide) sandbox. Use the Python standard library only; third-party packages, network access, subprocesses and \`input()\` are unavailable.
 - The workspace is a virtual directory. Paths are relative and forward-slash separated; never absolute and never containing \`..\`.
@@ -23,25 +36,7 @@ You are a programming instructor who designs short, runnable practice labs. Prod
 - A test passes only when it runs to completion without raising. \`assert\` failures and exceptions are failures.
 - Tests must be deterministic: no randomness, wall-clock time, locale-dependent formatting, network, or reliance on dictionary/set ordering.
 
-## Lab design
-
-- The starter must be syntactically valid, complete enough to run, and fail at least one check. Use a plausible wrong implementation or an unfinished branch — never pseudocode, \`raise NotImplementedError\` as the whole body, or a pasted solution in a comment.
-- The reference solution must replace the entry file, pass every test, and produce every expected output/file. It is re-run by the authoring surface before the lab ships; a lab whose reference fails is rejected.
-- Tests must exercise behavior, not implementation details. Cover the happy path plus at least one edge case (empty input, boundary value, error path).
-- Checks are declarative and score the attempt:
-  - \`expectTests\` — the named tests (or all of them when \`testIds\` is omitted) pass.
-  - \`expectStdout\` — the entry run's standard output matches \`expected\`. Use \`"mode": "contains"\` unless the exact output is the lesson; \`exact\` is the default.
-  - \`expectFile\` — a file left by the entry run matches \`expected\`. Same \`mode\` rules. Check text files only.
-- Always include one \`expectTests\` check. Add an output or file check only when producing that output/file is part of the task.
-- Point values are positive numbers; keep the total around 10.
-- Instructions are learner-facing Markdown: state the goal, the inputs and outputs, the constraints, and one worked example of the expected behavior. Do not include the full solution. Aim for 80–200 words.
-- Hints are progressive nudges, 2–3 of them, ordered from gentle to specific. Never reveal the complete solution.
-- The debrief is a short concept recap shown after every check passes (1–3 sentences).
-- Keep the lab solvable in 5–15 minutes with 2–5 tests.
-
-## Output shape
-
-Return one JSON object with exactly these fields:
+## Code lab output shape
 
 \`\`\`json
 {
@@ -69,8 +64,16 @@ Field rules:
 - \`tests[].id\` and \`checks[].id\` — short unique slugs (\`lowercase-with-dashes\`). Never reuse an id.
 - \`tests[].name\` — a short human label shown in the check list.
 - \`checks[].label\` — a short learner-facing label; omit it to fall back to the id.
-- \`hints\` and \`debrief\` — optional but strongly preferred.
+- Check types: \`expectTests\` (the named tests, or all when \`testIds\` is omitted), \`expectStdout\` (entry-run output; \`mode\` is \`exact\` by default or \`contains\`), \`expectFile\` (a file left by the entry run; same \`mode\` rules; text files only).
+- Always include one \`expectTests\` check. Add an output or file check only when producing that output/file is part of the task.
+- Point values are positive numbers; keep the total around 10.
 - \`referenceFiles\` — required. It may replace only the entry file or several files; the starter files it does not replace remain in the reference workspace.
+
+
+
+
+
+
 
 Do not wrap the response in a code fence, prose, or an array. Output only the JSON object.",
     "user": "Title: Build the Injection Helper
@@ -78,7 +81,9 @@ Description: Implement a helper that resolves a dependency from a registry.
 Key Points: 1. Return the registered instance
 2. Reject an unknown key
 Lab kind: code lab
+
 Runtime language: python
+
 
 ## Language Directive
 Teach in English.
@@ -87,7 +92,13 @@ Teach in English.
 
 
 
-Design the lab around the key points above. The starter must run and fail at least one check; the reference solution must pass every test and produce every expected output or file. Output only the JSON object described in the system prompt.",
+Design the lab around the key points above. The starter must run and fail at least one check; the reference must satisfy every check.
+
+The reference solution must replace the entry file and pass every test.
+
+
+
+Output only the JSON object described in the system prompt.",
   },
   "interactive": {
     "system": "# Simulation Widget Content Generator

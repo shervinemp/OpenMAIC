@@ -1,7 +1,6 @@
 import type {
   Action,
   ActivityContent,
-  CodeActivityContent,
   InteractiveContent,
   PBLContent,
   PBLProject,
@@ -48,12 +47,12 @@ export interface GeneratedPBLContent {
 }
 
 /**
- * AI-generated code-lab payload. Unlike the other generated primitives this is
- * the persisted content itself (discriminant included): the lab's files,
- * tests, checks and reference solution are authored wholesale by the model and
+ * AI-generated lab payload. Unlike the other generated primitives this is the
+ * persisted content itself (discriminant included): the lab's starter, checks
+ * and authoring-only reference are authored wholesale by the model and
  * validated against the same DSL contract the learner runtime consumes.
  */
-export type GeneratedActivityContent = CodeActivityContent;
+export type GeneratedActivityContent = ActivityContent;
 
 export type GeneratedSceneContent =
   | GeneratedSlideContent

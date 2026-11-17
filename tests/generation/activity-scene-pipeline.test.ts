@@ -66,4 +66,70 @@ describe('buildSceneFromOutline — activity', () => {
       language: 'python',
     });
   });
+
+  it('builds a validated SQL lab scene', async () => {
+    const outline: SceneOutline = {
+      ...OUTLINE,
+      id: 'activity-sql',
+      title: 'Build the adults view',
+      activityConfig: { kind: 'sql' },
+    };
+    const lab = {
+      instructions:
+        'Create a view named `adults` that returns the name of every learner aged 21 or older. The `learners` table is seeded before your script runs. Your script may create a view or a table. The probe reads `adults` ordered by name. For example, Ada (24) and Linus (31) appear; Grace (19) does not.',
+      setupSql:
+        "create table learners (id int primary key, name text, age int);\ninsert into learners values (1, 'Ada', 24), (2, 'Grace', 19), (3, 'Linus', 31);",
+      starterSql: 'select * from learners;',
+      checks: [
+        {
+          id: 'rows',
+          type: 'expectSqlRows',
+          sql: 'select name from adults order by name;',
+          expected: [['Ada'], ['Linus']],
+          ordered: true,
+        },
+      ],
+      referenceSql:
+        'create view adults as select name from learners where age >= 21 order by name;',
+    };
+
+    const scene = await buildSceneFromOutline(outline, async () => JSON.stringify(lab), 'stage-1');
+    expect(scene).not.toBeNull();
+    expect(scene?.type).toBe('activity');
+    expect(scene?.content).toMatchObject({ type: 'activity', kind: 'sql' });
+    expect(scene?.actions).toEqual([]);
+    expect(validateScene(scene)).toEqual({ valid: true });
+    expect(validateAppScene(scene)).toEqual({ valid: true });
+  });
+
+  it('builds a validated simulated terminal lab scene', async () => {
+    const outline: SceneOutline = {
+      ...OUTLINE,
+      id: 'activity-terminal',
+      title: 'Write a note in the shell',
+      activityConfig: { kind: 'terminal' },
+    };
+    const lab = {
+      instructions:
+        'Create a file named `notes.txt` in your home directory whose content contains the word `done`. Then print the current working directory. The session starts in `/home/learner`. You can use output redirection with `echo`, and `pwd` prints the current directory. For example, `echo done > notes.txt` writes the file.',
+      files: [{ path: 'README.txt', content: 'Workspace notes.\n', editable: false }],
+      checks: [
+        { id: 'file', type: 'expectFile', path: 'notes.txt', expected: 'done', mode: 'contains' },
+        { id: 'cwd', type: 'expectState', path: 'cwd', expected: '/home/learner' },
+      ],
+      referenceCommands: ['echo done > notes.txt', 'pwd'],
+    };
+
+    const scene = await buildSceneFromOutline(outline, async () => JSON.stringify(lab), 'stage-1');
+    expect(scene).not.toBeNull();
+    expect(scene?.type).toBe('activity');
+    expect(scene?.content).toMatchObject({
+      type: 'activity',
+      kind: 'terminal',
+      runtime: 'simulation',
+    });
+    expect(scene?.actions).toEqual([]);
+    expect(validateScene(scene)).toEqual({ valid: true });
+    expect(validateAppScene(scene)).toEqual({ valid: true });
+  });
 });

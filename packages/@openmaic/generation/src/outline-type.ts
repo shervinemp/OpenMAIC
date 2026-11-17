@@ -10,8 +10,8 @@ const DEFAULT_QUIZ_CONFIG = {
 const MAX_TARGET_SKILLS = 6;
 
 /**
- * Default lab configuration. Python is the only executable runtime today, and
- * `kind: 'code'` is the only authorable activity family.
+ * Default lab configuration. A new lab starts as a Python code lab; SQL and
+ * terminal labs are selected explicitly (by the author or the outline model).
  */
 const DEFAULT_ACTIVITY_CONFIG = {
   kind: 'code' as const,

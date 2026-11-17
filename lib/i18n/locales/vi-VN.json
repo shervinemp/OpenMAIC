@@ -1380,7 +1380,13 @@
     },
     "phaseContent": "đang viết nội dung",
     "phaseActions": "đang sắp slide",
-    "phaseNarration": "đang thu thuyết minh"
+    "phaseNarration": "đang thu thuyết minh",
+    "activityKind": "Loại phòng thực hành",
+    "activityKindCode": "Mã",
+    "activityKindSql": "SQL",
+    "activityKindTerminal": "Dòng lệnh",
+    "activitySqlNote": "Người học viết một script PostgreSQL; các truy vấn kiểm tra so sánh các hàng kết quả.",
+    "activityTerminalNote": "Người học luyện kiến thức cơ bản về dòng lệnh trong shell mô phỏng. Cách ly máy chủ do quản trị viên bật và không được tạo tự động."
   },
   "settings": {
     "title": "Cài đặt",

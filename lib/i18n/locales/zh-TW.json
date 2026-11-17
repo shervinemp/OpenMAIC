@@ -1359,7 +1359,13 @@
     },
     "phaseContent": "正在撰寫內容",
     "phaseActions": "正在排版投影片",
-    "phaseNarration": "正在錄製旁白"
+    "phaseNarration": "正在錄製旁白",
+    "activityKind": "實驗類型",
+    "activityKindCode": "程式碼",
+    "activityKindSql": "SQL",
+    "activityKindTerminal": "終端機",
+    "activitySqlNote": "學習者撰寫一段 PostgreSQL 指令碼，檢查查詢會比較結果列。",
+    "activityTerminalNote": "學習者在模擬 shell 中練習命令列基礎。伺服器隔離需維運開啟，不會自動產生。"
   },
   "settings": {
     "title": "設定",

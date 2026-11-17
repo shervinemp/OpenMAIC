@@ -169,6 +169,91 @@ export function validActivityResponse(): Record<string, unknown> {
   };
 }
 
+export function sqlActivityOutline(): SceneOutline {
+  return {
+    id: 'activity-sql-1',
+    type: 'activity',
+    title: 'Build the Adults View',
+    description: 'Create a view of adult learners from a seeded table.',
+    keyPoints: ['Filter by age', 'Order by name'],
+    order: 4,
+    activityConfig: { kind: 'sql' },
+  };
+}
+
+/**
+ * A SQL-lab reply that satisfies the structural contract and the depth
+ * validator at the default depth: substantive instructions, a seeded schema,
+ * one probe, and a reference script that differs from the starter.
+ */
+export function validSqlActivityResponse(): Record<string, unknown> {
+  return {
+    instructions:
+      'Create a view named `adults` that returns the name of every learner aged 21 or older. The `learners` table has `id`, `name` and `age` columns and is seeded before your script runs. Your script may create a view or a table. The probe reads `adults` ordered by name, so include an `ORDER BY` or let the probe sort. For example, Ada (24) and Linus (31) must appear, while Grace (19) must not.',
+    setupSql:
+      "create table learners (id int primary key, name text, age int);\ninsert into learners values (1, 'Ada', 24), (2, 'Grace', 19), (3, 'Linus', 31);",
+    starterSql: 'select * from learners;',
+    checks: [
+      {
+        id: 'rows',
+        type: 'expectSqlRows',
+        label: 'Adults only, ordered by name',
+        sql: 'select name from adults order by name;',
+        expected: [['Ada'], ['Linus']],
+        ordered: true,
+      },
+    ],
+    hints: ['Filter the rows with a WHERE clause.', 'A view keeps the query reusable.'],
+    debrief: 'A view packages a query so later statements can read it like a table.',
+    referenceSql: 'create view adults as select name from learners where age >= 21 order by name;',
+  };
+}
+
+export function terminalActivityOutline(): SceneOutline {
+  return {
+    id: 'activity-terminal-1',
+    type: 'activity',
+    title: 'Write a Note in the Shell',
+    description: 'Use redirection to create a note and confirm the working directory.',
+    keyPoints: ['Write a file', 'Print the working directory'],
+    order: 5,
+    activityConfig: { kind: 'terminal' },
+  };
+}
+
+/**
+ * A terminal-lab reply that satisfies the structural contract and the depth
+ * validator at the default depth: substantive instructions, two checks, and
+ * an executable reference sequence.
+ */
+export function validTerminalActivityResponse(): Record<string, unknown> {
+  return {
+    instructions:
+      'Create a file named `notes.txt` in your home directory whose content contains the word `done`. Then print the current working directory. The session starts in `/home/learner`, and `README.txt` describes the workspace. You can use output redirection with `echo`, and `pwd` prints the current directory. For example, `echo done > notes.txt` writes the file, and `pwd` prints `/home/learner`.',
+    files: [{ path: 'README.txt', content: 'Workspace notes.\n', editable: false }],
+    checks: [
+      {
+        id: 'file',
+        type: 'expectFile',
+        label: 'notes.txt contains done',
+        path: 'notes.txt',
+        expected: 'done',
+        mode: 'contains',
+      },
+      {
+        id: 'cwd',
+        type: 'expectState',
+        label: 'Still in the home directory',
+        path: 'cwd',
+        expected: '/home/learner',
+      },
+    ],
+    referenceCommands: ['echo done > notes.txt', 'pwd'],
+    hints: ['Redirection writes stdout to a file.', 'pwd prints the working directory.'],
+    debrief: 'Redirection and the working directory are the two anchors of a shell session.',
+  };
+}
+
 export function widgetOutline(): SceneOutline {
   return {
     id: 'widget-1',

@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { CodeActivityContent } from '@openmaic/dsl';
-import { validateActivityDepth } from '@openmaic/generation';
-import { activityOutline } from './scene-fixtures.js';
+import type {
+  CodeActivityContent,
+  SqlActivityContent,
+  TerminalActivityContent,
+} from '@openmaic/dsl';
+import {
+  validateActivityDepth,
+  validateSqlActivityDepth,
+  validateTerminalActivityDepth,
+} from '@openmaic/generation';
+import { activityOutline, sqlActivityOutline, terminalActivityOutline } from './scene-fixtures.js';
 
 function lab(overrides: Partial<CodeActivityContent> = {}): CodeActivityContent {
   return {
@@ -133,5 +141,138 @@ describe('validateActivityDepth', () => {
     expect(
       findings(lab({ checks: [{ id: 'tests', type: 'expectTests', testIds: ['ghost'] }] })),
     ).toContain('names undeclared tests');
+  });
+});
+
+function sqlLab(overrides: Partial<SqlActivityContent> = {}): SqlActivityContent {
+  return {
+    type: 'activity',
+    kind: 'sql',
+    instructions:
+      'Create a view named `adults` that returns the name of every learner aged 21 or older. The `learners` table is seeded before your script runs. Your script may create a view or a table. The probe reads `adults` ordered by name. For example, Ada (24) and Linus (31) appear; Grace (19) does not.',
+    setupSql:
+      "create table learners (id int primary key, name text, age int);\ninsert into learners values (1, 'Ada', 24), (2, 'Grace', 19), (3, 'Linus', 31);",
+    starterSql: 'select * from learners;',
+    checks: [
+      {
+        id: 'rows',
+        type: 'expectSqlRows',
+        sql: 'select name from adults order by name;',
+        expected: [['Ada'], ['Linus']],
+        ordered: true,
+      },
+    ],
+    referenceSql: 'create view adults as select name from learners where age >= 21;',
+    ...overrides,
+  };
+}
+
+function sqlFindings(content: SqlActivityContent): string {
+  return validateSqlActivityDepth(sqlActivityOutline(), content).findings.join('\n');
+}
+
+describe('validateSqlActivityDepth', () => {
+  it('accepts a seeded lab whose reference differs from the starter', () => {
+    expect(validateSqlActivityDepth(sqlActivityOutline(), sqlLab())).toMatchObject({
+      adequate: true,
+      depthValidated: true,
+      findings: [],
+    });
+  });
+
+  it('flags a missing setup, starter or reference', () => {
+    const text = sqlFindings(sqlLab({ setupSql: ' ', starterSql: ' ', referenceSql: ' ' }));
+    expect(text).toContain('setupSql is empty');
+    expect(text).toContain('starterSql is empty');
+    expect(text).toContain('referenceSql is empty');
+  });
+
+  it('flags an identical starter and reference', () => {
+    const reference = sqlLab().referenceSql!;
+    expect(sqlFindings(sqlLab({ starterSql: reference }))).toContain(
+      'asks the learner to do nothing',
+    );
+  });
+
+  it('flags a probe without a query or with malformed rows', () => {
+    const text = sqlFindings(
+      sqlLab({
+        checks: [
+          {
+            id: 'rows',
+            type: 'expectSqlRows',
+            sql: ' ',
+            expected: [[1]],
+          },
+        ],
+      }),
+    );
+    expect(text).toContain('has no query');
+  });
+
+  it('requires more probes as the course deepens', () => {
+    const deep = { ...sqlActivityOutline(), depthLevel: 'university' as const };
+    expect(validateSqlActivityDepth(deep, sqlLab()).findings).toEqual([
+      expect.stringContaining('need at least 2'),
+    ]);
+  });
+});
+
+function terminalLab(overrides: Partial<TerminalActivityContent> = {}): TerminalActivityContent {
+  return {
+    type: 'activity',
+    kind: 'terminal',
+    runtime: 'simulation',
+    instructions:
+      'Create a file named `notes.txt` in your home directory whose content contains the word `done`. Then print the current working directory. The session starts in `/home/learner`. You can use output redirection with `echo`, and `pwd` prints the current directory. For example, `echo done > notes.txt` writes the file.',
+    files: [{ path: 'README.txt', content: 'Workspace notes.\n', editable: false }],
+    checks: [
+      { id: 'file', type: 'expectFile', path: 'notes.txt', expected: 'done', mode: 'contains' },
+      { id: 'cwd', type: 'expectState', path: 'cwd', expected: '/home/learner' },
+    ],
+    referenceCommands: ['echo done > notes.txt', 'pwd'],
+    ...overrides,
+  };
+}
+
+function terminalFindings(content: TerminalActivityContent): string {
+  return validateTerminalActivityDepth(terminalActivityOutline(), content).findings.join('\n');
+}
+
+describe('validateTerminalActivityDepth', () => {
+  it('accepts a simulated lab with executable reference commands', () => {
+    expect(validateTerminalActivityDepth(terminalActivityOutline(), terminalLab())).toMatchObject({
+      adequate: true,
+      depthValidated: true,
+      findings: [],
+    });
+  });
+
+  it('rejects the server tier and missing or empty reference commands', () => {
+    expect(terminalFindings(terminalLab({ runtime: 'server' }))).toContain(
+      'must use the simulation runtime',
+    );
+    expect(terminalFindings(terminalLab({ referenceCommands: [] }))).toContain(
+      'referenceCommands is empty',
+    );
+    expect(terminalFindings(terminalLab({ referenceCommands: [''] }))).toContain(
+      'contains an empty command',
+    );
+    expect(terminalFindings(terminalLab({ referenceCommands: ['# TODO'] }))).toContain(
+      'no executable command',
+    );
+  });
+
+  it('flags a malformed or empty state expectation', () => {
+    const text = terminalFindings(
+      terminalLab({
+        checks: [
+          { id: 'bad', type: 'expectState', path: 'folder', expected: '/home/learner' },
+          { id: 'empty', type: 'expectState', path: 'env.MODE', expected: ' ' },
+        ],
+      }),
+    );
+    expect(text).toContain('state path must be cwd, env.NAME, or file:path');
+    expect(text).toContain('expects an empty state value');
   });
 });

@@ -1382,7 +1382,13 @@
     },
     "phaseContent": "writing content",
     "phaseActions": "arranging slides",
-    "phaseNarration": "recording narration"
+    "phaseNarration": "recording narration",
+    "activityKind": "Lab kind",
+    "activityKindCode": "Code",
+    "activityKindSql": "SQL",
+    "activityKindTerminal": "Terminal",
+    "activitySqlNote": "Learners write one PostgreSQL script; probe queries compare result rows.",
+    "activityTerminalNote": "Learners practice command-line basics in a simulated shell. Server isolation is operator-gated and not generated."
   },
   "settings": {
     "title": "Settings",

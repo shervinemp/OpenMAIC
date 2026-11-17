@@ -7,7 +7,15 @@ import {
   takeSceneDepthReport,
   validateOutlineShape,
 } from '@openmaic/generation';
-import { CONTENT_ATTEMPTS, activityOutline, validActivityResponse } from './scene-fixtures.js';
+import {
+  CONTENT_ATTEMPTS,
+  activityOutline,
+  sqlActivityOutline,
+  terminalActivityOutline,
+  validActivityResponse,
+  validSqlActivityResponse,
+  validTerminalActivityResponse,
+} from './scene-fixtures.js';
 
 function reply(payload: unknown): string {
   return JSON.stringify(payload);
@@ -25,6 +33,32 @@ describe('activity outline contract', () => {
     ]);
     expect(validateOutlineShape(activityOutline())).toEqual([]);
   });
+
+  it('accepts SQL and simulated terminal configs', () => {
+    expect(validateOutlineShape(sqlActivityOutline())).toEqual([]);
+    expect(validateOutlineShape(terminalActivityOutline())).toEqual([]);
+    expect(
+      validateOutlineShape({
+        ...terminalActivityOutline(),
+        activityConfig: { kind: 'terminal', runtime: 'simulation' },
+      }),
+    ).toEqual([]);
+  });
+
+  it('rejects a non-Python code lab and a server terminal lab', () => {
+    expect(
+      validateOutlineShape({
+        ...activityOutline(),
+        activityConfig: { kind: 'code', language: 'javascript' },
+      }).join(' '),
+    ).toContain('language must be python');
+    expect(
+      validateOutlineShape({
+        ...terminalActivityOutline(),
+        activityConfig: { kind: 'terminal', runtime: 'server' },
+      }).join(' '),
+    ).toContain('server terminal runtime');
+  });
 });
 
 describe('generateSceneContent — code labs', () => {
@@ -36,7 +70,7 @@ describe('generateSceneContent — code labs', () => {
     };
 
     const content = await generateSceneContent(activityOutline(), aiCall);
-    expect(system).toContain('Code Lab Generator');
+    expect(system).toContain('Practice Lab Generator');
     expect(content).toMatchObject({
       type: 'activity',
       kind: 'code',
@@ -45,10 +79,9 @@ describe('generateSceneContent — code labs', () => {
       hints: ['Look the key up in the mapping.', 'Missing keys should raise KeyError.'],
       debrief: 'A registry lookup returns the registered instance or fails loudly.',
     });
-    if (!content || !('type' in content)) {
+    if (!content || !('kind' in content) || content.kind !== 'code') {
       throw new Error('expected code activity content');
     }
-    expect(content.kind).toBe('code');
     expect(content.tests.map((test) => test.id)).toEqual(['finds', 'rejects']);
     expect(content.checks).toEqual([{ id: 'tests', type: 'expectTests', label: 'All tests pass' }]);
     expect(content.referenceFiles?.[0]?.content).toContain('registry[key]');
@@ -148,7 +181,101 @@ describe('generateSceneContent — code labs', () => {
   });
 });
 
-describe('generateSceneActions — code labs', () => {
+describe('generateSceneContent — SQL labs', () => {
+  it('normalizes a SQL reply and uses the SQL prompt section', async () => {
+    let system = '';
+    const aiCall: AICallFn = async (systemPrompt) => {
+      system = systemPrompt;
+      return reply(validSqlActivityResponse());
+    };
+
+    const content = await generateSceneContent(sqlActivityOutline(), aiCall);
+    expect(system).toContain('SQL lab runtime');
+    expect(system).not.toContain('Code lab runtime');
+    expect(system).not.toContain('Terminal lab runtime');
+    expect(content).toMatchObject({
+      type: 'activity',
+      kind: 'sql',
+      starterSql: 'select * from learners;',
+    });
+    if (!content || !('kind' in content) || content.kind !== 'sql') {
+      throw new Error('expected SQL activity content');
+    }
+    expect(content.setupSql).toContain('create table learners');
+    expect(content.referenceSql).toContain('create view adults');
+    expect(content.checks[0]).toMatchObject({
+      type: 'expectSqlRows',
+      ordered: true,
+      expected: [['Ada'], ['Linus']],
+    });
+    expect(validateActivityContent(content)).toEqual({ valid: true });
+  });
+
+  it('re-prompts a SQL lab that used the code check family', async () => {
+    let calls = 0;
+    let secondPrompt = '';
+    const aiCall: AICallFn = async (_system, user) => {
+      calls += 1;
+      if (calls === 1) {
+        return reply({
+          ...validSqlActivityResponse(),
+          checks: [{ id: 'tests', type: 'expectTests' }],
+        });
+      }
+      secondPrompt = user;
+      return reply(validSqlActivityResponse());
+    };
+
+    const content = await generateSceneContent(sqlActivityOutline(), aiCall);
+    expect(calls).toBe(2);
+    expect(secondPrompt).toContain('broke the lab contract');
+    expect(secondPrompt).toContain('expectSqlRows');
+    expect(content).toMatchObject({ type: 'activity', kind: 'sql' });
+  });
+});
+
+describe('generateSceneContent — terminal labs', () => {
+  it('normalizes a terminal reply and forces the simulation runtime', async () => {
+    let system = '';
+    const aiCall: AICallFn = async (systemPrompt) => {
+      system = systemPrompt;
+      // A model that copies a runtime field must not enable server isolation.
+      return reply({ ...validTerminalActivityResponse(), runtime: 'server' });
+    };
+
+    const content = await generateSceneContent(terminalActivityOutline(), aiCall);
+    expect(system).toContain('Terminal lab runtime');
+    expect(system).not.toContain('SQL lab runtime');
+    expect(content).toMatchObject({
+      type: 'activity',
+      kind: 'terminal',
+      runtime: 'simulation',
+      referenceCommands: ['echo done > notes.txt', 'pwd'],
+    });
+    if (!content || !('kind' in content) || content.kind !== 'terminal') {
+      throw new Error('expected terminal activity content');
+    }
+    expect(content.checks.map((check) => check.type)).toEqual(['expectFile', 'expectState']);
+    expect(validateActivityContent(content)).toEqual({ valid: true });
+  });
+
+  it('records a depth report when the reference commands are missing', async () => {
+    let calls = 0;
+    const aiCall: AICallFn = async () => {
+      calls += 1;
+      return reply({ ...validTerminalActivityResponse(), referenceCommands: [] });
+    };
+
+    const content = await generateSceneContent(terminalActivityOutline(), aiCall);
+    expect(content).toBeNull();
+    expect(calls).toBe(CONTENT_ATTEMPTS);
+    expect(takeSceneDepthReport('activity-terminal-1')?.findings.join(' ')).toContain(
+      'referenceCommands is empty',
+    );
+  });
+});
+
+describe('generateSceneActions — activity labs', () => {
   it('returns no narration actions for a lab', async () => {
     const content = await generateSceneContent(activityOutline(), async () =>
       reply(validActivityResponse()),

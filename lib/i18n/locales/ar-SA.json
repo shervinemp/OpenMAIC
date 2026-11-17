@@ -1382,7 +1382,13 @@
     },
     "phaseContent": "كتابة المحتوى",
     "phaseActions": "ترتيب الشرائح",
-    "phaseNarration": "تسجيل التعليق الصوتي"
+    "phaseNarration": "تسجيل التعليق الصوتي",
+    "activityKind": "نوع المختبر",
+    "activityKindCode": "كود",
+    "activityKindSql": "SQL",
+    "activityKindTerminal": "الطرفية",
+    "activitySqlNote": "يكتب المتعلمون سكربت PostgreSQL، وتقارن استعلامات الفحص صفوف النتيجة.",
+    "activityTerminalNote": "يتدرب المتعلمون على أساسيات سطر الأوامر في صدفة محاكاة. عزل الخادم يفعّله المشغّل ولا يُولَّد تلقائيًا."
   },
   "settings": {
     "title": "الإعدادات",

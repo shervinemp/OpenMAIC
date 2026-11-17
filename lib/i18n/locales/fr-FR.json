@@ -1382,7 +1382,13 @@
     },
     "phaseContent": "rédaction du contenu",
     "phaseActions": "organisation des diapos",
-    "phaseNarration": "enregistrement de la narration"
+    "phaseNarration": "enregistrement de la narration",
+    "activityKind": "Type d'atelier",
+    "activityKindCode": "Code",
+    "activityKindSql": "SQL",
+    "activityKindTerminal": "Terminal",
+    "activitySqlNote": "Les apprenants écrivent un script PostgreSQL ; les requêtes de vérification comparent les lignes de résultat.",
+    "activityTerminalNote": "Les apprenants pratiquent les bases de la ligne de commande dans un shell simulé. L'isolation serveur est activée par l'exploitant et n'est pas générée."
   },
   "settings": {
     "title": "Paramètres",

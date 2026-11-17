@@ -167,6 +167,8 @@ export {
   recordSceneDepthSummary,
   takeSceneDepthSummary,
   validateActivityDepth,
+  validateSqlActivityDepth,
+  validateTerminalActivityDepth,
   validateDerivationDepth,
   validateExerciseDepth,
   validateFreeResponseDepth,
@@ -207,6 +209,8 @@ export {
   formatTeacherPersonaForPrompt,
 } from './prompt-formatters.js';
 export type {
+  ActivityOutlineConfig,
+  ActivityOutlineKind,
   ImageMapping,
   MediaGenerationRequest,
   PdfImage,

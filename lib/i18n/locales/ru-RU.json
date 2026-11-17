@@ -1382,7 +1382,13 @@
     },
     "phaseContent": "пишем содержимое",
     "phaseActions": "расставляем слайды",
-    "phaseNarration": "записываем озвучку"
+    "phaseNarration": "записываем озвучку",
+    "activityKind": "Тип практикума",
+    "activityKindCode": "Код",
+    "activityKindSql": "SQL",
+    "activityKindTerminal": "Терминал",
+    "activitySqlNote": "Учащиеся пишут скрипт PostgreSQL; проверочные запросы сравнивают строки результата.",
+    "activityTerminalNote": "Учащиеся осваивают основы командной строки в симулированной оболочке. Изоляция на сервере включается оператором и не генерируется."
   },
   "settings": {
     "title": "Настройки",

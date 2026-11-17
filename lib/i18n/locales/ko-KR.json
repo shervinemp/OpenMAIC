@@ -1382,7 +1382,13 @@
     },
     "phaseContent": "콘텐츠 작성 중",
     "phaseActions": "슬라이드 정리 중",
-    "phaseNarration": "내레이션 녹음 중"
+    "phaseNarration": "내레이션 녹음 중",
+    "activityKind": "실습 유형",
+    "activityKindCode": "코드",
+    "activityKindSql": "SQL",
+    "activityKindTerminal": "터미널",
+    "activitySqlNote": "학습자가 PostgreSQL 스크립트를 작성하고, 검사 쿼리가 결과 행을 비교합니다.",
+    "activityTerminalNote": "학습자는 시뮬레이션 셸에서 명령줄 기초를 연습합니다. 서버 격리는 운영자가 활성화하며 자동 생성되지 않습니다."
   },
   "settings": {
     "title": "설정",

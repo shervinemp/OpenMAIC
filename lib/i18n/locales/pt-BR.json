@@ -1382,7 +1382,13 @@
     },
     "phaseContent": "escrevendo conteúdo",
     "phaseActions": "organizando slides",
-    "phaseNarration": "gravando narração"
+    "phaseNarration": "gravando narração",
+    "activityKind": "Tipo de laboratório",
+    "activityKindCode": "Código",
+    "activityKindSql": "SQL",
+    "activityKindTerminal": "Terminal",
+    "activitySqlNote": "Os alunos escrevem um script PostgreSQL; as consultas de verificação comparam as linhas de resultado.",
+    "activityTerminalNote": "Os alunos praticam fundamentos de linha de comando em um shell simulado. O isolamento em servidor é habilitado pelo operador e não é gerado."
   },
   "settings": {
     "title": "Configurações",

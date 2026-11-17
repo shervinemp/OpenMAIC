@@ -1382,7 +1382,13 @@
     "coverageGaps": "{{count}} source section(s) are not covered by any lesson",
     "coverageDigestTrimmed": "{{count}} topic(s) were trimmed from the coverage map to fit the outline budget",
     "pendingGenerationTitle": "Course generation in progress",
-    "pendingGenerationDesc": "Resume where you left off — your outlines are safe."
+    "pendingGenerationDesc": "Resume where you left off — your outlines are safe.",
+    "activityKind": "Lab-Typ",
+    "activityKindCode": "Code",
+    "activityKindSql": "SQL",
+    "activityKindTerminal": "Terminal",
+    "activitySqlNote": "Lernende schreiben ein PostgreSQL-Skript; Prüfabfragen vergleichen die Ergebniszeilen.",
+    "activityTerminalNote": "Lernende üben Kommandozeilen-Grundlagen in einer simulierten Shell. Serverisolierung wird vom Betrieb freigeschaltet und nicht generiert."
   },
   "settings": {
     "title": "Einstellungen",

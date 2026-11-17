@@ -19,7 +19,13 @@
  * why the scene failed.
  */
 
-import type { CodeActivityContent, PPTElement, QuizQuestion } from '@openmaic/dsl';
+import type {
+  CodeActivityContent,
+  PPTElement,
+  QuizQuestion,
+  SqlActivityContent,
+  TerminalActivityContent,
+} from '@openmaic/dsl';
 import {
   COURSE_DEPTH_FLOORS,
   SPECIALTY_DEPTH_FLOORS,
@@ -824,6 +830,126 @@ export function validateActivityDepth(
   }
 
   return blankFindingsReport(activity.files.length + activity.tests.length, findings);
+}
+
+/**
+ * A generated SQL lab must seed a database, give the learner a runnable
+ * starter, and carry a reference script that proves its probes are
+ * satisfiable. The authoring surface re-runs the reference and the starter
+ * through PGlite before the lab ships.
+ */
+export function validateSqlActivityDepth(
+  outline: SceneOutline,
+  activity: SqlActivityContent,
+): DepthReport {
+  const depthLevel = resolveDepthLevel(outline.depthLevel);
+  const findings: string[] = [];
+  const minChecks = depthLevel === 'intro' ? 1 : 2;
+
+  const instructionWords = wordCount(activity.instructions.trim());
+  if (instructionWords < 30) {
+    findings.push(
+      `instructions are ${instructionWords} word(s) — explain the goal, the schema, and the expected result shape in at least 30 words`,
+    );
+  }
+  if (!activity.setupSql.trim()) {
+    findings.push('setupSql is empty — the probes need a schema and seed rows');
+  }
+  if (!activity.starterSql.trim()) {
+    findings.push('starterSql is empty — the learner needs a query to start from');
+  }
+  const reference = activity.referenceSql?.trim() ?? '';
+  if (!reference) {
+    findings.push('referenceSql is empty — the checks cannot be proven satisfiable');
+  } else if (reference === activity.starterSql.trim()) {
+    findings.push(
+      'the starter SQL is identical to the reference — the lab asks the learner to do nothing',
+    );
+  }
+
+  if (activity.checks.length < minChecks) {
+    findings.push(
+      `the lab declares ${activity.checks.length} probe(s); need at least ${minChecks}`,
+    );
+  }
+  if (activity.checks.length > 0 && activity.checks.every((check) => check.hidden)) {
+    findings.push('every probe is hidden — keep at least one visible so the learner gets feedback');
+  }
+  for (const check of activity.checks) {
+    if (!check.sql.trim()) {
+      findings.push(`probe "${check.id}" has no query`);
+    }
+    if (!Array.isArray(check.expected) || check.expected.some((row) => !Array.isArray(row))) {
+      findings.push(`probe "${check.id}" expected rows must be an array of arrays`);
+    }
+  }
+
+  return blankFindingsReport(activity.checks.length, findings);
+}
+
+/**
+ * A generated terminal lab must be a simulated shell exercise with a
+ * reference command sequence. It is deliberately not a cybersec/network lab:
+ * that tier requires operator-gated server isolation and is authored by hand,
+ * never emitted by the course model.
+ */
+export function validateTerminalActivityDepth(
+  outline: SceneOutline,
+  activity: TerminalActivityContent,
+): DepthReport {
+  const depthLevel = resolveDepthLevel(outline.depthLevel);
+  const findings: string[] = [];
+  const minChecks = depthLevel === 'intro' ? 1 : 2;
+
+  const instructionWords = wordCount(activity.instructions.trim());
+  if (instructionWords < 30) {
+    findings.push(
+      `instructions are ${instructionWords} word(s) — explain the goal, the starting files, and the commands/state being checked in at least 30 words`,
+    );
+  }
+  if (activity.runtime === 'server') {
+    findings.push(
+      'generated terminal labs must use the simulation runtime; server isolation is operator-gated and hand-authored',
+    );
+  }
+
+  const commands = (activity.referenceCommands ?? []).map((command) => command.trim());
+  if (commands.length === 0) {
+    findings.push('referenceCommands is empty — the checks cannot be proven satisfiable');
+  } else if (commands.some((command) => command === '')) {
+    findings.push('referenceCommands contains an empty command');
+  } else if (commands.every((command) => command.startsWith('#'))) {
+    findings.push('referenceCommands has no executable command');
+  }
+
+  if (activity.checks.length < minChecks) {
+    findings.push(
+      `the lab declares ${activity.checks.length} check(s); need at least ${minChecks}`,
+    );
+  }
+  if (activity.checks.length > 0 && activity.checks.every((check) => check.hidden)) {
+    findings.push('every check is hidden — keep at least one visible so the learner gets feedback');
+  }
+  for (const check of activity.checks) {
+    if (check.type === 'expectFile' && !check.path.trim()) {
+      findings.push(`check "${check.id}" has no file path`);
+    }
+    if (check.type === 'expectState') {
+      const path = check.path.trim();
+      if (!path.startsWith('env.') && path !== 'cwd' && !path.startsWith('file:')) {
+        findings.push(
+          `check "${check.id}" state path must be cwd, env.NAME, or file:path (got ${JSON.stringify(path)})`,
+        );
+      }
+      if (check.expected.trim() === '') {
+        findings.push(
+          `check "${check.id}" expects an empty state value, which passes without work`,
+        );
+      }
+    }
+  }
+
+  return blankFindingsReport(activity.files.length + activity.checks.length, findings);
 }
 
 // ==================== Specialized scene validation (Phase 2 §15.4b) ====================

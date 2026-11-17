@@ -320,10 +320,10 @@ function renderCourseStyleGuide(contract: CourseContract, courseType: CourseType
     courseType === 'exam-prep'
       ? 'Exam-prep: quiz-heavy mix — one quiz every 3rd scene (course-wide), exam-objective phrasing in keyPoints, distractors mirroring real exam traps.'
       : courseType === 'hands-on'
-        ? 'Hands-on: practice-led mix - runnable code labs and coding/simulation/game interactive scenes, plus worked exercises throughout the course; at most 1 pbl per unit.'
+        ? 'Hands-on: practice-led mix - runnable code/SQL/terminal labs and coding/simulation/game interactive scenes, plus worked exercises throughout the course; at most 1 pbl per unit.'
         : 'Balanced: alternate concept slides with active practice — spread interactive scenes (code/simulation/game) and worked exercises across the course instead of limiting them to 1-2; at most 1 pbl per unit.';
 
-  const specialization = `\n- Specialized scene types:\n  * "activity" - a runnable code lab: a starter program that fails at least one check, visible tests, declarative checks, and a reference solution. Use one per practice-heavy lesson; every activity needs activityConfig { "kind": "code", "language": "python" }.\n  * "exercise" - fully-worked problems (concrete statement + worked solution) for computational, quantitative, and coding lessons - use these liberally wherever the material is computational.${contract.depthLevel === 'university' ? ' At university depth each problem also needs an "analysis" (why the method works / common pitfalls).' : ''}\n  * "derivation" — step-by-step proof/derivation scenes with LaTeX formulas, for formula-heavy lessons.\n  * "glossary" — one per unit: the unit's key terms with complete definitions.\n  * "reading" — one per unit: annotated further-reading list (title + why-read).\n  * "freeResponse" - a writing task: a full prompt, framing guidance, a grading rubric (criteria with what-to-look-for), and a strong sample answer. Use one per unit where written explanation is the skill being taught.`;
+  const specialization = `\n- Specialized scene types:\n  * "activity" - a runnable practice lab: a starter that fails at least one check, declarative checks, and an authoring-only reference. Choose the family that matches the skill: "code" for Python programming, "sql" for PostgreSQL queries, "terminal" for command-line basics in a simulated shell. Use one per practice-heavy lesson. Every activity needs activityConfig { "kind": "code", "language": "python" } | { "kind": "sql" } | { "kind": "terminal" }. Never request the server terminal runtime: it is operator-gated and not generated.\n  * "exercise" - fully-worked problems (concrete statement + worked solution) for computational, quantitative, and coding lessons - use these liberally wherever the material is computational.${contract.depthLevel === 'university' ? ' At university depth each problem also needs an "analysis" (why the method works / common pitfalls).' : ''}\n  * "derivation" - step-by-step proof/derivation scenes with LaTeX formulas, for formula-heavy lessons.\n  * "glossary" - one per unit: the unit's key terms with complete definitions.\n  * "reading" - one per unit: annotated further-reading list (title + why-read).\n  * "freeResponse" - a writing task: a full prompt, framing guidance, a grading rubric (criteria with what-to-look-for), and a strong sample answer. Use one per unit where written explanation is the skill being taught.`;
 
   return `- Scene types: ${typeMix}${specialization}`;
 }
@@ -624,8 +624,27 @@ export function validateOutlineShape(outline: SceneOutline): string[] {
   if (outline.type === 'quiz' && !outline.quizConfig) {
     errors.push(`quiz outline "${outline.title || outline.order}" missing quizConfig`);
   }
-  if (outline.type === 'activity' && !outline.activityConfig) {
-    errors.push(`activity outline "${outline.title || outline.order}" missing activityConfig`);
+  if (outline.type === 'activity') {
+    const label = outline.title || outline.order;
+    const config = outline.activityConfig;
+    if (!config) {
+      errors.push(`activity outline "${label}" missing activityConfig`);
+    } else if (config.kind !== 'code' && config.kind !== 'sql' && config.kind !== 'terminal') {
+      errors.push(
+        `activity outline "${label}" has an invalid activityConfig.kind (${String(config.kind)}) - use code, sql or terminal`,
+      );
+    } else if (config.kind === 'code') {
+      const language = (config.language ?? '').trim().toLowerCase();
+      if (!['python', 'python3', 'py'].includes(language)) {
+        errors.push(
+          `activity outline "${label}" is a code lab; its language must be python (the only executable runtime)`,
+        );
+      }
+    } else if (config.kind === 'terminal' && config.runtime === 'server') {
+      errors.push(
+        `activity outline "${label}" requests the server terminal runtime; generated labs must use the simulation`,
+      );
+    }
   }
   if (
     outline.type === 'interactive' &&

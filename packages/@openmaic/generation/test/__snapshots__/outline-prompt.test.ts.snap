@@ -65,10 +65,10 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 
 ### MAIC Platform Technical Constraints
 
-- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`activity\` (runnable code lab), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
+- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`activity\` (runnable code, SQL, or terminal lab), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds - \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) - are supported
 - **Slide Scene**: Static PPT pages supporting text, charts, formulas, and other visual components.
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
-- **Activity Scene**: A runnable code lab where the learner edits a starter program and submits it; declarative checks score the result
+- **Activity Scene**: A runnable practice lab where the learner edits code or SQL, or works in a simulated shell, then submits it; declarative checks score the result
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
 - **PBL Scene**: Complete project-based learning module with roles, issues, and collaboration workflow. Ideal for complex projects, engineering practice, and research tasks
 - **Duration Control**: Each scene should be 1-3 minutes (PBL scenes are longer, typically 15-30 minutes)
@@ -153,14 +153,19 @@ When comparing or listing information, specify in keyPoints:
 
 ### Activity Scene Guidelines
 
-Use \`activity\` when the learner must write and run code, not just read or choose. Good candidates: implementing a function, fixing a bug, processing a data file, or exercising an API from a small program.
+Use \`activity\` when the learner must do, not just read or choose. Pick the family that matches the skill:
+
+- \`code\` — implement a function, fix a bug, process a data file, or exercise an API from a Python program.
+- \`sql\` — write a PostgreSQL query or view against a seeded schema and have it checked by result rows.
+- \`terminal\` — practice command-line basics (navigation, files, redirection, text tools) in a deterministic simulated shell.
 
 **Constraints**:
 
-- Each activity **requires** an \`activityConfig\` object with \`{ "kind": "code", "language": "python" }\`.
-- The content stage ships a runnable starter that fails at least one check, visible tests, declarative checks, and a reference solution that passes everything. Put the task in \`description\` and the observable behavior in \`keyPoints\` (inputs, outputs, edge cases).
+- Each activity **requires** an \`activityConfig\` object: \`{ "kind": "code", "language": "python" }\`, \`{ "kind": "sql" }\`, or \`{ "kind": "terminal" }\`.
+- The content stage ships a runnable starter that fails at least one check, declarative checks, and an authoring-only reference that passes everything. Put the task in \`description\` and the observable behavior in \`keyPoints\` (inputs, outputs, edge cases).
 - Keep at most one lab per practice-heavy lesson; do not turn every lesson into a lab.
 - Do NOT use \`activity\` for a quiz, a worked example (\`exercise\`), or a simulation (\`interactive\`).
+- Do NOT propose cybersec, networking, or privilege-escalation terminal labs. Real server isolation is operator-gated and is never generated; the generated terminal runtime is a simulation for command-line basics only.
 
 ### Interactive Scene Guidelines
 Use \`interactive\` type when a concept benefits significantly from hands-on interaction and visualization. Good candidates include:
@@ -338,7 +343,7 @@ Rules:
 
 
 | quizConfig        | object                   | ❌       | Required for quiz type, contains questionCount/difficulty/questionTypes                          |
-| activityConfig    | object                   | ❌       | Required for activity type, contains kind ("code") and language ("python")                       |
+| activityConfig    | object                   | ❌       | Required for activity type: \`{kind:"code",language:"python"}\`, \`{kind:"sql"}\`, or \`{kind:"terminal"}\` |
 | interactiveConfig | object                   | ❌ (deprecated) | Legacy: use widgetType + widgetOutline instead                                                                                       |
 | widgetType        | string                   | ✅ (for interactive) | Widget type: "simulation", "diagram", "code", "game", "visualization3d"                                                 |
 | widgetOutline     | object                   | ✅ (for interactive) | Widget-specific configuration (see Widget Type Selection)                                                               |
@@ -359,13 +364,18 @@ Rules:
 ### activityConfig Structure
 
 \`\`\`json
-{
-  "kind": "code",
-  "language": "python"
-}
+{ "kind": "code", "language": "python" }
 \`\`\`
 
-An \`activity\` lab runs Python in the browser. Describe one self-contained task whose behavior can be checked by running tests and inspecting output or files.
+\`\`\`json
+{ "kind": "sql" }
+\`\`\`
+
+\`\`\`json
+{ "kind": "terminal" }
+\`\`\`
+
+A \`code\` lab runs Python in the browser and is checked by tests plus output/file expectations. A \`sql\` lab runs PostgreSQL in the browser against a seeded schema and is checked by probe result rows. A \`terminal\` lab runs in a deterministic simulated shell and is checked by output, files, and final state. Never add a \`runtime\` field; server isolation is operator-gated and not generated.
 
 ### interactiveConfig Structure
 
@@ -615,10 +625,10 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 
 ### MAIC Platform Technical Constraints
 
-- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`activity\` (runnable code lab), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
+- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`activity\` (runnable code, SQL, or terminal lab), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds - \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) - are supported
 - **Slide Scene**: Static PPT pages supporting text, charts, formulas, and other visual components.
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
-- **Activity Scene**: A runnable code lab where the learner edits a starter program and submits it; declarative checks score the result
+- **Activity Scene**: A runnable practice lab where the learner edits code or SQL, or works in a simulated shell, then submits it; declarative checks score the result
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
 - **PBL Scene**: Complete project-based learning module with roles, issues, and collaboration workflow. Ideal for complex projects, engineering practice, and research tasks
 - **Duration Control**: Each scene should be 1-3 minutes (PBL scenes are longer, typically 15-30 minutes)
@@ -769,14 +779,19 @@ To avoid blocked requests from the generation model:
 
 ### Activity Scene Guidelines
 
-Use \`activity\` when the learner must write and run code, not just read or choose. Good candidates: implementing a function, fixing a bug, processing a data file, or exercising an API from a small program.
+Use \`activity\` when the learner must do, not just read or choose. Pick the family that matches the skill:
+
+- \`code\` — implement a function, fix a bug, process a data file, or exercise an API from a Python program.
+- \`sql\` — write a PostgreSQL query or view against a seeded schema and have it checked by result rows.
+- \`terminal\` — practice command-line basics (navigation, files, redirection, text tools) in a deterministic simulated shell.
 
 **Constraints**:
 
-- Each activity **requires** an \`activityConfig\` object with \`{ "kind": "code", "language": "python" }\`.
-- The content stage ships a runnable starter that fails at least one check, visible tests, declarative checks, and a reference solution that passes everything. Put the task in \`description\` and the observable behavior in \`keyPoints\` (inputs, outputs, edge cases).
+- Each activity **requires** an \`activityConfig\` object: \`{ "kind": "code", "language": "python" }\`, \`{ "kind": "sql" }\`, or \`{ "kind": "terminal" }\`.
+- The content stage ships a runnable starter that fails at least one check, declarative checks, and an authoring-only reference that passes everything. Put the task in \`description\` and the observable behavior in \`keyPoints\` (inputs, outputs, edge cases).
 - Keep at most one lab per practice-heavy lesson; do not turn every lesson into a lab.
 - Do NOT use \`activity\` for a quiz, a worked example (\`exercise\`), or a simulation (\`interactive\`).
+- Do NOT propose cybersec, networking, or privilege-escalation terminal labs. Real server isolation is operator-gated and is never generated; the generated terminal runtime is a simulation for command-line basics only.
 
 ### Interactive Scene Guidelines
 Use \`interactive\` type when a concept benefits significantly from hands-on interaction and visualization. Good candidates include:
@@ -958,7 +973,7 @@ Rules:
 | mediaGenerations  | MediaGenerationRequest[] | ❌       | AI-generated media requests when generated media would enhance a slide scene                     |
 
 | quizConfig        | object                   | ❌       | Required for quiz type, contains questionCount/difficulty/questionTypes                          |
-| activityConfig    | object                   | ❌       | Required for activity type, contains kind ("code") and language ("python")                       |
+| activityConfig    | object                   | ❌       | Required for activity type: \`{kind:"code",language:"python"}\`, \`{kind:"sql"}\`, or \`{kind:"terminal"}\` |
 | interactiveConfig | object                   | ❌ (deprecated) | Legacy: use widgetType + widgetOutline instead                                                                                       |
 | widgetType        | string                   | ✅ (for interactive) | Widget type: "simulation", "diagram", "code", "game", "visualization3d"                                                 |
 | widgetOutline     | object                   | ✅ (for interactive) | Widget-specific configuration (see Widget Type Selection)                                                               |
@@ -979,13 +994,18 @@ Rules:
 ### activityConfig Structure
 
 \`\`\`json
-{
-  "kind": "code",
-  "language": "python"
-}
+{ "kind": "code", "language": "python" }
 \`\`\`
 
-An \`activity\` lab runs Python in the browser. Describe one self-contained task whose behavior can be checked by running tests and inspecting output or files.
+\`\`\`json
+{ "kind": "sql" }
+\`\`\`
+
+\`\`\`json
+{ "kind": "terminal" }
+\`\`\`
+
+A \`code\` lab runs Python in the browser and is checked by tests plus output/file expectations. A \`sql\` lab runs PostgreSQL in the browser against a seeded schema and is checked by probe result rows. A \`terminal\` lab runs in a deterministic simulated shell and is checked by output, files, and final state. Never add a \`runtime\` field; server isolation is operator-gated and not generated.
 
 ### interactiveConfig Structure
 
@@ -1244,10 +1264,10 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 
 ### MAIC Platform Technical Constraints
 
-- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`activity\` (runnable code lab), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
+- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`activity\` (runnable code, SQL, or terminal lab), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds - \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) - are supported
 - **Slide Scene**: Static PPT pages supporting text, charts, formulas, and other visual components.
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
-- **Activity Scene**: A runnable code lab where the learner edits a starter program and submits it; declarative checks score the result
+- **Activity Scene**: A runnable practice lab where the learner edits code or SQL, or works in a simulated shell, then submits it; declarative checks score the result
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
 - **PBL Scene**: Complete project-based learning module with roles, issues, and collaboration workflow. Ideal for complex projects, engineering practice, and research tasks
 - **Duration Control**: Each scene should be 1-3 minutes (PBL scenes are longer, typically 15-30 minutes)
@@ -1371,14 +1391,19 @@ To avoid blocked requests from the generation model:
 
 ### Activity Scene Guidelines
 
-Use \`activity\` when the learner must write and run code, not just read or choose. Good candidates: implementing a function, fixing a bug, processing a data file, or exercising an API from a small program.
+Use \`activity\` when the learner must do, not just read or choose. Pick the family that matches the skill:
+
+- \`code\` — implement a function, fix a bug, process a data file, or exercise an API from a Python program.
+- \`sql\` — write a PostgreSQL query or view against a seeded schema and have it checked by result rows.
+- \`terminal\` — practice command-line basics (navigation, files, redirection, text tools) in a deterministic simulated shell.
 
 **Constraints**:
 
-- Each activity **requires** an \`activityConfig\` object with \`{ "kind": "code", "language": "python" }\`.
-- The content stage ships a runnable starter that fails at least one check, visible tests, declarative checks, and a reference solution that passes everything. Put the task in \`description\` and the observable behavior in \`keyPoints\` (inputs, outputs, edge cases).
+- Each activity **requires** an \`activityConfig\` object: \`{ "kind": "code", "language": "python" }\`, \`{ "kind": "sql" }\`, or \`{ "kind": "terminal" }\`.
+- The content stage ships a runnable starter that fails at least one check, declarative checks, and an authoring-only reference that passes everything. Put the task in \`description\` and the observable behavior in \`keyPoints\` (inputs, outputs, edge cases).
 - Keep at most one lab per practice-heavy lesson; do not turn every lesson into a lab.
 - Do NOT use \`activity\` for a quiz, a worked example (\`exercise\`), or a simulation (\`interactive\`).
+- Do NOT propose cybersec, networking, or privilege-escalation terminal labs. Real server isolation is operator-gated and is never generated; the generated terminal runtime is a simulation for command-line basics only.
 
 ### Interactive Scene Guidelines
 Use \`interactive\` type when a concept benefits significantly from hands-on interaction and visualization. Good candidates include:
@@ -1558,7 +1583,7 @@ Rules:
 | mediaGenerations  | MediaGenerationRequest[] | ❌       | AI-generated media requests when generated media would enhance a slide scene                     |
 
 | quizConfig        | object                   | ❌       | Required for quiz type, contains questionCount/difficulty/questionTypes                          |
-| activityConfig    | object                   | ❌       | Required for activity type, contains kind ("code") and language ("python")                       |
+| activityConfig    | object                   | ❌       | Required for activity type: \`{kind:"code",language:"python"}\`, \`{kind:"sql"}\`, or \`{kind:"terminal"}\` |
 | interactiveConfig | object                   | ❌ (deprecated) | Legacy: use widgetType + widgetOutline instead                                                                                       |
 | widgetType        | string                   | ✅ (for interactive) | Widget type: "simulation", "diagram", "code", "game", "visualization3d"                                                 |
 | widgetOutline     | object                   | ✅ (for interactive) | Widget-specific configuration (see Widget Type Selection)                                                               |
@@ -1579,13 +1604,18 @@ Rules:
 ### activityConfig Structure
 
 \`\`\`json
-{
-  "kind": "code",
-  "language": "python"
-}
+{ "kind": "code", "language": "python" }
 \`\`\`
 
-An \`activity\` lab runs Python in the browser. Describe one self-contained task whose behavior can be checked by running tests and inspecting output or files.
+\`\`\`json
+{ "kind": "sql" }
+\`\`\`
+
+\`\`\`json
+{ "kind": "terminal" }
+\`\`\`
+
+A \`code\` lab runs Python in the browser and is checked by tests plus output/file expectations. A \`sql\` lab runs PostgreSQL in the browser against a seeded schema and is checked by probe result rows. A \`terminal\` lab runs in a deterministic simulated shell and is checked by output, files, and final state. Never add a \`runtime\` field; server isolation is operator-gated and not generated.
 
 ### interactiveConfig Structure
 
@@ -1835,10 +1865,10 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 
 ### MAIC Platform Technical Constraints
 
-- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`activity\` (runnable code lab), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds — \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) — are supported
+- **Scene Types**: \`slide\` (presentation), \`quiz\` (assessment), \`activity\` (runnable code, SQL, or terminal lab), \`interactive\` (interactive visualization), \`pbl\` (project-based learning), plus specialized kinds - \`exercise\` (worked problems), \`derivation\` (proofs), \`glossary\` (key terms), \`reading\` (further reading) - are supported
 - **Slide Scene**: Static PPT pages supporting text, charts, formulas, and other visual components.
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
-- **Activity Scene**: A runnable code lab where the learner edits a starter program and submits it; declarative checks score the result
+- **Activity Scene**: A runnable practice lab where the learner edits code or SQL, or works in a simulated shell, then submits it; declarative checks score the result
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
 - **PBL Scene**: Complete project-based learning module with roles, issues, and collaboration workflow. Ideal for complex projects, engineering practice, and research tasks
 - **Duration Control**: Each scene should be 1-3 minutes (PBL scenes are longer, typically 15-30 minutes)
@@ -1923,14 +1953,19 @@ When comparing or listing information, specify in keyPoints:
 
 ### Activity Scene Guidelines
 
-Use \`activity\` when the learner must write and run code, not just read or choose. Good candidates: implementing a function, fixing a bug, processing a data file, or exercising an API from a small program.
+Use \`activity\` when the learner must do, not just read or choose. Pick the family that matches the skill:
+
+- \`code\` — implement a function, fix a bug, process a data file, or exercise an API from a Python program.
+- \`sql\` — write a PostgreSQL query or view against a seeded schema and have it checked by result rows.
+- \`terminal\` — practice command-line basics (navigation, files, redirection, text tools) in a deterministic simulated shell.
 
 **Constraints**:
 
-- Each activity **requires** an \`activityConfig\` object with \`{ "kind": "code", "language": "python" }\`.
-- The content stage ships a runnable starter that fails at least one check, visible tests, declarative checks, and a reference solution that passes everything. Put the task in \`description\` and the observable behavior in \`keyPoints\` (inputs, outputs, edge cases).
+- Each activity **requires** an \`activityConfig\` object: \`{ "kind": "code", "language": "python" }\`, \`{ "kind": "sql" }\`, or \`{ "kind": "terminal" }\`.
+- The content stage ships a runnable starter that fails at least one check, declarative checks, and an authoring-only reference that passes everything. Put the task in \`description\` and the observable behavior in \`keyPoints\` (inputs, outputs, edge cases).
 - Keep at most one lab per practice-heavy lesson; do not turn every lesson into a lab.
 - Do NOT use \`activity\` for a quiz, a worked example (\`exercise\`), or a simulation (\`interactive\`).
+- Do NOT propose cybersec, networking, or privilege-escalation terminal labs. Real server isolation is operator-gated and is never generated; the generated terminal runtime is a simulation for command-line basics only.
 
 ### Interactive Scene Guidelines
 Use \`interactive\` type when a concept benefits significantly from hands-on interaction and visualization. Good candidates include:
@@ -2110,7 +2145,7 @@ Rules:
 
 
 | quizConfig        | object                   | ❌       | Required for quiz type, contains questionCount/difficulty/questionTypes                          |
-| activityConfig    | object                   | ❌       | Required for activity type, contains kind ("code") and language ("python")                       |
+| activityConfig    | object                   | ❌       | Required for activity type: \`{kind:"code",language:"python"}\`, \`{kind:"sql"}\`, or \`{kind:"terminal"}\` |
 | interactiveConfig | object                   | ❌ (deprecated) | Legacy: use widgetType + widgetOutline instead                                                                                       |
 | widgetType        | string                   | ✅ (for interactive) | Widget type: "simulation", "diagram", "code", "game", "visualization3d"                                                 |
 | widgetOutline     | object                   | ✅ (for interactive) | Widget-specific configuration (see Widget Type Selection)                                                               |
@@ -2131,13 +2166,18 @@ Rules:
 ### activityConfig Structure
 
 \`\`\`json
-{
-  "kind": "code",
-  "language": "python"
-}
+{ "kind": "code", "language": "python" }
 \`\`\`
 
-An \`activity\` lab runs Python in the browser. Describe one self-contained task whose behavior can be checked by running tests and inspecting output or files.
+\`\`\`json
+{ "kind": "sql" }
+\`\`\`
+
+\`\`\`json
+{ "kind": "terminal" }
+\`\`\`
+
+A \`code\` lab runs Python in the browser and is checked by tests plus output/file expectations. A \`sql\` lab runs PostgreSQL in the browser against a seeded schema and is checked by probe result rows. A \`terminal\` lab runs in a deterministic simulated shell and is checked by output, files, and final state. Never add a \`runtime\` field; server isolation is operator-gated and not generated.
 
 ### interactiveConfig Structure
 

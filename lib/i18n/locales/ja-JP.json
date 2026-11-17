@@ -1382,7 +1382,13 @@
     },
     "phaseContent": "コンテンツ作成中",
     "phaseActions": "スライド整理中",
-    "phaseNarration": "ナレーション録音中"
+    "phaseNarration": "ナレーション録音中",
+    "activityKind": "ラボの種類",
+    "activityKindCode": "コード",
+    "activityKindSql": "SQL",
+    "activityKindTerminal": "ターミナル",
+    "activitySqlNote": "学習者は PostgreSQL スクリプトを書き、検証クエリが結果行を比較します。",
+    "activityTerminalNote": "学習者はシミュレーションシェルでコマンドの基礎を練習します。サーバー分離は運用者が有効化するもので、自動生成されません。"
   },
   "settings": {
     "title": "設定",

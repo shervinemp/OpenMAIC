@@ -9,6 +9,7 @@ import { nanoid } from 'nanoid';
 import katex from 'katex';
 import type {
   Action,
+  ActivityContent,
   ActivityFile,
   ActivityTest,
   CodeActivityCheck,
@@ -17,6 +18,11 @@ import type {
   PPTElement,
   QuizQuestion,
   SlideBackground,
+  SqlActivityCheck,
+  SqlActivityContent,
+  SqlValue,
+  TerminalActivityCheck,
+  TerminalActivityContent,
   WidgetType,
 } from '@openmaic/dsl';
 import { isWidgetType, normalizeElement, validateActivityContent } from '@openmaic/dsl';
@@ -37,6 +43,8 @@ import {
   recordSceneDepthSummary,
   summarizeDepthFindings,
   validateActivityDepth,
+  validateSqlActivityDepth,
+  validateTerminalActivityDepth,
   validateDerivationDepth,
   validateExerciseDepth,
   validateFreeResponseDepth,
@@ -1129,7 +1137,7 @@ async function verifyQuizAnswersSafely(
 // starter through the real runtime before the lab ships.
 
 interface ActivityNormalization {
-  content?: CodeActivityContent;
+  content?: ActivityContent;
   issue?: string;
 }
 
@@ -1195,6 +1203,45 @@ function normalizeActivityTests(value: unknown): { tests?: ActivityTest[]; issue
 }
 
 const CODE_CHECK_TYPES = new Set(['expectTests', 'expectStdout', 'expectFile']);
+const TERMINAL_CHECK_TYPES = new Set(['expectStdout', 'expectFile', 'expectState']);
+
+function activityHints(payload: Record<string, unknown>): string[] {
+  return Array.isArray(payload.hints)
+    ? payload.hints
+        .filter((hint): hint is string => typeof hint === 'string')
+        .map((hint) => hint.trim())
+        .filter(Boolean)
+        .slice(0, 4)
+    : [];
+}
+
+/** Attach the fields every activity family shares. */
+function applyActivityCommon(content: ActivityContent, payload: Record<string, unknown>): void {
+  const hints = activityHints(payload);
+  if (hints.length > 0) content.hints = hints;
+  const debrief = activityText(payload.debrief).trim();
+  if (debrief) content.debrief = debrief;
+  if (typeof payload.timeLimitSec === 'number' && Number.isFinite(payload.timeLimitSec)) {
+    content.timeLimitSec = Math.min(Math.max(Math.round(payload.timeLimitSec), 1), 120);
+  }
+}
+
+function checkBase(entry: Record<string, unknown>): {
+  id: string;
+  label?: string;
+  points?: number;
+  hidden?: boolean;
+} {
+  const id = activityText(entry.id).trim() || `check_${nanoid(8)}`;
+  const base: { id: string; label?: string; points?: number; hidden?: boolean } = { id };
+  const label = activityText(entry.label).trim();
+  if (label) base.label = label;
+  if (typeof entry.points === 'number' && Number.isFinite(entry.points) && entry.points >= 0) {
+    base.points = entry.points;
+  }
+  if (entry.hidden === true) base.hidden = true;
+  return base;
+}
 
 function normalizeActivityChecks(value: unknown): { checks?: CodeActivityCheck[]; issue?: string } {
   if (!Array.isArray(value) || value.length === 0) {
@@ -1209,14 +1256,7 @@ function normalizeActivityChecks(value: unknown): { checks?: CodeActivityCheck[]
         issue: `unsupported check type ${JSON.stringify(type)} (use expectTests, expectStdout or expectFile)`,
       };
     }
-    const id = activityText(entry.id).trim() || `check_${nanoid(8)}`;
-    const base: { id: string; label?: string; points?: number; hidden?: boolean } = { id };
-    const label = activityText(entry.label).trim();
-    if (label) base.label = label;
-    if (typeof entry.points === 'number' && Number.isFinite(entry.points) && entry.points >= 0) {
-      base.points = entry.points;
-    }
-    if (entry.hidden === true) base.hidden = true;
+    const base = checkBase(entry);
 
     if (type === 'expectTests') {
       const testIds = Array.isArray(entry.testIds)
@@ -1234,12 +1274,12 @@ function normalizeActivityChecks(value: unknown): { checks?: CodeActivityCheck[]
     }
 
     if (typeof entry.expected !== 'string') {
-      return { issue: `check "${id}" needs string expected text` };
+      return { issue: `check "${base.id}" needs string expected text` };
     }
     const mode = entry.mode === 'contains' ? 'contains' : 'exact';
     if (type === 'expectFile') {
       const path = activityText(entry.path).trim();
-      if (!path) return { issue: `check "${id}" needs a file path` };
+      if (!path) return { issue: `check "${base.id}" needs a file path` };
       checks.push({ ...base, type: 'expectFile', path, expected: entry.expected, mode });
     } else {
       checks.push({ ...base, type: 'expectStdout', expected: entry.expected, mode });
@@ -1248,8 +1288,98 @@ function normalizeActivityChecks(value: unknown): { checks?: CodeActivityCheck[]
   return { checks };
 }
 
-/** Normalize one model reply into the DSL contract, or explain why it cannot be. */
-function normalizeActivityContent(parsed: unknown, language: string): ActivityNormalization {
+function isSqlCell(value: unknown): value is SqlValue {
+  return (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  );
+}
+
+function normalizeSqlChecks(value: unknown): { checks?: SqlActivityCheck[]; issue?: string } {
+  if (!Array.isArray(value) || value.length === 0) {
+    return { issue: 'checks must be a non-empty array' };
+  }
+  const checks: SqlActivityCheck[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) return { issue: 'checks contains a non-object entry' };
+    if (activityText(entry.type) !== 'expectSqlRows') {
+      return {
+        issue: 'SQL labs use only expectSqlRows checks (each probe is a query plus expected rows)',
+      };
+    }
+    const base = checkBase(entry);
+    const sql = activityText(entry.sql).trim();
+    if (!sql) return { issue: `check "${base.id}" needs a probe query` };
+    if (!Array.isArray(entry.expected)) {
+      return { issue: `check "${base.id}" needs an array of expected rows` };
+    }
+    const expected: SqlValue[][] = [];
+    for (const row of entry.expected) {
+      if (!Array.isArray(row)) {
+        return { issue: `check "${base.id}" expected rows must be arrays` };
+      }
+      if (!row.every(isSqlCell)) {
+        return {
+          issue: `check "${base.id}" expected cells must be string, number, boolean or null`,
+        };
+      }
+      expected.push([...row]);
+    }
+    checks.push({
+      ...base,
+      type: 'expectSqlRows',
+      sql,
+      expected,
+      ...(entry.ordered === true ? { ordered: true } : {}),
+    });
+  }
+  return { checks };
+}
+
+function normalizeTerminalChecks(value: unknown): {
+  checks?: TerminalActivityCheck[];
+  issue?: string;
+} {
+  if (!Array.isArray(value) || value.length === 0) {
+    return { issue: 'checks must be a non-empty array' };
+  }
+  const checks: TerminalActivityCheck[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) return { issue: 'checks contains a non-object entry' };
+    const type = activityText(entry.type);
+    if (!TERMINAL_CHECK_TYPES.has(type)) {
+      return {
+        issue: `unsupported check type ${JSON.stringify(type)} (use expectStdout, expectFile or expectState)`,
+      };
+    }
+    const base = checkBase(entry);
+    if (typeof entry.expected !== 'string') {
+      return { issue: `check "${base.id}" needs string expected text` };
+    }
+
+    if (type === 'expectState') {
+      const path = activityText(entry.path).trim();
+      if (!path) return { issue: `check "${base.id}" needs a state path` };
+      checks.push({ ...base, type: 'expectState', path, expected: entry.expected });
+      continue;
+    }
+
+    const mode = entry.mode === 'contains' ? 'contains' : 'exact';
+    if (type === 'expectFile') {
+      const path = activityText(entry.path).trim();
+      if (!path) return { issue: `check "${base.id}" needs a file path` };
+      checks.push({ ...base, type: 'expectFile', path, expected: entry.expected, mode });
+    } else {
+      checks.push({ ...base, type: 'expectStdout', expected: entry.expected, mode });
+    }
+  }
+  return { checks };
+}
+
+/** Normalize one model reply into a code-lab contract, or explain why it cannot be. */
+function normalizeCodeActivity(parsed: unknown, language: string): ActivityNormalization {
   const payload = unwrapActivityPayload(parsed);
   if (!payload) return { issue: 'expected one JSON object describing the lab' };
 
@@ -1272,15 +1402,6 @@ function normalizeActivityContent(parsed: unknown, language: string): ActivityNo
   }
   const entryFile = requestedEntry || files.files[0].path;
 
-  const hints = Array.isArray(payload.hints)
-    ? payload.hints
-        .filter((hint): hint is string => typeof hint === 'string')
-        .map((hint) => hint.trim())
-        .filter(Boolean)
-        .slice(0, 4)
-    : [];
-  const debrief = activityText(payload.debrief).trim();
-
   const content: CodeActivityContent = {
     type: 'activity',
     kind: 'code',
@@ -1291,17 +1412,70 @@ function normalizeActivityContent(parsed: unknown, language: string): ActivityNo
     tests: tests.tests,
     checks: checks.checks,
   };
-  if (hints.length > 0) content.hints = hints;
-  if (debrief) content.debrief = debrief;
-  if (typeof payload.timeLimitSec === 'number' && Number.isFinite(payload.timeLimitSec)) {
-    content.timeLimitSec = Math.min(Math.max(Math.round(payload.timeLimitSec), 1), 120);
-  }
+  applyActivityCommon(content, payload);
   if (reference.files.length > 0) content.referenceFiles = reference.files;
   return { content };
 }
 
+/** Normalize one model reply into a SQL-lab contract. */
+function normalizeSqlActivity(parsed: unknown): ActivityNormalization {
+  const payload = unwrapActivityPayload(parsed);
+  if (!payload) return { issue: 'expected one JSON object describing the lab' };
+
+  const checks = normalizeSqlChecks(payload.checks);
+  if (checks.issue || !checks.checks) return { issue: checks.issue };
+
+  const content: SqlActivityContent = {
+    type: 'activity',
+    kind: 'sql',
+    instructions: activityText(payload.instructions).trim(),
+    setupSql: activityText(payload.setupSql),
+    starterSql: activityText(payload.starterSql),
+    checks: checks.checks,
+  };
+  applyActivityCommon(content, payload);
+  const referenceSql = activityText(payload.referenceSql).trim();
+  if (referenceSql) content.referenceSql = referenceSql;
+  return { content };
+}
+
 /**
- * Generate one code lab.
+ * Normalize one model reply into a terminal-lab contract. The runtime is
+ * forced to the simulation: generation must never emit an operator-gated
+ * server lab, even if the model copies a runtime field from the prompt.
+ */
+function normalizeTerminalActivity(parsed: unknown): ActivityNormalization {
+  const payload = unwrapActivityPayload(parsed);
+  if (!payload) return { issue: 'expected one JSON object describing the lab' };
+
+  const files = normalizeActivityFiles(payload.files, 'files');
+  if (files.issue || !files.files) return { issue: files.issue };
+
+  const checks = normalizeTerminalChecks(payload.checks);
+  if (checks.issue || !checks.checks) return { issue: checks.issue };
+
+  const referenceCommands = Array.isArray(payload.referenceCommands)
+    ? payload.referenceCommands
+        .filter((command): command is string => typeof command === 'string')
+        .map((command) => command.trim())
+        .filter(Boolean)
+    : [];
+
+  const content: TerminalActivityContent = {
+    type: 'activity',
+    kind: 'terminal',
+    runtime: 'simulation',
+    instructions: activityText(payload.instructions).trim(),
+    files: files.files,
+    checks: checks.checks,
+  };
+  applyActivityCommon(content, payload);
+  if (referenceCommands.length > 0) content.referenceCommands = referenceCommands;
+  return { content };
+}
+
+/**
+ * Generate one activity lab (code, SQL, or simulated terminal).
  *
  * The bounded loop re-prompts on unparseable JSON, on a DSL structural
  * violation (path escapes, duplicate ids, missing entry file, wrong check
@@ -1319,15 +1493,24 @@ async function generateActivityContent(
   onFailure?: (failure: SceneContentFailure) => void,
 ): Promise<GeneratedActivityContent | null> {
   const config = outline.activityConfig ?? { kind: 'code' as const, language: 'python' };
-  const requestedLanguage = config.language.trim().toLowerCase();
-  if (config.kind !== 'code' || !['python', 'python3', 'py'].includes(requestedLanguage)) {
-    log.error(
-      `Activity "${outline.title}" asks for ${config.kind}/${config.language}; the browser runner only executes Python code labs`,
-    );
+  const kind = config.kind;
+
+  if (kind === 'code') {
+    const requestedLanguage = (config.language ?? '').trim().toLowerCase();
+    if (!['python', 'python3', 'py'].includes(requestedLanguage)) {
+      log.error(
+        `Activity "${outline.title}" asks for code/${config.language ?? 'no language'}; the browser runner only executes Python code labs`,
+      );
+      onFailure?.({ code: 'invalid-model-output' });
+      return null;
+    }
+  } else if (kind !== 'sql' && kind !== 'terminal') {
+    log.error(`Activity "${outline.title}" asks for an unsupported kind: ${String(kind)}`);
     onFailure?.({ code: 'invalid-model-output' });
     return null;
   }
   const language = 'python';
+  const labKind = kind === 'code' ? 'code lab' : kind === 'sql' ? 'SQL lab' : 'terminal lab';
   const depthLevel = resolveDepthLevel(outline.depthLevel);
 
   const prompts = buildPrompt(PROMPT_IDS.ACTIVITY_CONTENT, {
@@ -1335,6 +1518,10 @@ async function generateActivityContent(
     description: outline.description,
     keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
     language,
+    labKind,
+    codeLab: kind === 'code',
+    sqlLab: kind === 'sql',
+    terminalLab: kind === 'terminal',
     languageDirective: languageDirective || '',
     depthDirective: renderDepthDirective(depthLevel),
     unitContext: unitContext || '',
@@ -1374,7 +1561,12 @@ async function generateActivityContent(
       return null;
     }
 
-    const normalized = normalizeActivityContent(parsed, language);
+    const normalized =
+      kind === 'code'
+        ? normalizeCodeActivity(parsed, language)
+        : kind === 'sql'
+          ? normalizeSqlActivity(parsed)
+          : normalizeTerminalActivity(parsed);
     if (!normalized.content) {
       log.error(
         `Activity payload rejected for "${outline.title}": ${normalized.issue ?? 'unknown shape'}`,
@@ -1402,7 +1594,12 @@ async function generateActivityContent(
       return null;
     }
 
-    const depthReport = validateActivityDepth(outline, normalized.content);
+    const depthReport =
+      normalized.content.kind === 'code'
+        ? validateActivityDepth(outline, normalized.content)
+        : normalized.content.kind === 'sql'
+          ? validateSqlActivityDepth(outline, normalized.content)
+          : validateTerminalActivityDepth(outline, normalized.content);
     if (depthReport.adequate) {
       if (attempt > 1) {
         recordSceneDepthSummary(outline.id, { reworked: true, attempts: attempt, findings: [] });

@@ -1245,39 +1245,77 @@ function ActivityConfigDisclosure({
 }) {
   const { t } = useI18n();
   const config = outline.activityConfig ?? { kind: 'code' as const, language: 'python' };
+  const summary =
+    config.kind === 'sql'
+      ? t('generation.activityKindSql')
+      : config.kind === 'terminal'
+        ? t('generation.activityKindTerminal')
+        : t('generation.activityConfigSummary', {
+            language: config.language === 'python' ? 'Python' : (config.language ?? 'Python'),
+          });
 
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button type="button" className={cascadeSegmentClass(theme)}>
-          <span className="max-w-[8rem] truncate">
-            {t('generation.activityConfigSummary', {
-              language: config.language === 'python' ? 'Python' : config.language,
-            })}
-          </span>
+          <span className="max-w-[8rem] truncate">{summary}</span>
           <ChevronDown className="size-3 opacity-70" />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" sideOffset={6} className="w-64 space-y-2.5 p-3">
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs font-medium text-muted-foreground">
-            {t('generation.activityRuntime')}
+            {t('generation.activityKind')}
           </span>
           <select
-            value={config.language || 'python'}
-            onChange={(event) =>
+            value={config.kind}
+            onChange={(event) => {
+              const next = event.target.value;
               onUpdate({
-                activityConfig: { kind: 'code', language: event.target.value },
-              })
-            }
+                activityConfig:
+                  next === 'sql'
+                    ? { kind: 'sql' }
+                    : next === 'terminal'
+                      ? { kind: 'terminal' }
+                      : { kind: 'code', language: 'python' },
+              });
+            }}
             className="rounded-md border border-border bg-background px-2 py-1 text-xs"
           >
-            <option value="python">Python</option>
+            <option value="code">{t('generation.activityKindCode')}</option>
+            <option value="sql">{t('generation.activityKindSql')}</option>
+            <option value="terminal">{t('generation.activityKindTerminal')}</option>
           </select>
         </div>
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
-          {t('generation.activityRuntimeNote')}
-        </p>
+        {config.kind === 'code' ? (
+          <>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-medium text-muted-foreground">
+                {t('generation.activityRuntime')}
+              </span>
+              <select
+                value={config.language || 'python'}
+                onChange={(event) =>
+                  onUpdate({
+                    activityConfig: { kind: 'code', language: event.target.value },
+                  })
+                }
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+              >
+                <option value="python">Python</option>
+              </select>
+            </div>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              {t('generation.activityRuntimeNote')}
+            </p>
+          </>
+        ) : (
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            {config.kind === 'sql'
+              ? t('generation.activitySqlNote')
+              : t('generation.activityTerminalNote')}
+          </p>
+        )}
       </PopoverContent>
     </Popover>
   );

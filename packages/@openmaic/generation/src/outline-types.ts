@@ -21,6 +21,21 @@ export interface PdfImage {
 
 export type ImageMapping = Record<string, string>;
 
+/** Activity families the course generator can author. */
+export type ActivityOutlineKind = 'code' | 'sql' | 'terminal';
+
+export interface ActivityOutlineConfig {
+  kind: ActivityOutlineKind;
+  /** Code labs only. Python is the only executable runtime today. */
+  language?: string;
+  /**
+   * Terminal labs only. Outlines may request `simulation`; `server` exists in
+   * the contract so the planner can be rejected explicitly, but generation
+   * never emits an operator-gated lab.
+   */
+  runtime?: 'simulation' | 'server';
+}
+
 /** Free-form requirements accepted by outline generation. */
 export interface UserRequirements {
   requirement: string;
@@ -133,15 +148,13 @@ export interface SceneOutline {
     scenarioBrief?: string;
   };
   /**
-   * Hands-on lab configuration. `kind` selects the activity family; `language`
-   * selects the runtime (only `python` is executable today). The content stage
-   * emits a runnable starter, visible tests, declarative checks and an
-   * authoring-only reference solution.
+   * Hands-on lab configuration. `kind` selects the activity family: a Python
+   * code lab, a PostgreSQL SQL lab, or a simulated terminal lab. `language`
+   * applies to code labs only; generated terminal labs are always the
+   * deterministic simulation (the server tier is operator-gated and never
+   * authored by the model).
    */
-  activityConfig?: {
-    kind: 'code';
-    language: string;
-  };
+  activityConfig?: ActivityOutlineConfig;
   widgetType?: WidgetType;
   widgetOutline?: WidgetOutline;
 }
