@@ -65,6 +65,9 @@ describe('quiz decision grading', () => {
     expect(quizGradeFromResult(result(7), input, config())).toBeNull();
     expect(quizGradeFromResult(result(0), input, config())?.value.score).toBe(0);
     expect(quizGradeFromResult(result(10), input, config())?.value.score).toBe(10);
+    // Rounding must not manufacture a 0 or a full score.
+    expect(quizGradeFromResult(result(0.4), input, config())).toBeNull();
+    expect(quizGradeFromResult(result(9.6), input, config())).toBeNull();
   });
 
   it('clamps a score to the question maximum and refuses no answer', () => {

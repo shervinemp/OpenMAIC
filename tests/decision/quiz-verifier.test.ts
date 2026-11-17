@@ -83,6 +83,34 @@ describe('decision quiz verifier', () => {
     expect(answers).toEqual([{ id: 'q2', answers: ['B', 'A'] }]);
   });
 
+  it('measures the rendered prompt once instead of double-counting options', async () => {
+    const long: QuizVerificationQuestion[] = [
+      {
+        id: 'q1',
+        type: 'single',
+        question: 'Pick',
+        options: [
+          { value: 'A', label: 'A'.repeat(500) },
+          { value: 'B', label: 'B' },
+        ],
+      },
+    ];
+    const decide = vi.fn(async () => ({
+      provider: 'fake',
+      answers: new Map([['q1', { kind: 'choice' as const, values: ['A'], confidence: 0.9 }]]),
+      abstained: new Set<string>(),
+      latencyMs: 1,
+    }));
+    const verifier = createDecisionQuizVerifier({
+      // Above the rendered length, below the old double-counted length.
+      config: config({ maxInputChars: 800 }),
+      provider: { id: 'fake', decide },
+    });
+
+    await expect(verifier(long)).resolves.toEqual([{ id: 'q1', answers: ['A'] }]);
+    expect(decide).toHaveBeenCalledTimes(1);
+  });
+
   it('returns no signal when nothing usable came back', async () => {
     const verifier = createDecisionQuizVerifier({
       config: config(),

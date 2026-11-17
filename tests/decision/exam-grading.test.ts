@@ -71,6 +71,34 @@ describe('exam decision grading', () => {
         rubric: [input.rubric[0]!, { ...input.rubric[1]!, id: 'r1' }],
       }),
     ).toBeNull();
+    expect(
+      buildExamDecisionRequest({
+        ...input,
+        rubric: [{ ...input.rubric[0]!, id: '__score' }],
+      }),
+    ).toBeNull();
+  });
+
+  it('uses the same index fallback as the LLM prompt when a rubric has no ids', () => {
+    const idless = {
+      ...input,
+      rubric: [
+        { criterion: 'Names storage layers', weight: 'essential', lookFor: 'bronze/silver' },
+        { criterion: 'Explains separation', weight: 'important', lookFor: 'compute split' },
+      ],
+    } as unknown as ExamDecisionInput;
+
+    expect(buildExamDecisionRequest(idless)?.questions.map((question) => question.id)).toEqual([
+      '0',
+      '1',
+      '__score',
+    ]);
+    expect(
+      examGradeFromResult(result({ '0': met(), '1': met() }), idless, config())?.value.criteria,
+    ).toEqual([
+      { id: '0', met: true, comment: '' },
+      { id: '1', met: true, comment: '' },
+    ]);
   });
 
   it('awards full marks when every criterion is confidently met', () => {
@@ -106,6 +134,22 @@ describe('exam decision grading', () => {
         config({ mode: 'triage' }),
       ),
     ).toBeNull();
+  });
+
+  it('treats a coin-flip criterion as partial, not as full marks or zero', () => {
+    const half: DecisionAnswer = { kind: 'noul', probability: 0.5, confidence: 0.99 };
+    expect(examGradeFromResult(result({ r1: half, r2: half }), input, config())).toBeNull();
+
+    const replaced = examGradeFromResult(
+      result({
+        r1: half,
+        r2: half,
+        __score: { kind: 'score', value: 6, confidence: 0.9 },
+      }),
+      input,
+      config({ mode: 'replace' }),
+    );
+    expect(replaced?.value.score).toBe(6);
   });
 
   it('uses the reported overall score for a partial result in replace mode', () => {

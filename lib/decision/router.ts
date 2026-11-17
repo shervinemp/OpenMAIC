@@ -151,7 +151,35 @@ export async function runDecisionSite<T>(
     return fallback(input, config, 'no-questions');
   }
 
-  const provider = providerFor(config, deps);
+  // A chat model's confidence is self-reported, not calibrated. `triage` would
+  // always fall back after paying for the call, so skip the call entirely and
+  // let the boot warning point the operator at `replace` or `shadow`.
+  if (config.mode === 'triage' && config.provider === 'chat') {
+    recordDecisionEvent({
+      site: input.site,
+      provider: deps.provider?.id ?? config.provider,
+      mode: config.mode,
+      outcome: 'skipped',
+      reason: 'uncalibrated',
+    });
+    return fallback(input, config, 'uncalibrated');
+  }
+
+  let provider: DecisionProvider;
+  try {
+    provider = providerFor(config, deps);
+  } catch {
+    // A malformed injected config or a missing endpoint must fall back, not
+    // fail the learner request. Env parsing normally catches this earlier.
+    recordDecisionEvent({
+      site: input.site,
+      provider: config.provider,
+      mode: config.mode,
+      outcome: 'error',
+      reason: 'provider-config',
+    });
+    return fallback(input, config, 'provider-config');
+  }
 
   if (config.mode === 'shadow') {
     // Shadow is a validation mode, not a hot path. Without a baseline there is

@@ -79,6 +79,24 @@ describe('decision config', () => {
     });
   });
 
+  it('defaults chat to replace and a cold-start timeout', () => {
+    const routes = parseDecisionRoutes(
+      JSON.stringify({
+        'quiz-grade': {
+          provider: 'chat',
+          model: 'ollama:qwen3:4b',
+        },
+      }),
+      env(),
+    );
+
+    expect(routes.get('quiz-grade')).toMatchObject({
+      provider: 'chat',
+      mode: 'replace',
+      timeoutMs: 15_000,
+    });
+  });
+
   it('resolves an API key from a named env var', () => {
     const routes = parseDecisionRoutes(
       JSON.stringify({

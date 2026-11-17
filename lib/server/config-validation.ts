@@ -187,8 +187,12 @@ function validateDecisionRoutes(): void {
     return;
   }
   for (const config of routes.values()) {
-    if (config.provider === 'chat' && config.model) {
-      checkModelString(config.model, `DECISION_ROUTES.${config.site}.model`, true);
+    if (config.provider !== 'chat' || !config.model) continue;
+    checkModelString(config.model, `DECISION_ROUTES.${config.site}.model`, true);
+    if (config.mode === 'triage') {
+      warn(
+        `DECISION_ROUTES.${config.site} uses a chat model in triage mode. Chat confidence is not calibrated, so triage will always fall back to the LLM. Use "replace" or "shadow" instead.`,
+      );
     }
   }
 }

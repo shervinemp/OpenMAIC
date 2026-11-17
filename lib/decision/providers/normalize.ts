@@ -65,6 +65,9 @@ function answerEntries(raw: unknown): Map<string, unknown> {
 
 function readChoiceValues(value: unknown): string[] {
   if (typeof value === 'string') return value.trim() ? [value.trim()] : [];
+  // Some servers use numeric option values (`choice: 1`). They are just as
+  // valid as strings; the option map decides whether the value exists.
+  if (typeof value === 'number' && Number.isFinite(value)) return [String(value)];
   if (Array.isArray(value)) return value.flatMap((item) => readChoiceValues(item));
   const record = asRecord(value);
   if (!record) return [];
@@ -94,14 +97,18 @@ function mapChoiceValues(
   return multiple ? mapped : mapped.slice(0, 1);
 }
 
-function readAnswer(question: DecisionQuestion, raw: unknown): DecisionAnswer | null {
+function readAnswer(
+  question: DecisionQuestion,
+  raw: unknown,
+  ignoreConfidence: boolean,
+): DecisionAnswer | null {
   // A primitive entry is legal: `{"q1": "A"}` or `{"q1": 0.82}`.
   const entry =
     asRecord(raw) ?? (typeof raw === 'string' || typeof raw === 'number' ? { value: raw } : null);
   if (!entry) return null;
   if (entry.abstain === true || entry.route === 'review') return null;
 
-  const confidence = readConfidence(entry);
+  const confidence = ignoreConfidence ? UNREPORTED_CONFIDENCE : readConfidence(entry);
 
   if (question.kind === 'choice') {
     const values = mapChoiceValues(
@@ -137,13 +144,19 @@ export function normalizeDecisionResult(input: {
   questions: readonly DecisionQuestion[];
   provider: string;
   latencyMs: number;
+  /**
+   * Force every answer's confidence to 0. Used by the chat adapter: a
+   * generative model's self-reported confidence is not calibrated, so it must
+   * never satisfy a `triage` threshold.
+   */
+  ignoreConfidence?: boolean;
 }): DecisionResult {
   const entries = answerEntries(readAnswers(input.raw));
   const answers = new Map<string, DecisionAnswer>();
   const abstained = new Set<string>();
 
   for (const question of input.questions) {
-    const answer = readAnswer(question, entries.get(question.id));
+    const answer = readAnswer(question, entries.get(question.id), input.ignoreConfidence === true);
     if (answer) answers.set(question.id, answer);
     else abstained.add(question.id);
   }

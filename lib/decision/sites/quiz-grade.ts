@@ -56,7 +56,10 @@ export function quizGradeFromResult(
   if (!answer || answer.kind !== 'score') return null;
 
   const score = Math.max(0, Math.min(input.points, Math.round(answer.value)));
-  if (config.mode === 'triage' && score !== 0 && score !== input.points) {
+  // Triage must see an actual zero or full score. Rounding 0.4 to 0 or 9.6 to
+  // 10 would turn a partial answer into a confident verdict, so check the raw
+  // value before rounding.
+  if (config.mode === 'triage' && answer.value !== 0 && answer.value !== input.points) {
     return null;
   }
 

@@ -23,6 +23,9 @@ import {
 const log = createLogger('decision-config');
 
 const DEFAULT_TIMEOUT_MS = 4_000;
+// A cold local chat model can take several seconds to load before it answers.
+// The typed servers are already resident, so they keep the tighter default.
+const DEFAULT_CHAT_TIMEOUT_MS = 15_000;
 const DEFAULT_MIN_CONFIDENCE = 0.9;
 const DEFAULT_MAX_INPUT_CHARS = 12_000;
 const MIN_TIMEOUT_MS = 100;
@@ -144,7 +147,11 @@ export function parseDecisionRoutes(
       continue;
     }
 
-    const mode = (readString(entry.mode)?.toLowerCase() ?? 'triage') as DecisionMode;
+    // A chat model cannot report calibrated confidence, so `triage` would
+    // always fall back. Default it to the permissive mode it can actually
+    // drive; an explicit `triage` is still accepted and warned about at boot.
+    const defaultMode: DecisionMode = provider === 'chat' ? 'replace' : 'triage';
+    const mode = (readString(entry.mode)?.toLowerCase() ?? defaultMode) as DecisionMode;
     if (!MODES.includes(mode)) {
       log.warn(`Decision site "${site}" has invalid mode "${String(entry.mode)}"; ignored.`);
       continue;
@@ -182,7 +189,7 @@ export function parseDecisionRoutes(
       ...(apiKey ? { apiKey } : {}),
       timeoutMs: readNumber(
         entry.timeoutMs,
-        DEFAULT_TIMEOUT_MS,
+        provider === 'chat' ? DEFAULT_CHAT_TIMEOUT_MS : DEFAULT_TIMEOUT_MS,
         MIN_TIMEOUT_MS,
         MAX_TIMEOUT_MS,
         'timeoutMs',
@@ -213,18 +220,20 @@ export function parseDecisionRoutes(
   return configs;
 }
 
-/** Cached config map for the process. Boot validation warms this cache. */
-export function loadDecisionConfigs(
-  env: NodeJS.ProcessEnv = process.env,
-): Map<DecisionSiteId, DecisionSiteConfig> {
-  if (!cached) cached = parseDecisionRoutes(env.DECISION_ROUTES, env);
+/**
+ * Cached config map for the process. Boot validation warms this cache.
+ *
+ * The cache is process-wide and reads the process env, matching production
+ * behavior. Tests that need a different env should call the pure
+ * `parseDecisionRoutes(raw, env)` directly, or reset before changing
+ * `process.env`.
+ */
+export function loadDecisionConfigs(): Map<DecisionSiteId, DecisionSiteConfig> {
+  if (!cached) cached = parseDecisionRoutes(process.env.DECISION_ROUTES, process.env);
   return cached;
 }
 
 /** Cached config for one site, or undefined when the site is not configured. */
-export function getDecisionSiteConfig(
-  site: DecisionSiteId,
-  env: NodeJS.ProcessEnv = process.env,
-): DecisionSiteConfig | undefined {
-  return loadDecisionConfigs(env).get(site);
+export function getDecisionSiteConfig(site: DecisionSiteId): DecisionSiteConfig | undefined {
+  return loadDecisionConfigs().get(site);
 }

@@ -35,8 +35,15 @@ export interface ExamDecisionInput {
   includeCriteria: boolean;
 }
 
+/**
+ * The prompt uses `id=${c.id ?? i}` (a zero-based index when the rubric has no
+ * id) and the LLM echoes that id back in `criteria`. Synthesizing a different
+ * label here (`criterion-0`) made every id-less rubric look like a shadow
+ * disagreement, so the fallback must be the same index the prompt shows.
+ */
 function criterionId(criterion: RubricCriterion, index: number): string {
-  return criterion.id?.trim() || `criterion-${index}`;
+  const raw = (criterion as { id?: unknown }).id;
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : String(index);
 }
 
 export function buildExamDecisionRequest(input: ExamDecisionInput): DecisionRequest | null {
@@ -56,7 +63,9 @@ export function buildExamDecisionRequest(input: ExamDecisionInput): DecisionRequ
     .join('\n\n');
 
   const questions: DecisionQuestion[] = [];
-  const seenIds = new Set<string>();
+  // `__score` is reserved for the overall score; a rubric criterion must not
+  // be able to shadow it with the same id.
+  const seenIds = new Set<string>(['__score']);
   for (let index = 0; index < input.rubric.length; index += 1) {
     const criterion = input.rubric[index]!;
     const id = criterionId(criterion, index);
@@ -94,7 +103,9 @@ export function examGradeFromResult(
   input: ExamDecisionInput,
   config: DecisionSiteConfig,
 ): { value: ExamFrGrade; confidence: number } | null {
-  const met: Array<{ id: string; met: boolean }> = [];
+  if (input.rubric.length === 0) return null;
+
+  const met: Array<{ id: string; met: boolean; probability: number }> = [];
   let confidence = 1;
 
   for (let index = 0; index < input.rubric.length; index += 1) {
@@ -102,13 +113,14 @@ export function examGradeFromResult(
     const id = criterionId(criterion, index);
     const answer = result.answers.get(id);
     if (!answer || answer.kind !== 'noul') return null;
-    met.push({ id, met: answer.probability >= 0.5 });
+    met.push({ id, met: answer.probability >= 0.5, probability: answer.probability });
     confidence = Math.min(confidence, answer.confidence);
   }
 
-  const metCount = met.filter((entry) => entry.met).length;
-  const allMet = metCount === met.length;
-  const noneMet = metCount === 0;
+  // A probability of exactly 0.5 is a coin flip, not a verdict. Treat it as
+  // partial in triage instead of awarding full marks (or zero) on it.
+  const allMet = met.every((entry) => entry.probability > 0.5);
+  const noneMet = met.every((entry) => entry.probability < 0.5);
 
   let score: number;
   if (allMet) {

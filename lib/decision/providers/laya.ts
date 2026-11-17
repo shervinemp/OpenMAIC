@@ -14,9 +14,11 @@
  * (an `answers` map nested under `result` is accepted too). `prompt` is also
  * sent as `question` for servers that use the older spelling.
  *
- * The server is operator-controlled, but it still goes through the normal
- * outbound URL rules: a localhost endpoint needs `ALLOW_LOCAL_NETWORKS=true`
- * the same way a local Ollama endpoint does.
+ * The endpoint comes from operator configuration, never from request input,
+ * so it is trusted like a server-managed provider base URL and does not go
+ * through the user-URL SSRF policy. A localhost/LAN decision server is
+ * expected to work without `ALLOW_LOCAL_NETWORKS`; `DECISION_ROUTES` should be
+ * protected with the same care as any other provider credential/config.
  */
 
 import { normalizeDecisionResult } from './normalize';

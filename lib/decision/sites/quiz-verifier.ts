@@ -39,14 +39,12 @@ function buildRequest(questions: readonly QuizVerificationQuestion[]): DecisionR
 }
 
 function inputChars(request: DecisionRequest): number {
-  return request.questions.reduce(
-    (total, question) =>
-      total +
-      question.prompt.length +
-      (question.kind === 'choice'
-        ? question.options.reduce((sum, option) => sum + option.label.length + 2, 0)
-        : 0),
-    request.state.length,
+  // `buildRequest` already renders the options into each prompt. Counting the
+  // option labels again nearly doubled the measured input and made long but
+  // valid quizzes skip the decision model.
+  return (
+    request.state.length +
+    request.questions.reduce((total, question) => total + question.prompt.length, 0)
   );
 }
 

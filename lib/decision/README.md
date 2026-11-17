@@ -42,8 +42,7 @@ repeated judgments:
   "quiz-grade": {
     "provider": "chat",
     "model": "ollama:qwen3:4b",
-    "mode": "triage",
-    "minConfidence": 0.9,
+    "mode": "replace",
     "maxInputChars": 6000
   }
 }
@@ -54,11 +53,11 @@ Fields:
 | Field | Meaning | Default |
 |---|---|---|
 | `provider` | `laya`, `jev`, or `chat` | required |
-| `mode` | `shadow`, `triage`, `replace`, or `off` | `triage` |
+| `mode` | `shadow`, `triage`, `replace`, or `off` | `triage` typed, `replace` chat |
 | `endpoint` | Base URL for `laya` / `jev`; the adapter POSTs `/predict` | required for typed |
 | `apiKey` / `apiKeyEnv` | Hosted auth; prefer `apiKeyEnv` so the JSON stays shareable | none |
 | `model` | `provider:model` for `chat` | required for chat |
-| `timeoutMs` | Per-call deadline | `4000` |
+| `timeoutMs` | Per-call deadline | `4000` typed, `15000` chat |
 | `minConfidence` | `triage` threshold | `0.9` |
 | `maxInputChars` | Longer inputs skip the decision | `12000` |
 | `fallback` | `llm` or `none` | `llm` |
@@ -117,11 +116,22 @@ cannot drive `triage`. `prompt` is also sent as `question` for older servers.
 
 Any model already in the registry — OpenAI, Gemini, Ollama, Lemonade, vLLM —
 with a JSON-only prompt. The wire result is the same shape, normalized by the
-same parser. This path is generative: it has no calibrated confidence, so use
-`replace` or `shadow`, not `triage`.
+same parser. This path is generative: its self-reported confidence is not
+calibrated, so the adapter records every answer with confidence `0`. Use
+`replace` or `shadow`; an explicit `triage` skips the decision call and warns
+at boot instead of paying for a result it cannot use. Omitting `mode` defaults
+chat sites to `replace`.
+
+The chat timeout defaults to 15s because a cold local model may spend several
+seconds loading before it answers.
 
 Local providers still need an explicit base URL. A localhost endpoint needs
 `ALLOW_LOCAL_NETWORKS=true`, exactly like a local Ollama endpoint.
+
+For stricter output, a provider that supports schema-constrained decoding
+(Ollama `format`, vLLM guided JSON, llama.cpp grammars) can enforce the
+`answers` shape at the decoder. Wiring that through the chat adapter is a
+future extension; the normalizer already accepts the resulting JSON.
 
 ## Sites
 
@@ -149,6 +159,7 @@ design, not a triage flag.
 - A decision-only site does not need a chat model: the LLM is resolved lazily,
   only when the fallback actually runs.
 - `abstain` is not zero. It is an absent observation.
+- A chat model never drives `triage`: its confidence is not calibrated.
 - Long inputs go to the LLM: encoders have a bounded window.
 - Decision scores are clamped to the question's declared range.
 - The LLM remains the default and the permanent fallback.

@@ -149,6 +149,27 @@ describe('decision router', () => {
     expect(readDecisionTelemetry()[0]?.key).toBe('quiz-grade|fake|replace|error');
   });
 
+  it('skips a chat model in triage instead of paying for an unusable call', async () => {
+    const decide = vi.fn();
+    const outcome = await runDecisionSite(input(), {
+      config: config({ provider: 'chat', model: 'ollama:qwen3:4b', mode: 'triage' }),
+      provider: { id: 'fake', decide },
+    });
+
+    expect(outcome).toEqual({ source: 'baseline', value: 'baseline' });
+    expect(decide).not.toHaveBeenCalled();
+    expect(readDecisionTelemetry()[0]?.key).toBe('quiz-grade|fake|triage|skipped');
+  });
+
+  it('falls back when a provider cannot be constructed', async () => {
+    const outcome = await runDecisionSite(input(), {
+      config: config({ provider: 'laya', endpoint: undefined }),
+    });
+
+    expect(outcome).toEqual({ source: 'baseline', value: 'baseline' });
+    expect(readDecisionTelemetry()[0]?.key).toBe('quiz-grade|laya|triage|error');
+  });
+
   it('skips an input longer than the configured budget', async () => {
     const outcome = await runDecisionSite(input({ inputChars: 1_001 }), {
       config: config({ mode: 'replace' }),

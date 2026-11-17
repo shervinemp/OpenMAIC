@@ -28,8 +28,14 @@ const questions: DecisionQuestion[] = [
   { id: 'n1', kind: 'noul', prompt: 'Is it met?' },
 ];
 
-function normalize(raw: unknown) {
-  return normalizeDecisionResult({ raw, questions, provider: 'test', latencyMs: 7 });
+function normalize(raw: unknown, ignoreConfidence = false) {
+  return normalizeDecisionResult({
+    raw,
+    questions,
+    provider: 'test',
+    latencyMs: 7,
+    ignoreConfidence,
+  });
 }
 
 describe('decision answer normalization', () => {
@@ -98,6 +104,32 @@ describe('decision answer normalization', () => {
   it('never reports more confidence than the provider gave', () => {
     const result = normalize({ answers: { s1: { score: 6 } } });
     expect(result.answers.get('s1')).toMatchObject({ confidence: 0 });
+  });
+
+  it('can force uncalibrated confidence to zero', () => {
+    const result = normalize({ answers: { s1: { score: 6, confidence: 0.99 } } }, true);
+    expect(result.answers.get('s1')).toMatchObject({ confidence: 0 });
+  });
+
+  it('accepts numeric option values', () => {
+    const numeric: DecisionQuestion[] = [
+      {
+        id: 'n1',
+        kind: 'choice',
+        prompt: 'Pick a number',
+        options: [
+          { value: '1', label: 'One' },
+          { value: '2', label: 'Two' },
+        ],
+      },
+    ];
+    const result = normalizeDecisionResult({
+      raw: { answers: { n1: { choice: 2, confidence: 0.9 } } },
+      questions: numeric,
+      provider: 'test',
+      latencyMs: 1,
+    });
+    expect(result.answers.get('n1')).toMatchObject({ kind: 'choice', values: ['2'] });
   });
 
   it('clamps a probability and a negative score', () => {

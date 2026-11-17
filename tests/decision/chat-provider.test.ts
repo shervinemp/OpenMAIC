@@ -49,10 +49,18 @@ describe('chat decision provider', () => {
     expect(mocks.callLLM).toHaveBeenCalledTimes(1);
     const [params, source] = mocks.callLLM.mock.calls[0]!;
     expect(source).toBe('decision:quiz-grade');
-    expect(params).toMatchObject({ temperature: 0, maxOutputTokens: 1_200 });
+    expect(params).toMatchObject({ maxOutputTokens: 1_200 });
+    // Some reasoning models reject a temperature, so the adapter omits it.
+    expect((params as { temperature?: unknown }).temperature).toBeUndefined();
     expect(String(params.system)).toContain('typed decision engine');
+    expect(String(params.system)).toContain('untrusted learner content');
     expect(String(params.prompt)).toContain('__score');
-    expect(result.answers.get('__score')).toMatchObject({ kind: 'score', value: 7 });
+    // Self-reported confidence is normalized away: chat cannot drive triage.
+    expect(result.answers.get('__score')).toMatchObject({
+      kind: 'score',
+      value: 7,
+      confidence: 0,
+    });
     expect(result.provider).toBe('chat:ollama:qwen3:4b');
   });
 

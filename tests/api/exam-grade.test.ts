@@ -128,6 +128,19 @@ describe('POST /api/exam/grade-fr', () => {
     expect(res3.status).toBe(400);
   });
 
+  it('rejects malformed or oversized rubric identifiers', async () => {
+    mocks.callLLM.mockClear();
+    const badId = await POST(post(body({ rubric: [{ ...rubric[0], id: 42 }] })) as never);
+    expect(badId.status).toBe(400);
+    const badWeight = await POST(post(body({ rubric: [{ ...rubric[0], weight: 42 }] })) as never);
+    expect(badWeight.status).toBe(400);
+    const longId = await POST(
+      post(body({ rubric: [{ ...rubric[0], id: 'I'.repeat(4_001) }] })) as never,
+    );
+    expect(longId.status).toBe(413);
+    expect(mocks.callLLM).not.toHaveBeenCalled();
+  });
+
   it('413s oversized inputs before calling the model', async () => {
     mocks.callLLM.mockClear();
     const longPrompt = await POST(post(body({ prompt: 'P'.repeat(12_001) })) as never);

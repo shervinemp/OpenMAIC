@@ -127,28 +127,49 @@ export async function POST(req: NextRequest) {
         `rubric has too many criteria (max ${MAX_RUBRIC_CRITERIA})`,
       );
     }
-    const oversizedCriterion = rubric.some(
-      (criterion) =>
-        !criterion ||
+    const invalidCriterion = rubric.some((criterion) => {
+      if (!criterion || typeof criterion !== 'object') return true;
+      const id = (criterion as { id?: unknown }).id;
+      const weight = (criterion as { weight?: unknown }).weight;
+      return (
         typeof criterion.criterion !== 'string' ||
+        (criterion.lookFor !== undefined && typeof criterion.lookFor !== 'string') ||
+        (id !== undefined && typeof id !== 'string') ||
+        (weight !== undefined && typeof weight !== 'string')
+      );
+    });
+    if (invalidCriterion) {
+      return apiError(
+        'INVALID_REQUEST',
+        400,
+        'each rubric criterion needs string criterion, lookFor, id, and weight fields',
+      );
+    }
+    const oversizedCriterion = rubric.some((criterion) => {
+      const id = (criterion as { id?: string }).id;
+      const weight = (criterion as { weight?: string }).weight;
+      return (
         criterion.criterion.length > MAX_RUBRIC_FIELD_CHARS ||
-        (criterion.lookFor !== undefined &&
-          (typeof criterion.lookFor !== 'string' ||
-            criterion.lookFor.length > MAX_RUBRIC_FIELD_CHARS)),
-    );
+        (criterion.lookFor !== undefined && criterion.lookFor.length > MAX_RUBRIC_FIELD_CHARS) ||
+        (id !== undefined && id.length > MAX_RUBRIC_FIELD_CHARS) ||
+        (weight !== undefined && weight.length > MAX_RUBRIC_FIELD_CHARS)
+      );
+    });
     if (oversizedCriterion) {
       return apiError(
         'INVALID_REQUEST',
         413,
-        `each rubric criterion is limited to ${MAX_RUBRIC_FIELD_CHARS} characters`,
+        `each rubric criterion is limited to ${MAX_RUBRIC_FIELD_CHARS} characters per field`,
       );
     }
 
     const lines = rubric
-      .map(
-        (c, i) =>
-          `${i + 1}. id=${c.id ?? i} [${c.weight ?? 'important'}] ${c.criterion} — looks for: ${c.lookFor}`,
-      )
+      .map((c, i) => {
+        // The decision mapper and the LLM prompt must agree on the criterion
+        // id, including the index fallback and whitespace trimming.
+        const id = typeof c.id === 'string' && c.id.trim() ? c.id.trim() : String(i);
+        return `${i + 1}. id=${id} [${c.weight ?? 'important'}] ${c.criterion} — looks for: ${c.lookFor ?? 'the criterion is satisfied'}`;
+      })
       .join('\n');
 
     const system = `You are a fair, rigorous examiner grading a constructed-response answer against an explicit rubric. Grade strictly but generously on partially-satisfied criteria; a criterion fully met earns its weight, half-addressed earns about half, absent earns nothing.
@@ -184,7 +205,7 @@ ${userAnswer}`;
           includeCriteria && Array.isArray(parsed.criteria)
             ? (parsed.criteria as Array<Record<string, unknown>>)
                 .map((c) => ({
-                  id: String(c.id ?? ''),
+                  id: String(c.id ?? '').trim(),
                   met: c.met === true,
                   comment: typeof c.comment === 'string' ? c.comment : '',
                 }))
