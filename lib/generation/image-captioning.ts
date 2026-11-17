@@ -1,11 +1,13 @@
 /**
  * Upload-time image captioning pass (Phase 2 §16).
  *
- * Every source image gets a real content caption in ONE batched vision pass
- * at document analysis time (cached by content hash in the callers). With
- * captions, no image ever travels through the pipeline as metadata-only —
- * the outline stage can reference any image by its caption, and per-scene
- * vision is reserved for the images actually relevant to that scene.
+ * Every substantive source image gets a real content caption in ONE batched
+ * vision pass at document analysis time (cached by content hash in the
+ * callers). With captions, no substantive image ever travels through the
+ * pipeline as metadata-only — the outline stage can reference any image by its
+ * caption, and per-scene vision is reserved for the images actually relevant
+ * to that scene. Icon-sized decorations are skipped: they cost vision tokens
+ * and teach nothing.
  *
  * Pure functions + injected aiCall only; no I/O.
  */
@@ -47,9 +49,14 @@ export interface ImageCaption {
  * Whether an extracted image is substantive enough to deserve a vision call.
  *
  * Logos, bullets, rules and icon-sized decorations caption to "a small icon"
- * at the same price as a diagram that teaches something. Unmeasurable images
- * (legacy or non-image-typed sources) stay eligible: absent dimensions are not
- * evidence of a tiny image.
+ * at the same price as a diagram that teaches something. Dimensions are
+ * assumed to be intrinsic pixels — the extractors that populate them from
+ * image bytes (unpdf) do. An extractor that reports page-layout coordinates
+ * instead (MinerU's bbox) is outside this filter's contract; its values are
+ * not pixel sizes and may skip a small figure. Unmeasurable images (missing
+ * dimensions) stay eligible: absent dimensions are not evidence of a tiny
+ * image. A zero side is treated as unmeasured for the same reason — a broken
+ * measurement is likelier than a zero-pixel image that decoded.
  */
 export function isCaptionWorthyImage(image: Pick<PdfImage, 'width' | 'height'>): boolean {
   const { width, height } = image;
@@ -61,7 +68,7 @@ export function isCaptionWorthyImage(image: Pick<PdfImage, 'width' | 'height'>):
   ) {
     return true;
   }
-  if (width <= 0 || height <= 0) return false;
+  if (width === 0 || height === 0) return true;
   return (
     Math.min(width, height) >= CAPTION_MIN_IMAGE_SIDE && width * height >= CAPTION_MIN_IMAGE_PIXELS
   );
@@ -71,6 +78,7 @@ export function isCaptionWorthyImage(image: Pick<PdfImage, 'width' | 'height'>):
  * Estimated vision tiles one image occupies, on a 1024-pixel grid. One tile is
  * the floor, so unknown dimensions cannot make a batch unbounded; a page-sized
  * scan of 4096×3072 costs twelve tiles and shares its call with two others.
+ * Like `isCaptionWorthyImage`, this assumes dimensions are intrinsic pixels.
  */
 export function captionImageTiles(image: Pick<PdfImage, 'width' | 'height'>): number {
   const { width, height } = image;

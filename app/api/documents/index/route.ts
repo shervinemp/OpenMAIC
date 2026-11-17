@@ -3,7 +3,8 @@
  *
  * One endpoint that turns extracted source material into a reusable index:
  * full text stored server-side by content hash, retrieval chunks, a coverage
- * digest for the outline stage, and batched vision captions for EVERY image.
+ * digest for the outline stage, and batched vision captions for every
+ * substantive image.
  * Everything is cached by the text's sha256 — re-running any course over the
  * same document reuses the index with zero LLM calls.
  *
@@ -278,7 +279,7 @@ export async function POST(req: NextRequest) {
             );
           }
 
-          // 2) Batch-caption EVERY image (one-time, cached with the index).
+          // 2) Batch-caption every substantive image (one-time, cached with the index).
           const captions: Record<string, ImageCaption> = {};
           let captionedCount = 0;
           if (images.length > 0 && captionHasVision) {

@@ -80,6 +80,8 @@ describe('caption worthiness', () => {
   test('unmeasured images stay eligible', () => {
     expect(isCaptionWorthyImage({ width: undefined, height: undefined })).toBe(true);
     expect(isCaptionWorthyImage({ width: Number.NaN, height: 800 })).toBe(true);
+    // A zero side is a broken measurement, not evidence of a zero-pixel image.
+    expect(isCaptionWorthyImage({ width: 0, height: 0 })).toBe(true);
   });
 });
 
