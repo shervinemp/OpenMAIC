@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * for the outline-dirty flush).
  */
 
-import { useStageStore } from '@/lib/store/stage';
+import { MAX_EXAM_ATTEMPTS_PER_KIND, useStageStore } from '@/lib/store/stage';
 import type { ExamAttempt, ExamSpec } from '@/lib/types/exam';
 
 const attemptFixture = (id: string): ExamAttempt => ({
@@ -51,16 +51,18 @@ describe('exam artifacts in the stage store', () => {
     expect(useStageStore.getState().exams.midterm?.title).toBe('Midterm Exam v2');
   });
 
-  it('saveExamAttempt keeps only the two most recent attempts per exam', () => {
+  it('keeps a bounded window of recent attempts for analytics', () => {
     // Note: this calls saveToStorage internally; with no stage loaded it is a
     // no-op save, which is fine — the state mutation and the cap are what we
     // pin here (the document snapshot itself carries the same state).
-    useStageStore.getState().saveExamAttempt(attemptFixture('a1'));
-    useStageStore.getState().saveExamAttempt(attemptFixture('a2'));
-    useStageStore.getState().saveExamAttempt(attemptFixture('a3'));
+    for (let index = 1; index <= MAX_EXAM_ATTEMPTS_PER_KIND + 2; index += 1) {
+      useStageStore.getState().saveExamAttempt(attemptFixture(`a${index}`));
+    }
 
     const attempts = useStageStore.getState().examAttempts.midterm ?? [];
-    expect(attempts.map((a) => a.id)).toEqual(['a2', 'a3']);
+    expect(attempts).toHaveLength(MAX_EXAM_ATTEMPTS_PER_KIND);
+    expect(attempts[0]?.id).toBe('a3');
+    expect(attempts.at(-1)?.id).toBe(`a${MAX_EXAM_ATTEMPTS_PER_KIND + 2}`);
   });
 
   it('clearing the store resets exam artifacts', () => {

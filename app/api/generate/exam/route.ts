@@ -23,14 +23,20 @@ import type { QuizQuestion } from '@openmaic/dsl';
 import { parseJsonResponse } from '@/lib/generation/json-repair';
 import type { CourseBlueprint, SceneOutline } from '@/lib/types/generation';
 import type { ExamChoiceQuestion, ExamFreeResponse, ExamKind, ExamSpec } from '@/lib/types/exam';
+import { DEFAULT_EXAM_FORMS } from '@/lib/exam/variants';
+import { DEFAULT_EXAM_TIMING } from '@/lib/exam/timing';
 
 const log = createLogger('Exam Generation');
 
 export const maxDuration = 300;
 
-/** Minimum quality contract: MC must be substantial, not a token quiz. */
-export const MIN_MC_QUESTIONS = 12;
-export const MIN_FR_QUESTIONS = 3;
+/**
+ * Minimum quality contract: the generated artifact is a POOL, not one paper.
+ * Each attempt draws a seeded subset (12/3 midterm, 14/4 final), so the pool
+ * must be materially larger than a single form. Deduplicated stems count.
+ */
+export const MIN_MC_QUESTIONS = 18;
+export const MIN_FR_QUESTIONS = 5;
 
 function coerceChoiceQuestion(raw: unknown, index: number): ExamChoiceQuestion | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -115,6 +121,19 @@ function coerceFreeResponse(raw: unknown, index: number): ExamFreeResponse | nul
   };
 }
 
+/** Drop repeated stems so a pool cannot inflate its count by restating one item. */
+function dedupeBy<T>(items: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const item of items) {
+    const normalized = key(item).trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(item);
+  }
+  return result;
+}
+
 export function findShortfalls(spec: ExamSpec): string[] {
   const findings: string[] = [];
   if (spec.mcQuestions.length < MIN_MC_QUESTIONS) {
@@ -169,27 +188,32 @@ export async function POST(req: NextRequest) {
       )
       .join('\n');
 
+    const form = DEFAULT_EXAM_FORMS[examKind];
     const system = `You are a rigorous university examiner writing a ${kind === 'midterm' ? 'MIDTERM' : 'FINAL'} exam for an instructor-grade course. Exams must discriminate real understanding: application, justification, and synthesis under constraints.
+
+Write a QUESTION POOL, not a single paper: the course platform draws a different seeded form from the pool for every learner and retake. Every question must stand alone, and no two questions may test the same point in the same way.
 
 Output ONLY JSON:
 {
   "mcQuestions": [
     { "question": "<scenario/application stem: a situation the learner must reason about, NOT a bare definition>", "options": [{"label":"<answer option one>","value":"A"}, {"label":"...","value":"B"}, {"label":"...","value":"C"}, {"label":"...","value":"D"}], "answer": ["<value of the correct option>"], "analysis": "<why the correct option is right and the best distractor is wrong>" }
-    // at least ${MIN_MC_QUESTIONS} questions, exactly 4-5 options each, exactly one correct answer, distractors must be plausible common misconceptions
+    // at least ${MIN_MC_QUESTIONS} distinct questions, exactly 4-5 options each, exactly one correct answer, distractors must be plausible common misconceptions
   ],
   "frQuestions": [
     { "prompt": "<a constructed-response task: design, justify, analyze a case, or critique a claim>", "guidance": ["<2-4 framing pointers that do not give the answer away>"], "rubric": [{"id":"r1","criterion":"<what a strong answer does>","weight":"essential","lookFor":"<the concrete indicator a grader looks for>"}, ...], "sampleAnswer": "<a strong model answer>", "maxPoints": 10, "commentPrompt": "<1-2 sentences of grading guidance beyond the rubric>" }
-    // ${MIN_FR_QUESTIONS} questions; every question needs 3-5 rubric criteria, at least one 'essential'
+    // at least ${MIN_FR_QUESTIONS} distinct questions; every question needs 3-5 rubric criteria, at least one 'essential'
   ]
 }
+The ${kind === 'midterm' ? 'midterm' : 'final'} form draws ${form.mcCount} MC questions and ${form.frCount} written questions from this pool.
 Rules:
 - Ground every question in the covered material below; no trivia-only recall.
 - MC questions must carry real diagnosis: each distractor must encode a specific misconception.
 - The FR tasks must be answerable by a serious student with roughly 8-14 sentences each; do not require data or tools not provided.
+- Do not repeat a stem, scenario, or task; a duplicate wastes pool space and will be rejected.
 - Course title: "${blueprint.title ?? 'the course'}". Audience: "${blueprint.audience ?? 'intermediate learners'}".
 ${languageDirective ? `- Language directive: ${languageDirective}` : '- Write all exam content in the course language.'}`;
 
-    const userPrompt = `COVERED MATERIAL (outline titles, objectives, key points):\n${digest}\n\nWrite the exam now. Remember: at least ${MIN_MC_QUESTIONS} MC questions and ${MIN_FR_QUESTIONS} free-response questions, and conform to the JSON schema exactly.`;
+    const userPrompt = `COVERED MATERIAL (outline titles, objectives, key points):\n${digest}\n\nWrite the pool now. Remember: at least ${MIN_MC_QUESTIONS} distinct MC questions and ${MIN_FR_QUESTIONS} distinct free-response questions, and conform to the JSON schema exactly.`;
 
     const callOnce = async (extra?: string) => {
       const result = await callLLM(
@@ -218,18 +242,25 @@ ${languageDirective ? `- Language directive: ${languageDirective}` : '- Write al
       if (!parsed) return null;
       const mcRaw = Array.isArray(parsed.mcQuestions) ? parsed.mcQuestions : [];
       const frRaw = Array.isArray(parsed.frQuestions) ? parsed.frQuestions : [];
-      const mcQuestions = mcRaw
-        .map((q: unknown, i: number) => coerceChoiceQuestion(q, i))
-        .filter(Boolean) as ExamChoiceQuestion[];
-      const frQuestions = frRaw
-        .map((q: unknown, i: number) => coerceFreeResponse(q, i))
-        .filter(Boolean) as ExamFreeResponse[];
+      const mcQuestions = dedupeBy(
+        mcRaw
+          .map((q: unknown, i: number) => coerceChoiceQuestion(q, i))
+          .filter(Boolean) as ExamChoiceQuestion[],
+        (question) => question.question,
+      );
+      const frQuestions = dedupeBy(
+        frRaw
+          .map((q: unknown, i: number) => coerceFreeResponse(q, i))
+          .filter(Boolean) as ExamFreeResponse[],
+        (question) => question.prompt,
+      );
       const blueprintUnits = blueprint.units?.length ?? 0;
       const from = 0;
       const to =
         examKind === 'midterm'
           ? Math.max(0, Math.ceil(blueprintUnits / 2) - 1)
           : Math.max(0, blueprintUnits - 1);
+      const timing = DEFAULT_EXAM_TIMING[examKind];
       return {
         kind: examKind,
         title:
@@ -242,6 +273,8 @@ ${languageDirective ? `- Language directive: ${languageDirective}` : '- Write al
         unitRange: { from, to },
         mcQuestions,
         frQuestions,
+        formConfig: { ...DEFAULT_EXAM_FORMS[examKind] },
+        timing: { ...timing },
         generatedAt: Date.now(),
       };
     };

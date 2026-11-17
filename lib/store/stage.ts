@@ -47,6 +47,13 @@ import {
 const log = createLogger('StageStore');
 
 /**
+ * Persisted attempts retained per exam kind. Analytics needs more than the
+ * latest score, while the document still needs a hard bound; twenty attempts
+ * covers a semester's retakes and keeps the JSON snapshot small.
+ */
+export const MAX_EXAM_ATTEMPTS_PER_KIND = 20;
+
+/**
  * Defensive hydration for the persisted exams snapshot. Legacy documents have
  * no exams block; hostile or hand-edited documents must not poison the store,
  * so every shaped field is re-validated and unknown kinds drop on the floor.
@@ -80,7 +87,7 @@ function sanitizePersistedExams(
   if (src.examAttempts && typeof src.examAttempts === 'object') {
     for (const [kind, list] of Object.entries(src.examAttempts as Record<string, unknown>)) {
       if (isValidKind(kind) && Array.isArray(list) && list.length) {
-        attemptsResult[kind] = (list as ExamAttempt[]).slice(-2);
+        attemptsResult[kind] = (list as ExamAttempt[]).slice(-MAX_EXAM_ATTEMPTS_PER_KIND);
       }
     }
   }
@@ -1140,10 +1147,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   saveExamAttempt: (attempt) => {
-    // Keep only the two most recent attempts per exam so a resubmitted attempt
-    // does not grow the document unboundedly.
+    // Bounded history: analytics reads the whole window, but resubmitting an
+    // attempt must not grow the document without limit.
     const attempts = get().examAttempts[attempt.kind] ?? [];
-    const next = [...attempts.filter((a) => a.id !== attempt.id), attempt].slice(-2);
+    const next = [...attempts.filter((a) => a.id !== attempt.id), attempt].slice(
+      -MAX_EXAM_ATTEMPTS_PER_KIND,
+    );
     set({ examAttempts: { ...get().examAttempts, [attempt.kind]: next } });
     void get().saveToStorage();
   },

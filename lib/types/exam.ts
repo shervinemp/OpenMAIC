@@ -37,6 +37,27 @@ export interface ExamFreeResponse {
   commentPrompt?: string;
 }
 
+/**
+ * How one attempt is drawn from the generated question pool. The pool itself
+ * lives in `mcQuestions` / `frQuestions`; a form is a seeded subset (and, for
+ * MC, a seeded option order) so two learners — or two retakes — do not see the
+ * same paper. Counts are capped by the pool size when an exam is underfilled.
+ */
+export interface ExamFormConfig {
+  mcCount: number;
+  frCount: number;
+}
+
+/**
+ * Wall-clock budget per section. A missing section budget means that section
+ * is untimed; generation always writes both, and the UI only shows a timer
+ * when one is present.
+ */
+export interface ExamSectionTiming {
+  mcSec?: number;
+  frSec?: number;
+}
+
 export interface ExamSpec {
   kind: ExamKind;
   title: string;
@@ -44,8 +65,17 @@ export interface ExamSpec {
   coverage: string;
   /** Covered unit indexes (0-based into blueprint.units). */
   unitRange: { from: number; to: number };
+  /**
+   * The MC question POOL. New specs draw a seeded form from it; legacy specs
+   * without `formConfig` use every question in this order.
+   */
   mcQuestions: ExamChoiceQuestion[];
+  /** The FR question pool; same rule as `mcQuestions`. */
   frQuestions: ExamFreeResponse[];
+  /** Per-attempt form size. Omitted for pre-variant specs. */
+  formConfig?: ExamFormConfig;
+  /** Per-section time budgets, in seconds. */
+  timing?: ExamSectionTiming;
   generatedAt: number;
 }
 
@@ -67,6 +97,12 @@ export interface ExamFrGrade {
 export interface ExamAttempt {
   id: string;
   kind: ExamKind;
+  /**
+   * Seed that deterministically selects this attempt's questions and MC option
+   * order. Absent on attempts submitted before variants shipped; those used
+   * the whole spec in stored order.
+   */
+  variantSeed?: string;
   /** Picked option value per MC question ("A"). */
   mcAnswers: Record<string, string>;
   frAnswers: Record<string, string>;
@@ -75,6 +111,10 @@ export interface ExamAttempt {
   frGrades: ExamFrGrade[];
   /** Fraction 0-1 over the whole exam, once fully graded. */
   scorePct: number | null;
+  /** Seconds actually spent per section, when the section was timed. */
+  sectionSeconds?: { mc?: number; fr?: number };
+  /** True when the attempt was submitted by the section timer, not the learner. */
+  timedOut?: boolean;
   submittedAt: number;
   gradedAt?: number;
 }

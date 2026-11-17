@@ -69,8 +69,8 @@ function fr(index: number) {
 
 function exam(q1Key: string) {
   return {
-    mcQuestions: Array.from({ length: 12 }, (_, i) => mc(i + 1, i === 0 ? q1Key : 'A')),
-    frQuestions: [fr(1), fr(2), fr(3)],
+    mcQuestions: Array.from({ length: 18 }, (_, i) => mc(i + 1, i === 0 ? q1Key : 'A')),
+    frQuestions: [fr(1), fr(2), fr(3), fr(4), fr(5)],
   };
 }
 
@@ -79,7 +79,7 @@ function verifierVerdicts(q1Key: string) {
   return {
     answers: [
       { id: 'mc_1', answers: [q1Key] },
-      ...Array.from({ length: 11 }, (_, i) => ({ id: `mc_${i + 2}`, answers: ['A'] })),
+      ...Array.from({ length: 17 }, (_, i) => ({ id: `mc_${i + 2}`, answers: ['A'] })),
     ],
   };
 }

@@ -114,7 +114,7 @@ describe('POST /api/generate/exam', () => {
 
   it('coerces the LLM JSON into a validated ExamSpec', async () => {
     const rawExam = {
-      mcQuestions: Array.from({ length: 12 }, (_, i) => ({
+      mcQuestions: Array.from({ length: 18 }, (_, i) => ({
         question: `Scenario ${i + 1}: choose carefully`,
         options: [
           { label: 'opt A', value: 'A' },
@@ -162,6 +162,22 @@ describe('POST /api/generate/exam', () => {
           ],
           sampleAnswer: 's3',
         },
+        {
+          prompt: 'Fourth written task',
+          rubric: [
+            { criterion: 'c5', weight: 'essential', lookFor: 'l5' },
+            { criterion: 'c6', weight: 'important', lookFor: 'l6' },
+          ],
+          sampleAnswer: 's4',
+        },
+        {
+          prompt: 'Fifth written task',
+          rubric: [
+            { criterion: 'c7', weight: 'essential', lookFor: 'l7' },
+            { criterion: 'c8', weight: 'important', lookFor: 'l8' },
+          ],
+          sampleAnswer: 's5',
+        },
       ],
     };
     mocks.callLLM.mockResolvedValue({ text: JSON.stringify(rawExam) });
@@ -172,11 +188,35 @@ describe('POST /api/generate/exam', () => {
     const j = JSON.parse(bodyText) as { exam?: ExamSpec; success?: boolean };
     expect(j.success).toBe(true);
     expect(j.exam?.kind).toBe('midterm');
-    expect(j.exam?.mcQuestions.length).toBe(12);
-    expect(j.exam?.frQuestions.length).toBe(3);
+    expect(j.exam?.mcQuestions.length).toBe(18);
+    expect(j.exam?.frQuestions.length).toBe(5);
     expect(j.exam?.mcQuestions[0].answer).toEqual(['A']);
     expect(j.exam?.frQuestions[0].rubric.length).toBe(2);
+    expect(j.exam?.formConfig).toEqual({ mcCount: 12, frCount: 3 });
+    expect(j.exam?.timing).toEqual({ mcSec: 1500, frSec: 2100 });
     expect(mocks.callLLM).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not count duplicate stems toward the pool', async () => {
+    const duplicateExam = {
+      mcQuestions: Array.from({ length: 18 }, () => ({
+        question: 'The one and only question',
+        options: [
+          { label: 'a', value: 'A' },
+          { label: 'b', value: 'B' },
+          { label: 'c', value: 'C' },
+          { label: 'd', value: 'D' },
+        ],
+        answer: ['A'],
+        analysis: 'x',
+      })),
+      frQuestions: [],
+    };
+    mocks.callLLM.mockResolvedValue({ text: JSON.stringify(duplicateExam) });
+    const res = await POST(post(genBody()) as never);
+    expect(res.status).toBe(502);
+    expect(mocks.callLLM).toHaveBeenCalledTimes(2);
+    expect(mockPrompts()[1] ?? '').toContain('MC section has 1 questions');
   });
 
   it('re-prompts once when the first spec lacks MC questions, then succeeds', async () => {
@@ -193,7 +233,7 @@ describe('POST /api/generate/exam', () => {
       frQuestions: [],
     };
     const fullExam = {
-      mcQuestions: Array.from({ length: 12 }, (_, i) => ({
+      mcQuestions: Array.from({ length: 18 }, (_, i) => ({
         question: `Scenario ${i + 1}`,
         options: [
           { label: 'a', value: 'A' },
@@ -229,6 +269,22 @@ describe('POST /api/generate/exam', () => {
           ],
           sampleAnswer: 's3',
         },
+        {
+          prompt: 'fr4',
+          rubric: [
+            { id: 'r7', criterion: 'c7', weight: 'essential', lookFor: 'l7' },
+            { id: 'r8', criterion: 'c8', weight: 'important', lookFor: 'l8' },
+          ],
+          sampleAnswer: 's4',
+        },
+        {
+          prompt: 'fr5',
+          rubric: [
+            { id: 'r9', criterion: 'c9', weight: 'essential', lookFor: 'l9' },
+            { id: 'r10', criterion: 'c10', weight: 'important', lookFor: 'l10' },
+          ],
+          sampleAnswer: 's5',
+        },
       ],
     };
     mocks.callLLM
@@ -239,8 +295,10 @@ describe('POST /api/generate/exam', () => {
     expect(res.status).toBe(200);
     const bodyText = await (res as unknown as Response).text();
     const j = JSON.parse(bodyText) as { exam?: ExamSpec };
-    expect(j.exam?.mcQuestions.length).toBe(12);
-    expect(j.exam?.frQuestions.length).toBe(3);
+    expect(j.exam?.mcQuestions.length).toBe(18);
+    expect(j.exam?.frQuestions.length).toBe(5);
+    expect(j.exam?.formConfig).toEqual({ mcCount: 14, frCount: 4 });
+    expect(j.exam?.timing).toEqual({ mcSec: 2100, frSec: 3000 });
     // Retry prompt must contain the shortfall findings.
     expect(mockPrompts()[1] ?? '').toContain('CONSTRAINT VIOLATION REPORT');
     expect(mocks.callLLM).toHaveBeenCalledTimes(2);
