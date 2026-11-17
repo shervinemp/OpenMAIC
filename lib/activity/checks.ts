@@ -385,6 +385,7 @@ export function projectActivityForLearner(activity: ActivityContent): ActivityCo
     hints: activity.hints ? [...activity.hints] : undefined,
     debrief: activity.debrief,
     timeLimitSec: activity.timeLimitSec,
+    concepts: activity.concepts ? [...activity.concepts] : undefined,
   };
   if (activity.kind === 'code') {
     return {

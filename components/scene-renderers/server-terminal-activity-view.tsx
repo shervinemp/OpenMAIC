@@ -24,12 +24,18 @@ import { buildActivityRunRequest, type ActivityRunResult } from '@/lib/activity/
 import { createServerTerminalRunner } from '@/lib/activity/server-runner';
 import type { ActivityRunner } from '@/lib/activity/worker-runner';
 import { MarkdownText } from '@/components/scene-renderers/pbl/v2/markdown-text';
+import { createActivityAttemptId } from '@/lib/activity/attempt-id';
+import { createLogger } from '@/lib/logger';
+import { recordActivityLearning } from '@/lib/learning/record-activity';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
+
+const log = createLogger('ServerTerminalActivityView');
 
 interface ServerTerminalActivityViewProps {
   readonly content: TerminalActivityContent;
   readonly sceneId: string;
+  readonly stageId: string;
 }
 
 interface RunState {
@@ -50,7 +56,11 @@ function checkLabel(
  * The whole command list is one submission: a container per shell command would
  * be slow and would not preserve session state.
  */
-export function ServerTerminalActivityView({ content, sceneId }: ServerTerminalActivityViewProps) {
+export function ServerTerminalActivityView({
+  content,
+  sceneId,
+  stageId,
+}: ServerTerminalActivityViewProps) {
   const { t } = useI18n();
   const lab = useMemo(() => projectActivityForLearner(content), [content]);
   const terminal = lab.kind === 'terminal' ? lab : null;
@@ -60,11 +70,15 @@ export function ServerTerminalActivityView({ content, sceneId }: ServerTerminalA
   const [run, setRun] = useState<RunState | null>(null);
   const [hintCount, setHintCount] = useState(0);
   const [showInstructions, setShowInstructions] = useState(true);
+  // One visit is one attempt: the script starts empty, so only a completed
+  // session is evidence, and later passing runs reuse this id.
+  const sessionIdRef = useRef<string>(createActivityAttemptId());
 
   useEffect(() => {
     setScript('');
     setRun(null);
     setHintCount(0);
+    sessionIdRef.current = createActivityAttemptId();
   }, [terminal]);
 
   useEffect(() => {
@@ -79,6 +93,7 @@ export function ServerTerminalActivityView({ content, sceneId }: ServerTerminalA
   const reset = useCallback(() => {
     setScript('');
     setRun(null);
+    sessionIdRef.current = createActivityAttemptId();
   }, []);
 
   const runSession = useCallback(async () => {
@@ -99,6 +114,19 @@ export function ServerTerminalActivityView({ content, sceneId }: ServerTerminalA
       setRunning(false);
     }
   }, [running, script, terminal]);
+
+  useEffect(() => {
+    if (!run || !stageId || !run.evaluation.passed) return;
+    void recordActivityLearning({
+      stageId,
+      sceneId,
+      attemptId: sessionIdRef.current,
+      concepts: terminal?.concepts,
+      results: run.evaluation.results,
+    }).catch((error) => {
+      log.warn('Failed to record activity learning evidence:', error);
+    });
+  }, [run, terminal, stageId, sceneId]);
 
   if (!terminal) return null;
 

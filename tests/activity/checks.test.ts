@@ -322,12 +322,15 @@ describe('projectActivityForLearner', () => {
         { id: 'secret', name: 'secret', code: 'assert secret()', hidden: true },
       ],
       referenceFiles: [{ path: 'main.py', content: 'def add(a, b): return a + b\n' }],
+      concepts: ['recursion'],
     };
     const projected = projectActivityForLearner(activity);
     expect(projected.kind).toBe('code');
     if (projected.kind !== 'code') throw new Error('expected code');
     expect(projected.tests.map((test) => test.id)).toEqual(['public']);
     expect(projected.referenceFiles).toBeUndefined();
+    expect(projected.concepts).toEqual(['recursion']);
+    expect(projected.concepts).not.toBe(activity.concepts);
     // The stored activity is not mutated.
     expect(activity.referenceFiles).toHaveLength(1);
   });

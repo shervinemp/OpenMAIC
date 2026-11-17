@@ -164,6 +164,12 @@ export interface ActivityContentBase {
   debrief?: string;
   /** Wall-clock cap for one run, in seconds. Runners clamp to their own maximum. */
   timeLimitSec?: number;
+  /**
+   * 1-4 normalized concept tags this lab measures. Every check in the lab is
+   * evidence about these ideas. Absent on legacy activities, whose checks are
+   * still recorded but cannot move a concept estimate.
+   */
+  concepts?: string[];
 }
 
 /** A code exercise executed in a language runtime. */

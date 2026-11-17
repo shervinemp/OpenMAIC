@@ -26,17 +26,21 @@ concept estimate.
 
 ## Concept tags
 
-Generated quiz questions and exam items carry an optional `concepts` list. The
-shared normalizer (`normalizeConceptTags` in `@openmaic/dsl`) trims list
-markers and quotes, drops format-only tags such as `quiz` or `multiple choice`,
-lower-cases the rest, deduplicates, and caps a question at four tags. Lower case
-is the identity rule: `Recursion` and `recursion.` must be one concept for
-mastery to add up across scenes, not two.
+Generated quiz questions and exam items carry an optional `concepts` list.
+Activities carry one scene-level list instead: every check in a lab is evidence
+about the same small set of ideas. The shared normalizer
+(`normalizeConceptTags` in `@openmaic/dsl`) trims list markers and quotes, drops
+format-only tags such as `quiz` or `multiple choice`, lower-cases the rest,
+deduplicates, and caps an item at four tags. Lower case is the identity rule:
+`Recursion` and `recursion.` must be one concept for mastery to add up across
+scenes, not two.
 
 Tags are generated from the scene's outline key points and reused across the
 questions that measure the same idea. Imported or hand-edited content is
 normalized again when the quiz view builds evidence, so sloppy casing cannot
-fragment a learner's history.
+fragment a learner's history. Activity evidence normalizes the scene tags for the
+same reason; a legacy untagged lab still records check history, it just cannot
+move a concept estimate.
 
 ## Mastery
 
@@ -94,6 +98,14 @@ into one card.
 ## Wired today
 
 - Quiz questions and exam items are tagged during generation.
+- Activity labs are tagged with scene-level concepts during generation. A
+  completed session records one evidence row per check, once per scene visit.
+  The starter is expected to fail, so an incomplete run stays formative feedback
+  rather than a mastery observation; code, SQL, and server-terminal labs complete
+  through their Run button, and the simulated terminal completes when every
+  check passes its final session state. Activities create no review cards: a
+  check is an application task, not a memory prompt with a question to show in
+  review.
 - A reviewed quiz attempt writes evidence and creates review cards for tagged,
   graded items (`recordQuizLearning`, called from `quiz-view`). The write is
   idempotent, so reopening a reviewed attempt retries safely.
@@ -125,7 +137,6 @@ into one card.
 
 ## Next
 
-1. Attach activity producers to the same evidence log.
-2. Add remediation links to exam review (the pool has no single scene today).
-3. Add a placement / adaptive-routing decision on top of real evidence.
-4. Compact very old evidence records in the runtime store.
+1. Add remediation links to exam review (the pool has no single scene today).
+2. Add a placement / adaptive-routing decision on top of real evidence.
+3. Compact very old evidence records in the runtime store.

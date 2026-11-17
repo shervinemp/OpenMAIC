@@ -31,12 +31,18 @@ import {
   type ActivityRunner,
 } from '@/lib/activity/code-runner';
 import { MarkdownText } from '@/components/scene-renderers/pbl/v2/markdown-text';
+import { createActivityAttemptId } from '@/lib/activity/attempt-id';
+import { createLogger } from '@/lib/logger';
+import { recordActivityLearning } from '@/lib/learning/record-activity';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
+
+const log = createLogger('ActivityView');
 
 interface ActivityViewProps {
   readonly content: ActivityContent;
   readonly sceneId: string;
+  readonly stageId: string;
 }
 
 interface RunState {
@@ -58,7 +64,7 @@ function checkLabel(
   return label && label.trim() ? label : t('activity.checkFallback', { id: checkId });
 }
 
-export function CodeActivityView({ content, sceneId }: ActivityViewProps) {
+export function CodeActivityView({ content, sceneId, stageId }: ActivityViewProps) {
   const { t } = useI18n();
   const learnerContent = useMemo(() => projectActivityForLearner(content), [content]);
   const runnerRef = useRef<ActivityRunner | null>(null);
@@ -69,6 +75,9 @@ export function CodeActivityView({ content, sceneId }: ActivityViewProps) {
   const [hintCount, setHintCount] = useState(0);
   const [showTests, setShowTests] = useState(false);
   const [showInstructions, setShowInstructions] = useState(true);
+  // One visit is one attempt: the starter run is expected to fail, so only a
+  // completed lab is evidence, and later passing runs reuse this id.
+  const sessionIdRef = useRef<string>(createActivityAttemptId());
 
   const code = learnerContent.kind === 'code' ? learnerContent : null;
   const editablePaths = useMemo(() => {
@@ -82,6 +91,7 @@ export function CodeActivityView({ content, sceneId }: ActivityViewProps) {
     setActivePath(code.entryFile || editablePaths[0] || code.files[0]?.path || '');
     setRun(null);
     setHintCount(0);
+    sessionIdRef.current = createActivityAttemptId();
   }, [code, editablePaths]);
 
   useEffect(() => {
@@ -98,6 +108,7 @@ export function CodeActivityView({ content, sceneId }: ActivityViewProps) {
     if (!code) return;
     setFiles(initialFiles(code));
     setRun(null);
+    sessionIdRef.current = createActivityAttemptId();
   }, [code]);
 
   const updateFile = useCallback((path: string, value: string) => {
@@ -158,6 +169,22 @@ export function CodeActivityView({ content, sceneId }: ActivityViewProps) {
       setRunning(false);
     }
   }, [code, files, running, t]);
+
+  // Only a completed lab is evidence. The starter is expected to fail at least
+  // one check, so counting every run would penalize the learner for exploring;
+  // the session id keeps later passing runs (and React retries) idempotent.
+  useEffect(() => {
+    if (!run || !stageId || !run.evaluation.passed) return;
+    void recordActivityLearning({
+      stageId,
+      sceneId,
+      attemptId: sessionIdRef.current,
+      concepts: code?.concepts,
+      results: run.evaluation.results,
+    }).catch((error) => {
+      log.warn('Failed to record activity learning evidence:', error);
+    });
+  }, [run, code, stageId, sceneId]);
 
   if (!code) {
     return (

@@ -138,6 +138,7 @@ export function validActivityResponse(): Record<string, unknown> {
   return {
     instructions:
       'Implement `resolve(registry, key)`. Return the instance stored under `key`. When the key is missing, raise `KeyError`. Do not mutate the registry. For example, `resolve({"db": 1}, "db")` returns `1`, while `resolve({}, "db")` raises `KeyError`.',
+    concepts: ['Registry Lookup', 'missing keys', 'quiz'],
     entryFile: 'main.py',
     files: [
       {
@@ -190,6 +191,7 @@ export function validSqlActivityResponse(): Record<string, unknown> {
   return {
     instructions:
       'Create a view named `adults` that returns the name of every learner aged 21 or older. The `learners` table has `id`, `name` and `age` columns and is seeded before your script runs. Your script may create a view or a table. The probe reads `adults` ordered by name, so include an `ORDER BY` or let the probe sort. For example, Ada (24) and Linus (31) must appear, while Grace (19) must not.',
+    concepts: ['Filtering Rows', 'sql views'],
     setupSql:
       "create table learners (id int primary key, name text, age int);\ninsert into learners values (1, 'Ada', 24), (2, 'Grace', 19), (3, 'Linus', 31);",
     starterSql: 'select * from learners;',
@@ -230,6 +232,7 @@ export function validTerminalActivityResponse(): Record<string, unknown> {
   return {
     instructions:
       'Create a file named `notes.txt` in your home directory whose content contains the word `done`. Then print the current working directory. The session starts in `/home/learner`, and `README.txt` describes the workspace. You can use output redirection with `echo`, and `pwd` prints the current directory. For example, `echo done > notes.txt` writes the file, and `pwd` prints `/home/learner`.',
+    concepts: ['Output Redirection', 'working directory', 'exercise'],
     files: [{ path: 'README.txt', content: 'Workspace notes.\n', editable: false }],
     checks: [
       {

@@ -20,13 +20,19 @@ import {
 } from '@/lib/activity/checks';
 import type { ActivityRunResult } from '@/lib/activity/protocol';
 import { simulateTerminal, TERMINAL_HOME } from '@/lib/activity/terminal-simulator';
+import { createActivityAttemptId } from '@/lib/activity/attempt-id';
 import { MarkdownText } from '@/components/scene-renderers/pbl/v2/markdown-text';
+import { createLogger } from '@/lib/logger';
+import { recordActivityLearning } from '@/lib/learning/record-activity';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
+
+const log = createLogger('TerminalActivityView');
 
 interface TerminalActivityViewProps {
   readonly content: TerminalActivityContent;
   readonly sceneId: string;
+  readonly stageId: string;
 }
 
 interface TranscriptEntry {
@@ -61,7 +67,7 @@ function initialFiles(activity: TerminalActivityContent): Record<string, string>
   return files;
 }
 
-export function TerminalActivityView({ content, sceneId }: TerminalActivityViewProps) {
+export function TerminalActivityView({ content, sceneId, stageId }: TerminalActivityViewProps) {
   const { t } = useI18n();
   const lab = useMemo(() => projectActivityForLearner(content), [content]);
   const terminal = lab.kind === 'terminal' ? lab : null;
@@ -74,6 +80,9 @@ export function TerminalActivityView({ content, sceneId }: TerminalActivityViewP
   const lastReportRef = useRef<ActivityRunResult | null>(null);
   const outputRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // One terminal session is one attempt. Commands keep updating the same run,
+  // so evidence is written when the session first passes, not on every command.
+  const sessionIdRef = useRef<string>(createActivityAttemptId());
 
   useEffect(() => {
     setCommands([]);
@@ -82,6 +91,7 @@ export function TerminalActivityView({ content, sceneId }: TerminalActivityViewP
     setRun(null);
     setHintCount(0);
     lastReportRef.current = null;
+    sessionIdRef.current = createActivityAttemptId();
   }, [terminal]);
 
   useEffect(() => {
@@ -99,6 +109,7 @@ export function TerminalActivityView({ content, sceneId }: TerminalActivityViewP
         setRun(null);
         lastReportRef.current = null;
         setInput('');
+        sessionIdRef.current = createActivityAttemptId();
         return;
       }
 
@@ -133,8 +144,25 @@ export function TerminalActivityView({ content, sceneId }: TerminalActivityViewP
     setInput('');
     setRun(null);
     lastReportRef.current = null;
+    sessionIdRef.current = createActivityAttemptId();
     inputRef.current?.focus();
   }, []);
+
+  // The simulated shell has no Run button: every command recomputes the run.
+  // Only a completed session is evidence, and the session id makes later
+  // commands (or a React retry) idempotent with the first successful pass.
+  useEffect(() => {
+    if (!run || !stageId || !run.evaluation.passed) return;
+    void recordActivityLearning({
+      stageId,
+      sceneId,
+      attemptId: sessionIdRef.current,
+      concepts: terminal?.concepts,
+      results: run.evaluation.results,
+    }).catch((error) => {
+      log.warn('Failed to record activity learning evidence:', error);
+    });
+  }, [run, terminal, stageId, sceneId]);
 
   if (!terminal) return null;
 

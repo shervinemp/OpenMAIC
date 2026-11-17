@@ -1285,6 +1285,8 @@ function applyActivityCommon(content: ActivityContent, payload: Record<string, u
   if (hints.length > 0) content.hints = hints;
   const debrief = activityText(payload.debrief).trim();
   if (debrief) content.debrief = debrief;
+  const concepts = normalizeConceptTags(payload.concepts);
+  if (concepts) content.concepts = concepts;
   if (typeof payload.timeLimitSec === 'number' && Number.isFinite(payload.timeLimitSec)) {
     content.timeLimitSec = Math.min(Math.max(Math.round(payload.timeLimitSec), 1), 120);
   }

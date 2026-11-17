@@ -36,7 +36,14 @@ export function SceneRenderer({ scene, mode }: SceneRendererProps) {
         );
       case 'activity':
         if (scene.content.type !== 'activity') return <div>Invalid activity content</div>;
-        return <ActivityView key={scene.id} content={scene.content} sceneId={scene.id} />;
+        return (
+          <ActivityView
+            key={scene.id}
+            content={scene.content}
+            sceneId={scene.id}
+            stageId={scene.stageId}
+          />
+        );
       case 'interactive':
         if (scene.content.type !== 'interactive') return <div>Invalid interactive content</div>;
         return <InteractiveRenderer content={scene.content} sceneId={scene.id} />;

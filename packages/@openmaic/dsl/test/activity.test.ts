@@ -51,6 +51,18 @@ describe('activity contract', () => {
     expect(validateScene(scene(codeActivity))).toEqual({ valid: true });
   });
 
+  it('accepts activity concept tags and rejects non-string entries', () => {
+    expect(
+      validateScene(scene({ ...codeActivity, concepts: ['registry lookup', 'missing keys'] })),
+    ).toEqual({ valid: true });
+
+    const invalid = validateScene(scene({ ...codeActivity, concepts: ['ok', 3] }));
+    expect(invalid.valid).toBe(false);
+    if (!invalid.valid) {
+      expect(invalid.errors.map((error) => error.path)).toContain('/content/concepts');
+    }
+  });
+
   it('accepts a SQL activity with probe checks', () => {
     const sql = {
       type: 'activity',

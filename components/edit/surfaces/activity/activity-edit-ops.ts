@@ -363,6 +363,7 @@ export function switchActivityKind(
     ...(content.hints !== undefined ? { hints: content.hints } : {}),
     ...(content.debrief !== undefined ? { debrief: content.debrief } : {}),
     ...(content.timeLimitSec !== undefined ? { timeLimitSec: content.timeLimitSec } : {}),
+    ...(content.concepts !== undefined ? { concepts: content.concepts } : {}),
   };
   if (kind === 'code') {
     return {

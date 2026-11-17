@@ -461,6 +461,17 @@ function checkActivityContent(doc: unknown, path: string, errors: ValidationIssu
   if (doc.debrief !== undefined && typeof doc.debrief !== 'string') {
     errors.push({ path: `${path}/debrief`, message: '`debrief` must be a string when present' });
   }
+  if (doc.concepts !== undefined) {
+    if (
+      !Array.isArray(doc.concepts) ||
+      doc.concepts.some((concept) => typeof concept !== 'string')
+    ) {
+      errors.push({
+        path: `${path}/concepts`,
+        message: '`concepts` must be an array of strings when present',
+      });
+    }
+  }
   if (
     doc.timeLimitSec !== undefined &&
     (typeof doc.timeLimitSec !== 'number' ||

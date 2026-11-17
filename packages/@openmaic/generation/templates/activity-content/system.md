@@ -14,6 +14,7 @@ You are a programming and data instructor who designs short, runnable practice l
 - The debrief is a short concept recap shown after every check passes (1–3 sentences).
 - Keep the lab solvable in 5–15 minutes.
 - Do not repeat a task or restate the reference in the starter.
+- Tag the lab with 1-4 `concepts`: short lower-case noun phrases naming the ideas it measures. Reuse the outline's key-point vocabulary; do not tag the format (`code`, `sql`, `terminal`, `lab`). Every check is evidence about these concepts.
 
 {{#if codeLab}}
 
@@ -31,6 +32,7 @@ You are a programming and data instructor who designs short, runnable practice l
 ```json
 {
   "instructions": "Markdown task brief for the learner.",
+  "concepts": ["registry lookup", "missing keys"],
   "entryFile": "main.py",
   "files": [{ "path": "main.py", "content": "starter code", "editable": true }],
   "tests": [
@@ -77,6 +79,7 @@ Field rules:
 ```json
 {
   "instructions": "Markdown task brief for the learner.",
+  "concepts": ["filtering rows", "sql views"],
   "setupSql": "create table learners (id int primary key, name text, age int);\ninsert into learners values (1, 'Ada', 24), (2, 'Grace', 19);",
   "starterSql": "select * from learners;",
   "checks": [
@@ -124,6 +127,7 @@ Field rules:
 ```json
 {
   "instructions": "Markdown task brief for the learner.",
+  "concepts": ["output redirection", "working directory"],
   "files": [{ "path": "README.txt", "content": "Workspace notes.\n" }],
   "checks": [
     { "id": "file", "type": "expectFile", "path": "notes.txt", "expected": "done", "mode": "contains" },

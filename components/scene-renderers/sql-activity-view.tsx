@@ -24,12 +24,18 @@ import { buildActivityRunRequest, type ActivityRunResult } from '@/lib/activity/
 import { createSqlActivityRunner } from '@/lib/activity/sql-runner';
 import type { ActivityRunner } from '@/lib/activity/worker-runner';
 import { MarkdownText } from '@/components/scene-renderers/pbl/v2/markdown-text';
+import { createActivityAttemptId } from '@/lib/activity/attempt-id';
+import { createLogger } from '@/lib/logger';
+import { recordActivityLearning } from '@/lib/learning/record-activity';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
+
+const log = createLogger('SqlActivityView');
 
 interface SqlActivityViewProps {
   readonly content: SqlActivityContent;
   readonly sceneId: string;
+  readonly stageId: string;
 }
 
 interface RunState {
@@ -87,7 +93,7 @@ function SqlResultTable({ columns, rows }: { columns: string[] | undefined; rows
   return <pre className="overflow-auto text-[11px]">{JSON.stringify(rows)}</pre>;
 }
 
-export function SqlActivityView({ content, sceneId }: SqlActivityViewProps) {
+export function SqlActivityView({ content, sceneId, stageId }: SqlActivityViewProps) {
   const { t } = useI18n();
   const lab = useMemo(() => projectActivityForLearner(content), [content]);
   const sqlLab = lab.kind === 'sql' ? lab : null;
@@ -97,12 +103,16 @@ export function SqlActivityView({ content, sceneId }: SqlActivityViewProps) {
   const [run, setRun] = useState<RunState | null>(null);
   const [hintCount, setHintCount] = useState(0);
   const [showInstructions, setShowInstructions] = useState(true);
+  // One visit is one attempt: the starter run is expected to fail, so only a
+  // completed lab is evidence, and later passing runs reuse this id.
+  const sessionIdRef = useRef<string>(createActivityAttemptId());
 
   useEffect(() => {
     if (!sqlLab) return;
     setSql(sqlLab.starterSql);
     setRun(null);
     setHintCount(0);
+    sessionIdRef.current = createActivityAttemptId();
   }, [sqlLab]);
 
   useEffect(() => {
@@ -118,6 +128,7 @@ export function SqlActivityView({ content, sceneId }: SqlActivityViewProps) {
     if (!sqlLab) return;
     setSql(sqlLab.starterSql);
     setRun(null);
+    sessionIdRef.current = createActivityAttemptId();
   }, [sqlLab]);
 
   const updateSql = useCallback((value: string) => {
@@ -159,6 +170,19 @@ export function SqlActivityView({ content, sceneId }: SqlActivityViewProps) {
       setRunning(false);
     }
   }, [sql, running, sqlLab, t]);
+
+  useEffect(() => {
+    if (!run || !stageId || !run.evaluation.passed) return;
+    void recordActivityLearning({
+      stageId,
+      sceneId,
+      attemptId: sessionIdRef.current,
+      concepts: sqlLab?.concepts,
+      results: run.evaluation.results,
+    }).catch((error) => {
+      log.warn('Failed to record activity learning evidence:', error);
+    });
+  }, [run, sqlLab, stageId, sceneId]);
 
   if (!sqlLab) {
     return null;

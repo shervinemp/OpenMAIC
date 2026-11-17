@@ -76,6 +76,7 @@ describe('generateSceneContent — code labs', () => {
       kind: 'code',
       language: 'python',
       entryFile: 'main.py',
+      concepts: ['registry lookup', 'missing keys'],
       hints: ['Look the key up in the mapping.', 'Missing keys should raise KeyError.'],
       debrief: 'A registry lookup returns the registered instance or fails loudly.',
     });
@@ -197,6 +198,7 @@ describe('generateSceneContent — SQL labs', () => {
       type: 'activity',
       kind: 'sql',
       starterSql: 'select * from learners;',
+      concepts: ['filtering rows', 'sql views'],
     });
     if (!content || !('kind' in content) || content.kind !== 'sql') {
       throw new Error('expected SQL activity content');
@@ -250,6 +252,7 @@ describe('generateSceneContent — terminal labs', () => {
       type: 'activity',
       kind: 'terminal',
       runtime: 'simulation',
+      concepts: ['output redirection', 'working directory'],
       referenceCommands: ['echo done > notes.txt', 'pwd'],
     });
     if (!content || !('kind' in content) || content.kind !== 'terminal') {

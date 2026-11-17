@@ -9,18 +9,19 @@ import { TerminalActivityView } from './terminal-activity-view';
 interface ActivitySceneViewProps {
   readonly content: ActivityContent;
   readonly sceneId: string;
+  readonly stageId: string;
 }
 
 /** Playback dispatcher for the three activity families. */
-export function ActivityView({ content, sceneId }: ActivitySceneViewProps) {
+export function ActivityView({ content, sceneId, stageId }: ActivitySceneViewProps) {
   if (content.kind === 'code') {
-    return <CodeActivityView content={content} sceneId={sceneId} />;
+    return <CodeActivityView content={content} sceneId={sceneId} stageId={stageId} />;
   }
   if (content.kind === 'sql') {
-    return <SqlActivityView content={content} sceneId={sceneId} />;
+    return <SqlActivityView content={content} sceneId={sceneId} stageId={stageId} />;
   }
   if (content.runtime === 'server') {
-    return <ServerTerminalActivityView content={content} sceneId={sceneId} />;
+    return <ServerTerminalActivityView content={content} sceneId={sceneId} stageId={stageId} />;
   }
-  return <TerminalActivityView content={content} sceneId={sceneId} />;
+  return <TerminalActivityView content={content} sceneId={sceneId} stageId={stageId} />;
 }
