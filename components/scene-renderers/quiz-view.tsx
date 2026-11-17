@@ -108,7 +108,7 @@ async function gradeShortAnswerQuestion(
   userAnswer: string,
   language: string,
 ): Promise<QuestionResult> {
-  const pts = q.points ?? 1;
+  const pts = quizQuestionPoints(q.points);
   try {
     const modelConfig = getCurrentModelConfig();
     const headers: Record<string, string> = {
@@ -838,7 +838,7 @@ function ShortAnswerQuestion({
                   t('quiz.ungraded')
                 ) : (
                   <>
-                    {result.earned}/{question.points ?? 1}
+                    {result.earned}/{quizQuestionPoints(question.points)}
                     {t('quiz.pointsSuffix')}
                   </>
                 )}
@@ -940,7 +940,7 @@ function QuestionCard({
 }) {
   const { t } = useI18n();
   const isReview = !!result;
-  const pts = question.points ?? 1;
+  const pts = quizQuestionPoints(question.points);
 
   return (
     <motion.div
@@ -1463,7 +1463,7 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
   const attemptId = isQuizRuntimeReady(runtimeGate) ? runtimeGate.attemptId : null;
 
   const totalPoints = useMemo(
-    () => questions.reduce((sum, q) => sum + (q.points ?? 1), 0),
+    () => questions.reduce((sum, q) => sum + quizQuestionPoints(q.points), 0),
     [questions],
   );
 
@@ -1595,7 +1595,7 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
     () =>
       questions.reduce((sum, q) => {
         const result = resultMap[q.id];
-        return sum + (result?.status === 'ungraded' ? 0 : (q.points ?? 1));
+        return sum + (result?.status === 'ungraded' ? 0 : quizQuestionPoints(q.points));
       }, 0),
     [questions, resultMap],
   );

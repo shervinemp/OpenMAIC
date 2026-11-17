@@ -1,4 +1,5 @@
 import type { StatelessChatRequest } from '@/lib/types/chat';
+import { quizQuestionPoints } from '@/lib/quiz/grading';
 import { buildWhiteboardConflicts } from './whiteboard-conflicts';
 import { type CodeLine, createCodeRenderBudget, renderCodeLines } from './code-line-budget';
 
@@ -193,7 +194,7 @@ export function buildStateContext(storeState: StatelessChatRequest['storeState']
               Array.isArray(q.answer) && q.answer.length > 0 ? q.answer.join(', ') : '(open-ended)';
             const ungraded = r?.status === 'ungraded';
             const verdict = ungraded ? 'UNGRADED' : r ? r.status.toUpperCase() : 'UNGRADED';
-            const points = q.points ?? 1;
+            const points = quizQuestionPoints(q.points);
             const earned = ungraded ? 0 : (r?.earned ?? 0);
             const entry: string[] = [
               `  ${i + 1}. [${q.type}] ${q.question}`,
@@ -211,7 +212,7 @@ export function buildStateContext(storeState: StatelessChatRequest['storeState']
           );
           const total = questions.reduce((acc, q) => {
             const r = resultsById.get(q.id);
-            return acc + (r?.status === 'ungraded' ? 0 : (q.points ?? 1));
+            return acc + (r?.status === 'ungraded' ? 0 : quizQuestionPoints(q.points));
           }, 0);
           const ungradedCount = quizResults.results.filter((r) => r.status === 'ungraded').length;
           const ungradedNote =
