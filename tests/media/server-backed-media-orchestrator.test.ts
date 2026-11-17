@@ -376,6 +376,9 @@ describe('server-backed classic media orchestrator', () => {
     const tasks = useMediaGenerationStore.getState().tasks;
     expect(tasks.ast_first).toMatchObject({ status: 'done', elementId: 'ast_first' });
     expect(tasks.ast_second).toBeUndefined();
+    // Sharing the purchase must not strand the duplicate's own outline phase.
+    expect(mocks.recordPhase).toHaveBeenCalledWith('outline-1', 'media', { status: 'done' });
+    expect(mocks.recordPhase).toHaveBeenCalledWith('outline-2', 'media', { status: 'done' });
   });
 
   it('shares one stored video and poster across identical slots', async () => {
@@ -424,6 +427,10 @@ describe('server-backed classic media orchestrator', () => {
         posterAssetId: 'ast_poster',
       }),
     );
+    // The duplicate's outline is settled by the shared commit, not left
+    // waiting for a purchase of its own.
+    expect(mocks.recordPhase).toHaveBeenCalledWith('outline-1', 'media', { status: 'done' });
+    expect(mocks.recordPhase).toHaveBeenCalledWith('outline-2', 'media', { status: 'done' });
   });
 
   it('records a duplicate placeholder on the shared asset row for later adoption', async () => {

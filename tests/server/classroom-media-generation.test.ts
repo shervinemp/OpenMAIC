@@ -477,4 +477,71 @@ describe('generateMediaForClassroom model fallback', () => {
     expect(dedupeWrites).toHaveLength(1);
     expect(dedupeWrites[0]).toContain('gen_img_a');
   });
+
+  test('buys an identical video prompt once and serves both element ids from one file', async () => {
+    vi.stubEnv('VIDEO_SEEDANCE_API_KEY', 'sk-seedance');
+    vi.useFakeTimers();
+    vi.resetModules();
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'video-task-shared' }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'video-task-shared',
+          status: 'succeeded',
+          content: { video_url: 'https://cdn.example.com/shared.mp4' },
+          resolution: '720p',
+          ratio: '16:9',
+          duration: 5,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { generateMediaForClassroom } = await import('@/lib/server/classroom-media-generation');
+
+    const outlines = [
+      {
+        id: 'outline_a',
+        type: 'slide',
+        title: 'Scene A',
+        description: 'd',
+        order: 1,
+        mediaGenerations: [{ type: 'video', prompt: 'a cat running', elementId: 'gen_vid_a' }],
+      },
+      {
+        id: 'outline_b',
+        type: 'slide',
+        title: 'Scene B',
+        description: 'd',
+        order: 2,
+        mediaGenerations: [{ type: 'video', prompt: 'A CAT   running', elementId: 'gen_vid_b' }],
+      },
+    ] as unknown as SceneOutline[];
+
+    const mediaMapPromise = generateMediaForClassroom(
+      outlines,
+      'cls-video-dedupe',
+      'http://localhost',
+    );
+    await vi.advanceTimersByTimeAsync(5_000);
+    const mediaMap = await mediaMapPromise;
+
+    // One submit, one poll, one download, one stored file served for both ids.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(mediaMap).toEqual({
+      gen_vid_a: 'http://localhost/api/classroom-media/cls-video-dedupe/media/gen_vid_a.mp4',
+      gen_vid_b: 'http://localhost/api/classroom-media/cls-video-dedupe/media/gen_vid_a.mp4',
+    });
+    const written = vi.mocked(fs.writeFile).mock.calls.map(([file]) => String(file));
+    const dedupeWrites = written.filter((file) => /gen_vid_[ab]\.mp4/.test(file));
+    expect(dedupeWrites).toHaveLength(1);
+    expect(dedupeWrites[0]).toContain('gen_vid_a');
+  });
 });
