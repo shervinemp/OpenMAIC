@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import type { Scene, StageMode } from '@/lib/types/stage';
 import { SlideEditor as SlideRenderer } from '../slide-renderer/Editor';
 import { QuizView } from '../scene-renderers/quiz-view';
+import { ActivityView } from '../scene-renderers/activity-view';
 import { InteractiveRenderer } from '../scene-renderers/interactive-renderer';
 import { PBLRenderer } from '../scene-renderers/pbl-renderer';
 
@@ -33,6 +34,9 @@ export function SceneRenderer({ scene, mode }: SceneRendererProps) {
             stageId={scene.stageId}
           />
         );
+      case 'activity':
+        if (scene.content.type !== 'activity') return <div>Invalid activity content</div>;
+        return <ActivityView key={scene.id} content={scene.content} sceneId={scene.id} />;
       case 'interactive':
         if (scene.content.type !== 'interactive') return <div>Invalid interactive content</div>;
         return <InteractiveRenderer content={scene.content} sceneId={scene.id} />;

@@ -12,6 +12,7 @@ import type {
   SceneContent,
   SlideContent,
   QuizContent,
+  ActivityContent,
   InteractiveContent,
   PBLContent,
 } from '@/lib/types/stage';
@@ -82,6 +83,27 @@ export function createDefaultQuizContent(): QuizContent {
 }
 
 /**
+ * Create default ActivityContent
+ *
+ * A code lab with the smallest valid workspace: one editable entry file, no
+ * tests, and a single check the author replaces when the lab is written. The
+ * generator normally supplies a complete activity; this exists so a manually
+ * inserted scene is structurally valid instead of throwing.
+ */
+export function createDefaultActivityContent(): ActivityContent {
+  return {
+    type: 'activity',
+    kind: 'code',
+    language: 'python',
+    entryFile: 'main.py',
+    instructions: '',
+    files: [{ path: 'main.py', content: '' }],
+    tests: [],
+    checks: [{ id: 'check-1', type: 'expectTests' }],
+  };
+}
+
+/**
  * Create default InteractiveContent
  */
 export function createDefaultInteractiveContent(): InteractiveContent {
@@ -107,6 +129,8 @@ export function createDefaultContent(type: SceneType): SceneContent {
       return createDefaultSlideContent();
     case 'quiz':
       return createDefaultQuizContent();
+    case 'activity':
+      return createDefaultActivityContent();
     case 'interactive':
       return createDefaultInteractiveContent();
     case 'pbl':

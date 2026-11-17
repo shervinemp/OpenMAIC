@@ -73,6 +73,7 @@ export interface SceneOutline {
   type:
     | 'slide'
     | 'quiz'
+    | 'activity'
     | 'interactive'
     | 'pbl'
     // Specialized university-level kinds (Phase 2 §15.4b): render as slides.

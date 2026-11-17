@@ -83,6 +83,12 @@ const TYPE_THEME: Record<
     accent: 'bg-purple-500',
     dot: 'bg-purple-400',
   },
+  activity: {
+    chip: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300',
+    chipHover: 'hover:bg-cyan-100/80 dark:hover:bg-cyan-500/15',
+    accent: 'bg-cyan-500',
+    dot: 'bg-cyan-400',
+  },
   interactive: {
     chip: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300',
     chipHover: 'hover:bg-emerald-100/80 dark:hover:bg-emerald-500/15',

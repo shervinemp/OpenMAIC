@@ -1,14 +1,14 @@
 // Stage and Scene data types.
 //
 // The universal lesson skeleton (Stage / Scene / SceneContent / Whiteboard /
-// VideoManifest / SlideContent / QuizContent / …) now lives in `@openmaic/dsl` and
-// is re-exported below. `Scene` is generic there: the contract owns the
-// structure and all four persisted content kinds, while richer interactive
-// widget payloads and PBL learner/runtime state are composed in here.
+// VideoManifest / SlideContent / QuizContent / ActivityContent / …) now lives in
+// `@openmaic/dsl` and is re-exported below. `Scene` is generic there: the
+// contract owns the structure and every persisted content kind, while richer
+// interactive widget payloads and PBL learner/runtime state are composed in here.
 //
 // `Scene` is re-exported as an alias of the app's fully-instantiated
 // `Scene<Action, AppSceneContent>`, so existing `import { Scene }` callers keep
-// the same semantics (actions are `Action[]`, content spans all four kinds).
+// the same semantics (actions are `Action[]`, content spans all five kinds).
 import type {
   InteractiveContent as DslInteractiveContent,
   PBLContent as DslPBLContent,
@@ -33,21 +33,46 @@ export type {
   QuizOption,
   QuizQuestion,
   QuizContent,
+  ActivityKind,
+  ActivityFile,
+  ActivityTest,
+  ActivityCheck,
+  ActivityExpectTestsCheck,
+  ActivityExpectStdoutCheck,
+  ActivityExpectFileCheck,
+  ActivityExpectSqlRowsCheck,
+  ActivityExpectStateCheck,
+  ActivityMatchMode,
+  SqlValue,
+  ActivityContent,
+  CodeActivityCheck,
+  SqlActivityCheck,
+  TerminalActivityCheck,
+  CodeActivityContent,
+  SqlActivityContent,
+  TerminalActivityContent,
 } from '@openmaic/dsl';
 
-// The two discriminant guards are runtime functions, so they must be value
+// The discriminant and kind guards are runtime functions, so they must be value
 // re-exported — a bare `export type {}` erases them and leaves the import as
 // `undefined` at runtime / "cannot be used as a value" at the type level.
-export { isSlideContent, isQuizContent } from '@openmaic/dsl';
+export {
+  isSlideContent,
+  isQuizContent,
+  isActivityContent,
+  isCodeActivityContent,
+  isSqlActivityContent,
+  isTerminalActivityContent,
+} from '@openmaic/dsl';
 
 // `@openmaic/dsl` inlines the question-type union on `QuizQuestion.type` rather than
 // exporting a named alias; derive it here so editor quiz code can keep importing
 // `QuizQuestionType` from `@/lib/types/stage`.
 export type QuizQuestionType = import('@openmaic/dsl').QuizQuestion['type'];
 
-// The contract's compatibility-default `SceneContent` is slide | quiz. Reach it
-// under a distinct name; the contract-owned interactive and PBL shapes are
-// widened below before composing the app's full four-way union.
+// The contract's compatibility-default `SceneContent` is slide | quiz |
+// activity. Reach it under a distinct name; the contract-owned interactive and
+// PBL shapes are widened below before composing the app's full five-way union.
 export type { SceneContent as SceneContentBase } from '@openmaic/dsl';
 
 // The raw, generic contract Scene is reachable under a distinct name for
@@ -77,14 +102,14 @@ export type PBLContent = Omit<DslPBLContent, 'projectConfig'> & {
 /**
  * The app's full scene-content union: the contract's universal kinds plus the
  * app-widened feature kinds. This is what `@/lib/types/stage` callers have
- * always known as `SceneContent` (all four cases).
+ * always known as `SceneContent` (all five cases).
  */
 export type AppSceneContent = DslSceneContent | InteractiveContent | PBLContent;
 
 /**
- * The app's `SceneContent` — the full four-way union. Overrides the contract's
- * narrower `SceneContentBase` (slide | quiz) so call sites that switch on all
- * four `content.type` cases keep compiling.
+ * The app's `SceneContent` — the full five-way union. Overrides the contract's
+ * narrower `SceneContentBase` (slide | quiz | activity) so call sites that
+ * switch on every `content.type` case keep compiling.
  */
 export type SceneContent = AppSceneContent;
 
@@ -94,7 +119,7 @@ export type SceneContent = AppSceneContent;
  *
  * Aliased as `Scene` so existing `import { Scene } from '@/lib/types/stage'`
  * callers keep their original semantics (actions are `Action[]`, content spans
- * all four kinds).
+ * all five kinds).
  */
 export type AppScene = DslScene<Action, SceneContent> & {
   /**
@@ -139,6 +164,7 @@ export type Scene = AppScene;
 export type SceneOutlineKind =
   | 'slide'
   | 'quiz'
+  | 'activity'
   | 'interactive'
   | 'pbl'
   | 'exercise'

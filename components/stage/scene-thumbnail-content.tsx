@@ -94,6 +94,28 @@ export function SceneThumbnailContent({
     );
   }
 
+  if (scene.type === 'activity') {
+    return (
+      <div className="flex h-full w-full flex-col bg-gradient-to-br from-cyan-50 to-sky-50 p-1.5 dark:from-cyan-950/30 dark:to-sky-950/20">
+        <div className="mb-1 flex items-center gap-1 border-b border-cyan-200/40 pb-1 dark:border-cyan-700/20">
+          <div className="h-1.5 w-1.5 rounded-full bg-cyan-400/80 dark:bg-cyan-500/60" />
+          <div className="h-1 flex-1 rounded-full bg-cyan-200/60 dark:bg-cyan-700/30" />
+        </div>
+        <div className="flex flex-1 gap-1">
+          <div className="w-1/3 space-y-1 pt-0.5">
+            <div className="h-0.5 w-full rounded-full bg-cyan-200/60 dark:bg-cyan-700/30" />
+            <div className="h-0.5 w-3/4 rounded-full bg-cyan-200/60 dark:bg-cyan-700/30" />
+          </div>
+          <div className="flex flex-1 flex-col gap-0.5 rounded border border-cyan-200/40 bg-zinc-900/90 p-1">
+            <div className="h-0.5 w-2/3 rounded-full bg-cyan-300/60" />
+            <div className="h-0.5 w-1/2 rounded-full bg-emerald-300/60" />
+            <div className="h-0.5 w-3/4 rounded-full bg-cyan-300/40" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (scene.type === 'interactive') {
     const interactiveContent = scene.content as InteractiveContent;
     if (interactiveContent.html && visible) {

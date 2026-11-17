@@ -23,6 +23,7 @@ import {
   LineChart,
   GitBranch,
   PenLine,
+  SquareTerminal,
   Wrench,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -387,6 +388,7 @@ export function SceneSidebar({
     const icons = {
       slide: BookOpen,
       quiz: PieChart,
+      activity: SquareTerminal,
       interactive: MousePointer2,
       pbl: Cpu,
       exercise: Dumbbell,
@@ -511,6 +513,25 @@ export function SceneSidebar({
                       />
                     </div>
                   ))}
+                </div>
+              </div>
+            ) : scene.type === 'activity' ? (
+              /* Activity: code editor + check rail */
+              <div className="w-full h-full bg-gradient-to-br from-cyan-50 to-sky-50 dark:from-cyan-950/30 dark:to-sky-950/20 p-1.5 flex flex-col">
+                <div className="flex items-center gap-1 mb-1 pb-1 border-b border-cyan-200/40 dark:border-cyan-700/20">
+                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-400/80 dark:bg-cyan-500/60" />
+                  <div className="h-1 flex-1 bg-cyan-200/60 dark:bg-cyan-700/30 rounded-full" />
+                </div>
+                <div className="flex-1 flex gap-1">
+                  <div className="w-1/3 space-y-1 pt-0.5">
+                    <div className="h-0.5 w-full bg-cyan-200/60 dark:bg-cyan-700/30 rounded-full" />
+                    <div className="h-0.5 w-3/4 bg-cyan-200/60 dark:bg-cyan-700/30 rounded-full" />
+                  </div>
+                  <div className="flex-1 rounded border border-cyan-200/40 dark:border-cyan-700/20 bg-zinc-900/90 p-1 space-y-0.5">
+                    <div className="h-0.5 w-2/3 bg-cyan-300/60 rounded-full" />
+                    <div className="h-0.5 w-1/2 bg-emerald-300/60 rounded-full" />
+                    <div className="h-0.5 w-3/4 bg-cyan-300/40 rounded-full" />
+                  </div>
                 </div>
               </div>
             ) : scene.type === 'interactive' && interactiveContent?.html ? (

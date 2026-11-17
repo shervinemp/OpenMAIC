@@ -227,6 +227,7 @@ export interface SceneOutline {
   type:
     | 'slide'
     | 'quiz'
+    | 'activity'
     | 'interactive'
     | 'pbl'
     | 'exercise'

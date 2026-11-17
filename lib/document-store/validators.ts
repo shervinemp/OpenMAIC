@@ -37,13 +37,13 @@ function placementSignature(sceneId: string, changes: ReadonlyArray<unknown>): s
   return `${sceneId}|${JSON.stringify(changes)}`;
 }
 
-/** Validate the app's four-way scene union at the document write boundary. */
+/** Validate the app's five-way scene union at the document write boundary. */
 export const validateAppScene: SceneValidator = (scene) => {
   const value = objectValue(scene);
   if (!value) {
     return { valid: false, errors: [{ path: '/', message: 'scene must be an object' }] };
   }
-  if (value.type === 'slide' || value.type === 'quiz') {
+  if (value.type === 'slide' || value.type === 'quiz' || value.type === 'activity') {
     if (value.type === 'slide') {
       const content = objectValue(value.content);
       const canvas = content ? objectValue(content.canvas) : null;

@@ -2,8 +2,8 @@
  * Concrete schema-codegen entry point.
  *
  * JSON Schema is not generic, so the build-time generator needs a concrete,
- * non-generic root. This root explicitly composes all four contract-owned
- * content types; it adds no constraint the public generic {@link Scene} type
+ * non-generic root. This root explicitly composes every contract-owned content
+ * type; it adds no constraint the public generic {@link Scene} type
  * doesn't already express (the `type` <-> `content` binding lives in `Scene`
  * itself). It is intentionally NOT re-exported from `index.ts`.
  *
@@ -12,10 +12,11 @@
  * the bare form into a single object with an unbound `type`, whereas the
  * spelled-out union emits a discriminated `anyOf` that preserves the binding.
  *
- * Scope: `scene.schema.json` covers all four persisted content kinds owned by
- * the contract while preserving their scene `type` ↔ `content.type` binding.
+ * Scope: `scene.schema.json` covers every persisted content kind owned by the
+ * contract while preserving their scene `type` ↔ `content.type` binding.
  */
 import type { Scene, SlideContent, QuizContent } from './stage.js';
+import type { ActivityContent } from './activity.js';
 import type { InteractiveContent } from './interactive.js';
 import type { PBLContent } from './pbl.js';
 import type { Action } from './action.js';
@@ -23,5 +24,6 @@ import type { Action } from './action.js';
 export type SerializedScene =
   | Scene<Action, SlideContent>
   | Scene<Action, QuizContent>
+  | Scene<Action, ActivityContent>
   | Scene<Action, InteractiveContent>
   | Scene<Action, PBLContent>;

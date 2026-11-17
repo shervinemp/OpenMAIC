@@ -17,6 +17,7 @@
  */
 import { isActionType } from './action.js';
 import type { ActionType } from './action.js';
+import { isActivityKind } from './activity.js';
 import { isWidgetType } from './interactive.js';
 import { isPBLProject } from './pbl.js';
 import { isSceneType } from './stage.js';
@@ -218,6 +219,337 @@ function checkInteractiveContent(doc: unknown, path: string, errors: ValidationI
   }
 }
 
+/** Check ids and test ids are addressed by reference, so duplicates are errors. */
+function collectUniqueIds(
+  values: unknown[],
+  path: string,
+  field: string,
+  errors: ValidationIssue[],
+): Set<string> {
+  const seen = new Set<string>();
+  values.forEach((value, index) => {
+    if (!isObject(value)) return;
+    const id = value.id;
+    if (typeof id !== 'string' || id === '') return;
+    if (seen.has(id)) {
+      errors.push({
+        path: `${path}/${index}/id`,
+        message: `duplicate ${field} id: ${JSON.stringify(id)}`,
+      });
+    }
+    seen.add(id);
+  });
+  return seen;
+}
+
+function checkActivityFile(
+  doc: unknown,
+  path: string,
+  seenPaths: Set<string>,
+  errors: ValidationIssue[],
+): void {
+  if (!isObject(doc)) {
+    errors.push({ path, message: 'activity file must be an object' });
+    return;
+  }
+  if (typeof doc.path !== 'string' || doc.path.trim() === '') {
+    errors.push({ path: `${path}/path`, message: 'activity file requires a non-empty `path`' });
+  } else {
+    const filePath = doc.path;
+    const segments = filePath.split('/');
+    if (
+      filePath.startsWith('/') ||
+      filePath.includes('\\') ||
+      segments.some((segment) => segment === '..' || segment === '' || segment === '.')
+    ) {
+      errors.push({
+        path: `${path}/path`,
+        message:
+          'activity file paths must be relative, forward-slash separated, and contain no `..` segments',
+      });
+    }
+    if (seenPaths.has(filePath)) {
+      errors.push({
+        path: `${path}/path`,
+        message: `duplicate activity file path: ${JSON.stringify(filePath)}`,
+      });
+    }
+    seenPaths.add(filePath);
+  }
+  if (typeof doc.content !== 'string') {
+    errors.push({ path: `${path}/content`, message: 'activity file requires string `content`' });
+  }
+  if (doc.editable !== undefined && typeof doc.editable !== 'boolean') {
+    errors.push({ path: `${path}/editable`, message: '`editable` must be a boolean when present' });
+  }
+}
+
+function checkActivityTests(doc: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!Array.isArray(doc)) {
+    errors.push({ path, message: 'code activity requires a `tests` array' });
+    return;
+  }
+  collectUniqueIds(doc, path, 'test', errors);
+  doc.forEach((test, index) => {
+    const testPath = `${path}/${index}`;
+    if (!isObject(test)) {
+      errors.push({ path: testPath, message: 'activity test must be an object' });
+      return;
+    }
+    for (const field of ['id', 'name', 'code'] as const) {
+      if (typeof test[field] !== 'string' || test[field] === '') {
+        errors.push({
+          path: `${testPath}/${field}`,
+          message: `activity test requires a non-empty \`${field}\``,
+        });
+      }
+    }
+    if (test.hidden !== undefined && typeof test.hidden !== 'boolean') {
+      errors.push({
+        path: `${testPath}/hidden`,
+        message: '`hidden` must be a boolean when present',
+      });
+    }
+  });
+}
+
+const CODE_CHECK_TYPES = new Set(['expectTests', 'expectStdout', 'expectFile']);
+const SQL_CHECK_TYPES = new Set(['expectSqlRows']);
+const TERMINAL_CHECK_TYPES = new Set(['expectStdout', 'expectFile', 'expectState']);
+
+function checkActivityCheck(
+  doc: unknown,
+  path: string,
+  allowed: ReadonlySet<string>,
+  errors: ValidationIssue[],
+): void {
+  if (!isObject(doc)) {
+    errors.push({ path, message: 'activity check must be an object' });
+    return;
+  }
+  if (typeof doc.id !== 'string' || doc.id === '') {
+    errors.push({ path: `${path}/id`, message: 'activity check requires a non-empty `id`' });
+  }
+  if (typeof doc.type !== 'string' || !allowed.has(doc.type)) {
+    errors.push({
+      path: `${path}/type`,
+      message: `check type ${JSON.stringify(doc.type)} is not valid for this activity kind`,
+    });
+    return;
+  }
+  if (doc.label !== undefined && typeof doc.label !== 'string') {
+    errors.push({ path: `${path}/label`, message: '`label` must be a string when present' });
+  }
+  if (
+    doc.points !== undefined &&
+    (typeof doc.points !== 'number' || !Number.isFinite(doc.points) || doc.points < 0)
+  ) {
+    errors.push({
+      path: `${path}/points`,
+      message: '`points` must be a finite non-negative number',
+    });
+  }
+  if (doc.hidden !== undefined && typeof doc.hidden !== 'boolean') {
+    errors.push({ path: `${path}/hidden`, message: '`hidden` must be a boolean when present' });
+  }
+
+  const textExpected = () => {
+    if (typeof doc.expected !== 'string') {
+      errors.push({ path: `${path}/expected`, message: '`expected` must be a string' });
+    }
+    if (doc.mode !== undefined && doc.mode !== 'exact' && doc.mode !== 'contains') {
+      errors.push({ path: `${path}/mode`, message: '`mode` must be `exact` or `contains`' });
+    }
+  };
+
+  switch (doc.type) {
+    case 'expectTests':
+      if (doc.testIds !== undefined) {
+        if (!Array.isArray(doc.testIds) || doc.testIds.some((id) => typeof id !== 'string')) {
+          errors.push({
+            path: `${path}/testIds`,
+            message: '`testIds` must be an array of strings when present',
+          });
+        }
+      }
+      break;
+    case 'expectStdout':
+      textExpected();
+      break;
+    case 'expectFile':
+      if (typeof doc.path !== 'string' || doc.path === '') {
+        errors.push({ path: `${path}/path`, message: '`path` must be a non-empty string' });
+      }
+      textExpected();
+      break;
+    case 'expectSqlRows':
+      if (typeof doc.sql !== 'string' || doc.sql.trim() === '') {
+        errors.push({ path: `${path}/sql`, message: '`sql` must be a non-empty string' });
+      }
+      if (!Array.isArray(doc.expected) || doc.expected.some((row) => !Array.isArray(row))) {
+        errors.push({ path: `${path}/expected`, message: '`expected` must be an array of rows' });
+      } else {
+        const width = (doc.expected[0] as unknown[] | undefined)?.length;
+        doc.expected.forEach((row, index) => {
+          if (width !== undefined && (row as unknown[]).length !== width) {
+            errors.push({
+              path: `${path}/expected/${index}`,
+              message: 'every expected SQL row must have the same number of columns',
+            });
+          }
+        });
+      }
+      if (doc.ordered !== undefined && typeof doc.ordered !== 'boolean') {
+        errors.push({
+          path: `${path}/ordered`,
+          message: '`ordered` must be a boolean when present',
+        });
+      }
+      break;
+    case 'expectState':
+      if (typeof doc.path !== 'string' || doc.path === '') {
+        errors.push({ path: `${path}/path`, message: '`path` must be a non-empty string' });
+      }
+      textExpected();
+      break;
+  }
+}
+
+function checkActivityContent(doc: unknown, path: string, errors: ValidationIssue[]): void {
+  if (!isObject(doc)) {
+    errors.push({ path: path || '/', message: 'activity content must be an object' });
+    return;
+  }
+  if (doc.type !== 'activity') {
+    errors.push({ path: `${path}/type`, message: 'expected `activity` content type' });
+  }
+  if (!isActivityKind(doc.kind)) {
+    errors.push({
+      path: `${path}/kind`,
+      message: `unknown activity kind: ${JSON.stringify(doc.kind)}`,
+    });
+    return; // per-kind fields cannot be checked without a known kind
+  }
+  if (typeof doc.instructions !== 'string') {
+    errors.push({
+      path: `${path}/instructions`,
+      message: 'activity requires string `instructions`',
+    });
+  }
+  if (doc.hints !== undefined) {
+    if (!Array.isArray(doc.hints) || doc.hints.some((hint) => typeof hint !== 'string')) {
+      errors.push({ path: `${path}/hints`, message: '`hints` must be an array of strings' });
+    }
+  }
+  if (doc.debrief !== undefined && typeof doc.debrief !== 'string') {
+    errors.push({ path: `${path}/debrief`, message: '`debrief` must be a string when present' });
+  }
+  if (
+    doc.timeLimitSec !== undefined &&
+    (typeof doc.timeLimitSec !== 'number' ||
+      !Number.isFinite(doc.timeLimitSec) ||
+      doc.timeLimitSec <= 0)
+  ) {
+    errors.push({
+      path: `${path}/timeLimitSec`,
+      message: '`timeLimitSec` must be a finite positive number',
+    });
+  }
+
+  const allowedChecks =
+    doc.kind === 'code'
+      ? CODE_CHECK_TYPES
+      : doc.kind === 'sql'
+        ? SQL_CHECK_TYPES
+        : TERMINAL_CHECK_TYPES;
+
+  if (!Array.isArray(doc.checks)) {
+    errors.push({ path: `${path}/checks`, message: 'activity requires a `checks` array' });
+  } else {
+    if (doc.checks.length === 0) {
+      errors.push({ path: `${path}/checks`, message: 'activity requires at least one check' });
+    }
+    collectUniqueIds(doc.checks, `${path}/checks`, 'check', errors);
+    doc.checks.forEach((check, index) => {
+      checkActivityCheck(check, `${path}/checks/${index}`, allowedChecks, errors);
+    });
+  }
+
+  if (doc.kind === 'code') {
+    if (typeof doc.language !== 'string' || doc.language === '') {
+      errors.push({ path: `${path}/language`, message: 'code activity requires a `language`' });
+    }
+    if (typeof doc.entryFile !== 'string' || doc.entryFile === '') {
+      errors.push({ path: `${path}/entryFile`, message: 'code activity requires an `entryFile`' });
+    }
+    const filePaths = new Set<string>();
+    if (!Array.isArray(doc.files)) {
+      errors.push({ path: `${path}/files`, message: 'code activity requires a `files` array' });
+    } else {
+      doc.files.forEach((file, index) => {
+        checkActivityFile(file, `${path}/files/${index}`, filePaths, errors);
+      });
+      if (
+        typeof doc.entryFile === 'string' &&
+        doc.entryFile !== '' &&
+        !filePaths.has(doc.entryFile)
+      ) {
+        errors.push({
+          path: `${path}/entryFile`,
+          message: '`entryFile` must name one of the activity files',
+        });
+      }
+    }
+    checkActivityTests(doc.tests, `${path}/tests`, errors);
+    if (doc.referenceFiles !== undefined) {
+      if (!Array.isArray(doc.referenceFiles)) {
+        errors.push({
+          path: `${path}/referenceFiles`,
+          message: '`referenceFiles` must be an array',
+        });
+      } else {
+        const referencePaths = new Set<string>();
+        doc.referenceFiles.forEach((file, index) => {
+          checkActivityFile(file, `${path}/referenceFiles/${index}`, referencePaths, errors);
+        });
+      }
+    }
+  } else if (doc.kind === 'sql') {
+    if (typeof doc.setupSql !== 'string') {
+      errors.push({ path: `${path}/setupSql`, message: 'sql activity requires string `setupSql`' });
+    }
+    if (typeof doc.starterSql !== 'string') {
+      errors.push({
+        path: `${path}/starterSql`,
+        message: 'sql activity requires string `starterSql`',
+      });
+    }
+    if (doc.referenceSql !== undefined && typeof doc.referenceSql !== 'string') {
+      errors.push({ path: `${path}/referenceSql`, message: '`referenceSql` must be a string' });
+    }
+  } else {
+    const filePaths = new Set<string>();
+    if (!Array.isArray(doc.files)) {
+      errors.push({ path: `${path}/files`, message: 'terminal activity requires a `files` array' });
+    } else {
+      doc.files.forEach((file, index) => {
+        checkActivityFile(file, `${path}/files/${index}`, filePaths, errors);
+      });
+    }
+    if (doc.referenceCommands !== undefined) {
+      if (
+        !Array.isArray(doc.referenceCommands) ||
+        doc.referenceCommands.some((command) => typeof command !== 'string')
+      ) {
+        errors.push({
+          path: `${path}/referenceCommands`,
+          message: '`referenceCommands` must be an array of strings',
+        });
+      }
+    }
+  }
+}
+
 function checkPBLContent(doc: unknown, path: string, errors: ValidationIssue[]): void {
   if (!isObject(doc)) {
     errors.push({ path: path || '/', message: 'pbl content must be an object' });
@@ -250,8 +582,8 @@ function checkScene(doc: unknown, path: string, errors: ValidationIssue[]): void
   reqString(doc, 'title', path, errors);
   reqNumber(doc, 'order', path, errors);
 
-  // The scene `type` is bound to its `content` (see `Scene`) for all four
-  // persisted kinds owned by the contract.
+  // The scene `type` is bound to its `content` (see `Scene`) for every
+  // persisted kind owned by the contract.
   const t = doc.type;
   if (!isSceneType(t)) {
     errors.push({
@@ -279,6 +611,8 @@ function checkScene(doc: unknown, path: string, errors: ValidationIssue[]): void
         path: `${path}/content/questions`,
         message: 'quiz content requires a `questions` array',
       });
+    } else if (t === 'activity') {
+      checkActivityContent(content, `${path}/content`, errors);
     } else if (t === 'interactive') {
       checkInteractiveContent(content, `${path}/content`, errors);
     } else if (t === 'pbl') {
@@ -311,6 +645,13 @@ export function validateStage(doc: unknown): ValidationResult {
 export function validateScene(doc: unknown): ValidationResult {
   const errors: ValidationIssue[] = [];
   checkScene(doc, '', errors);
+  return done(errors);
+}
+
+/** Validate a standalone activity content payload. */
+export function validateActivityContent(doc: unknown): ValidationResult {
+  const errors: ValidationIssue[] = [];
+  checkActivityContent(doc, '', errors);
   return done(errors);
 }
 

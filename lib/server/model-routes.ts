@@ -143,6 +143,7 @@ export const LLM_STAGES = [
   'scene-content',
   'scene-content:slide',
   'scene-content:quiz',
+  'scene-content:activity',
   'scene-content:interactive',
   'scene-content:pbl',
   'scene-content:exercise',

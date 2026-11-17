@@ -36,6 +36,9 @@ test-results/
 # generated: synced from packages/@openmaic/importer/dist for runtime URL import
 /public/vendor/maic-importer
 
+# generated: Python runtime for activity code labs, copied from node_modules
+/public/vendor/pyodide
+
 # misc
 .DS_Store
 *.pem

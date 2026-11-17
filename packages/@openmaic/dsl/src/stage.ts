@@ -3,7 +3,8 @@
  *
  * This module owns the *structural* part of a lesson: the top-level `Stage`
  * container and a per-page `Scene` whose `content` is a discriminated union of
- * the universal content kinds (`SlideContent`, `QuizContent`). Interactive and
+ * the universal content kinds (`SlideContent`, `QuizContent`,
+ * `ActivityContent`). Interactive and
  * PBL content contracts are exported alongside them and compose through
  * `Scene`'s generic content parameter. `Scene`'s
  * playback `actions` default to the contract's standard {@link Action} union
@@ -17,14 +18,16 @@
  */
 import type { Slide } from './slides.js';
 import type { Action } from './action.js';
+import type { ActivityContent } from './activity.js';
 
 /** All scene kinds owned by the contract. */
-export type SceneType = 'slide' | 'quiz' | 'interactive' | 'pbl';
+export type SceneType = 'slide' | 'quiz' | 'activity' | 'interactive' | 'pbl';
 
 /** Frozen set of every valid {@link SceneType}, for cheap membership checks. */
 export const SCENE_TYPES = [
   'slide',
   'quiz',
+  'activity',
   'interactive',
   'pbl',
 ] as const satisfies readonly SceneType[];
@@ -236,7 +239,7 @@ export interface QuizContent {
  * default. Interactive and PBL content are also contract-owned and are composed
  * into concrete scene unions through the generic content parameter.
  */
-export type SceneContent = SlideContent | QuizContent;
+export type SceneContent = SlideContent | QuizContent | ActivityContent;
 
 /**
  * The content-kind-independent fields of a {@link Scene}. Everything except the
@@ -281,8 +284,9 @@ export interface SceneCore<TAction = Action> {
  *
  * Implemented as a distributive conditional over `TContent`: the binding holds
  * per member of the content union, so the default `Scene<Action, SlideContent |
- * QuizContent>` is `({ type: 'slide'; content: SlideContent } | { type: 'quiz';
- * content: QuizContent }) & SceneCore`; consumers compose the exported
+ * QuizContent | ActivityContent>` is `({ type: 'slide'; content: SlideContent }
+ * | { type: 'quiz'; content: QuizContent } | { type: 'activity'; content:
+ * ActivityContent }) & SceneCore`; consumers compose the exported
  * interactive and PBL types into `TContent`, and every member ties its own
  * `type` to its shape.
  *
@@ -302,7 +306,7 @@ export interface SceneCore<TAction = Action> {
  */
 export type Scene<
   TAction = Action,
-  TContent extends { type: SceneType } = SlideContent | QuizContent,
+  TContent extends { type: SceneType } = SlideContent | QuizContent | ActivityContent,
 > = TContent extends unknown
   ? SceneCore<TAction> & { type: TContent['type']; content: TContent }
   : never;

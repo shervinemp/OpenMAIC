@@ -15,6 +15,7 @@ import {
   LineChart,
   GitBranch,
   PenLine,
+  SquareTerminal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -35,6 +36,7 @@ const log = createLogger('ClassroomComplete');
 const SCENE_TYPE_ICONS: Record<SummarySceneKind, typeof FileText> = {
   slide: FileText,
   quiz: HelpCircle,
+  activity: SquareTerminal,
   interactive: Gamepad2,
   pbl: Puzzle,
   exercise: Dumbbell,
@@ -50,6 +52,7 @@ const SCENE_TYPE_ICONS: Record<SummarySceneKind, typeof FileText> = {
 const TYPE_ORDER: SummarySceneKind[] = [
   'slide',
   'quiz',
+  'activity',
   'interactive',
   'pbl',
   'exercise',
