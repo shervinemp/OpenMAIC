@@ -33,7 +33,7 @@ import {
   type QuestionResult,
 } from '@/lib/quiz/grading';
 import { renderQuizMathText } from '@/lib/quiz/math-text';
-import { hasPracticeAnswer, summarizePractice } from '@/lib/quiz/practice';
+import { hasQuizAnswer, summarizePractice } from '@/lib/quiz/practice';
 import { displayOrder } from '@/lib/quiz/shuffle';
 import { writeDraftRecovery } from '@/lib/quiz/persistence';
 import {
@@ -594,6 +594,142 @@ function OrderingQuestion({
   );
 }
 
+function MatchingQuestion({
+  question,
+  index,
+  value,
+  onChange,
+  disabled,
+  result,
+}: {
+  question: QuizQuestion;
+  index: number;
+  value?: string[];
+  onChange: (value: string[]) => void;
+  disabled?: boolean;
+  result?: QuestionResult;
+}) {
+  const { t } = useI18n();
+  const isReview = !!result;
+  const left = useMemo(() => question.options ?? [], [question.options]);
+  const right = useMemo(() => question.matches ?? [], [question.matches]);
+  const rightByValue = useMemo(() => new Map(right.map((item) => [item.value, item])), [right]);
+  // The right column is stored aligned with the left, so rendering it as-is
+  // would reveal every pair. Shuffle it with the same deterministic helper as
+  // ordering.
+  const rightDisplay = useMemo(
+    () => displayOrder(`${question.id}:match`, right.length),
+    [question.id, right.length],
+  );
+  const picks = useMemo(
+    () => (value && value.length === left.length ? value : left.map(() => '')),
+    [left, value],
+  );
+
+  const choose = (leftIndex: number, rightValue: string) => {
+    if (disabled || isReview) return;
+    const next = picks.slice();
+    next[leftIndex] = rightValue;
+    onChange(next);
+  };
+
+  return (
+    <QuestionCard question={question} index={index} result={result}>
+      {!isReview && (
+        <p className="mb-2 text-xs text-gray-400 dark:text-gray-500">{t('quiz.matchingHint')}</p>
+      )}
+      <div className="grid gap-2">
+        {left.map((item, position) => {
+          const chosen = picks[position] ?? '';
+          const correct = right[position];
+          const isRight = !!chosen && chosen === correct?.value;
+          const ungraded = result?.status === 'ungraded';
+
+          return (
+            <div
+              key={item.value}
+              className={cn(
+                'flex flex-col gap-2 rounded-xl border px-3 py-2.5 text-sm',
+                !isReview && 'border-gray-200 dark:border-gray-600',
+                isReview &&
+                  (ungraded
+                    ? 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20'
+                    : isRight
+                      ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-900/30'
+                      : 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/30'),
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100 font-mono text-xs font-bold text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                  {position + 1}
+                </span>
+                <span className="flex-1 text-gray-700 dark:text-gray-200">
+                  <QuizMathText text={item.label} />
+                </span>
+                {isReview ? (
+                  ungraded ? (
+                    <HelpCircle className="h-5 w-5 shrink-0 text-amber-500" />
+                  ) : isRight ? (
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
+                  ) : (
+                    <XCircle className="h-5 w-5 shrink-0 text-red-400" />
+                  )
+                ) : (
+                  <select
+                    aria-label={`${t('quiz.matchingChoose')}: ${item.label}`}
+                    value={chosen}
+                    disabled={disabled}
+                    onChange={(event) => choose(position, event.target.value)}
+                    className="max-w-[45%] shrink-0 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 focus:border-violet-300 focus:outline-none focus:ring-2 focus:ring-violet-100 disabled:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-violet-600 dark:focus:ring-violet-900/50"
+                  >
+                    <option value="">{t('quiz.matchingChoose')}</option>
+                    {rightDisplay.map((rightIndex) => {
+                      const option = right[rightIndex];
+                      if (!option) return null;
+                      return (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
+              </div>
+              {isReview && (
+                <div className="flex flex-wrap items-center gap-2 pl-10 text-xs">
+                  <span className="text-gray-500 dark:text-gray-400">{t('quiz.yourAnswer')}</span>
+                  <span
+                    className={cn(
+                      'rounded-md px-2 py-0.5',
+                      ungraded
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                        : isRight
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                          : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+                    )}
+                  >
+                    {chosen ? (rightByValue.get(chosen)?.label ?? chosen) : t('quiz.notAnswered')}
+                  </span>
+                  {!ungraded && !isRight && correct && (
+                    <>
+                      <span className="text-gray-500 dark:text-gray-400">
+                        {t('quiz.correctMatch')}
+                      </span>
+                      <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                        {correct.label}
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </QuestionCard>
+  );
+}
+
 function ShortAnswerQuestion({
   question,
   index,
@@ -869,7 +1005,9 @@ function QuestionCard({
                     ? t('quiz.numeric')
                     : question.type === 'ordering'
                       ? t('quiz.ordering')
-                      : t('quiz.shortAnswer')}
+                      : question.type === 'matching'
+                        ? t('quiz.matching')
+                        : t('quiz.shortAnswer')}
               {' · '}
               {pts} {t('quiz.pointsSuffix')}
             </p>
@@ -1056,7 +1194,7 @@ export function QuizPractice({
   const finished = index >= ids.length;
   const question = finished ? undefined : byId.get(ids[index]);
   const answer = question ? answers[question.id] : undefined;
-  const answered = hasPracticeAnswer(answer);
+  const answered = question ? hasQuizAnswer(question, answer) : false;
 
   const start = useCallback(
     (nextIds: string[]) => {
@@ -1229,6 +1367,16 @@ export function QuizPractice({
             result={currentResult ?? undefined}
           />
         )}
+        {question?.type === 'matching' && (
+          <MatchingQuestion
+            question={question}
+            index={index}
+            value={answer as string[] | undefined}
+            onChange={(value) => setAnswers((previous) => ({ ...previous, [question.id]: value }))}
+            disabled={!!currentResult}
+            result={currentResult ?? undefined}
+          />
+        )}
         {question?.type === 'numeric' && (
           <NumericQuestion
             question={question}
@@ -1316,12 +1464,7 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
   );
 
   const allAnswered = useMemo(() => {
-    return questions.every((q) => {
-      const a = answers[q.id];
-      if (!a) return false;
-      if (Array.isArray(a)) return a.length > 0;
-      return (a as string).trim().length > 0;
-    });
+    return questions.every((q) => hasQuizAnswer(q, answers[q.id]));
   }, [questions, answers]);
 
   const handleSetAnswer = useCallback(
@@ -1529,14 +1672,8 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                   {t('quiz.answering')}
                 </span>
                 <span className="text-xs text-gray-400 ml-1">
-                  {
-                    Object.keys(answers).filter((k) => {
-                      const a = answers[k];
-                      if (Array.isArray(a)) return a.length > 0;
-                      return typeof a === 'string' && a.trim().length > 0;
-                    }).length
-                  }{' '}
-                  / {questions.length}
+                  {questions.filter((q) => hasQuizAnswer(q, answers[q.id])).length} /{' '}
+                  {questions.length}
                 </span>
               </div>
               <button
@@ -1582,6 +1719,17 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                 if (q.type === 'ordering') {
                   return (
                     <OrderingQuestion
+                      key={q.id}
+                      question={q}
+                      index={i}
+                      value={answers[q.id] as string[] | undefined}
+                      onChange={(v) => handleSetAnswer(q.id, v)}
+                    />
+                  );
+                }
+                if (q.type === 'matching') {
+                  return (
+                    <MatchingQuestion
                       key={q.id}
                       question={q}
                       index={i}
@@ -1725,6 +1873,19 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                 if (q.type === 'ordering') {
                   return (
                     <OrderingQuestion
+                      key={q.id}
+                      question={q}
+                      index={i}
+                      value={answers[q.id] as string[] | undefined}
+                      onChange={() => {}}
+                      disabled
+                      result={r}
+                    />
+                  );
+                }
+                if (q.type === 'matching') {
+                  return (
+                    <MatchingQuestion
                       key={q.id}
                       question={q}
                       index={i}

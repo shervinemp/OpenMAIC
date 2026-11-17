@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ArrowLeftRight,
   Calculator,
   CircleDot,
   ListChecks,
@@ -43,6 +44,12 @@ const TYPES: { type: QuizQuestionType; labelKey: string; Icon: LucideIcon; tint:
     labelKey: 'edit.quiz.type.ordering',
     Icon: ListOrdered,
     tint: 'bg-teal-100 text-teal-600 dark:bg-teal-500/15 dark:text-teal-300',
+  },
+  {
+    type: 'matching',
+    labelKey: 'edit.quiz.type.matching',
+    Icon: ArrowLeftRight,
+    tint: 'bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300',
   },
 ];
 

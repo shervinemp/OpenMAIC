@@ -438,7 +438,8 @@
         "multiple": "Múltipla escolha",
         "short_answer": "Resposta curta",
         "numeric": "Numérico",
-        "ordering": "Ordenação"
+        "ordering": "Ordenação",
+        "matching": "Associação"
       },
       "shortAnswerGradingNote": "Respostas curtas são sempre avaliadas por IA com base na orientação abaixo.",
       "numericAnswerLabel": "Valor correto",
@@ -449,10 +450,16 @@
       "numericHint": "Respostas dentro de ±tolerância contam como corretas. A unidade é apenas exibida.",
       "orderingItemsLabel": "Itens (na ordem correta)",
       "orderingHint": "Os alunos veem estes itens embaralhados.",
+      "matchingPairsLabel": "Pares",
+      "matchingHint": "Cada item à esquerda forma par com um item à direita. Os alunos veem a coluna da direita embaralhada.",
+      "matchingLeftPlaceholder": "Item à esquerda",
+      "matchingRightPlaceholder": "Item correspondente",
       "hint": {
         "emptyText": "Pergunta {{n}}: adicione o texto da pergunta",
         "fewOptions": "Pergunta {{n}}: adicione ao menos duas opções",
         "emptyOption": "Pergunta {{n}}: há uma opção vazia",
+        "emptyPair": "Pergunta {{n}}: complete todos os pares",
+        "duplicateMatch": "Pergunta {{n}}: dois itens à direita são iguais",
         "noCorrect": "Pergunta {{n}}: marque a resposta correta",
         "badNumber": "Pergunta {{n}}: insira uma resposta numérica válida"
       }
@@ -752,6 +759,10 @@
     "numericPlaceholder": "Digite um número...",
     "ordering": "Ordenação",
     "orderingHint": "Coloque os itens na ordem correta.",
+    "matching": "Associação",
+    "matchingHint": "Relacione cada item à esquerda com um item à direita.",
+    "matchingChoose": "Escolher par",
+    "correctMatch": "Par correto:",
     "correctOrder": "Ordem correta:",
     "moveUp": "Mover para cima",
     "moveDown": "Mover para baixo",
@@ -1150,6 +1161,7 @@
     "quizTypeText": "Discursiva",
     "quizTypeNumeric": "Numérico",
     "quizTypeOrdering": "Ordenação",
+    "quizTypeMatching": "Associação",
     "alwaysReviewOutlines": "Sempre revisar roteiros antes de gerar",
     "outlineEditorEyebrow": "Roteiro gerado por IA",
     "outlineEditorStreamingProgress": "Em streaming · {{count}} cenas prontas",

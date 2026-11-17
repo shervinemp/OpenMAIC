@@ -77,13 +77,20 @@ export function prepareQuizQuestionList(scene: CompilerScene): QuizQuestionListQ
         type !== 'multiple' &&
         type !== 'short_answer' &&
         type !== 'numeric' &&
-        type !== 'ordering')
+        type !== 'ordering' &&
+        type !== 'matching')
     ) {
       continue;
     }
-    // Ordering stores its items in the answer sequence, so projecting them
-    // would leak the key. Export shows an answer area instead.
-    if (type === 'short_answer' || type === 'numeric' || type === 'ordering') {
+    // Ordering stores its items in the answer sequence and matching stores
+    // each partner at the same index, so projecting either would leak the key.
+    // Export shows an answer area instead.
+    if (
+      type === 'short_answer' ||
+      type === 'numeric' ||
+      type === 'ordering' ||
+      type === 'matching'
+    ) {
       questions.push({ id, type, question });
       continue;
     }

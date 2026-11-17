@@ -171,9 +171,67 @@ function gradeOrderingAnswer(q: QuizQuestion, submitted: string[]): QuestionResu
   };
 }
 
+/** Every value present and distinct: the shape an unambiguous pairing needs. */
+function allDistinct(values: readonly string[], requireNonEmpty: boolean): boolean {
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (requireNonEmpty && value.length === 0) return false;
+    if (seen.has(value)) return false;
+    seen.add(value);
+  }
+  return true;
+}
+
 /**
- * Grade locally checkable questions (single, multiple, numeric, ordering).
- * Short-answer questions are graded by the LLM and are not returned here.
+ * Grade a `matching` answer. `options` and `matches` are aligned, so the
+ * correct partner of options[i] is matches[i]; the learner submits the chosen
+ * right value per left item, in the same order. All pairs must be correct.
+ * A key with unequal columns, repeated values, or repeated right labels is
+ * ambiguous and stays ungraded.
+ */
+function gradeMatchingAnswer(q: QuizQuestion, submitted: string[]): QuestionResult {
+  const points = q.points ?? 1;
+  const left = q.options ?? [];
+  const right = q.matches ?? [];
+  const keyValid =
+    left.length >= 2 &&
+    left.length === right.length &&
+    allDistinct(
+      left.map((item) => item.value),
+      true,
+    ) &&
+    allDistinct(
+      right.map((item) => item.value),
+      true,
+    ) &&
+    allDistinct(
+      right.map((item) => item.label.trim()),
+      true,
+    );
+  if (!keyValid) {
+    return {
+      questionId: q.id,
+      correct: null,
+      status: 'ungraded',
+      earned: 0,
+      aiComment: 'This matching question has no valid answer key, so it was not graded.',
+    };
+  }
+  const correct =
+    submitted.length === left.length &&
+    submitted.every((value, index) => value === right[index]?.value);
+  return {
+    questionId: q.id,
+    correct,
+    status: correct ? 'correct' : 'incorrect',
+    earned: correct ? points : 0,
+  };
+}
+
+/**
+ * Grade locally checkable questions (single, multiple, numeric, ordering,
+ * matching). Short-answer questions are graded by the LLM and are not returned
+ * here.
  */
 export function gradeChoiceQuestions(
   questions: QuizQuestion[],
@@ -185,9 +243,13 @@ export function gradeChoiceQuestions(
         q.type === 'single' ||
         q.type === 'multiple' ||
         q.type === 'numeric' ||
-        q.type === 'ordering',
+        q.type === 'ordering' ||
+        q.type === 'matching',
     )
     .map((q) => {
+      if (q.type === 'matching') {
+        return gradeMatchingAnswer(q, toArray(answers[q.id]));
+      }
       if (q.type === 'ordering') {
         return gradeOrderingAnswer(q, toArray(answers[q.id]));
       }

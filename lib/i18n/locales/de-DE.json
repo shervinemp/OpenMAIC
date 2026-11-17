@@ -462,7 +462,8 @@
         "multiple": "Mehrfachauswahl",
         "short_answer": "Kurzantwort",
         "numeric": "Numerisch",
-        "ordering": "Reihenfolge"
+        "ordering": "Reihenfolge",
+        "matching": "Zuordnung"
       },
       "shortAnswerGradingNote": "Kurzantworten werden immer von der KI anhand der folgenden Hinweise bewertet.",
       "numericAnswerLabel": "Richtiger Wert",
@@ -473,10 +474,16 @@
       "numericHint": "Antworten innerhalb der ±Toleranz gelten als richtig. Die Einheit dient nur der Anzeige.",
       "orderingItemsLabel": "Elemente (in richtiger Reihenfolge)",
       "orderingHint": "Lernende sehen diese Elemente in gemischter Reihenfolge.",
+      "matchingPairsLabel": "Paare",
+      "matchingHint": "Jedes linke Element gehört zu genau einem rechten Element. Lernende sehen die rechte Spalte gemischt.",
+      "matchingLeftPlaceholder": "Linkes Element",
+      "matchingRightPlaceholder": "Passendes Element",
       "hint": {
         "emptyText": "Frage {{n}}: Fragetext hinzufügen",
         "fewOptions": "Frage {{n}}: mindestens zwei Antwortmöglichkeiten hinzufügen",
         "emptyOption": "Frage {{n}}: eine Antwortmöglichkeit ist leer",
+        "emptyPair": "Frage {{n}}: jedes Zuordnungspaar ausfüllen",
+        "duplicateMatch": "Frage {{n}}: zwei rechte Elemente sind identisch",
         "noCorrect": "Frage {{n}}: eine richtige Antwort markieren",
         "badNumber": "Frage {{n}}: eine gültige Zahl als Antwort eingeben"
       }
@@ -752,6 +759,10 @@
     "numericPlaceholder": "Zahl eingeben...",
     "ordering": "Reihenfolge",
     "orderingHint": "Bringe die Elemente in die richtige Reihenfolge.",
+    "matching": "Zuordnung",
+    "matchingHint": "Ordne jedes Element links einem Element rechts zu.",
+    "matchingChoose": "Zuordnung wählen",
+    "correctMatch": "Richtige Zuordnung:",
     "correctOrder": "Richtige Reihenfolge:",
     "moveUp": "Nach oben",
     "moveDown": "Nach unten",
@@ -1142,6 +1153,7 @@
     "quizTypeText": "Kurzantwort",
     "quizTypeNumeric": "Numerisch",
     "quizTypeOrdering": "Reihenfolge",
+    "quizTypeMatching": "Zuordnung",
     "alwaysReviewOutlines": "Gliederungen vor der Generierung immer prüfen",
     "outlineEditorEyebrow": "KI-generierte Gliederung",
     "outlineEditorStreamingProgress": "Übertragung läuft · Szenen bereit: {{count}}",

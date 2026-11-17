@@ -25,6 +25,12 @@ const translations = vi.hoisted(() => ({
   'quiz.correctOrder': 'Correct order:',
   'quiz.moveUp': 'Move up',
   'quiz.moveDown': 'Move down',
+  'quiz.matching': 'Matching',
+  'quiz.matchingHint': 'Match each item on the left with one on the right.',
+  'quiz.matchingChoose': 'Choose a match',
+  'quiz.correctMatch': 'Correct match:',
+  'quiz.yourAnswer': 'Your answer:',
+  'quiz.notAnswered': 'Not answered',
 }));
 
 vi.mock('@/lib/hooks/use-i18n', () => ({
@@ -188,6 +194,54 @@ describe('QuizPractice', () => {
     await moveTo(labels[0], 0);
     await moveTo(labels[1], 1);
     expect(visible()).toEqual(labels);
+
+    await click('Check answer');
+    expect(container.textContent).toContain('Next');
+    await click('Next');
+    expect(container.textContent).toContain('Practice complete');
+    expect(container.textContent).not.toContain('Practice missed (');
+  });
+
+  it('requires every matching pair before checking and grades the set', async () => {
+    const matching: QuizQuestion = {
+      id: 'm1',
+      type: 'matching',
+      question: 'Match each medallion layer with what it stores.',
+      options: [
+        { value: 'A', label: 'Bronze' },
+        { value: 'B', label: 'Silver' },
+      ],
+      matches: [
+        { value: 'A', label: 'Raw events' },
+        { value: 'B', label: 'Cleaned records' },
+      ],
+      analysis: 'Bronze keeps raw events; silver holds cleaned records.',
+      hasAnswer: true,
+      points: 1,
+    };
+    renderPractice([matching]);
+
+    const checkButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Check answer'),
+    )!;
+    expect(checkButton.disabled).toBe(true);
+
+    const setSelect = async (index: number, value: string) => {
+      const select = container.querySelectorAll('select')[index] as HTMLSelectElement;
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLSelectElement.prototype,
+        'value',
+      )!.set!;
+      await act(async () => {
+        setter.call(select, value);
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    };
+
+    await setSelect(0, 'A');
+    expect(checkButton.disabled).toBe(true);
+    await setSelect(1, 'B');
+    expect(checkButton.disabled).toBe(false);
 
     await click('Check answer');
     expect(container.textContent).toContain('Next');

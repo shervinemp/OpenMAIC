@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { hasPracticeAnswer, summarizePractice } from '@/lib/quiz/practice';
+import { hasPracticeAnswer, hasQuizAnswer, summarizePractice } from '@/lib/quiz/practice';
 import type { QuestionResult } from '@/lib/quiz/grading';
+import type { QuizQuestion } from '@/lib/types/stage';
 
 function result(
   questionId: string,
@@ -57,5 +58,44 @@ describe('hasPracticeAnswer', () => {
     expect(hasPracticeAnswer([])).toBe(false);
     expect(hasPracticeAnswer('42')).toBe(true);
     expect(hasPracticeAnswer(['A'])).toBe(true);
+  });
+});
+
+describe('hasQuizAnswer', () => {
+  const matching: QuizQuestion = {
+    id: 'm1',
+    type: 'matching',
+    question: 'Match the layers.',
+    options: [
+      { value: 'A', label: 'Bronze' },
+      { value: 'B', label: 'Silver' },
+    ],
+    matches: [
+      { value: 'A', label: 'Raw' },
+      { value: 'B', label: 'Clean' },
+    ],
+  };
+
+  it('requires every matching pair to be chosen', () => {
+    expect(hasQuizAnswer(matching, undefined)).toBe(false);
+    expect(hasQuizAnswer(matching, [])).toBe(false);
+    expect(hasQuizAnswer(matching, [''])).toBe(false);
+    expect(hasQuizAnswer(matching, ['A'])).toBe(false);
+    expect(hasQuizAnswer(matching, ['A', ''])).toBe(false);
+    expect(hasQuizAnswer(matching, ['A', 'B'])).toBe(true);
+  });
+
+  it('keeps the other types at one non-empty entry', () => {
+    const ordering: QuizQuestion = {
+      id: 'o1',
+      type: 'ordering',
+      question: 'Put these in order.',
+      options: [
+        { value: 'A', label: 'One' },
+        { value: 'B', label: 'Two' },
+      ],
+    };
+    expect(hasQuizAnswer(ordering, ['A'])).toBe(true);
+    expect(hasQuizAnswer(ordering, [])).toBe(false);
   });
 });

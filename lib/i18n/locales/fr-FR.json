@@ -462,7 +462,8 @@
         "multiple": "Choix multiple",
         "short_answer": "Réponse courte",
         "numeric": "Numérique",
-        "ordering": "Mise en ordre"
+        "ordering": "Mise en ordre",
+        "matching": "Association"
       },
       "shortAnswerGradingNote": "Les réponses courtes sont toujours corrigées par l’IA à partir des consignes ci-dessous.",
       "numericAnswerLabel": "Valeur correcte",
@@ -473,10 +474,16 @@
       "numericHint": "Les réponses dans la tolérance ± sont correctes. L'unité est affichée uniquement.",
       "orderingItemsLabel": "Éléments (dans le bon ordre)",
       "orderingHint": "Les apprenants voient ces éléments mélangés.",
+      "matchingPairsLabel": "Paires",
+      "matchingHint": "Chaque élément de gauche correspond à un élément de droite. Les apprenants voient la colonne de droite mélangée.",
+      "matchingLeftPlaceholder": "Élément de gauche",
+      "matchingRightPlaceholder": "Élément associé",
       "hint": {
         "emptyText": "Question {{n}} : ajoutez l’énoncé",
         "fewOptions": "Question {{n}} : ajoutez au moins deux options",
         "emptyOption": "Question {{n}} : le libellé d’une option est vide",
+        "emptyPair": "Question {{n}} : complétez chaque paire",
+        "duplicateMatch": "Question {{n}} : deux éléments de droite sont identiques",
         "noCorrect": "Question {{n}} : indiquez la bonne réponse",
         "badNumber": "Question {{n}} : saisissez une réponse numérique valide"
       }
@@ -752,6 +759,10 @@
     "numericPlaceholder": "Saisir un nombre...",
     "ordering": "Mise en ordre",
     "orderingHint": "Remettez les éléments dans le bon ordre.",
+    "matching": "Association",
+    "matchingHint": "Associez chaque élément de gauche à un élément de droite.",
+    "matchingChoose": "Choisir une association",
+    "correctMatch": "Bonne association :",
     "correctOrder": "Ordre correct :",
     "moveUp": "Monter",
     "moveDown": "Descendre",
@@ -1150,6 +1161,7 @@
     "quizTypeText": "Réponse courte",
     "quizTypeNumeric": "Numérique",
     "quizTypeOrdering": "Mise en ordre",
+    "quizTypeMatching": "Association",
     "alwaysReviewOutlines": "Toujours vérifier les plans avant la génération",
     "outlineEditorEyebrow": "Plan généré par l’IA",
     "outlineEditorStreamingProgress": "En cours · {{count}} scènes prêtes",

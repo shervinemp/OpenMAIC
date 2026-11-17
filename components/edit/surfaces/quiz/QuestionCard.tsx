@@ -3,6 +3,7 @@
 import { Reorder, motion, useDragControls } from 'motion/react';
 import { answerIncludesOption } from '@/lib/quiz/grading';
 import {
+  ArrowLeftRight,
   Check,
   ChevronDown,
   ChevronRight,
@@ -25,7 +26,7 @@ import {
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import type { QuizQuestion, QuizQuestionType } from '@/lib/types/stage';
-import { MAX_OPTIONS, isChoice, isOrdered, optionLetter } from './quiz-edit-ops';
+import { MAX_OPTIONS, isChoice, isMatching, isOrdered, optionLetter } from './quiz-edit-ops';
 import {
   addQuizOption,
   deleteQuizOption,
@@ -33,11 +34,19 @@ import {
   reorderQuizOptions,
   setQuizQuestionType,
   toggleQuizCorrect,
+  typeQuizMatchLabel,
   typeQuizOptionLabel,
   typeQuizQuestion,
 } from './use-quiz-surface';
 
-const TYPES: QuizQuestionType[] = ['single', 'multiple', 'short_answer', 'numeric', 'ordering'];
+const TYPES: QuizQuestionType[] = [
+  'single',
+  'multiple',
+  'short_answer',
+  'numeric',
+  'ordering',
+  'matching',
+];
 
 /** Per-type accent: a quiz scene's question types read at a glance by colour. */
 const TYPE_ACCENT: Record<QuizQuestionType, { badge: string; rail: string }> = {
@@ -61,6 +70,10 @@ const TYPE_ACCENT: Record<QuizQuestionType, { badge: string; rail: string }> = {
     badge: 'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300',
     rail: 'from-teal-400 to-teal-600',
   },
+  matching: {
+    badge: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
+    rail: 'from-rose-400 to-rose-600',
+  },
 };
 
 /** Brand-violet focus treatment shared by every text input in the form. */
@@ -81,6 +94,7 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
   const controls = useDragControls();
   const choice = isChoice(q.type);
   const ordering = isOrdered(q.type);
+  const matching = isMatching(q.type);
   const accent = TYPE_ACCENT[q.type];
 
   return (
@@ -326,6 +340,85 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
                     </div>
                   );
                 })}
+                <button
+                  type="button"
+                  disabled={(q.options?.length ?? 0) >= MAX_OPTIONS}
+                  onPointerDown={stopDrag}
+                  onClick={() => addQuizOption(q.id)}
+                  className="mt-0.5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-zinc-200 py-2 text-xs font-medium text-zinc-500 transition-colors hover:border-violet-300 hover:bg-violet-50/60 hover:text-violet-600 disabled:pointer-events-none disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-violet-500/40 dark:hover:bg-violet-500/10 dark:hover:text-violet-300"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {t('edit.quiz.addOption')}
+                </button>
+              </div>
+            </Field>
+          )}
+
+          {/* Matching pairs: each row is one left item and its right-hand
+              partner. The two columns are stored aligned, so moving or
+              deleting a row keeps the pairing intact; learners see the right
+              column shuffled. */}
+          {matching && (
+            <Field label={t('edit.quiz.matchingPairsLabel')}>
+              <div className="flex flex-col gap-1.5">
+                <p className="text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
+                  {t('edit.quiz.matchingHint')}
+                </p>
+                {(q.options ?? []).map((opt, i) => (
+                  <div
+                    key={opt.value}
+                    className="group/opt flex items-center gap-2 rounded-xl border border-transparent p-1 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                  >
+                    <span
+                      aria-hidden
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 font-mono text-xs font-bold text-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                    >
+                      {i + 1}
+                    </span>
+                    <Input
+                      value={opt.label}
+                      onPointerDown={stopDrag}
+                      onChange={(e) => typeQuizOptionLabel(q.id, i, e.target.value)}
+                      placeholder={t('edit.quiz.matchingLeftPlaceholder')}
+                      className={cn('flex-1 border-transparent bg-transparent shadow-none', FOCUS)}
+                    />
+                    <ArrowLeftRight
+                      aria-hidden
+                      className="h-4 w-4 shrink-0 text-zinc-300 dark:text-zinc-600"
+                    />
+                    <Input
+                      value={q.matches?.[i]?.label ?? ''}
+                      onPointerDown={stopDrag}
+                      onChange={(e) => typeQuizMatchLabel(q.id, i, e.target.value)}
+                      placeholder={t('edit.quiz.matchingRightPlaceholder')}
+                      className={cn('flex-1 border-transparent bg-transparent shadow-none', FOCUS)}
+                    />
+                    <div className="flex shrink-0 items-center opacity-60 transition-opacity group-hover/opt:opacity-100">
+                      <IconButton
+                        label={t('edit.quiz.moveUp')}
+                        disabled={i === 0}
+                        onClick={() => reorderQuizOptions(q.id, i, i - 1)}
+                      >
+                        <ChevronUp className="h-4 w-4" />
+                      </IconButton>
+                      <IconButton
+                        label={t('edit.quiz.moveDown')}
+                        disabled={i === (q.options?.length ?? 0) - 1}
+                        onClick={() => reorderQuizOptions(q.id, i, i + 1)}
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                      </IconButton>
+                      <IconButton
+                        label={t('edit.quiz.deleteOption')}
+                        disabled={(q.options?.length ?? 0) <= 1}
+                        onClick={() => deleteQuizOption(q.id, i)}
+                        danger
+                      >
+                        <X className="h-4 w-4" />
+                      </IconButton>
+                    </div>
+                  </div>
+                ))}
                 <button
                   type="button"
                   disabled={(q.options?.length ?? 0) >= MAX_OPTIONS}

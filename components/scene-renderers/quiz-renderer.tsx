@@ -96,6 +96,26 @@ export function QuizRenderer({ content, mode, sceneId: _sceneId }: QuizRendererP
                   ))}
                 </ol>
               )}
+              {question.type === 'matching' && question.options && question.matches && (
+                // Static preview: left prompts in order, right-hand partners
+                // shuffled so no row reveals its pair.
+                <div className="grid gap-4 text-sm sm:grid-cols-2">
+                  <ol className="list-decimal space-y-1 pl-5">
+                    {question.options.map((option, index) => (
+                      <li key={`${question.id}-left-${index}`}>{option.label}</li>
+                    ))}
+                  </ol>
+                  <ol className="list-[upper-alpha] space-y-1 pl-5">
+                    {displayOrder(`${question.id}:match`, question.matches.length).map(
+                      (position, index) => (
+                        <li key={`${question.id}-right-${index}`}>
+                          {question.matches?.[position]?.label ?? ''}
+                        </li>
+                      ),
+                    )}
+                  </ol>
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}

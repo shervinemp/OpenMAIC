@@ -390,7 +390,8 @@
         "multiple": "多選",
         "short_answer": "簡答",
         "numeric": "數值",
-        "ordering": "排序"
+        "ordering": "排序",
+        "matching": "配對"
       },
       "shortAnswerGradingNote": "簡答題一律由 AI 依下方評分指引自動評分。",
       "numericAnswerLabel": "正確答案",
@@ -401,10 +402,16 @@
       "numericHint": "在 ±容差範圍內的答案算正確；單位僅供顯示。",
       "orderingItemsLabel": "項目（依正確順序）",
       "orderingHint": "學習者看到的項目順序是打亂的。",
+      "matchingPairsLabel": "配對",
+      "matchingHint": "每個左側項目對應一個右側項目；學習者看到的右側欄是打亂的。",
+      "matchingLeftPlaceholder": "左側項目",
+      "matchingRightPlaceholder": "配對項目",
       "hint": {
         "emptyText": "題目 {{n}}：請輸入題目內容",
         "fewOptions": "題目 {{n}}：至少需要 2 個選項",
         "emptyOption": "題目 {{n}}：選項內容不可為空白",
+        "emptyPair": "第 {{n}} 題：請補齊所有配對",
+        "duplicateMatch": "第 {{n}} 題：有兩個右側項目完全相同",
         "noCorrect": "題目 {{n}}：請標記一個正確答案",
         "badNumber": "第 {{n}} 題：請輸入有效的數值答案"
       }
@@ -729,6 +736,10 @@
     "numericPlaceholder": "輸入數值...",
     "ordering": "排序",
     "orderingHint": "將下列項目依正確順序排列。",
+    "matching": "配對",
+    "matchingHint": "將左側各項目與右側對應項目配對。",
+    "matchingChoose": "選擇配對項",
+    "correctMatch": "正確配對：",
     "correctOrder": "正確順序：",
     "moveUp": "上移",
     "moveDown": "下移",
@@ -1127,6 +1138,7 @@
     "quizTypeText": "簡答",
     "quizTypeNumeric": "數值",
     "quizTypeOrdering": "排序題",
+    "quizTypeMatching": "配對題",
     "alwaysReviewOutlines": "以後生成前都審閱大綱",
     "outlineEditorEyebrow": "AI 生成的大綱",
     "outlineEditorStreamingProgress": "生成中 · 已就位 {{count}} 個場景",

@@ -462,7 +462,8 @@
         "multiple": "多选",
         "short_answer": "简答",
         "numeric": "数值",
-        "ordering": "排序"
+        "ordering": "排序",
+        "matching": "匹配"
       },
       "shortAnswerGradingNote": "简答题由 AI 依据下方评分指引自动打分。",
       "numericAnswerLabel": "正确答案",
@@ -473,10 +474,16 @@
       "numericHint": "在 ±容差范围内的答案算正确；单位仅用于显示。",
       "orderingItemsLabel": "项目（按正确顺序）",
       "orderingHint": "学习者看到的项目顺序是打乱的。",
+      "matchingPairsLabel": "配对",
+      "matchingHint": "每个左侧项目对应一个右侧项目；学习者看到的右侧列是打乱的。",
+      "matchingLeftPlaceholder": "左侧项目",
+      "matchingRightPlaceholder": "匹配项目",
       "hint": {
         "emptyText": "第 {{n}} 题：请填写题干",
         "fewOptions": "第 {{n}} 题：至少需要两个选项",
         "emptyOption": "第 {{n}} 题：有选项内容为空",
+        "emptyPair": "第 {{n}} 题：请补全所有配对",
+        "duplicateMatch": "第 {{n}} 题：有两个右侧项目完全相同",
         "noCorrect": "第 {{n}} 题：请标记正确答案",
         "badNumber": "第 {{n}} 题：请输入有效的数值答案"
       }
@@ -752,6 +759,10 @@
     "numericPlaceholder": "输入数值...",
     "ordering": "排序",
     "orderingHint": "将下列项目按正确顺序排列。",
+    "matching": "匹配",
+    "matchingHint": "将左侧各项与右侧对应项匹配。",
+    "matchingChoose": "选择匹配项",
+    "correctMatch": "正确匹配：",
     "correctOrder": "正确顺序：",
     "moveUp": "上移",
     "moveDown": "下移",
@@ -1150,6 +1161,7 @@
     "quizTypeText": "简答",
     "quizTypeNumeric": "数值",
     "quizTypeOrdering": "排序题",
+    "quizTypeMatching": "匹配题",
     "alwaysReviewOutlines": "以后生成前都审阅大纲",
     "outlineEditorEyebrow": "AI 生成的大纲",
     "outlineEditorStreamingProgress": "生成中 · 已就位 {{count}} 个场景",

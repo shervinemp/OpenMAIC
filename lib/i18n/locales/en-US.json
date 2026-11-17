@@ -462,7 +462,8 @@
         "multiple": "Multiple choice",
         "short_answer": "Short answer",
         "numeric": "Numeric",
-        "ordering": "Ordering"
+        "ordering": "Ordering",
+        "matching": "Matching"
       },
       "shortAnswerGradingNote": "Short answers are always graded by AI from the guidance below.",
       "numericAnswerLabel": "Correct value",
@@ -473,10 +474,16 @@
       "numericHint": "Answers within ±tolerance count as correct. The unit is display-only.",
       "orderingItemsLabel": "Items (in the correct order)",
       "orderingHint": "Learners see these items shuffled.",
+      "matchingPairsLabel": "Pairs",
+      "matchingHint": "Each left item pairs with one right item. Learners see the right column shuffled.",
+      "matchingLeftPlaceholder": "Left item",
+      "matchingRightPlaceholder": "Matching item",
       "hint": {
         "emptyText": "Question {{n}}: add question text",
         "fewOptions": "Question {{n}}: add at least two options",
         "emptyOption": "Question {{n}}: an option label is empty",
+        "emptyPair": "Question {{n}}: complete every matching pair",
+        "duplicateMatch": "Question {{n}}: two right-hand items are identical",
         "noCorrect": "Question {{n}}: mark a correct answer",
         "badNumber": "Question {{n}}: enter a valid numeric answer"
       }
@@ -752,6 +759,10 @@
     "numericPlaceholder": "Enter a number...",
     "ordering": "Ordering",
     "orderingHint": "Put the items in the correct order.",
+    "matching": "Matching",
+    "matchingHint": "Match each item on the left with one on the right.",
+    "matchingChoose": "Choose a match",
+    "correctMatch": "Correct match:",
     "correctOrder": "Correct order:",
     "moveUp": "Move up",
     "moveDown": "Move down",
@@ -1150,6 +1161,7 @@
     "quizTypeText": "Short answer",
     "quizTypeNumeric": "Numeric",
     "quizTypeOrdering": "Ordering",
+    "quizTypeMatching": "Matching",
     "alwaysReviewOutlines": "Always review outlines before generation",
     "outlineEditorEyebrow": "AI-generated outline",
     "outlineEditorStreamingProgress": "Streaming · {{count}} scenes ready",

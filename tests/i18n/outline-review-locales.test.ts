@@ -44,6 +44,7 @@ const outlineReviewKeys = [
   'generation.quizTypeText',
   'generation.quizTypeNumeric',
   'generation.quizTypeOrdering',
+  'generation.quizTypeMatching',
   'generation.alwaysReviewOutlines',
   'generation.dragSceneHint',
   'generation.deleteScene',

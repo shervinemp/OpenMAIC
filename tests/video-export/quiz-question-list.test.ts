@@ -32,6 +32,26 @@ const measured: QuizLayoutProbe = {
 };
 
 describe('Quiz question-list preparation', () => {
+  it('projects a matching question without its pairs', () => {
+    const [projected] = prepareQuizQuestionList(
+      scene([
+        {
+          id: 'match',
+          type: 'matching',
+          question: 'Match each layer with what it stores',
+          options: [{ value: 'A', label: 'SECRET_LEFT' }],
+          matches: [{ value: 'A', label: 'SECRET_RIGHT' }],
+          analysis: 'SECRET_ANALYSIS',
+        },
+      ]),
+    );
+    expect(projected).toEqual({
+      id: 'match',
+      type: 'matching',
+      question: 'Match each layer with what it stores',
+    });
+  });
+
   it('projects an ordering question without its stored sequence', () => {
     const [projected] = prepareQuizQuestionList(
       scene([

@@ -462,7 +462,8 @@
         "multiple": "Chọn nhiều đáp án",
         "short_answer": "Trả lời ngắn",
         "numeric": "Số",
-        "ordering": "Sắp xếp"
+        "ordering": "Sắp xếp",
+        "matching": "Ghép cặp"
       },
       "shortAnswerGradingNote": "Câu trả lời ngắn luôn do AI chấm dựa trên hướng dẫn bên dưới.",
       "numericAnswerLabel": "Giá trị đúng",
@@ -473,10 +474,16 @@
       "numericHint": "Câu trả lời trong khoảng ±sai số được tính đúng. Đơn vị chỉ để hiển thị.",
       "orderingItemsLabel": "Các mục (theo đúng thứ tự)",
       "orderingHint": "Học viên thấy các mục này được xáo trộn.",
+      "matchingPairsLabel": "Cặp",
+      "matchingHint": "Mỗi mục bên trái ghép với một mục bên phải. Học viên thấy cột bên phải được xáo trộn.",
+      "matchingLeftPlaceholder": "Mục bên trái",
+      "matchingRightPlaceholder": "Mục ghép",
       "hint": {
         "emptyText": "Câu {{n}}: hãy nhập nội dung câu hỏi",
         "fewOptions": "Câu {{n}}: cần ít nhất hai phương án",
         "emptyOption": "Câu {{n}}: có một phương án còn để trống",
+        "emptyPair": "Câu {{n}}: hoàn thành mọi cặp",
+        "duplicateMatch": "Câu {{n}}: hai mục bên phải giống nhau",
         "noCorrect": "Câu {{n}}: hãy đánh dấu đáp án đúng",
         "badNumber": "Câu {{n}}: nhập một đáp án số hợp lệ"
       }
@@ -752,6 +759,10 @@
     "numericPlaceholder": "Nhập một số...",
     "ordering": "Sắp xếp",
     "orderingHint": "Sắp xếp các mục theo đúng thứ tự.",
+    "matching": "Ghép cặp",
+    "matchingHint": "Ghép mỗi mục bên trái với một mục bên phải.",
+    "matchingChoose": "Chọn cặp",
+    "correctMatch": "Cặp đúng:",
     "correctOrder": "Thứ tự đúng:",
     "moveUp": "Di chuyển lên",
     "moveDown": "Di chuyển xuống",
@@ -1142,6 +1153,7 @@
     "quizTypeText": "Trả lời ngắn",
     "quizTypeNumeric": "Số",
     "quizTypeOrdering": "Sắp xếp",
+    "quizTypeMatching": "Ghép cặp",
     "alwaysReviewOutlines": "Luôn xem lại đề cương trước khi tạo",
     "outlineEditorEyebrow": "Đề cương do AI tạo",
     "outlineEditorStreamingProgress": "Đang nhận · {{count}} cảnh đã xong",

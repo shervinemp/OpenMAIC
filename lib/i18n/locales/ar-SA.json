@@ -462,7 +462,8 @@
         "multiple": "اختيار متعدد",
         "short_answer": "إجابة قصيرة",
         "numeric": "رقمي",
-        "ordering": "ترتيب"
+        "ordering": "ترتيب",
+        "matching": "مطابقة"
       },
       "shortAnswerGradingNote": "تُقيّم الإجابات القصيرة دائمًا بواسطة الذكاء الاصطناعي وفق إرشادات التصحيح أدناه.",
       "numericAnswerLabel": "القيمة الصحيحة",
@@ -473,10 +474,16 @@
       "numericHint": "تُحتسب الإجابات ضمن ±السماحية صحيحة. الوحدة للعرض فقط.",
       "orderingItemsLabel": "العناصر (بالترتيب الصحيح)",
       "orderingHint": "يرى المتعلم هذه العناصر مبعثرة.",
+      "matchingPairsLabel": "الأزواج",
+      "matchingHint": "كل عنصر على اليسار يقابله عنصر واحد على اليمين. يرى المتعلم العمود الأيمن مبعثرًا.",
+      "matchingLeftPlaceholder": "العنصر الأيسر",
+      "matchingRightPlaceholder": "العنصر المطابق",
       "hint": {
         "emptyText": "السؤال {{n}}: أضف نص السؤال",
         "fewOptions": "السؤال {{n}}: يلزم خياران على الأقل",
         "emptyOption": "السؤال {{n}}: يوجد خيار فارغ",
+        "emptyPair": "السؤال {{n}}: أكمل كل زوج مطابقة",
+        "duplicateMatch": "السؤال {{n}}: يوجد عنصران متطابقان على اليمين",
         "noCorrect": "السؤال {{n}}: حدّد الإجابة الصحيحة",
         "badNumber": "السؤال {{n}}: أدخل إجابة رقمية صالحة"
       }
@@ -752,6 +759,10 @@
     "numericPlaceholder": "أدخل رقمًا...",
     "ordering": "ترتيب",
     "orderingHint": "رتّب العناصر بالترتيب الصحيح.",
+    "matching": "مطابقة",
+    "matchingHint": "طابق كل عنصر على اليسار مع عنصر على اليمين.",
+    "matchingChoose": "اختر مطابقة",
+    "correctMatch": "المطابقة الصحيحة:",
     "correctOrder": "الترتيب الصحيح:",
     "moveUp": "تحريك لأعلى",
     "moveDown": "تحريك لأسفل",
@@ -1150,6 +1161,7 @@
     "quizTypeText": "إجابة قصيرة",
     "quizTypeNumeric": "رقمي",
     "quizTypeOrdering": "ترتيب",
+    "quizTypeMatching": "مطابقة",
     "alwaysReviewOutlines": "مراجعة المخططات دائمًا قبل التوليد",
     "outlineEditorEyebrow": "مخطط من توليد الذكاء الاصطناعي",
     "outlineEditorStreamingProgress": "جارٍ التوليد · {{count}} مشاهد جاهزة",

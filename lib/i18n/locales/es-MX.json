@@ -462,7 +462,8 @@
         "multiple": "Opción múltiple",
         "short_answer": "Respuesta corta",
         "numeric": "Numérico",
-        "ordering": "Ordenar"
+        "ordering": "Ordenar",
+        "matching": "Relacionar"
       },
       "shortAnswerGradingNote": "Las respuestas cortas siempre las califica la IA según la guía de abajo.",
       "numericAnswerLabel": "Valor correcto",
@@ -473,10 +474,16 @@
       "numericHint": "Las respuestas dentro de ±tolerancia cuentan como correctas. La unidad solo se muestra.",
       "orderingItemsLabel": "Elementos (en el orden correcto)",
       "orderingHint": "Los estudiantes ven estos elementos desordenados.",
+      "matchingPairsLabel": "Parejas",
+      "matchingHint": "Cada elemento de la izquierda se relaciona con uno de la derecha. Los estudiantes ven la columna derecha desordenada.",
+      "matchingLeftPlaceholder": "Elemento izquierdo",
+      "matchingRightPlaceholder": "Elemento correspondiente",
       "hint": {
         "emptyText": "Pregunta {{n}}: agrega el texto de la pregunta",
         "fewOptions": "Pregunta {{n}}: agrega al menos dos opciones",
         "emptyOption": "Pregunta {{n}}: hay una opción sin texto",
+        "emptyPair": "Pregunta {{n}}: completa todas las parejas",
+        "duplicateMatch": "Pregunta {{n}}: dos elementos de la derecha son idénticos",
         "noCorrect": "Pregunta {{n}}: marca una respuesta correcta",
         "badNumber": "Pregunta {{n}}: introduce una respuesta numérica válida"
       }
@@ -752,6 +759,10 @@
     "numericPlaceholder": "Introduce un número...",
     "ordering": "Ordenar",
     "orderingHint": "Ordena los elementos correctamente.",
+    "matching": "Relacionar",
+    "matchingHint": "Relaciona cada elemento de la izquierda con uno de la derecha.",
+    "matchingChoose": "Elegir pareja",
+    "correctMatch": "Pareja correcta:",
     "correctOrder": "Orden correcto:",
     "moveUp": "Subir",
     "moveDown": "Bajar",
@@ -1150,6 +1161,7 @@
     "quizTypeText": "Respuesta corta",
     "quizTypeNumeric": "Numérico",
     "quizTypeOrdering": "Ordenamiento",
+    "quizTypeMatching": "Relacionar",
     "alwaysReviewOutlines": "Siempre revisar los esquemas antes de generar",
     "outlineEditorEyebrow": "Esquema generado por IA",
     "outlineEditorStreamingProgress": "Streaming · {{count}} escenas listas",

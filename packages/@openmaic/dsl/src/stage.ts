@@ -195,7 +195,7 @@ export interface QuizOption {
 
 export interface QuizQuestion {
   id: string;
-  type: 'single' | 'multiple' | 'short_answer' | 'numeric' | 'ordering';
+  type: 'single' | 'multiple' | 'short_answer' | 'numeric' | 'ordering' | 'matching';
   question: string;
   /**
    * Choice options (single/multiple), the sequence items for `ordering`
@@ -203,6 +203,12 @@ export interface QuizQuestion {
    * undefined for text/numeric questions.
    */
   options?: QuizOption[];
+  /**
+   * `matching` questions only: the right-hand targets, aligned one-to-one with
+   * `options` (matches[i] is the correct partner of options[i]). The runtime
+   * shuffles this column for display, so pair i is never revealed by position.
+   */
+  matches?: QuizOption[];
   answer?: string[]; // Correct answer values: ["A"], ["A","C"], a numeric string, or undefined for text/ordering
   /**
    * Absolute tolerance for a `numeric` answer (default 0). Ignored by every

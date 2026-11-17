@@ -1186,14 +1186,20 @@ async function generateQuizContent(
       const isText = q.type === 'short_answer';
       const isNumeric = q.type === 'numeric';
       const isOrdering = q.type === 'ordering';
+      const isMatching = q.type === 'matching';
       const options =
         isText || isNumeric
           ? undefined
           : isOrdering
             ? normalizeOrderingOptions(q as unknown as Record<string, unknown>)
             : normalizeQuizOptions(q.options);
+      const matches = isMatching
+        ? normalizeQuizOptions(
+            (q as unknown as Record<string, unknown>).matches as unknown[] | undefined,
+          )
+        : undefined;
       const answer =
-        isText || isOrdering
+        isText || isOrdering || isMatching
           ? undefined
           : isNumeric
             ? normalizeNumericAnswer(q as unknown as Record<string, unknown>)
@@ -1207,6 +1213,7 @@ async function generateQuizContent(
         answer,
         hasAnswer: isText ? false : true,
         ...(isNumeric ? { tolerance, unit } : { tolerance: undefined, unit: undefined }),
+        ...(isMatching ? { matches } : { matches: undefined }),
       };
     });
 
@@ -1217,6 +1224,7 @@ async function generateQuizContent(
     if (contractFailure) {
       log.error(`Quiz question contract failed for "${outline.title}": ${contractFailure}`);
       if (attempt < maxAttempts) {
+        const matchingIssue = contractFailure.includes('matching');
         const orderingIssue = contractFailure.includes('ordering');
         const numericIssue = contractFailure.includes('numeric');
         parseFeedback = `Your previous reply broke the quiz question contract (${contractFailure}). ${
@@ -1224,7 +1232,9 @@ async function generateQuizContent(
             ? 'A numeric question has no options: give one finite number as "answer" (a string array) and a non-negative "tolerance".'
             : orderingIssue
               ? 'An ordering question lists its items in the correct order in "options" (at least two distinct items) and has no "answer" key.'
-              : 'Every choice option must be { "label": "<content>", "value": "<one letter A-Z>" } and "answer" must list those letters.'
+              : matchingIssue
+                ? 'A matching question has one left item in "options" and its partner in "matches", aligned by index; both lists need the same length, at least two pairs, and distinct right-hand labels.'
+                : 'Every choice option must be { "label": "<content>", "value": "<one letter A-Z>" } and "answer" must list those letters.'
         }`;
         continue;
       }
@@ -1297,6 +1307,8 @@ const QUIZ_OPTION_VALUE = /^[A-Z]$/;
  * ASCII letters A-Z, and every answer entry must equal one of those values.
  * Ordering questions carry the correct sequence in `options` (at least two
  * distinct items) and no answer key.
+ * Matching questions need equal-length `options` and `matches` columns with
+ * distinct labels, and no answer key.
  * Numeric questions need one finite answer and a non-negative tolerance.
  * Short-answer questions are skipped.
  */
@@ -1306,6 +1318,49 @@ export function findQuizOptionsContractFailure(questions: readonly QuizQuestion[
     if (!question) continue;
 
     const where = question.id ? `question ${index + 1} (${question.id})` : `question ${index + 1}`;
+    if (question.type === 'matching') {
+      const left = question.options;
+      const right = question.matches;
+      if (!left || left.length < 2) {
+        return `${where}: matching question needs at least two pairs`;
+      }
+      if (!right || right.length !== left.length) {
+        return `${where}: matching question needs one right-hand item per left item`;
+      }
+      const leftValues = new Set<string>();
+      for (const item of left) {
+        if (typeof item.value !== 'string' || item.value === '') {
+          return `${where}: matching left item is missing its value`;
+        }
+        if (typeof item.label !== 'string' || item.label.trim() === '') {
+          return `${where}: matching left item is missing its label`;
+        }
+        if (leftValues.has(item.value)) {
+          return `${where}: matching left item value ${JSON.stringify(item.value)} is repeated`;
+        }
+        leftValues.add(item.value);
+      }
+      const rightValues = new Set<string>();
+      const rightLabels = new Set<string>();
+      for (const item of right) {
+        if (typeof item.value !== 'string' || item.value === '') {
+          return `${where}: matching right item is missing its value`;
+        }
+        if (rightValues.has(item.value)) {
+          return `${where}: matching right item value ${JSON.stringify(item.value)} is repeated`;
+        }
+        rightValues.add(item.value);
+        const label = item.label.trim();
+        if (label === '') {
+          return `${where}: matching right item is missing its label`;
+        }
+        if (rightLabels.has(label)) {
+          return `${where}: matching right label ${JSON.stringify(label)} is repeated and would be ambiguous`;
+        }
+        rightLabels.add(label);
+      }
+      continue;
+    }
     if (question.type === 'ordering') {
       const items = question.options;
       if (!items || items.length < 2) {
@@ -1315,6 +1370,9 @@ export function findQuizOptionsContractFailure(questions: readonly QuizQuestion[
       for (const item of items) {
         if (typeof item.value !== 'string' || item.value === '') {
           return `${where}: ordering item is missing its value`;
+        }
+        if (typeof item.label !== 'string' || item.label.trim() === '') {
+          return `${where}: ordering item is missing its label`;
         }
         if (seen.has(item.value)) {
           return `${where}: ordering item value ${JSON.stringify(item.value)} is repeated`;

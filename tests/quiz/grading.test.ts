@@ -170,6 +170,64 @@ describe('ordering grading', () => {
   });
 });
 
+describe('matching grading', () => {
+  function paired(overrides: Partial<QuizQuestion> = {}): QuizQuestion {
+    return q({
+      type: 'matching',
+      options: [
+        { value: 'A', label: 'Bronze' },
+        { value: 'B', label: 'Silver' },
+        { value: 'C', label: 'Gold' },
+      ],
+      matches: [
+        { value: 'A', label: 'Raw events' },
+        { value: 'B', label: 'Cleaned records' },
+        { value: 'C', label: 'Business aggregates' },
+      ],
+      answer: undefined,
+      ...overrides,
+    });
+  }
+
+  it('accepts every correct partner', () => {
+    const [result] = gradeChoiceQuestions([paired()], { q1: ['A', 'B', 'C'] });
+    expect(result).toMatchObject({ status: 'correct', correct: true, earned: 1 });
+  });
+
+  it('rejects the whole question when one pair is wrong', () => {
+    const [result] = gradeChoiceQuestions([paired()], { q1: ['A', 'C', 'B'] });
+    expect(result).toMatchObject({ status: 'incorrect', earned: 0 });
+  });
+
+  it('rejects an incomplete or empty submission', () => {
+    expect(gradeChoiceQuestions([paired()], { q1: ['A', 'B'] })[0]!.status).toBe('incorrect');
+    expect(gradeChoiceQuestions([paired()], { q1: ['A', 'B', ''] })[0]!.status).toBe('incorrect');
+    expect(gradeChoiceQuestions([paired()], {})[0]!.status).toBe('incorrect');
+  });
+
+  it('leaves unequal columns ungraded', () => {
+    const short = paired({ matches: [{ value: 'A', label: 'Raw events' }] });
+    expect(gradeChoiceQuestions([short], { q1: ['A'] })[0]).toMatchObject({
+      status: 'ungraded',
+      earned: 0,
+    });
+  });
+
+  it('leaves repeated right-hand labels ungraded as ambiguous', () => {
+    const ambiguous = paired({
+      matches: [
+        { value: 'A', label: 'Same' },
+        { value: 'B', label: 'Same' },
+        { value: 'C', label: 'Other' },
+      ],
+    });
+    expect(gradeChoiceQuestions([ambiguous], { q1: ['A', 'B', 'C'] })[0]).toMatchObject({
+      status: 'ungraded',
+      earned: 0,
+    });
+  });
+});
+
 describe('ungradedResult', () => {
   it('marks the question ungraded without inventing a score', () => {
     const result = ungradedResult('s1', 'en-US');

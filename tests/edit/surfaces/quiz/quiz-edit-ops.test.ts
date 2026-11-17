@@ -15,6 +15,7 @@ import {
   setQuestionType,
   toggleCorrect,
   undoQuiz,
+  updateMatchLabel,
   updateOptionLabel,
   updateQuestion,
 } from '@/components/edit/surfaces/quiz/quiz-edit-ops';
@@ -198,6 +199,76 @@ describe('setQuestionType transitions', () => {
     expect(choice.type).toBe('multiple');
     expect(choice.options).toHaveLength(3);
     expect(choice.answer).toEqual([]);
+  });
+
+  it('createBlankQuestion seeds aligned matching pairs with no answer key', () => {
+    const question = createBlankQuestion('matching', 'q1');
+    expect(question).toMatchObject({ type: 'matching', points: 1, hasAnswer: true });
+    expect(question.options?.map((option) => option.value)).toEqual(['A', 'B', 'C']);
+    expect(question.matches?.map((option) => option.value)).toEqual(['A', 'B', 'C']);
+    expect(question.matches?.every((option) => option.label === '')).toBe(true);
+    expect(question.answer).toBeUndefined();
+  });
+
+  it('matching row mutations keep both columns aligned', () => {
+    const blank = content(createBlankQuestion('matching', 'q1'));
+    const named = updateMatchLabel(
+      updateMatchLabel(
+        updateOptionLabel(
+          updateOptionLabel(updateOptionLabel(blank, 'q1', 0, 'Bronze'), 'q1', 1, 'Silver'),
+          'q1',
+          2,
+          'Gold',
+        ),
+        'q1',
+        0,
+        'Raw events',
+      ),
+      'q1',
+      1,
+      'Cleaned records',
+    );
+
+    const moved = reorderOptions(named, 'q1', 1, 0).questions[0];
+    expect(moved.options?.map((option) => option.label)).toEqual(['Silver', 'Bronze', 'Gold']);
+    expect(moved.matches?.map((option) => option.label)).toEqual([
+      'Cleaned records',
+      'Raw events',
+      '',
+    ]);
+
+    const removed = deleteOption(content(moved), 'q1', 0).questions[0];
+    expect(removed.matches?.map((option) => option.label)).toEqual(['Raw events', '']);
+
+    const added = addOption(content(removed), 'q1').questions[0];
+    expect(added.options).toHaveLength(3);
+    expect(added.matches).toHaveLength(3);
+    expect(added.matches?.[2]).toEqual({ label: '', value: 'C' });
+  });
+
+  it('choice → matching keeps the left items and seeds blank partners', () => {
+    const question = setQuestionType(content(choiceQuestion()), 'q1', 'matching').questions[0];
+    expect(question.options?.map((option) => option.label)).toEqual(['Paris', 'Lyon', 'Nice']);
+    expect(question.matches?.map((option) => option.label)).toEqual(['', '', '']);
+    expect(question.answer).toBeUndefined();
+  });
+
+  it('matching → ordering drops the partners', () => {
+    const question = setQuestionType(
+      content(createBlankQuestion('matching', 'q1')),
+      'q1',
+      'ordering',
+    ).questions[0];
+    expect(question.matches).toBeUndefined();
+    expect(question.answer).toBeUndefined();
+  });
+
+  it('ordering → matching seeds a blank partner per item', () => {
+    const ordering = content(createBlankQuestion('ordering', 'q1'));
+    const question = setQuestionType(ordering, 'q1', 'matching').questions[0];
+    expect(question.options).toHaveLength(3);
+    expect(question.matches).toHaveLength(3);
+    expect(question.answer).toBeUndefined();
   });
 });
 

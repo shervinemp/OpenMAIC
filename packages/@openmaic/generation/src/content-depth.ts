@@ -675,12 +675,17 @@ export function validateQuizDepth(
         );
       }
     }
-    if (question.type === 'ordering') {
-      const itemCount = question.options?.length ?? 0;
+    if (question.type === 'ordering' || question.type === 'matching') {
+      const itemCount = Math.min(
+        question.options?.length ?? 0,
+        question.type === 'matching' ? (question.matches?.length ?? 0) : Infinity,
+      );
       const required = Math.max(2, floor.minOptions);
       if (itemCount < required) {
         findings.push(
-          `question "${question.id}" has ${itemCount} item(s) to order; need at least ${required} distinct steps`,
+          question.type === 'ordering'
+            ? `question "${question.id}" has ${itemCount} item(s) to order; need at least ${required} distinct steps`
+            : `question "${question.id}" has ${itemCount} matching pair(s); need at least ${required} pairs`,
         );
       }
     }

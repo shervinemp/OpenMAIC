@@ -18,6 +18,11 @@
  * `fromRows` re-derives `value = LETTERS[index]` and rebuilds `answer` from
  * the per-row `correct` flag. Reordering options therefore never needs an
  * explicit answer remap — correctness travels with the row.
+ *
+ * Ordering questions reuse the same rows with the row order itself as the key,
+ * and matching questions carry a second label per row (`OptionRow.match`) that
+ * `fromRows` rebuilds into the aligned `matches` column. Neither stores a
+ * separate answer key, so a pair or sequence can never desynchronize.
  */
 
 import type { QuizContent, QuizQuestion, QuizQuestionType } from '@/lib/types/stage';
@@ -80,31 +85,47 @@ export const MAX_OPTIONS = LETTERS.length;
 export interface OptionRow {
   label: string;
   correct: boolean;
+  /** Right-hand label of the same pair. `matching` rows only. */
+  match?: string;
 }
 
 export function optionLetter(index: number): string {
   return LETTERS[index] ?? `#${index + 1}`;
 }
 
+function blankOptions(count: number): { label: string; value: string }[] {
+  return Array.from({ length: count }, (_, index) => ({ label: '', value: optionLetter(index) }));
+}
+
 export function toRows(q: QuizQuestion): OptionRow[] {
-  return (q.options ?? []).map((o) => ({
+  return (q.options ?? []).map((o, index) => ({
     label: o.label,
     // The same resolved projection the review UI and the grader use: a key
     // stored as an option label must read as correct here too. Raw value
     // equality would report every row as incorrect, and the next mutation
     // would rebuild `answer` from those rows and silently drop the key.
     correct: answerIncludesOption(q, o.value),
+    match: q.matches?.[index]?.label,
   }));
 }
 
-/** Re-derive `options` (value = positional letter) + `answer` from rows. For
- * an ordering question the row order IS the key, so no answer is stored. */
+/** Re-derive the option columns (value = positional letter) from rows.
+ * Choice rows rebuild `answer` from the per-row `correct` flag, ordering rows
+ * use the row order as the key, and matching rows rebuild both aligned
+ * columns with no separate key. */
 export function fromRows(
   rows: OptionRow[],
-  mode: 'choice' | 'ordering' = 'choice',
-): Pick<QuizQuestion, 'options' | 'answer'> {
+  mode: 'choice' | 'ordering' | 'matching' = 'choice',
+): Pick<QuizQuestion, 'options' | 'answer' | 'matches'> {
   const options = rows.map((r, i) => ({ label: r.label, value: optionLetter(i) }));
   if (mode === 'ordering') return { options, answer: undefined };
+  if (mode === 'matching') {
+    return {
+      options,
+      matches: rows.map((r, i) => ({ label: r.match ?? '', value: optionLetter(i) })),
+      answer: undefined,
+    };
+  }
   const answer = rows
     .map((r, i) => ({ correct: r.correct, value: optionLetter(i) }))
     .filter((r) => r.correct)
@@ -125,9 +146,14 @@ export function isOrdered(type: QuizQuestionType): boolean {
   return type === 'ordering';
 }
 
+/** Whether the type pairs one left item with one right item. */
+export function isMatching(type: QuizQuestionType): boolean {
+  return type === 'matching';
+}
+
 /** Whether the type's option rows are editable at all. */
 export function hasOptionRows(type: QuizQuestionType): boolean {
-  return isChoice(type) || isOrdered(type);
+  return isChoice(type) || isOrdered(type) || isMatching(type);
 }
 
 /** A new blank question of the given type with sensible defaults. */
@@ -153,11 +179,18 @@ export function createBlankQuestion(
       id,
       type,
       question: '',
-      options: [
-        { label: '', value: 'A' },
-        { label: '', value: 'B' },
-        { label: '', value: 'C' },
-      ],
+      options: blankOptions(3),
+      points: 1,
+      hasAnswer: true,
+    };
+  }
+  if (type === 'matching') {
+    return {
+      id,
+      type,
+      question: '',
+      options: blankOptions(3),
+      matches: blankOptions(3),
       points: 1,
       hasAnswer: true,
     };
@@ -249,14 +282,15 @@ export function updateQuestion(
 
 /**
  * Switch a question's type, applying the structural transition:
- *   choice → short_answer : drop options + answer, seed grading fields.
- *   short_answer → choice : seed two blank options, empty answer.
- *   any → numeric         : drop options, seed one numeric answer slot.
- *   numeric → any         : drop the numeric-only fields.
- *   any → ordering        : keep choice options, seed three blank items
- *                           otherwise; the row order becomes the answer key.
- *   single ↔ multiple     : keep options; collapsing to single keeps only
- *                           the first correct answer.
+ *   any → short_answer    : drop options, matches and answer keys.
+ *   any → numeric         : drop the option columns, seed one numeric slot.
+ *   any → ordering        : keep choice/matching left items, seed three blank
+ *                           items otherwise; the row order becomes the key.
+ *   any → matching        : keep left items, seed blank right items; the two
+ *                           columns stay aligned and no separate key is stored.
+ *   any → choice          : keep left items, drop matching columns; the author
+ *                           must mark the correct answer(s).
+ *   single ↔ multiple     : keep options; single keeps at most one correct.
  */
 export function setQuestionType(
   content: QuizContent,
@@ -266,63 +300,72 @@ export function setQuestionType(
   return mapQuestion(content, id, (q) => {
     if (q.type === type) return q;
 
-    if (type === 'ordering') {
-      const { commentPrompt: _c, answer: _a, tolerance: _t, unit: _u, ...rest } = q;
-      return {
-        ...rest,
-        type,
-        options:
-          isChoice(q.type) && (q.options?.length ?? 0) >= 2
-            ? (q.options ?? [])
-            : [
-                { label: '', value: 'A' },
-                { label: '', value: 'B' },
-                { label: '', value: 'C' },
-              ],
-        hasAnswer: true,
-      };
-    }
-
-    if (type === 'numeric') {
-      const { options: _o, commentPrompt: _c, ...rest } = q;
-      return {
-        ...rest,
-        type,
-        answer: [q.answer?.[0] ?? ''],
-        tolerance: q.tolerance ?? 0,
-        unit: q.unit ?? '',
-        hasAnswer: true,
-      };
-    }
+    const { commentPrompt: _c, answer, tolerance, unit, matches, hasAnswer: _h, ...base } = q;
+    const keepLeft = hasOptionRows(q.type) && (q.options?.length ?? 0) >= 2;
 
     if (type === 'short_answer') {
-      const { options: _o, answer: _a, tolerance: _t, unit: _u, ...rest } = q;
+      const { options: _o, ...rest } = base;
       return { ...rest, type, hasAnswer: false };
     }
 
-    // Target is a choice type.
-    const { commentPrompt: _c, tolerance: _t, unit: _u, hasAnswer: _h, ...rest } = q;
-    if (!hasOptionRows(q.type)) {
+    if (type === 'numeric') {
+      const { options: _o, ...rest } = base;
       return {
         ...rest,
         type,
-        options: [
-          { label: '', value: 'A' },
-          { label: '', value: 'B' },
-        ],
-        answer: [],
+        answer: [answer?.[0] ?? ''],
+        tolerance: tolerance ?? 0,
+        unit: unit ?? '',
+        hasAnswer: true,
       };
     }
 
-    // single ↔ multiple: keep options; single keeps at most one correct.
-    const answer = type === 'single' ? (q.answer ?? []).slice(0, 1) : (q.answer ?? []);
-    return { ...rest, type, answer };
+    if (type === 'ordering') {
+      return {
+        ...base,
+        type,
+        options: keepLeft ? (q.options ?? []) : blankOptions(3),
+        answer: undefined,
+        hasAnswer: true,
+      };
+    }
+
+    if (type === 'matching') {
+      const left = keepLeft ? (q.options ?? []) : blankOptions(3);
+      return {
+        ...base,
+        type,
+        options: left,
+        matches: left.map((_, index) => ({
+          label: q.type === 'matching' ? (matches?.[index]?.label ?? '') : '',
+          value: optionLetter(index),
+        })),
+        answer: undefined,
+        hasAnswer: true,
+      };
+    }
+
+    // Target is a choice type. A matching/ordering column becomes plain
+    // options, but correctness must be re-marked by the author.
+    const keptAnswer = isChoice(q.type) ? (answer ?? []) : [];
+    return {
+      ...base,
+      type,
+      options: keepLeft ? (q.options ?? []) : blankOptions(2),
+      answer: type === 'single' ? keptAnswer.slice(0, 1) : keptAnswer,
+    };
   });
 }
 
 // ---------------------------------------------------------------------------
-// Option mutations (choice + ordering questions; no-op elsewhere)
+// Option mutations (choice, ordering and matching; no-op elsewhere)
 // ---------------------------------------------------------------------------
+
+function rowsMode(type: QuizQuestionType): 'choice' | 'ordering' | 'matching' {
+  if (isOrdered(type)) return 'ordering';
+  if (isMatching(type)) return 'matching';
+  return 'choice';
+}
 
 function mapRows(
   content: QuizContent,
@@ -331,8 +374,7 @@ function mapRows(
 ): QuizContent {
   return mapQuestion(content, id, (q) => {
     if (!hasOptionRows(q.type)) return q;
-    const mode = isOrdered(q.type) ? 'ordering' : 'choice';
-    return { ...q, ...fromRows(fn(toRows(q)), mode) };
+    return { ...q, ...fromRows(fn(toRows(q)), rowsMode(q.type)) };
   });
 }
 
@@ -353,6 +395,18 @@ export function updateOptionLabel(
   label: string,
 ): QuizContent {
   return mapRows(content, id, (rows) => rows.map((r, i) => (i === index ? { ...r, label } : r)));
+}
+
+/** Rename the right-hand item of one matching pair (no-op on other types). */
+export function updateMatchLabel(
+  content: QuizContent,
+  id: string,
+  index: number,
+  label: string,
+): QuizContent {
+  return mapRows(content, id, (rows) =>
+    rows.map((row, i) => (i === index ? { ...row, match: label } : row)),
+  );
 }
 
 export function reorderOptions(

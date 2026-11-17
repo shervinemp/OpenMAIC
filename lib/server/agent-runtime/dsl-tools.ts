@@ -446,6 +446,7 @@ function validationError(scene: Scene): string | null {
         'type',
         'question',
         'options',
+        'matches',
         'answer',
         'tolerance',
         'unit',
@@ -458,7 +459,7 @@ function validationError(scene: Scene): string | null {
       if (unknown.length)
         return `/content/questions/${index}: unknown field(s) ${unknown.join(', ')}`;
       if (
-        !['single', 'multiple', 'short_answer', 'numeric', 'ordering'].includes(
+        !['single', 'multiple', 'short_answer', 'numeric', 'ordering', 'matching'].includes(
           String(question.type),
         )
       ) {
@@ -467,23 +468,26 @@ function validationError(scene: Scene): string | null {
       if (typeof question.id !== 'string' || typeof question.question !== 'string') {
         return `/content/questions/${index}: id and question must be strings`;
       }
-      if (question.options !== undefined) {
-        if (!Array.isArray(question.options))
-          return `/content/questions/${index}/options: expected array`;
-        for (let optionIndex = 0; optionIndex < question.options.length; optionIndex += 1) {
-          const option = question.options[optionIndex];
+      for (const column of ['options', 'matches'] as const) {
+        if (question[column] === undefined) continue;
+        const items = question[column];
+        if (!Array.isArray(items)) {
+          return `/content/questions/${index}/${column}: expected array`;
+        }
+        for (let optionIndex = 0; optionIndex < items.length; optionIndex += 1) {
+          const option = items[optionIndex];
           if (option === null || typeof option !== 'object' || Array.isArray(option)) {
-            return `/content/questions/${index}/options/${optionIndex}: expected object`;
+            return `/content/questions/${index}/${column}/${optionIndex}: expected object`;
           }
           const record = option as Record<string, unknown>;
           const unknownOption = Object.keys(record).filter(
             (key) => !['label', 'value'].includes(key),
           );
           if (unknownOption.length) {
-            return `/content/questions/${index}/options/${optionIndex}: unknown field(s) ${unknownOption.join(', ')}`;
+            return `/content/questions/${index}/${column}/${optionIndex}: unknown field(s) ${unknownOption.join(', ')}`;
           }
           if (typeof record.label !== 'string' || typeof record.value !== 'string') {
-            return `/content/questions/${index}/options/${optionIndex}: label and value must be strings`;
+            return `/content/questions/${index}/${column}/${optionIndex}: label and value must be strings`;
           }
         }
       }

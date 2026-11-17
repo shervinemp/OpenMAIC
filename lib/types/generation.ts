@@ -266,7 +266,7 @@ export interface SceneOutline {
   quizConfig?: {
     questionCount: number;
     difficulty: 'easy' | 'medium' | 'hard';
-    questionTypes: ('single' | 'multiple' | 'text' | 'numeric' | 'ordering')[];
+    questionTypes: ('single' | 'multiple' | 'text' | 'numeric' | 'ordering' | 'matching')[];
   };
   /**
    * @deprecated Use widgetType + widgetOutline instead
@@ -610,7 +610,7 @@ export interface SuggestedSlideElement {
 }
 
 export interface SuggestedQuizQuestion {
-  type: 'single' | 'multiple' | 'short_answer' | 'numeric' | 'ordering';
+  type: 'single' | 'multiple' | 'short_answer' | 'numeric' | 'ordering' | 'matching';
   questionOutline: string;
   suggestedOptions?: string[];
   targetConceptId?: string;

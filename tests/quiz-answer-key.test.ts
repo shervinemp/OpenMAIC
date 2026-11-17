@@ -364,6 +364,57 @@ describe('ordering quiz generation', () => {
   });
 });
 
+describe('matching quiz generation', () => {
+  const matching: QuizQuestion = {
+    id: 'm1',
+    type: 'matching',
+    question: 'Match each layer with what it stores.',
+    options: [
+      { value: 'A', label: 'Bronze' },
+      { value: 'B', label: 'Silver' },
+    ],
+    matches: [
+      { value: 'A', label: 'Raw events' },
+      { value: 'B', label: 'Cleaned records' },
+    ],
+    analysis: 'Bronze keeps raw events and silver holds cleaned records.',
+    hasAnswer: true,
+  };
+
+  test('accepts aligned pairs with no answer key', () => {
+    expect(findQuizOptionsContractFailure([matching])).toBeNull();
+  });
+
+  test('rejects fewer than two pairs', () => {
+    const failing = [
+      matching,
+      {
+        ...matching,
+        options: [matching.options![0]],
+        matches: [matching.matches![0]],
+      },
+    ];
+    expect(findQuizOptionsContractFailure(failing)).toContain('at least two');
+  });
+
+  test('rejects columns of different length', () => {
+    expect(
+      findQuizOptionsContractFailure([{ ...matching, matches: [matching.matches![0]] }]),
+    ).toContain('one right-hand item per left item');
+  });
+
+  test('rejects repeated right-hand labels as ambiguous', () => {
+    const ambiguous = {
+      ...matching,
+      matches: [
+        { value: 'A', label: 'Same' },
+        { value: 'B', label: ' Same ' },
+      ],
+    };
+    expect(findQuizOptionsContractFailure([ambiguous])).toContain('repeated');
+  });
+});
+
 describe('normalizeQuizAnswer (generation): narrowed exact alignment', () => {
   test('exact value passes through', () => {
     expect(normalizeQuizAnswer({ answer: 'A' }, VECTOR_OPTIONS)).toEqual(['A']);

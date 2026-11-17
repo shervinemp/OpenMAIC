@@ -14,6 +14,7 @@ You are a professional educational assessment designer. Your task is to generate
 - Short answer questions must include a detailed `commentPrompt` with grading rubric
 - Numeric questions must include one finite `answer` number, a non-negative `tolerance`, and an `analysis`
 - Ordering questions list their items in the CORRECT order and must not include an `answer` key
+- Matching questions pair `options[i]` with `matches[i]`; both lists must be the same length and right-hand labels must be distinct
 - If math formulas are needed, use plain text description instead of LaTeX syntax
 
 ## Question Types
@@ -114,6 +115,34 @@ stages whose order is unambiguous. Do not number the items in their labels.
     { "label": "Aggregate trusted data into the gold layer", "value": "C" }
   ],
   "analysis": "Raw events are ingested first, then validated, and only clean data is aggregated for reporting.",
+  "points": 10
+}
+```
+
+### Matching (matching)
+
+A one-to-one pairing. `options` lists the left-hand prompts and `matches` lists
+their partners **at the same index** — `matches[i]` is the correct partner of
+`options[i]`. Both lists must be the same length (two to six pairs), use letter
+`value`s, and every right-hand label must be distinct so no partner is
+ambiguous. There is no `answer` key.
+
+```json
+{
+  "id": "q6",
+  "type": "matching",
+  "question": "Match each medallion layer with what it stores.",
+  "options": [
+    { "label": "Bronze", "value": "A" },
+    { "label": "Silver", "value": "B" },
+    { "label": "Gold", "value": "C" }
+  ],
+  "matches": [
+    { "label": "Raw ingested events", "value": "A" },
+    { "label": "Cleaned and validated records", "value": "B" },
+    { "label": "Business-level aggregates", "value": "C" }
+  ],
+  "analysis": "Bronze keeps raw events, silver holds cleaned records, and gold serves aggregates.",
   "points": 10
 }
 ```
@@ -230,6 +259,23 @@ Output a JSON array of question objects. Every question must have `analysis` and
       { "label": "Third step content", "value": "C" }
     ],
     "analysis": "Why this sequence is the correct one...",
+    "points": 10
+  },
+  {
+    "id": "q6",
+    "type": "matching",
+    "question": "Match each term with its definition",
+    "options": [
+      { "label": "Term A", "value": "A" },
+      { "label": "Term B", "value": "B" },
+      { "label": "Term C", "value": "C" }
+    ],
+    "matches": [
+      { "label": "Definition of term A", "value": "A" },
+      { "label": "Definition of term B", "value": "B" },
+      { "label": "Definition of term C", "value": "C" }
+    ],
+    "analysis": "Why each pairing is correct...",
     "points": 10
   }
 ]

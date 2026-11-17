@@ -11,12 +11,14 @@ import {
   deleteOption,
   deleteQuestion,
   isChoice,
+  isMatching,
   isOrdered,
   reorderOptions,
   reorderQuestions,
   setQuestionType,
   toggleCorrect,
   updateOptionLabel,
+  updateMatchLabel,
   updateQuestion,
 } from './quiz-edit-ops';
 import { useQuizEditSession } from './quiz-edit-session';
@@ -83,6 +85,11 @@ export function typeQuizOptionLabel(id: string, index: number, label: string): v
     .getState()
     .commitText(updateOptionLabel(resolvePresent(), id, index, label), `${id}:opt:${index}`);
 }
+export function typeQuizMatchLabel(id: string, index: number, label: string): void {
+  useQuizEditSession
+    .getState()
+    .commitText(updateMatchLabel(resolvePresent(), id, index, label), `${id}:match:${index}`);
+}
 export function reorderQuizOptions(id: string, from: number, to: number): void {
   useQuizEditSession.getState().commit(reorderOptions(resolvePresent(), id, from, to));
 }
@@ -110,7 +117,8 @@ export function buildQuizHints(
     const n = i + 1;
     const choice = isChoice(q.type);
     const ordered = isOrdered(q.type);
-    const rows = choice || ordered;
+    const matching = isMatching(q.type);
+    const rows = choice || ordered || matching;
     let issue: { severity: EditorHint['severity']; key: string } | null = null;
     if (!q.question.trim()) {
       issue = { severity: 'suggestion', key: 'emptyText' };
@@ -118,6 +126,14 @@ export function buildQuizHints(
       issue = { severity: 'warning', key: 'fewOptions' };
     } else if (rows && (q.options ?? []).some((o) => !o.label.trim())) {
       issue = { severity: 'suggestion', key: 'emptyOption' };
+    } else if (matching) {
+      const pairs = q.matches ?? [];
+      const lefts = q.options ?? [];
+      if (pairs.length !== lefts.length || pairs.some((m) => !m.label.trim())) {
+        issue = { severity: 'warning', key: 'emptyPair' };
+      } else if (new Set(pairs.map((m) => m.label.trim())).size !== pairs.length) {
+        issue = { severity: 'warning', key: 'duplicateMatch' };
+      }
     } else if (choice && (q.answer?.length ?? 0) === 0) {
       issue = { severity: 'warning', key: 'noCorrect' };
     } else if (q.type === 'numeric') {

@@ -392,6 +392,79 @@ describe('numeric quiz depth', () => {
   });
 });
 
+describe('matching quiz depth', () => {
+  const outline: SceneOutline = {
+    id: 'mq',
+    type: 'quiz',
+    title: 'Layer pairing',
+    description: 'Match each layer to what it stores.',
+    keyPoints: ['medallion layers'],
+    order: 1,
+    depthLevel: 'university',
+    quizConfig: { questionCount: 2, difficulty: 'medium', questionTypes: ['matching'] },
+  };
+
+  function matchingQuestions(): QuizQuestion[] {
+    return [
+      {
+        id: 'm1',
+        type: 'matching',
+        question: 'Match each medallion layer with what it stores.',
+        options: [
+          { value: 'A', label: 'Bronze' },
+          { value: 'B', label: 'Silver' },
+          { value: 'C', label: 'Gold' },
+        ],
+        matches: [
+          { value: 'A', label: 'Raw ingested events' },
+          { value: 'B', label: 'Cleaned and validated records' },
+          { value: 'C', label: 'Business-level aggregates' },
+        ],
+        analysis:
+          'Bronze keeps raw events, silver holds cleaned records, and gold serves aggregates.',
+        hasAnswer: true,
+      },
+      {
+        id: 'm2',
+        type: 'matching',
+        question: 'Match each pipeline stage with the failure it detects.',
+        options: [
+          { value: 'A', label: 'Ingestion' },
+          { value: 'B', label: 'Validation' },
+          { value: 'C', label: 'Serving' },
+        ],
+        matches: [
+          { value: 'A', label: 'Dropped source events' },
+          { value: 'B', label: 'Malformed records' },
+          { value: 'C', label: 'Stale dashboards' },
+        ],
+        analysis: 'Each stage has one characteristic failure mode.',
+        hasAnswer: true,
+      },
+    ];
+  }
+
+  test('accepts three aligned pairs', () => {
+    expect(validateQuizDepth(outline, matchingQuestions()).adequate).toBe(true);
+  });
+
+  test('rejects fewer pairs than the depth floor', () => {
+    const questions = matchingQuestions();
+    questions[0].options = questions[0].options!.slice(0, 2);
+    questions[0].matches = questions[0].matches!.slice(0, 2);
+    const report = validateQuizDepth(outline, questions);
+    expect(report.adequate).toBe(false);
+    expect(report.findings.some((finding) => finding.includes('matching pair(s)'))).toBe(true);
+  });
+
+  test('rejects columns of different length', () => {
+    const questions = matchingQuestions();
+    questions[0].matches = questions[0].matches!.slice(0, 2);
+    const report = validateQuizDepth(outline, questions);
+    expect(report.adequate).toBe(false);
+  });
+});
+
 describe('ordering quiz depth', () => {
   const outline: SceneOutline = {
     id: 'oq',
