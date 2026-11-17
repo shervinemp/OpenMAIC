@@ -236,8 +236,8 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
                 onPointerDown={stopDrag}
                 onChange={(e) => {
                   const n = e.target.value === '' ? 0 : Number(e.target.value);
-                  if (Number.isNaN(n)) return;
-                  typeQuizQuestion(q.id, { points: n }, `${q.id}:points`);
+                  if (!Number.isFinite(n)) return;
+                  typeQuizQuestion(q.id, { points: Math.max(0, n) }, `${q.id}:points`);
                 }}
                 className={cn('font-mono tabular-nums', FOCUS)}
               />

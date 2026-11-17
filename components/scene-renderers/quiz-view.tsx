@@ -29,6 +29,7 @@ import { SpeechButton } from '@/components/audio/speech-button';
 import {
   gradeChoiceQuestions,
   isShortAnswer,
+  quizQuestionPoints,
   ungradedResult,
   type QuestionResult,
 } from '@/lib/quiz/grading';
@@ -1177,7 +1178,10 @@ export function QuizPractice({
     [questions],
   );
   const pointsByQuestion = useMemo(
-    () => Object.fromEntries(questions.map((question) => [question.id, question.points ?? 1])),
+    () =>
+      Object.fromEntries(
+        questions.map((question) => [question.id, quizQuestionPoints(question.points)]),
+      ),
     [questions],
   );
   const allIds = useMemo(() => questions.map((question) => question.id), [questions]);

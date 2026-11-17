@@ -56,6 +56,17 @@ describe('gradeChoiceQuestions', () => {
     const results = gradeChoiceQuestions([q({ points: 5 })], { q1: 'a' });
     expect(results[0].earned).toBe(5);
   });
+
+  it('does not deduct points for a malformed authoring value', () => {
+    const negative = gradeChoiceQuestions([q({ points: -5 })], { q1: 'a' });
+    expect(negative[0]).toMatchObject({ status: 'correct', earned: 1 });
+
+    const infinite = gradeChoiceQuestions([q({ points: Number.POSITIVE_INFINITY })], { q1: 'a' });
+    expect(infinite[0]?.earned).toBe(1);
+
+    const zero = gradeChoiceQuestions([q({ points: 0 })], { q1: 'a' });
+    expect(zero[0]?.earned).toBe(0);
+  });
 });
 
 describe('numeric grading', () => {

@@ -52,6 +52,17 @@ export function isShortAnswer(q: QuizQuestion): boolean {
 }
 
 /**
+ * A question's point value, guarded the way activity checks are.
+ *
+ * Authoring input and imported documents are untrusted: a negative or
+ * non-finite value must not turn a correct answer into a deduction, and a
+ * zero-point question must stay worth zero rather than silently becoming one.
+ */
+export function quizQuestionPoints(points: unknown): number {
+  return typeof points === 'number' && Number.isFinite(points) && points >= 0 ? points : 1;
+}
+
+/**
  * Resolve a PERSISTED answer-key entry to an option value. Exact, unique
  * alignment only (per review): an entry that exactly equals one option VALUE
  * resolves to it; one that exactly equals exactly one option LABEL resolves
@@ -224,7 +235,7 @@ function parseNumericKey(key: string | undefined): number | null {
 }
 
 function gradeNumericAnswer(q: QuizQuestion, raw: string): QuestionResult {
-  const points = q.points ?? 1;
+  const points = quizQuestionPoints(q.points);
   const expected = parseNumericKey(q.answer?.[0]);
   if (expected === null) {
     // A malformed key is a data error, not a learner mistake: do not score it.
@@ -259,7 +270,7 @@ function gradeNumericAnswer(q: QuizQuestion, raw: string): QuestionResult {
  * is left ungraded rather than scored against the learner.
  */
 function gradeOrderingAnswer(q: QuizQuestion, submitted: string[]): QuestionResult {
-  const points = q.points ?? 1;
+  const points = quizQuestionPoints(q.points);
   const key = (q.options ?? []).map((option) => option.value);
   if (key.length < 2 || new Set(key).size !== key.length) {
     return {
@@ -299,7 +310,7 @@ function allDistinct(values: readonly string[], requireNonEmpty: boolean): boole
  * ambiguous and stays ungraded.
  */
 function gradeMatchingAnswer(q: QuizQuestion, submitted: string[]): QuestionResult {
-  const points = q.points ?? 1;
+  const points = quizQuestionPoints(q.points);
   const left = q.options ?? [];
   const right = q.matches ?? [];
   const keyValid =
@@ -366,7 +377,7 @@ export function gradeChoiceQuestions(
         const raw = answers[q.id];
         return gradeNumericAnswer(q, typeof raw === 'string' ? raw : (raw?.[0] ?? ''));
       }
-      const pts = q.points ?? 1;
+      const pts = quizQuestionPoints(q.points);
       // Compatibility resolution applies to the persisted key only. The
       // submission is a value the UI produced from the options, so resolving
       // it too would let a label (or any alias the key accepts) be submitted
