@@ -9,6 +9,14 @@
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
 import { EXAM_GRADING_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
+import { runDecisionSite } from '@/lib/decision/router';
+import {
+  buildExamDecisionRequest,
+  compareExamGrades,
+  examDecisionInputChars,
+  examGradeFromResult,
+  type ExamDecisionInput,
+} from '@/lib/decision/sites/exam-grading';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
@@ -136,12 +144,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { model: languageModel, thinkingConfig } = await resolveModelFromRequest(
-      req,
-      body,
-      'exam-grading',
-    );
-
     const lines = rubric
       .map(
         (c, i) =>
@@ -173,57 +175,101 @@ ${prompt}
 STUDENT ANSWER:
 ${userAnswer}`;
 
-    const result = await callLLM(
-      {
-        model: languageModel,
-        system,
-        prompt: userPrompt,
-        // Per-criterion verdicts and a short rationale; not a full essay.
-        maxOutputTokens: clampOutputBudget(EXAM_GRADING_OUTPUT_CAP, undefined, thinkingConfig),
-      },
-      'exam-grading',
-      undefined,
-      thinkingConfig,
-    );
-
-    const text = result.text.trim();
-    let grade: ExamFrGrade;
-    try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON found');
-      const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-      const criteria =
-        includeCriteria && Array.isArray(parsed.criteria)
-          ? (parsed.criteria as Array<Record<string, unknown>>)
-              .map((c) => ({
-                id: String(c.id ?? ''),
-                met: c.met === true,
-                comment: typeof c.comment === 'string' ? c.comment : '',
-              }))
-              .filter((c) => c.id)
-          : undefined;
-      const maybe = (parsed.comment ?? '') as string;
-      const rawScore = Number(parsed.score);
-      // A missing or non-numeric score is an unparseable grade, not a zero or
-      // a NaN that serializes to null and poisons the exam total.
-      if (parsed.score === null || parsed.score === undefined || !Number.isFinite(rawScore)) {
-        throw new Error('No numeric score');
+    const parseExamGrade = (text: string): ExamFrGrade | null => {
+      try {
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('No JSON found');
+        const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+        const criteria =
+          includeCriteria && Array.isArray(parsed.criteria)
+            ? (parsed.criteria as Array<Record<string, unknown>>)
+                .map((c) => ({
+                  id: String(c.id ?? ''),
+                  met: c.met === true,
+                  comment: typeof c.comment === 'string' ? c.comment : '',
+                }))
+                .filter((c) => c.id)
+            : undefined;
+        const maybe = (parsed.comment ?? '') as string;
+        const rawScore = Number(parsed.score);
+        // A missing or non-numeric score is an unparseable grade, not a zero or
+        // a NaN that serializes to null and poisons the exam total.
+        if (parsed.score === null || parsed.score === undefined || !Number.isFinite(rawScore)) {
+          throw new Error('No numeric score');
+        }
+        return {
+          questionId: questionId ?? '',
+          score: Math.max(0, Math.min(maxPoints, Math.round(rawScore))),
+          maxPoints,
+          comment: String(maybe),
+          criteria: criteria?.length ? criteria : undefined,
+        };
+      } catch (parseError) {
+        // No grade is better than an invented one: a made-up half score would
+        // count toward the exam total. The client keeps the learner's answers
+        // and lets them submit again.
+        log.warn(
+          `Exam grade reply could not be parsed [question="${promptSnippet ?? 'unknown'}..."]:`,
+          parseError,
+        );
+        return null;
       }
-      grade = {
-        questionId: questionId ?? '',
-        score: Math.max(0, Math.min(maxPoints, Math.round(rawScore))),
-        maxPoints,
-        comment: String(maybe),
-        criteria: criteria?.length ? criteria : undefined,
-      };
-    } catch (parseError) {
-      // No grade is better than an invented one: a made-up half score would
-      // count toward the exam total. The client keeps the learner's answers
-      // and lets them submit again.
-      log.warn(
-        `Exam grade reply could not be parsed [question="${promptSnippet ?? 'unknown'}..."]:`,
-        parseError,
+    };
+
+    const gradeWithLlm = async (): Promise<ExamFrGrade | null> => {
+      // Resolve lazily: a deployment that routes this site to a decision model
+      // must not also need a chat model, and a decision-only failure should not
+      // fail the request before the fallback is actually needed.
+      const { model: languageModel, thinkingConfig } = await resolveModelFromRequest(
+        req,
+        body,
+        'exam-grading',
       );
+      const result = await callLLM(
+        {
+          model: languageModel,
+          system,
+          prompt: userPrompt,
+          // Per-criterion verdicts and a short rationale; not a full essay.
+          maxOutputTokens: clampOutputBudget(EXAM_GRADING_OUTPUT_CAP, undefined, thinkingConfig),
+        },
+        'exam-grading',
+        undefined,
+        thinkingConfig,
+      );
+      return parseExamGrade(result.text.trim());
+    };
+
+    const decisionInput: ExamDecisionInput = {
+      questionId,
+      prompt,
+      userAnswer,
+      rubric,
+      sampleAnswer,
+      maxPoints,
+      commentPrompt,
+      includeCriteria,
+    };
+    const decisionRequest = buildExamDecisionRequest(decisionInput);
+
+    let grade: ExamFrGrade | null;
+    if (decisionRequest) {
+      const outcome = await runDecisionSite<ExamFrGrade | null>({
+        site: 'exam-grading',
+        inputChars: examDecisionInputChars(decisionRequest),
+        request: decisionRequest,
+        baseline: gradeWithLlm,
+        fromResult: (result, config) => examGradeFromResult(result, decisionInput, config),
+        compare: (decision, baseline) =>
+          decision && baseline ? compareExamGrades(decision, baseline) : undefined,
+      });
+      grade = outcome.source === 'none' ? null : outcome.value;
+    } else {
+      // Decision grading needs per-criterion output to derive a score safely.
+      grade = await gradeWithLlm();
+    }
+
+    if (!grade) {
       return apiError(
         'GENERATION_FAILED',
         502,

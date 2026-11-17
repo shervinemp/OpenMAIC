@@ -8,6 +8,14 @@
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
 import { QUIZ_GRADE_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
+import { runDecisionSite } from '@/lib/decision/router';
+import {
+  buildQuizDecisionRequest,
+  compareQuizGrades,
+  quizDecisionInputChars,
+  quizGradeFromResult,
+  type QuizDecisionInput,
+} from '@/lib/decision/sites/quiz-grade';
 import { parseJsonResponse } from '@/lib/generation/json-repair';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -129,13 +137,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Resolve model from request headers/body
-    const {
-      model: languageModel,
-      thinkingConfig,
-      serverManaged,
-    } = await resolveModelFromRequest(req, body, 'quiz-grade');
-
     const isZh = language === 'zh-CN';
 
     const systemPrompt = isZh
@@ -154,36 +155,62 @@ ${commentPrompt ? `评分要点：${commentPrompt}\n` : ''}学生答案：${user
 Full marks: ${points} points
 ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${userAnswer}`;
 
-    const requestGrade = (prompt: string) =>
-      callLLM(
-        {
-          model: languageModel,
-          system: systemPrompt,
-          prompt,
-          // One score + one or two sentences of feedback + any explicit
-          // reasoning headroom; the full model window is never useful here.
-          maxOutputTokens: clampOutputBudget(QUIZ_GRADE_OUTPUT_CAP, undefined, thinkingConfig),
-        },
-        'quiz-grade',
-        undefined,
+    const gradeWithLlm = async (): Promise<GradeResponse | null> => {
+      // Resolve lazily: a site routed to a decision model does not need a chat
+      // model, and a decision failure should not fail before the fallback runs.
+      const {
+        model: languageModel,
         thinkingConfig,
-        { serverManaged },
-      );
+        serverManaged,
+      } = await resolveModelFromRequest(req, body, 'quiz-grade');
 
-    let grade = parseGrade((await requestGrade(userPrompt)).text, points);
+      const requestGrade = (prompt: string) =>
+        callLLM(
+          {
+            model: languageModel,
+            system: systemPrompt,
+            prompt,
+            // One score + one or two sentences of feedback + any explicit
+            // reasoning headroom; the full model window is never useful here.
+            maxOutputTokens: clampOutputBudget(QUIZ_GRADE_OUTPUT_CAP, undefined, thinkingConfig),
+          },
+          'quiz-grade',
+          undefined,
+          thinkingConfig,
+          { serverManaged },
+        );
 
-    if (!grade) {
-      // One corrective re-prompt is cheaper than a lost question, and a
-      // stricter "JSON only" instruction often fixes a prose reply. It is
-      // still bounded: after this, the question is ungraded, never invented.
-      log.warn(
-        `Quiz grade reply could not be parsed [question="${questionSnippet ?? 'unknown'}..."], re-prompting once`,
-      );
-      const retryInstruction = isZh
-        ? `\n\n你上一条回复无法解析。请只回复以下 JSON 对象，不要包含其他内容：{"score": <0 到 ${points} 的整数>, "comment": "<一两句反馈>"}`
-        : `\n\nYour previous reply could not be parsed. Reply again with ONLY this JSON object and nothing else: {"score": <integer from 0 to ${points}>, "comment": "<one or two sentences of feedback>"}`;
-      grade = parseGrade((await requestGrade(userPrompt + retryInstruction)).text, points);
-    }
+      let grade = parseGrade((await requestGrade(userPrompt)).text, points);
+
+      if (!grade) {
+        // One corrective re-prompt is cheaper than a lost question, and a
+        // stricter "JSON only" instruction often fixes a prose reply. It is
+        // still bounded: after this, the question is ungraded, never invented.
+        log.warn(
+          `Quiz grade reply could not be parsed [question="${questionSnippet ?? 'unknown'}..."], re-prompting once`,
+        );
+        const retryInstruction = isZh
+          ? `\n\n你上一条回复无法解析。请只回复以下 JSON 对象，不要包含其他内容：{"score": <0 到 ${points} 的整数>, "comment": "<一两句反馈>"}`
+          : `\n\nYour previous reply could not be parsed. Reply again with ONLY this JSON object and nothing else: {"score": <integer from 0 to ${points}>, "comment": "<one or two sentences of feedback>"}`;
+        grade = parseGrade((await requestGrade(userPrompt + retryInstruction)).text, points);
+      }
+
+      return grade;
+    };
+
+    const decisionInput: QuizDecisionInput = { question, userAnswer, points, commentPrompt };
+    const decisionRequest = buildQuizDecisionRequest(decisionInput);
+    const outcome = await runDecisionSite<GradeResponse | null>({
+      site: 'quiz-grade',
+      inputChars: quizDecisionInputChars(decisionRequest),
+      request: decisionRequest,
+      baseline: gradeWithLlm,
+      fromResult: (result, config) => quizGradeFromResult(result, decisionInput, config),
+      compare: (decision, baseline) =>
+        decision && baseline ? compareQuizGrades(decision, baseline) : undefined,
+    });
+
+    const grade = outcome.source === 'none' ? null : outcome.value;
 
     if (!grade) {
       log.error(

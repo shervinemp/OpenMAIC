@@ -10,6 +10,8 @@ import type { QuizAnswerVerifier, QuizVerificationQuestion } from '@openmaic/gen
 
 import { callLLM } from '@/lib/ai/llm';
 import { QUIZ_VERIFY_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
+import { getDecisionSiteConfig } from '@/lib/decision/config';
+import { createDecisionQuizVerifier } from '@/lib/decision/sites/quiz-verifier';
 import {
   buildQuizVerifierPrompt,
   parseQuizVerifierResponse,
@@ -22,11 +24,11 @@ interface VerifierLogger {
 }
 
 /**
- * Resolve the verifier for this request. Undefined when no `quiz-verify` route
- * is configured (no extra call) or when the route cannot be resolved
+ * Resolve the LLM verifier for this request. Undefined when no `quiz-verify`
+ * route is configured (no extra call) or when the route cannot be resolved
  * (fail-open, with a warning).
  */
-export async function resolveQuizAnswerVerifier(options: {
+async function resolveLlmQuizVerifier(options: {
   req: NextRequest;
   modelString?: string;
   log: VerifierLogger;
@@ -73,4 +75,27 @@ export async function resolveQuizAnswerVerifier(options: {
     );
     return parseQuizVerifierResponse(result.text, questions);
   };
+}
+
+/**
+ * Resolve the verifier for this request.
+ *
+ * `DECISION_ROUTES['quiz-verify']` takes precedence over the LLM route when
+ * configured; the LLM verifier becomes its shadow/triage/replace fallback.
+ * With neither configured this returns undefined, exactly as before.
+ */
+export async function resolveQuizAnswerVerifier(options: {
+  req: NextRequest;
+  modelString?: string;
+  log: VerifierLogger;
+}): Promise<QuizAnswerVerifier | undefined> {
+  const llmVerifier = await resolveLlmQuizVerifier(options);
+  const decisionConfig = getDecisionSiteConfig('quiz-verify');
+  if (!decisionConfig) return llmVerifier;
+
+  return createDecisionQuizVerifier({
+    config: decisionConfig,
+    baseline: llmVerifier,
+    signal: options.req.signal,
+  });
 }
