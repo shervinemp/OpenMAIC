@@ -124,10 +124,21 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
       };
     }),
 
-  markDone: (elementId, objectUrl, poster) =>
+  markDone: (elementId, objectUrl, poster) => {
+    // No caller replaces a done task's URLs today -- retries start from a
+    // failure and a tracked element is never enqueued again -- but the method
+    // allows it, and the task table is the only thing holding those URLs. Treat
+    // the replacement like a re-key: collect what the new state drops, release
+    // it after the update. A repeat call with the same URL keeps it, because
+    // the slot is still displaying those bytes.
+    const orphaned: string[] = [];
     set((s) => {
       const task = s.tasks[elementId];
       if (!task) return s;
+      const kept = new Set([objectUrl, poster]);
+      for (const url of [task.objectUrl, task.poster]) {
+        if (url && !kept.has(url)) orphaned.push(url);
+      }
       return {
         tasks: {
           ...s.tasks,
@@ -137,10 +148,14 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
             objectUrl,
             poster,
             error: undefined,
+            // A completed task must not keep reading as retryable.
+            errorCode: undefined,
           },
         },
       };
-    }),
+    });
+    for (const url of new Set(orphaned)) revokeBlobUrl(url);
+  },
 
   rekeyDone: (oldRef, newRef, objectUrl, poster, posterAssetId) => {
     // URLs a dropped task leaves behind are unreachable from the task table
