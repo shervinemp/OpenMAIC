@@ -92,9 +92,9 @@ logical evidence window is bounded on read.
 
 Physical compaction is log-structured, not a checkpoint rewrite. When one
 active session reaches 2,000 records and its oldest record is 30 days old, a
-throttled pass (at most once per stage per six hours, after the learning
-overlay loads) creates a fresh active session and archives the old one with an
-optimistic tail check. A later pass deletes an inactive session only when
+throttled pass (at most once per learner partition per six hours, after the
+learning overlay loads) creates a fresh active session and archives the old one
+with an optimistic tail check. A later pass deletes an inactive session only when
 nothing in it is still visible: none of its evidence survives the bounded
 window, and none of its card snapshots is the latest snapshot for a card.
 Active sessions are never deleted, so a concurrent writer cannot lose a record;

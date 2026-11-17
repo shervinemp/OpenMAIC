@@ -30,7 +30,7 @@ import { DEFAULT_EVIDENCE_LIMIT } from './evidence';
 import { LEARNING_SESSION_KIND, learningSessionId, type LearningStoreDeps } from './store';
 import { foldLearningRecords, normalizeLearningPayload } from './store-payload';
 
-/** One check per process is enough for a maintenance pass this cheap. */
+/** One maintenance check per learner partition every six hours is plenty. */
 export const LEARNING_COMPACTION_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 /** Rotate an active session once it reaches this size and age. */
