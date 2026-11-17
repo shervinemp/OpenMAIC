@@ -199,6 +199,8 @@ export {
 } from './pdf-retrieval.js';
 export { noopGenerationLogger } from './logger.js';
 export type { GenerationLogger } from './logger.js';
+export { collectLearnerText, detectLanguageDrift, inferTargetLanguage } from './language-drift.js';
+export type { LanguageDriftFinding, LanguageProfile, TextScript } from './language-drift.js';
 export {
   buildCourseContext,
   buildLanguageText,

@@ -78,6 +78,7 @@ import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator.js';
 import { isSlideLikeOutline } from './outline-type.js';
 import { postProcessInteractiveHtml } from './interactive-post-processor.js';
 import { findInteractiveScriptSyntaxFailure } from './interactive-script-validator.js';
+import { collectLearnerText, detectLanguageDrift } from './language-drift.js';
 import {
   blindQuizQuestions,
   quizAnswerDisagreements,
@@ -328,18 +329,67 @@ function buildWidgetOutline(
 /**
  * Step 3.1: Generate content based on outline
  */
-export async function generateSceneContent(
-  outline: SceneOutline,
-  aiCall: AICallFn,
-  options: SceneContentOptions = {},
-): Promise<
+type SceneContentResult =
   | GeneratedSlideContent
   | GeneratedQuizContent
   | GeneratedActivityContent
   | GeneratedInteractiveContent
   | GeneratedPBLContent
-  | null
-> {
+  | null;
+
+/**
+ * Generate one scene's content, then apply the deterministic language gate.
+ *
+ * The gate never calls a model to decide: it counts scripts in the
+ * learner-visible text. Only a definite drift buys one corrective rewrite with
+ * a strengthened directive; if that still drifts, the scene is kept (a usable
+ * lesson beats a missing one) and the finding is recorded for the job model.
+ */
+export async function generateSceneContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  options: SceneContentOptions = {},
+): Promise<SceneContentResult> {
+  const content = await generateSceneContentOnce(outline, aiCall, options);
+  if (!content || !options.languageDirective?.trim()) return content;
+
+  // Interactive widgets are mostly HTML/JS. Their visible prose is small and
+  // the code around it would dominate the script count.
+  if (outline.type === 'interactive') return content;
+
+  const log = options.logger ?? noopGenerationLogger;
+  const drift = detectLanguageDrift(collectLearnerText(content), options.languageDirective);
+  if (!drift) return content;
+
+  log.warn(
+    `Language drift in "${outline.title}": ${drift.finding}; requesting one corrective rewrite.`,
+  );
+  const retry = await generateSceneContentOnce(outline, aiCall, {
+    ...options,
+    languageDirective: `${options.languageDirective.trim()}\n\n${drift.correction}`,
+  });
+  const final = retry ?? content;
+  const remaining = retry
+    ? detectLanguageDrift(collectLearnerText(retry), options.languageDirective)
+    : drift;
+  if (remaining) {
+    recordSceneDepthSummary(outline.id, {
+      reworked: true,
+      attempts: 2,
+      findings: [`language drift: ${remaining.finding}`],
+    });
+    log.warn(
+      `Language drift remains in "${outline.title}" after one rewrite: ${remaining.finding}`,
+    );
+  }
+  return final;
+}
+
+async function generateSceneContentOnce(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  options: SceneContentOptions = {},
+): Promise<SceneContentResult> {
   const log = options.logger ?? noopGenerationLogger;
   const {
     assignedImages,
@@ -3025,7 +3075,61 @@ function buildPBLProjectSummary(outline: SceneOutline, project: PBLProject | und
 /**
  * Step 3.2: Generate Actions based on content and script
  */
+/**
+ * Generate narration/actions, then apply the same deterministic language gate
+ * to the spoken text. A scene whose content is in the course language but
+ * whose narration drifted is just as broken for the learner.
+ */
 export async function generateSceneActions(
+  outline: SceneOutline,
+  content:
+    | GeneratedSlideContent
+    | GeneratedQuizContent
+    | GeneratedActivityContent
+    | GeneratedInteractiveContent
+    | GeneratedPBLContent,
+  aiCall: AICallFn,
+  options: SceneActionsOptions = {},
+): Promise<Action[]> {
+  const actions = await generateSceneActionsOnce(outline, content, aiCall, options);
+  if (
+    actions.length === 0 ||
+    !options.languageDirective?.trim() ||
+    outline.type === 'interactive'
+  ) {
+    return actions;
+  }
+
+  const log = options.logger ?? noopGenerationLogger;
+  const drift = detectLanguageDrift(collectLearnerText(actions), options.languageDirective);
+  if (!drift) return actions;
+
+  log.warn(
+    `Language drift in narration for "${outline.title}": ${drift.finding}; requesting one corrective rewrite.`,
+  );
+  const retry = await generateSceneActionsOnce(outline, content, aiCall, {
+    ...options,
+    languageDirective: `${options.languageDirective.trim()}\n\n${drift.correction}`,
+  });
+  const final = retry.length > 0 ? retry : actions;
+  const remaining =
+    retry.length > 0
+      ? detectLanguageDrift(collectLearnerText(retry), options.languageDirective)
+      : drift;
+  if (remaining) {
+    recordSceneDepthSummary(outline.id, {
+      reworked: true,
+      attempts: 2,
+      findings: [`narration language drift: ${remaining.finding}`],
+    });
+    log.warn(
+      `Narration language drift remains in "${outline.title}" after one rewrite: ${remaining.finding}`,
+    );
+  }
+  return final;
+}
+
+async function generateSceneActionsOnce(
   outline: SceneOutline,
   content:
     | GeneratedSlideContent

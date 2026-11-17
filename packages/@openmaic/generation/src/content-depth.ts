@@ -472,7 +472,7 @@ const EXAMPLE_RE =
  * concrete facts.
  */
 const CONCRETE_NUMBER_RE =
-  /\b\d[\d_,.]*\s*(%|MB|GB|TB|KB|kB|ms|sec|seconds|minutes|GB\/s|MB\/s|x[0-9]*|个|条|万|亿)\b/i;
+  /\b\d[\d_,.]*\s*(%|MB|GB|TB|KB|kB|ms|sec|seconds|minutes|GB\/s|MB\/s|x[0-9]*|个|条|万|亿)/i;
 
 const CODE_ELEMENT_TYPES = new Set(['code', 'latex']);
 
