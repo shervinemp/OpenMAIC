@@ -25,7 +25,12 @@ import type {
   TerminalActivityContent,
   WidgetType,
 } from '@openmaic/dsl';
-import { isWidgetType, normalizeElement, validateActivityContent } from '@openmaic/dsl';
+import {
+  isWidgetType,
+  normalizeConceptTags,
+  normalizeElement,
+  validateActivityContent,
+} from '@openmaic/dsl';
 import {
   COURSE_DEPTH_FLOORS,
   MAX_VISION_IMAGES,
@@ -1778,12 +1783,14 @@ async function generateQuizContent(
             : normalizeQuizAnswer(q as unknown as Record<string, unknown>, options);
       const tolerance = isNumeric ? normalizeNumericTolerance(q.tolerance) : undefined;
       const unit = isNumeric && typeof q.unit === 'string' ? q.unit.trim() || undefined : undefined;
+      const concepts = normalizeConceptTags((q as unknown as Record<string, unknown>).concepts);
       return {
         ...q,
         id: q.id || `q_${nanoid(8)}`,
         options,
         answer,
         hasAnswer: isText ? false : true,
+        concepts,
         ...(isNumeric ? { tolerance, unit } : { tolerance: undefined, unit: undefined }),
         ...(isMatching ? { matches } : { matches: undefined }),
       };

@@ -23,6 +23,8 @@ export interface ExamChoiceQuestion {
   /** Shown after grading. */
   analysis: string;
   points: number;
+  /** 1-4 normalized concept tags this question measures; absent on legacy specs. */
+  concepts?: string[];
 }
 
 /** A constructed-response question graded per rubric by the LLM. */
@@ -35,6 +37,8 @@ export interface ExamFreeResponse {
   maxPoints: number;
   /** Grading guidance fed to the grader in addition to the rubric. */
   commentPrompt?: string;
+  /** 1-4 normalized concept tags this question measures; absent on legacy specs. */
+  concepts?: string[];
 }
 
 /**

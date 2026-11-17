@@ -19,7 +19,7 @@ import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveQuizAnswerVerifier } from '@/lib/server/quiz-verifier';
 import { blindQuizQuestions, quizAnswerDisagreements } from '@openmaic/generation';
-import type { QuizQuestion } from '@openmaic/dsl';
+import { normalizeConceptTags, type QuizQuestion } from '@openmaic/dsl';
 import { parseJsonResponse } from '@/lib/generation/json-repair';
 import type { CourseBlueprint, SceneOutline } from '@/lib/types/generation';
 import type { ExamChoiceQuestion, ExamFreeResponse, ExamKind, ExamSpec } from '@/lib/types/exam';
@@ -38,7 +38,8 @@ export const maxDuration = 300;
 export const MIN_MC_QUESTIONS = 18;
 export const MIN_FR_QUESTIONS = 5;
 
-function coerceChoiceQuestion(raw: unknown, index: number): ExamChoiceQuestion | null {
+/** Exported for the route's unit tests; not part of the public API. */
+export function coerceChoiceQuestion(raw: unknown, index: number): ExamChoiceQuestion | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const options = Array.isArray(r.options) ? r.options : [];
@@ -76,10 +77,12 @@ function coerceChoiceQuestion(raw: unknown, index: number): ExamChoiceQuestion |
     answer: answerValues,
     analysis,
     points: 1,
+    concepts: normalizeConceptTags(r.concepts),
   };
 }
 
-function coerceFreeResponse(raw: unknown, index: number): ExamFreeResponse | null {
+/** Exported for the route's unit tests; not part of the public API. */
+export function coerceFreeResponse(raw: unknown, index: number): ExamFreeResponse | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const prompt = typeof r.prompt === 'string' ? r.prompt.trim() : '';
@@ -118,6 +121,7 @@ function coerceFreeResponse(raw: unknown, index: number): ExamFreeResponse | nul
     sampleAnswer,
     maxPoints,
     commentPrompt: typeof r.commentPrompt === 'string' ? r.commentPrompt : undefined,
+    concepts: normalizeConceptTags(r.concepts),
   };
 }
 
@@ -196,17 +200,18 @@ Write a QUESTION POOL, not a single paper: the course platform draws a different
 Output ONLY JSON:
 {
   "mcQuestions": [
-    { "question": "<scenario/application stem: a situation the learner must reason about, NOT a bare definition>", "options": [{"label":"<answer option one>","value":"A"}, {"label":"...","value":"B"}, {"label":"...","value":"C"}, {"label":"...","value":"D"}], "answer": ["<value of the correct option>"], "analysis": "<why the correct option is right and the best distractor is wrong>" }
+    { "question": "<scenario/application stem: a situation the learner must reason about, NOT a bare definition>", "concepts": ["<1-3 short lowercase concept tags>"], "options": [{"label":"<answer option one>","value":"A"}, {"label":"...","value":"B"}, {"label":"...","value":"C"}, {"label":"...","value":"D"}], "answer": ["<value of the correct option>"], "analysis": "<why the correct option is right and the best distractor is wrong>" }
     // at least ${MIN_MC_QUESTIONS} distinct questions, exactly 4-5 options each, exactly one correct answer, distractors must be plausible common misconceptions
   ],
   "frQuestions": [
-    { "prompt": "<a constructed-response task: design, justify, analyze a case, or critique a claim>", "guidance": ["<2-4 framing pointers that do not give the answer away>"], "rubric": [{"id":"r1","criterion":"<what a strong answer does>","weight":"essential","lookFor":"<the concrete indicator a grader looks for>"}, ...], "sampleAnswer": "<a strong model answer>", "maxPoints": 10, "commentPrompt": "<1-2 sentences of grading guidance beyond the rubric>" }
+    { "prompt": "<a constructed-response task: design, justify, analyze a case, or critique a claim>", "concepts": ["<1-3 short lowercase concept tags>"], "guidance": ["<2-4 framing pointers that do not give the answer away>"], "rubric": [{"id":"r1","criterion":"<what a strong answer does>","weight":"essential","lookFor":"<the concrete indicator a grader looks for>"}, ...], "sampleAnswer": "<a strong model answer>", "maxPoints": 10, "commentPrompt": "<1-2 sentences of grading guidance beyond the rubric>" }
     // at least ${MIN_FR_QUESTIONS} distinct questions; every question needs 3-5 rubric criteria, at least one 'essential'
   ]
 }
 The ${kind === 'midterm' ? 'midterm' : 'final'} form draws ${form.mcCount} MC questions and ${form.frCount} written questions from this pool.
 Rules:
 - Ground every question in the covered material below; no trivia-only recall.
+- Every question must carry "concepts": 1-3 short lowercase tags naming the ideas it measures, reused for the same idea across the pool. Never tag the question format.
 - MC questions must carry real diagnosis: each distractor must encode a specific misconception.
 - The FR tasks must be answerable by a serious student with roughly 8-14 sentences each; do not require data or tools not provided.
 - Do not repeat a stem, scenario, or task; a duplicate wastes pool space and will be rejected.

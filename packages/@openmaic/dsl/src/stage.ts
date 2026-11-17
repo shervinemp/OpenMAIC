@@ -224,6 +224,13 @@ export interface QuizQuestion {
   commentPrompt?: string; // Grading guidance for text questions
   hasAnswer?: boolean; // Whether auto-grading is possible
   points?: number; // Points per question (default 1)
+  /**
+   * 1-4 concept tags naming the ideas this question measures (for example
+   * `recursion`, `base case`). Generation writes them from the scene outline;
+   * the learning loop keys mastery and review by these tags. Normalize with
+   * `normalizeConceptTags` before persisting. Absent on legacy content.
+   */
+  concepts?: string[];
 }
 
 /**
