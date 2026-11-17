@@ -197,6 +197,44 @@ describe('POST /api/generate/exam', () => {
     expect(mocks.callLLM).toHaveBeenCalledTimes(1);
   });
 
+  it('links pool items to covered teaching outlines conservatively', async () => {
+    const rawExam = {
+      mcQuestions: Array.from({ length: 18 }, (_, i) => ({
+        question: `Linked scenario ${i + 1}`,
+        concepts: i === 0 ? ['lakehouse'] : undefined,
+        options: [
+          { label: 'opt A', value: 'A' },
+          { label: 'opt B', value: 'B' },
+          { label: 'opt C', value: 'C' },
+          { label: 'opt D', value: 'D' },
+        ],
+        answer: ['A'],
+        analysis: 'Because A is right.',
+      })),
+      frQuestions: Array.from({ length: 5 }, (_, i) => ({
+        prompt: `Linked written task ${i + 1}`,
+        concepts: i === 0 ? ['lakehouse'] : undefined,
+        rubric: [
+          { id: `r${i}a`, criterion: 'one', weight: 'essential', lookFor: 'one' },
+          { id: `r${i}b`, criterion: 'two', weight: 'important', lookFor: 'two' },
+        ],
+        sampleAnswer: 'A strong answer.',
+        maxPoints: 10,
+      })),
+    };
+    mocks.callLLM.mockResolvedValue({ text: JSON.stringify(rawExam) });
+
+    const res = await POST(post(genBody()) as never);
+    expect(res.status).toBe(200);
+    const bodyText = await (res as unknown as Response).text();
+    const j = JSON.parse(bodyText) as { exam?: ExamSpec };
+
+    expect(j.exam?.mcQuestions[0].remediationOutlineId).toBe('s1');
+    expect(j.exam?.mcQuestions[1].remediationOutlineId).toBeUndefined();
+    expect(j.exam?.frQuestions[0].remediationOutlineId).toBe('s1');
+    expect(j.exam?.frQuestions[1].remediationOutlineId).toBeUndefined();
+  });
+
   it('does not count duplicate stems toward the pool', async () => {
     const duplicateExam = {
       mcQuestions: Array.from({ length: 18 }, () => ({

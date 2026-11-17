@@ -25,6 +25,12 @@ export interface ExamChoiceQuestion {
   points: number;
   /** 1-4 normalized concept tags this question measures; absent on legacy specs. */
   concepts?: string[];
+  /**
+   * Teaching outline that covers this item's concepts, when one matched
+   * conservatively at generation time. The review screen resolves it to a live
+   * scene; absent means no defensible link.
+   */
+  remediationOutlineId?: string;
 }
 
 /** A constructed-response question graded per rubric by the LLM. */
@@ -39,6 +45,12 @@ export interface ExamFreeResponse {
   commentPrompt?: string;
   /** 1-4 normalized concept tags this question measures; absent on legacy specs. */
   concepts?: string[];
+  /**
+   * Teaching outline that covers this item's concepts, when one matched
+   * conservatively at generation time. The review screen resolves it to a live
+   * scene; absent means no defensible link.
+   */
+  remediationOutlineId?: string;
 }
 
 /**

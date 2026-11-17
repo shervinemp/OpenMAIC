@@ -115,7 +115,10 @@ into one card.
   `ExamSpec.generatedAt` it was drawn from, so a regenerated pool cannot map
   old answers onto recycled question ids. Legacy attempts are not backfilled.
 - Exam items do not create review cards yet: a pool item has no owning scene to
-  send the learner back to. Their evidence still feeds concept mastery.
+  send the learner back to. Their evidence still feeds concept mastery. A pool
+  item whose concepts match a covered teaching outline conservatively gets a
+  `remediationOutlineId`, and exam review offers a jump to that live lesson; the
+  link never creates a review card.
 - Ungraded items become evidence but never review cards.
 - Retagging a question refreshes the card's concepts without changing its
   schedule.
@@ -137,6 +140,5 @@ into one card.
 
 ## Next
 
-1. Add remediation links to exam review (the pool has no single scene today).
-2. Add a placement / adaptive-routing decision on top of real evidence.
-3. Compact very old evidence records in the runtime store.
+1. Add a placement / adaptive-routing decision on top of real evidence.
+2. Compact very old evidence records in the runtime store.

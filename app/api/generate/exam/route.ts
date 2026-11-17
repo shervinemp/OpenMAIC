@@ -18,7 +18,11 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveQuizAnswerVerifier } from '@/lib/server/quiz-verifier';
-import { blindQuizQuestions, quizAnswerDisagreements } from '@openmaic/generation';
+import {
+  attachExamRemediation,
+  blindQuizQuestions,
+  quizAnswerDisagreements,
+} from '@openmaic/generation';
 import {
   normalizeConceptTags,
   normalizeOptionNote,
@@ -195,6 +199,8 @@ export async function POST(req: NextRequest) {
     }
     const examKind: ExamKind = kind;
 
+    const outlines: SceneOutline[] = Array.isArray(coveredOutlines) ? coveredOutlines : [];
+
     const {
       model: languageModel,
       modelInfo,
@@ -202,7 +208,7 @@ export async function POST(req: NextRequest) {
       thinkingConfig,
     } = await resolveModelFromRequest(req, body, 'exam-generation');
 
-    const digest = (Array.isArray(coveredOutlines) ? coveredOutlines : [])
+    const digest = outlines
       .slice(0, 400)
       .map(
         (o) =>
@@ -269,17 +275,23 @@ ${languageDirective ? `- Language directive: ${languageDirective}` : '- Write al
       if (!parsed) return null;
       const mcRaw = Array.isArray(parsed.mcQuestions) ? parsed.mcQuestions : [];
       const frRaw = Array.isArray(parsed.frQuestions) ? parsed.frQuestions : [];
-      const mcQuestions = dedupeBy(
-        mcRaw
-          .map((q: unknown, i: number) => coerceChoiceQuestion(q, i))
-          .filter(Boolean) as ExamChoiceQuestion[],
-        (question) => question.question,
+      const mcQuestions = attachExamRemediation(
+        dedupeBy(
+          mcRaw
+            .map((q: unknown, i: number) => coerceChoiceQuestion(q, i))
+            .filter(Boolean) as ExamChoiceQuestion[],
+          (question) => question.question,
+        ),
+        outlines,
       );
-      const frQuestions = dedupeBy(
-        frRaw
-          .map((q: unknown, i: number) => coerceFreeResponse(q, i))
-          .filter(Boolean) as ExamFreeResponse[],
-        (question) => question.prompt,
+      const frQuestions = attachExamRemediation(
+        dedupeBy(
+          frRaw
+            .map((q: unknown, i: number) => coerceFreeResponse(q, i))
+            .filter(Boolean) as ExamFreeResponse[],
+          (question) => question.prompt,
+        ),
+        outlines,
       );
       const blueprintUnits = blueprint.units?.length ?? 0;
       const from = 0;

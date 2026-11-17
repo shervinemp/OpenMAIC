@@ -17,6 +17,7 @@ import type { CourseBlueprint } from '@/lib/types/generation';
 import type { SceneOutline } from '@/lib/types/generation';
 import {
   BookCheck,
+  BookOpenText,
   CheckCircle2,
   CircleDot,
   Clock,
@@ -402,14 +403,22 @@ export default function ExamOverlay({
     [exams],
   );
 
-  if (!open) return null;
-
-  const close = () => {
+  const close = useCallback(() => {
     onOpenChange(false);
     deadlineRef.current = null;
     setRemainingSec(null);
-    if (phase !== 'list') setPhase('list');
-  };
+    setPhase((current) => (current === 'list' ? current : 'list'));
+  }, [onOpenChange]);
+
+  const reviewLesson = useCallback(
+    (sceneId: string) => {
+      useStageStore.getState().setCurrentSceneId(sceneId);
+      close();
+    },
+    [close],
+  );
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-[90] bg-zinc-950/70 backdrop-blur-md" role="presentation">
@@ -587,7 +596,12 @@ export default function ExamOverlay({
           )}
 
           {phase === 'reviewing' && reviewing && reviewVariant && activeSpec && (
-            <ExamReview spec={activeSpec} variant={reviewVariant} attempt={reviewing} />
+            <ExamReview
+              spec={activeSpec}
+              variant={reviewVariant}
+              attempt={reviewing}
+              onReviewLesson={reviewLesson}
+            />
           )}
         </div>
       </div>
@@ -981,14 +995,40 @@ function ExamTaking({
   );
 }
 
+function RemediationLink({
+  outlineId,
+  onReviewLesson,
+}: {
+  outlineId?: string;
+  onReviewLesson: (sceneId: string) => void;
+}) {
+  const { t } = useI18n();
+  const scenes = useStageStore((state) => state.scenes);
+  if (!outlineId) return null;
+  const scene = scenes.find((entry) => entry.outlineId === outlineId);
+  if (!scene) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => onReviewLesson(scene.id)}
+      className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-violet-200 px-3 py-1 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-50 dark:border-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/40"
+    >
+      <BookOpenText className="h-3.5 w-3.5" />
+      {t('quiz.reviewLesson')}: {scene.title}
+    </button>
+  );
+}
+
 function ExamReview({
   spec,
   variant,
   attempt,
+  onReviewLesson,
 }: {
   spec: ExamSpec;
   variant: ExamVariant;
   attempt: ExamAttempt;
+  onReviewLesson: (sceneId: string) => void;
 }) {
   const { t } = useI18n();
   const showSectionTimes =
@@ -1085,6 +1125,7 @@ function ExamReview({
             {q.analysis && (
               <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">{q.analysis}</p>
             )}
+            <RemediationLink outlineId={q.remediationOutlineId} onReviewLesson={onReviewLesson} />
           </div>
         );
       })}
@@ -1142,6 +1183,7 @@ function ExamReview({
                 </p>
               </details>
             )}
+            <RemediationLink outlineId={fr.remediationOutlineId} onReviewLesson={onReviewLesson} />
           </div>
         );
       })}
