@@ -460,14 +460,22 @@
       "type": {
         "single": "Один выбор",
         "multiple": "Несколько вариантов",
-        "short_answer": "Краткий ответ"
+        "short_answer": "Краткий ответ",
+        "numeric": "Числовой"
       },
       "shortAnswerGradingNote": "Краткие ответы всегда оцениваются ИИ по указаниям ниже.",
+      "numericAnswerLabel": "Правильное значение",
+      "numericAnswerPlaceholder": "напр. 3.14",
+      "numericToleranceLabel": "Допуск (±)",
+      "numericUnitLabel": "Единица",
+      "numericUnitPlaceholder": "напр. м",
+      "numericHint": "Ответы в пределах ±допуска считаются верными. Единица измерения только отображается.",
       "hint": {
         "emptyText": "Вопрос {{n}}: добавьте текст вопроса",
         "fewOptions": "Вопрос {{n}}: нужно не менее двух вариантов",
         "emptyOption": "Вопрос {{n}}: есть пустой вариант",
-        "noCorrect": "Вопрос {{n}}: отметьте правильный ответ"
+        "noCorrect": "Вопрос {{n}}: отметьте правильный ответ",
+        "badNumber": "Вопрос {{n}}: введите корректный числовой ответ"
       }
     },
     "cue": {
@@ -737,6 +745,9 @@
     "next": "Далее",
     "practiceComplete": "Практика завершена",
     "practiceNote": "Практика не учитывается в оценке.",
+    "numeric": "Числовой",
+    "numericPlaceholder": "Введите число...",
+    "expectedAnswer": "Ожидаемый ответ:",
     "answering": "В процессе",
     "submitAnswers": "Отправить ответы",
     "aiGrading": "AI проверяет...",
@@ -1129,6 +1140,7 @@
     "quizTypeSingle": "Один ответ",
     "quizTypeMultiple": "Несколько ответов",
     "quizTypeText": "Краткий ответ",
+    "quizTypeNumeric": "Числовой",
     "alwaysReviewOutlines": "Всегда проверять план перед генерацией",
     "outlineEditorEyebrow": "План, сгенерированный ИИ",
     "outlineEditorStreamingProgress": "Генерация · готово сцен: {{count}}",

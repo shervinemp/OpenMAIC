@@ -460,14 +460,22 @@
       "type": {
         "single": "اختيار واحد",
         "multiple": "اختيار متعدد",
-        "short_answer": "إجابة قصيرة"
+        "short_answer": "إجابة قصيرة",
+        "numeric": "رقمي"
       },
       "shortAnswerGradingNote": "تُقيّم الإجابات القصيرة دائمًا بواسطة الذكاء الاصطناعي وفق إرشادات التصحيح أدناه.",
+      "numericAnswerLabel": "القيمة الصحيحة",
+      "numericAnswerPlaceholder": "مثال: 3.14",
+      "numericToleranceLabel": "السماحية (±)",
+      "numericUnitLabel": "الوحدة",
+      "numericUnitPlaceholder": "مثال: m",
+      "numericHint": "تُحتسب الإجابات ضمن ±السماحية صحيحة. الوحدة للعرض فقط.",
       "hint": {
         "emptyText": "السؤال {{n}}: أضف نص السؤال",
         "fewOptions": "السؤال {{n}}: يلزم خياران على الأقل",
         "emptyOption": "السؤال {{n}}: يوجد خيار فارغ",
-        "noCorrect": "السؤال {{n}}: حدّد الإجابة الصحيحة"
+        "noCorrect": "السؤال {{n}}: حدّد الإجابة الصحيحة",
+        "badNumber": "السؤال {{n}}: أدخل إجابة رقمية صالحة"
       }
     },
     "cue": {
@@ -737,6 +745,9 @@
     "next": "التالي",
     "practiceComplete": "اكتمل التدريب",
     "practiceNote": "لا تُحتسب محاولات التدريب في درجتك.",
+    "numeric": "رقمي",
+    "numericPlaceholder": "أدخل رقمًا...",
+    "expectedAnswer": "الإجابة المتوقعة:",
     "answering": "قيد الإجابة",
     "submitAnswers": "إرسال الإجابات",
     "aiGrading": "الذكاء الاصطناعي يصحح...",
@@ -1129,6 +1140,7 @@
     "quizTypeSingle": "اختيار واحد",
     "quizTypeMultiple": "اختيارات متعددة",
     "quizTypeText": "إجابة قصيرة",
+    "quizTypeNumeric": "رقمي",
     "alwaysReviewOutlines": "مراجعة المخططات دائمًا قبل التوليد",
     "outlineEditorEyebrow": "مخطط من توليد الذكاء الاصطناعي",
     "outlineEditorStreamingProgress": "جارٍ التوليد · {{count}} مشاهد جاهزة",

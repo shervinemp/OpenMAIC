@@ -460,14 +460,22 @@
       "type": {
         "single": "Choix unique",
         "multiple": "Choix multiple",
-        "short_answer": "Réponse courte"
+        "short_answer": "Réponse courte",
+        "numeric": "Numérique"
       },
       "shortAnswerGradingNote": "Les réponses courtes sont toujours corrigées par l’IA à partir des consignes ci-dessous.",
+      "numericAnswerLabel": "Valeur correcte",
+      "numericAnswerPlaceholder": "p. ex. 3,14",
+      "numericToleranceLabel": "Tolérance (±)",
+      "numericUnitLabel": "Unité",
+      "numericUnitPlaceholder": "p. ex. m",
+      "numericHint": "Les réponses dans la tolérance ± sont correctes. L'unité est affichée uniquement.",
       "hint": {
         "emptyText": "Question {{n}} : ajoutez l’énoncé",
         "fewOptions": "Question {{n}} : ajoutez au moins deux options",
         "emptyOption": "Question {{n}} : le libellé d’une option est vide",
-        "noCorrect": "Question {{n}} : indiquez la bonne réponse"
+        "noCorrect": "Question {{n}} : indiquez la bonne réponse",
+        "badNumber": "Question {{n}} : saisissez une réponse numérique valide"
       }
     },
     "cue": {
@@ -737,6 +745,9 @@
     "next": "Suivant",
     "practiceComplete": "Entraînement terminé",
     "practiceNote": "Les tentatives d'entraînement ne comptent pas dans la note.",
+    "numeric": "Numérique",
+    "numericPlaceholder": "Saisir un nombre...",
+    "expectedAnswer": "Réponse attendue :",
     "answering": "En cours",
     "submitAnswers": "Valider mes réponses",
     "aiGrading": "Correction par l’IA…",
@@ -1129,6 +1140,7 @@
     "quizTypeSingle": "Choix unique",
     "quizTypeMultiple": "Choix multiple",
     "quizTypeText": "Réponse courte",
+    "quizTypeNumeric": "Numérique",
     "alwaysReviewOutlines": "Toujours vérifier les plans avant la génération",
     "outlineEditorEyebrow": "Plan généré par l’IA",
     "outlineEditorStreamingProgress": "En cours · {{count}} scènes prêtes",

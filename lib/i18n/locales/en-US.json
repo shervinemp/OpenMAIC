@@ -460,14 +460,22 @@
       "type": {
         "single": "Single choice",
         "multiple": "Multiple choice",
-        "short_answer": "Short answer"
+        "short_answer": "Short answer",
+        "numeric": "Numeric"
       },
       "shortAnswerGradingNote": "Short answers are always graded by AI from the guidance below.",
+      "numericAnswerLabel": "Correct value",
+      "numericAnswerPlaceholder": "e.g. 3.14",
+      "numericToleranceLabel": "Tolerance (±)",
+      "numericUnitLabel": "Unit",
+      "numericUnitPlaceholder": "e.g. m",
+      "numericHint": "Answers within ±tolerance count as correct. The unit is display-only.",
       "hint": {
         "emptyText": "Question {{n}}: add question text",
         "fewOptions": "Question {{n}}: add at least two options",
         "emptyOption": "Question {{n}}: an option label is empty",
-        "noCorrect": "Question {{n}}: mark a correct answer"
+        "noCorrect": "Question {{n}}: mark a correct answer",
+        "badNumber": "Question {{n}}: enter a valid numeric answer"
       }
     },
     "cue": {
@@ -737,6 +745,9 @@
     "next": "Next",
     "practiceComplete": "Practice complete",
     "practiceNote": "Practice attempts are not saved to your grade.",
+    "numeric": "Numeric",
+    "numericPlaceholder": "Enter a number...",
+    "expectedAnswer": "Expected answer:",
     "answering": "In Progress",
     "submitAnswers": "Submit Answers",
     "aiGrading": "AI is grading...",
@@ -1129,6 +1140,7 @@
     "quizTypeSingle": "Single choice",
     "quizTypeMultiple": "Multiple choice",
     "quizTypeText": "Short answer",
+    "quizTypeNumeric": "Numeric",
     "alwaysReviewOutlines": "Always review outlines before generation",
     "outlineEditorEyebrow": "AI-generated outline",
     "outlineEditorStreamingProgress": "Streaming · {{count}} scenes ready",

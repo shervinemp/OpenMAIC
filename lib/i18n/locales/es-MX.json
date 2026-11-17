@@ -460,14 +460,22 @@
       "type": {
         "single": "Opción única",
         "multiple": "Opción múltiple",
-        "short_answer": "Respuesta corta"
+        "short_answer": "Respuesta corta",
+        "numeric": "Numérico"
       },
       "shortAnswerGradingNote": "Las respuestas cortas siempre las califica la IA según la guía de abajo.",
+      "numericAnswerLabel": "Valor correcto",
+      "numericAnswerPlaceholder": "p. ej. 3.14",
+      "numericToleranceLabel": "Tolerancia (±)",
+      "numericUnitLabel": "Unidad",
+      "numericUnitPlaceholder": "p. ej. m",
+      "numericHint": "Las respuestas dentro de ±tolerancia cuentan como correctas. La unidad solo se muestra.",
       "hint": {
         "emptyText": "Pregunta {{n}}: agrega el texto de la pregunta",
         "fewOptions": "Pregunta {{n}}: agrega al menos dos opciones",
         "emptyOption": "Pregunta {{n}}: hay una opción sin texto",
-        "noCorrect": "Pregunta {{n}}: marca una respuesta correcta"
+        "noCorrect": "Pregunta {{n}}: marca una respuesta correcta",
+        "badNumber": "Pregunta {{n}}: introduce una respuesta numérica válida"
       }
     },
     "cue": {
@@ -737,6 +745,9 @@
     "next": "Siguiente",
     "practiceComplete": "Práctica completada",
     "practiceNote": "Las prácticas no se guardan en tu calificación.",
+    "numeric": "Numérico",
+    "numericPlaceholder": "Introduce un número...",
+    "expectedAnswer": "Respuesta esperada:",
     "answering": "En curso",
     "submitAnswers": "Enviar respuestas",
     "aiGrading": "La IA está calificando...",
@@ -1129,6 +1140,7 @@
     "quizTypeSingle": "Opción única",
     "quizTypeMultiple": "Opción múltiple",
     "quizTypeText": "Respuesta corta",
+    "quizTypeNumeric": "Numérico",
     "alwaysReviewOutlines": "Siempre revisar los esquemas antes de generar",
     "outlineEditorEyebrow": "Esquema generado por IA",
     "outlineEditorStreamingProgress": "Streaming · {{count}} escenas listas",

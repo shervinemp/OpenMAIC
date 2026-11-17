@@ -32,6 +32,27 @@ const measured: QuizLayoutProbe = {
 };
 
 describe('Quiz question-list preparation', () => {
+  it('projects a numeric question without options or the answer key', () => {
+    const [projected] = prepareQuizQuestionList(
+      scene([
+        {
+          id: 'numeric',
+          type: 'numeric',
+          question: 'How many centimeters?',
+          answer: ['42'],
+          tolerance: 0.5,
+          unit: 'cm',
+          analysis: 'SECRET_ANALYSIS',
+        },
+      ]),
+    );
+    expect(projected).toEqual({
+      id: 'numeric',
+      type: 'numeric',
+      question: 'How many centimeters?',
+    });
+  });
+
   it('whitelists only learner-visible fields across all three question types', () => {
     const questions = prepareQuizQuestionList(
       scene([

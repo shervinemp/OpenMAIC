@@ -117,6 +117,11 @@ export function buildQuizHints(
       issue = { severity: 'suggestion', key: 'emptyOption' };
     } else if (choice && (q.answer?.length ?? 0) === 0) {
       issue = { severity: 'warning', key: 'noCorrect' };
+    } else if (q.type === 'numeric') {
+      const key = q.answer?.[0];
+      if (key === undefined || key.trim() === '' || !Number.isFinite(Number(key))) {
+        issue = { severity: 'warning', key: 'badNumber' };
+      }
     }
     if (issue) {
       hints.push({

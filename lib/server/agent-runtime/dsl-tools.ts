@@ -447,6 +447,8 @@ function validationError(scene: Scene): string | null {
         'question',
         'options',
         'answer',
+        'tolerance',
+        'unit',
         'analysis',
         'commentPrompt',
         'hasAnswer',
@@ -455,7 +457,7 @@ function validationError(scene: Scene): string | null {
       const unknown = Object.keys(question).filter((key) => !allowed.includes(key));
       if (unknown.length)
         return `/content/questions/${index}: unknown field(s) ${unknown.join(', ')}`;
-      if (!['single', 'multiple', 'short_answer'].includes(String(question.type))) {
+      if (!['single', 'multiple', 'short_answer', 'numeric'].includes(String(question.type))) {
         return `/content/questions/${index}/type: unknown quiz question type`;
       }
       if (typeof question.id !== 'string' || typeof question.question !== 'string') {
@@ -495,6 +497,12 @@ function validationError(scene: Scene): string | null {
       }
       if (question.hasAnswer !== undefined && typeof question.hasAnswer !== 'boolean') {
         return `/content/questions/${index}/hasAnswer: expected boolean`;
+      }
+      if (question.tolerance !== undefined && typeof question.tolerance !== 'number') {
+        return `/content/questions/${index}/tolerance: expected number`;
+      }
+      if (question.unit !== undefined && typeof question.unit !== 'string') {
+        return `/content/questions/${index}/unit: expected string`;
       }
       if (question.points !== undefined && typeof question.points !== 'number') {
         return `/content/questions/${index}/points: expected number`;

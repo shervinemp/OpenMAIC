@@ -195,10 +195,17 @@ export interface QuizOption {
 
 export interface QuizQuestion {
   id: string;
-  type: 'single' | 'multiple' | 'short_answer';
+  type: 'single' | 'multiple' | 'short_answer' | 'numeric';
   question: string;
   options?: QuizOption[];
-  answer?: string[]; // Correct answer values: ["A"], ["A","C"], or undefined for text
+  answer?: string[]; // Correct answer values: ["A"], ["A","C"], a numeric string, or undefined for text
+  /**
+   * Absolute tolerance for a `numeric` answer (default 0). Ignored by every
+   * other type. Grading accepts any submitted value within ±tolerance.
+   */
+  tolerance?: number;
+  /** Optional unit label shown beside a `numeric` input (e.g. "cm"). */
+  unit?: string;
   analysis?: string; // Explanation shown after grading
   commentPrompt?: string; // Grading guidance for text questions
   hasAnswer?: boolean; // Whether auto-grading is possible

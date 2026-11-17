@@ -162,7 +162,7 @@ export const QuizQuestionListOptionSchema = z.object({
  */
 export const QuizQuestionListQuestionSchema = z.object({
   id: z.string(),
-  type: z.enum(['single', 'multiple', 'short_answer']),
+  type: z.enum(['single', 'multiple', 'short_answer', 'numeric']),
   question: z.string(),
   options: z.array(QuizQuestionListOptionSchema).optional(),
 });

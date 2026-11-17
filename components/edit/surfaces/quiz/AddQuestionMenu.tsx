@@ -1,6 +1,6 @@
 'use client';
 
-import { CircleDot, ListChecks, PencilLine, type LucideIcon } from 'lucide-react';
+import { Calculator, CircleDot, ListChecks, PencilLine, type LucideIcon } from 'lucide-react';
 import { PopoverClose } from '@/components/ui/popover';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { QuizQuestionType } from '@/lib/types/stage';
@@ -24,6 +24,12 @@ const TYPES: { type: QuizQuestionType; labelKey: string; Icon: LucideIcon; tint:
     labelKey: 'edit.quiz.type.short_answer',
     Icon: PencilLine,
     tint: 'bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300',
+  },
+  {
+    type: 'numeric',
+    labelKey: 'edit.quiz.type.numeric',
+    Icon: Calculator,
+    tint: 'bg-cyan-100 text-cyan-600 dark:bg-cyan-500/15 dark:text-cyan-300',
   },
 ];
 

@@ -460,14 +460,22 @@
       "type": {
         "single": "Chọn một đáp án",
         "multiple": "Chọn nhiều đáp án",
-        "short_answer": "Trả lời ngắn"
+        "short_answer": "Trả lời ngắn",
+        "numeric": "Số"
       },
       "shortAnswerGradingNote": "Câu trả lời ngắn luôn do AI chấm dựa trên hướng dẫn bên dưới.",
+      "numericAnswerLabel": "Giá trị đúng",
+      "numericAnswerPlaceholder": "ví dụ: 3.14",
+      "numericToleranceLabel": "Sai số (±)",
+      "numericUnitLabel": "Đơn vị",
+      "numericUnitPlaceholder": "ví dụ: m",
+      "numericHint": "Câu trả lời trong khoảng ±sai số được tính đúng. Đơn vị chỉ để hiển thị.",
       "hint": {
         "emptyText": "Câu {{n}}: hãy nhập nội dung câu hỏi",
         "fewOptions": "Câu {{n}}: cần ít nhất hai phương án",
         "emptyOption": "Câu {{n}}: có một phương án còn để trống",
-        "noCorrect": "Câu {{n}}: hãy đánh dấu đáp án đúng"
+        "noCorrect": "Câu {{n}}: hãy đánh dấu đáp án đúng",
+        "badNumber": "Câu {{n}}: nhập một đáp án số hợp lệ"
       }
     },
     "cue": {
@@ -737,6 +745,9 @@
     "next": "Tiếp theo",
     "practiceComplete": "Hoàn thành luyện tập",
     "practiceNote": "Luyện tập không được tính vào điểm của bạn.",
+    "numeric": "Số",
+    "numericPlaceholder": "Nhập một số...",
+    "expectedAnswer": "Đáp án mong đợi:",
     "answering": "Đang làm",
     "submitAnswers": "Nộp bài",
     "aiGrading": "AI đang chấm…",
@@ -1121,6 +1132,7 @@
     "quizTypeSingle": "Chọn một đáp án",
     "quizTypeMultiple": "Chọn nhiều đáp án",
     "quizTypeText": "Trả lời ngắn",
+    "quizTypeNumeric": "Số",
     "alwaysReviewOutlines": "Luôn xem lại đề cương trước khi tạo",
     "outlineEditorEyebrow": "Đề cương do AI tạo",
     "outlineEditorStreamingProgress": "Đang nhận · {{count}} cảnh đã xong",

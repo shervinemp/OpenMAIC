@@ -69,6 +69,21 @@ export function QuizRenderer({ content, mode, sceneId: _sceneId }: QuizRendererP
                   onChange={(e) => handleAnswerChange(question.id, e.target.value)}
                 />
               )}
+              {question.type === 'numeric' && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="w-full p-2 border rounded"
+                    placeholder="Enter a number..."
+                    value={answers[question.id] || ''}
+                    onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+                  />
+                  {question.unit && (
+                    <span className="text-sm text-muted-foreground">{question.unit}</span>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}

@@ -561,6 +561,82 @@ function ShortAnswerQuestion({
   );
 }
 
+function NumericQuestion({
+  question,
+  index,
+  value,
+  onChange,
+  disabled,
+  result,
+}: {
+  question: QuizQuestion;
+  index: number;
+  value?: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  result?: QuestionResult;
+}) {
+  const { t } = useI18n();
+  const isReview = !!result;
+  const unit = question.unit?.trim();
+  const expected = question.answer?.[0];
+  const tolerance = Number(question.tolerance);
+
+  return (
+    <QuestionCard question={question} index={index} result={result}>
+      {!isReview ? (
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            inputMode="decimal"
+            value={value ?? ''}
+            onChange={(event) => onChange(event.target.value)}
+            disabled={disabled}
+            placeholder={t('quiz.numericPlaceholder')}
+            className="w-full rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800/50 p-3 text-sm text-gray-700 dark:text-gray-200 focus:outline-none focus:border-violet-300 dark:focus:border-violet-600 focus:ring-2 focus:ring-violet-100 dark:focus:ring-violet-900/50 transition-all disabled:bg-gray-50 dark:disabled:bg-gray-800 disabled:text-gray-500"
+          />
+          {unit && (
+            <span className="shrink-0 text-sm font-medium text-gray-500 dark:text-gray-400">
+              {unit}
+            </span>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300">
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">{t('quiz.yourAnswer')}</p>
+            {value ? (
+              <span className="font-mono">
+                {value}
+                {unit ? ` ${unit}` : ''}
+              </span>
+            ) : (
+              <span className="text-gray-400 dark:text-gray-500 italic">
+                {t('quiz.notAnswered')}
+              </span>
+            )}
+          </div>
+          <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 text-sm text-emerald-700 dark:text-emerald-300">
+            <p className="text-xs text-emerald-600/70 dark:text-emerald-400/70 mb-1">
+              {t('quiz.expectedAnswer')}
+            </p>
+            <span className="font-mono">
+              {expected === undefined ? '—' : expected}
+              {expected !== undefined && unit ? ` ${unit}` : ''}
+            </span>
+            {expected !== undefined && Number.isFinite(tolerance) && tolerance > 0 && (
+              <span className="ml-2 text-xs text-emerald-600/70 dark:text-emerald-400/70">
+                ± {tolerance}
+                {unit ? ` ${unit}` : ''}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </QuestionCard>
+  );
+}
+
 function QuestionCard({
   question,
   index,
@@ -636,7 +712,9 @@ function QuestionCard({
                 ? t('quiz.singleChoice')
                 : question.type === 'multiple'
                   ? t('quiz.multipleChoice')
-                  : t('quiz.shortAnswer')}
+                  : question.type === 'numeric'
+                    ? t('quiz.numeric')
+                    : t('quiz.shortAnswer')}
               {' · '}
               {pts} {t('quiz.pointsSuffix')}
             </p>
@@ -986,6 +1064,16 @@ export function QuizPractice({
             result={currentResult ?? undefined}
           />
         )}
+        {question?.type === 'numeric' && (
+          <NumericQuestion
+            question={question}
+            index={index}
+            value={answer as string | undefined}
+            onChange={(value) => setAnswers((previous) => ({ ...previous, [question.id]: value }))}
+            disabled={!!currentResult}
+            result={currentResult ?? undefined}
+          />
+        )}
         {question?.type === 'short_answer' && (
           <ShortAnswerQuestion
             question={question}
@@ -1326,6 +1414,17 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                     />
                   );
                 }
+                if (q.type === 'numeric') {
+                  return (
+                    <NumericQuestion
+                      key={q.id}
+                      question={q}
+                      index={i}
+                      value={answers[q.id] as string | undefined}
+                      onChange={(v) => handleSetAnswer(q.id, v)}
+                    />
+                  );
+                }
                 return (
                   <ShortAnswerQuestion
                     key={q.id}
@@ -1441,6 +1540,19 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                       question={q}
                       index={i}
                       value={answers[q.id] as string[] | undefined}
+                      onChange={() => {}}
+                      disabled
+                      result={r}
+                    />
+                  );
+                }
+                if (q.type === 'numeric') {
+                  return (
+                    <NumericQuestion
+                      key={q.id}
+                      question={q}
+                      index={i}
+                      value={answers[q.id] as string | undefined}
                       onChange={() => {}}
                       disabled
                       result={r}

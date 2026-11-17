@@ -307,7 +307,7 @@ Rules:
       "quizConfig": {
         "questionCount": 2,
         "difficulty": "medium",
-        "questionTypes": ["single", "multiple"]
+        "questionTypes": ["single", "multiple", "numeric"]
       }
     }
   ]
@@ -344,9 +344,11 @@ Rules:
 {
   "questionCount": 2,
   "difficulty": "easy" | "medium" | "hard",
-  "questionTypes": ["single", "multiple", "short_answer"]
+  "questionTypes": ["single", "multiple", "short_answer", "numeric"]
 }
 ```
+
+`numeric` questions ask for one computed number (with an optional tolerance and unit); use them for calculations, measurements, dates and counts.
 
 ### interactiveConfig Structure
 

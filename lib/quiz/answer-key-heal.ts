@@ -21,7 +21,7 @@ import type { QuizQuestion } from '@/lib/types/stage';
  * left exactly as stored. Returns the new answer, or null for no change.
  */
 export function healedAnswerKey(question: QuizQuestion): string[] | null {
-  if (question.type === 'short_answer') return null;
+  if (question.type !== 'single' && question.type !== 'multiple') return null;
   const options = question.options ?? [];
   const keys = Array.isArray(question.answer) ? question.answer : [];
   if (options.length === 0 || keys.length === 0) return null;

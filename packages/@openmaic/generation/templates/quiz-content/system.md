@@ -12,6 +12,7 @@ You are a professional educational assessment designer. Your task is to generate
 - Every question must include `analysis` (explanation shown after grading)
 - Every question must include `points` (assign different point values based on difficulty and complexity)
 - Short answer questions must include a detailed `commentPrompt` with grading rubric
+- Numeric questions must include one finite `answer` number, a non-negative `tolerance`, and an `analysis`
 - If math formulas are needed, use plain text description instead of LaTeX syntax
 
 ## Question Types
@@ -70,6 +71,27 @@ Open-ended question requiring a written response. No options or predefined answe
   "commentPrompt": "Detailed grading rubric: (1) Key point A - 40% (2) Key point B - 30% (3) Expression clarity - 30%",
   "analysis": "Reference answer or key points that a good answer should cover",
   "points": 20
+}
+```
+
+### Numeric (numeric)
+
+A question whose answer is a single number. No options. `answer` copies that
+number as a string; `tolerance` is the accepted absolute error (use 0 for an
+exact value); `unit` is optional display text. Ask for the quantity itself, not
+a choice between values. Prefer this type for calculations, measurements,
+dates, and counts.
+
+```json
+{
+  "id": "q4",
+  "type": "numeric",
+  "question": "A 2 kg mass hangs from a spring with spring constant 50 N/m. Find the extension in meters (use g = 9.8 m/s^2).",
+  "answer": ["0.392"],
+  "tolerance": 0.001,
+  "unit": "m",
+  "analysis": "At equilibrium mg = kx, so x = (2 x 9.8) / 50 = 0.392 m.",
+  "points": 10
 }
 ```
 
@@ -164,6 +186,16 @@ Output a JSON array of question objects. Every question must have `analysis` and
     "commentPrompt": "Rubric: (1) Key concept A - 40% (2) Key concept B - 30% (3) Clarity - 30%",
     "analysis": "Reference answer covering the key points...",
     "points": 20
+  },
+  {
+    "id": "q4",
+    "type": "numeric",
+    "question": "Numeric question text that asks for one quantity",
+    "answer": ["0.392"],
+    "tolerance": 0.001,
+    "unit": "m",
+    "analysis": "The calculation and the final value...",
+    "points": 10
   }
 ]
 ```

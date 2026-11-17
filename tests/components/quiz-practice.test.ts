@@ -60,9 +60,9 @@ afterEach(() => {
   container.remove();
 });
 
-function renderPractice(onExit: () => void = () => {}) {
+function renderPractice(questions: QuizQuestion[] = [question], onExit: () => void = () => {}) {
   act(() => {
-    root.render(createElement(QuizPractice, { questions: [question], locale: 'en-US', onExit }));
+    root.render(createElement(QuizPractice, { questions, locale: 'en-US', onExit }));
   });
 }
 
@@ -106,9 +106,38 @@ describe('QuizPractice', () => {
 
   it('leaves through the exit action', async () => {
     const onExit = vi.fn();
-    renderPractice(onExit);
+    renderPractice([question], onExit);
 
     await click('Back to quiz');
     expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks a numeric answer through the shared local grader', async () => {
+    const numeric: QuizQuestion = {
+      id: 'n1',
+      type: 'numeric',
+      question: 'How many centimeters are in 1.5 meters?',
+      answer: ['150'],
+      tolerance: 0,
+      unit: 'cm',
+      analysis: '1.5 m x 100 = 150 cm.',
+      points: 1,
+    };
+    renderPractice([numeric]);
+
+    const input = container.querySelector('input')!;
+    const setValue = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    await act(async () => {
+      setValue.call(input, '150');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await click('Check answer');
+    expect(container.textContent).toContain('Next');
+    await click('Next');
+    expect(container.textContent).toContain('Practice complete');
   });
 });

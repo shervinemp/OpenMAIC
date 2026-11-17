@@ -141,6 +141,26 @@ describe('setQuestionType transitions', () => {
     const c0 = content(choiceQuestion({ type: 'single' }));
     expect(setQuestionType(c0, 'q1', 'single').questions[0]).toBe(c0.questions[0]);
   });
+
+  it('numeric ↔ choice drops the fields that no longer apply', () => {
+    const numeric = content(createBlankQuestion('numeric', 'q1'));
+    expect(numeric.questions[0]).toMatchObject({
+      type: 'numeric',
+      answer: [''],
+      tolerance: 0,
+      unit: '',
+    });
+
+    const single = setQuestionType(numeric, 'q1', 'single').questions[0];
+    expect(single.type).toBe('single');
+    expect(single.options).toHaveLength(2);
+    expect(single.answer).toEqual([]);
+    expect(single.tolerance).toBeUndefined();
+    expect(single.unit).toBeUndefined();
+
+    const back = setQuestionType(content(single), 'q1', 'numeric').questions[0];
+    expect(back).toMatchObject({ type: 'numeric', answer: [''], tolerance: 0, unit: '' });
+  });
 });
 
 describe('option mutations keep value=letter and answer correct', () => {

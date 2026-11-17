@@ -70,10 +70,14 @@ export function prepareQuizQuestionList(scene: CompilerScene): QuizQuestionListQ
     const id = text(value.id);
     const question = text(value.question);
     const type = value.type;
-    if (!id || !question || (type !== 'single' && type !== 'multiple' && type !== 'short_answer')) {
+    if (
+      !id ||
+      !question ||
+      (type !== 'single' && type !== 'multiple' && type !== 'short_answer' && type !== 'numeric')
+    ) {
       continue;
     }
-    if (type === 'short_answer') {
+    if (type === 'short_answer' || type === 'numeric') {
       questions.push({ id, type, question });
       continue;
     }

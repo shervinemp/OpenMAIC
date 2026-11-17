@@ -1184,15 +1184,22 @@ async function generateQuizContent(
     // Plain strings become letter/content pairs. Object fields stay as written.
     const questions: QuizQuestion[] = generatedQuestions.map((q) => {
       const isText = q.type === 'short_answer';
-      const options = isText ? undefined : normalizeQuizOptions(q.options);
+      const isNumeric = q.type === 'numeric';
+      const options = isText || isNumeric ? undefined : normalizeQuizOptions(q.options);
+      const answer = isText
+        ? undefined
+        : isNumeric
+          ? normalizeNumericAnswer(q as unknown as Record<string, unknown>)
+          : normalizeQuizAnswer(q as unknown as Record<string, unknown>, options);
+      const tolerance = isNumeric ? normalizeNumericTolerance(q.tolerance) : undefined;
+      const unit = isNumeric && typeof q.unit === 'string' ? q.unit.trim() || undefined : undefined;
       return {
         ...q,
         id: q.id || `q_${nanoid(8)}`,
         options,
-        answer: isText
-          ? undefined
-          : normalizeQuizAnswer(q as unknown as Record<string, unknown>, options),
+        answer,
         hasAnswer: isText ? false : true,
+        ...(isNumeric ? { tolerance, unit } : { tolerance: undefined, unit: undefined }),
       };
     });
 
@@ -1201,9 +1208,14 @@ async function generateQuizContent(
     // corrective re-prompt as an unparseable reply.
     const contractFailure = findQuizOptionsContractFailure(questions);
     if (contractFailure) {
-      log.error(`Quiz option contract failed for "${outline.title}": ${contractFailure}`);
+      log.error(`Quiz question contract failed for "${outline.title}": ${contractFailure}`);
       if (attempt < maxAttempts) {
-        parseFeedback = `Your previous reply broke the option contract (${contractFailure}). Every choice option must be { "label": "<content>", "value": "<one letter A-Z>" } and "answer" must list those letters.`;
+        const numericIssue = contractFailure.includes('numeric');
+        parseFeedback = `Your previous reply broke the quiz question contract (${contractFailure}). ${
+          numericIssue
+            ? 'A numeric question has no options: give one finite number as "answer" (a string array) and a non-negative "tolerance".'
+            : 'Every choice option must be { "label": "<content>", "value": "<one letter A-Z>" } and "answer" must list those letters.'
+        }`;
         continue;
       }
       onFailure?.({ code: 'invalid-model-output' });
@@ -1269,18 +1281,34 @@ async function generateQuizContent(
 const QUIZ_OPTION_VALUE = /^[A-Z]$/;
 
 /**
- * Reason a built quiz breaks the choice-option contract, or null when it holds.
+ * Reason a built quiz breaks a question contract, or null when it holds.
  *
- * Choice questions (everything except `short_answer`) need a non-empty option
- * list whose `value`s are single ASCII letters A-Z, and every answer entry
- * must equal one of those values exactly. Short-answer questions are skipped.
+ * Choice questions need a non-empty option list whose `value`s are single
+ * ASCII letters A-Z, and every answer entry must equal one of those values.
+ * Numeric questions need one finite answer and a non-negative tolerance.
+ * Short-answer questions are skipped.
  */
 export function findQuizOptionsContractFailure(questions: readonly QuizQuestion[]): string | null {
   for (let index = 0; index < questions.length; index += 1) {
     const question = questions[index];
-    if (!question || question.type === 'short_answer') continue;
+    if (!question) continue;
 
     const where = question.id ? `question ${index + 1} (${question.id})` : `question ${index + 1}`;
+    if (question.type === 'numeric') {
+      const key = question.answer?.[0];
+      if (key === undefined || key.trim() === '' || !Number.isFinite(Number(key))) {
+        return `${where}: numeric question needs one numeric answer`;
+      }
+      if (
+        question.tolerance !== undefined &&
+        (!Number.isFinite(question.tolerance) || question.tolerance < 0)
+      ) {
+        return `${where}: numeric tolerance must be a non-negative number`;
+      }
+      continue;
+    }
+    if (question.type === 'short_answer') continue;
+
     const options = question.options;
     if (!options || options.length === 0) {
       return `${where}: choice question has no options`;
@@ -1637,6 +1665,35 @@ export function normalizeQuizAnswer(
     if (candidates.size === 1) return [...candidates][0];
     return a;
   });
+}
+
+/**
+ * Normalize a numeric answer key to one canonical finite number string.
+ * Accepts the same aliases the choice normalizer does; returns undefined when
+ * the model did not provide a usable number, so the contract check can report
+ * it and the bounded re-prompt can fix it.
+ */
+export function normalizeNumericAnswer(question: Record<string, unknown>): string[] | undefined {
+  const raw = question.answer ?? question.correctAnswer ?? question.correct_answer;
+  const first = Array.isArray(raw) ? raw[0] : raw;
+  if (first === undefined || first === null || first === '') return undefined;
+  const text = String(first).trim();
+  // Same comma convention as the learner-side parser: a thousands group unless
+  // it follows a leading zero (0,392 is a decimal comma).
+  const normalized =
+    /^-?\d{1,3}(?:,\d{3})+$/.test(text) && !/^-?0,\d{3}$/.test(text)
+      ? text.replace(/,/g, '')
+      : text.replace(',', '.');
+  const value = Number(normalized);
+  return Number.isFinite(value) ? [String(value)] : undefined;
+}
+
+/** A numeric tolerance is finite; negatives are preserved so the contract
+ * check can reject the reply instead of silently changing its meaning. */
+export function normalizeNumericTolerance(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const tolerance = Number(value);
+  return Number.isFinite(tolerance) ? tolerance : undefined;
 }
 
 /**

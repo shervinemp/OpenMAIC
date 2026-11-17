@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { gradeChoiceQuestions, isShortAnswer, ungradedResult } from '@/lib/quiz/grading';
+import {
+  gradeChoiceQuestions,
+  isShortAnswer,
+  parseNumericAnswer,
+  ungradedResult,
+} from '@/lib/quiz/grading';
 import type { QuizQuestion } from '@/lib/types/stage';
 
 function q(overrides: Partial<QuizQuestion>): QuizQuestion {
@@ -50,6 +55,60 @@ describe('gradeChoiceQuestions', () => {
   it('honors custom point values', () => {
     const results = gradeChoiceQuestions([q({ points: 5 })], { q1: 'a' });
     expect(results[0].earned).toBe(5);
+  });
+});
+
+describe('numeric grading', () => {
+  function numeric(overrides: Partial<QuizQuestion> = {}): QuizQuestion {
+    return q({
+      type: 'numeric',
+      options: undefined,
+      answer: ['3.14'],
+      tolerance: 0.01,
+      unit: 'm',
+      ...overrides,
+    });
+  }
+
+  it('accepts a value inside the tolerance', () => {
+    const [result] = gradeChoiceQuestions([numeric()], { q1: '3.145' });
+    expect(result).toMatchObject({ status: 'correct', correct: true, earned: 1 });
+  });
+
+  it('rejects a value outside the tolerance', () => {
+    const [result] = gradeChoiceQuestions([numeric()], { q1: '3.2' });
+    expect(result).toMatchObject({ status: 'incorrect', correct: false, earned: 0 });
+  });
+
+  it('requires an exact match when no tolerance is set', () => {
+    const strict = numeric({ tolerance: undefined });
+    expect(gradeChoiceQuestions([strict], { q1: '3.1401' })[0]!.correct).toBe(false);
+    expect(gradeChoiceQuestions([strict], { q1: '3.14' })[0]!.correct).toBe(true);
+  });
+
+  it('accepts fractions, thousands separators, decimal commas and units', () => {
+    expect(parseNumericAnswer('3/4')).toBe(0.75);
+    expect(parseNumericAnswer('1,234')).toBe(1234);
+    expect(parseNumericAnswer('0,392')).toBe(0.392);
+    expect(parseNumericAnswer('1,5')).toBe(1.5);
+    expect(parseNumericAnswer('12 cm')).toBe(12);
+    expect(parseNumericAnswer('-2.5e3')).toBe(-2500);
+    expect(parseNumericAnswer('no digits here')).toBeNull();
+  });
+
+  it('marks an empty answer incorrect', () => {
+    const [result] = gradeChoiceQuestions([numeric()], {});
+    expect(result).toMatchObject({ status: 'incorrect', earned: 0 });
+  });
+
+  it('marks a malformed answer key ungraded instead of penalizing the learner', () => {
+    const [result] = gradeChoiceQuestions([numeric({ answer: ['not-a-number'] })], { q1: '3.14' });
+    expect(result).toMatchObject({ status: 'ungraded', correct: null, earned: 0 });
+  });
+
+  it('does not treat an empty key as zero', () => {
+    const [result] = gradeChoiceQuestions([numeric({ answer: [''] })], { q1: '0' });
+    expect(result).toMatchObject({ status: 'ungraded', earned: 0 });
   });
 });
 

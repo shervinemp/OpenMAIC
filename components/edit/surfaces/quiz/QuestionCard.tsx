@@ -37,7 +37,7 @@ import {
   typeQuizQuestion,
 } from './use-quiz-surface';
 
-const TYPES: QuizQuestionType[] = ['single', 'multiple', 'short_answer'];
+const TYPES: QuizQuestionType[] = ['single', 'multiple', 'short_answer', 'numeric'];
 
 /** Per-type accent: a quiz scene's question types read at a glance by colour. */
 const TYPE_ACCENT: Record<QuizQuestionType, { badge: string; rail: string }> = {
@@ -52,6 +52,10 @@ const TYPE_ACCENT: Record<QuizQuestionType, { badge: string; rail: string }> = {
   short_answer: {
     badge: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
     rail: 'from-amber-400 to-amber-600',
+  },
+  numeric: {
+    badge: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300',
+    rail: 'from-cyan-400 to-cyan-600',
   },
 };
 
@@ -311,9 +315,9 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
 
           {/* Short-answer grading fields. Short answers are always AI-graded
               from the guidance below (see lib/quiz/grading.ts isShortAnswer),
-              so there is no auto-grade toggle — an info note explains the
+              so there is no auto-grade toggle - an info note explains the
               scoring model instead. */}
-          {!choice && (
+          {q.type === 'short_answer' && (
             <>
               <div className="flex items-start gap-2.5 rounded-xl border border-violet-200/70 bg-violet-50/50 px-3 py-2.5 text-xs leading-relaxed text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/[0.07] dark:text-violet-300">
                 <Sparkles className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={2} />
@@ -335,6 +339,55 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
                   className={cn('resize-none', FOCUS)}
                 />
               </Field>
+            </>
+          )}
+
+          {/* Numeric grading fields: one finite answer, an absolute tolerance
+              and an optional display unit. */}
+          {q.type === 'numeric' && (
+            <>
+              <div className="flex gap-3">
+                <Field label={t('edit.quiz.numericAnswerLabel')} className="flex-1">
+                  <Input
+                    value={q.answer?.[0] ?? ''}
+                    onPointerDown={stopDrag}
+                    onChange={(e) =>
+                      typeQuizQuestion(q.id, { answer: [e.target.value] }, `${q.id}:numericAnswer`)
+                    }
+                    placeholder={t('edit.quiz.numericAnswerPlaceholder')}
+                    className={cn('font-mono', FOCUS)}
+                  />
+                </Field>
+                <Field label={t('edit.quiz.numericToleranceLabel')} className="w-28">
+                  <Input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={q.tolerance ?? 0}
+                    onPointerDown={stopDrag}
+                    onChange={(e) => {
+                      const n = e.target.value === '' ? 0 : Number(e.target.value);
+                      if (Number.isNaN(n)) return;
+                      typeQuizQuestion(q.id, { tolerance: n }, `${q.id}:numericTolerance`);
+                    }}
+                    className={cn('font-mono tabular-nums', FOCUS)}
+                  />
+                </Field>
+                <Field label={t('edit.quiz.numericUnitLabel')} className="w-24">
+                  <Input
+                    value={q.unit ?? ''}
+                    onPointerDown={stopDrag}
+                    onChange={(e) =>
+                      typeQuizQuestion(q.id, { unit: e.target.value }, `${q.id}:numericUnit`)
+                    }
+                    placeholder={t('edit.quiz.numericUnitPlaceholder')}
+                    className={FOCUS}
+                  />
+                </Field>
+              </div>
+              <p className="text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
+                {t('edit.quiz.numericHint')}
+              </p>
             </>
           )}
 

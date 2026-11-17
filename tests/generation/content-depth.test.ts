@@ -334,6 +334,64 @@ describe('depth levels (Phase 2 §15.4)', () => {
   });
 });
 
+describe('numeric quiz depth', () => {
+  const outline: SceneOutline = {
+    id: 'nq',
+    type: 'quiz',
+    title: 'Calculations',
+    description: 'Check quantitative understanding.',
+    keyPoints: ['spring extension'],
+    order: 1,
+    quizConfig: { questionCount: 2, difficulty: 'medium', questionTypes: ['numeric'] },
+  };
+
+  function numericQuestions(): QuizQuestion[] {
+    return [
+      {
+        id: 'n1',
+        type: 'numeric',
+        question:
+          'A 2 kg mass hangs from a spring with constant 50 N/m. Find the extension in meters (g = 9.8 m/s^2).',
+        answer: ['0.392'],
+        tolerance: 0.001,
+        unit: 'm',
+        analysis: 'At equilibrium mg = kx, so x = (2 x 9.8) / 50 = 0.392 m.',
+        hasAnswer: true,
+      },
+      {
+        id: 'n2',
+        type: 'numeric',
+        question:
+          'A sample of 250 cells grows by 12 percent. How many cells are there after the growth?',
+        answer: ['280'],
+        tolerance: 0,
+        analysis: '250 x 1.12 = 280.',
+        hasAnswer: true,
+      },
+    ];
+  }
+
+  test('accepts numeric questions without options', () => {
+    expect(validateQuizDepth(outline, numericQuestions()).adequate).toBe(true);
+  });
+
+  test('rejects a missing or non-numeric answer key', () => {
+    const questions = numericQuestions();
+    questions[0].answer = ['not a number'];
+    const report = validateQuizDepth(outline, questions);
+    expect(report.adequate).toBe(false);
+    expect(report.findings.some((finding) => finding.includes('numeric answer key'))).toBe(true);
+  });
+
+  test('rejects a negative tolerance', () => {
+    const questions = numericQuestions();
+    questions[1].tolerance = -1;
+    const report = validateQuizDepth(outline, questions);
+    expect(report.adequate).toBe(false);
+    expect(report.findings.some((finding) => finding.includes('tolerance'))).toBe(true);
+  });
+});
+
 describe('feedback + failure side channel', () => {
   test('summarizeDepthFindings is concrete and actionable', () => {
     const report = validateSlideDepth(slideOutline('Delta Lake Architecture'), [

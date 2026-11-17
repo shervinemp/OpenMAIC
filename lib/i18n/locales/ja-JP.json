@@ -460,14 +460,22 @@
       "type": {
         "single": "単一選択",
         "multiple": "複数選択",
-        "short_answer": "記述"
+        "short_answer": "記述",
+        "numeric": "数値"
       },
       "shortAnswerGradingNote": "記述式は下の採点ガイドに基づき AI が自動採点します。",
+      "numericAnswerLabel": "正しい値",
+      "numericAnswerPlaceholder": "例: 3.14",
+      "numericToleranceLabel": "許容誤差（±）",
+      "numericUnitLabel": "単位",
+      "numericUnitPlaceholder": "例: m",
+      "numericHint": "±許容誤差内の回答を正解とします。単位は表示のみです。",
       "hint": {
         "emptyText": "問題 {{n}}：問題文を入力してください",
         "fewOptions": "問題 {{n}}：選択肢は2つ以上必要です",
         "emptyOption": "問題 {{n}}：空の選択肢があります",
-        "noCorrect": "問題 {{n}}：正解を指定してください"
+        "noCorrect": "問題 {{n}}：正解を指定してください",
+        "badNumber": "問題 {{n}}: 有効な数値の答えを入力してください"
       }
     },
     "cue": {
@@ -737,6 +745,9 @@
     "next": "次へ",
     "practiceComplete": "練習完了",
     "practiceNote": "練習の記録は成績に反映されません。",
+    "numeric": "数値",
+    "numericPlaceholder": "数値を入力...",
+    "expectedAnswer": "正解：",
     "answering": "回答中",
     "submitAnswers": "回答を提出",
     "aiGrading": "AIが採点中...",
@@ -1129,6 +1140,7 @@
     "quizTypeSingle": "単一選択",
     "quizTypeMultiple": "複数選択",
     "quizTypeText": "記述式",
+    "quizTypeNumeric": "数値",
     "alwaysReviewOutlines": "生成前に常にアウトラインを確認",
     "outlineEditorEyebrow": "AI 生成のアウトライン",
     "outlineEditorStreamingProgress": "生成中 · {{count}} シーン到着",

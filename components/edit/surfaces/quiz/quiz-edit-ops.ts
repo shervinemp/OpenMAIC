@@ -133,6 +133,18 @@ export function createBlankQuestion(
       points: 1,
     };
   }
+  if (type === 'numeric') {
+    return {
+      id,
+      type,
+      question: '',
+      answer: [''],
+      tolerance: 0,
+      unit: '',
+      points: 1,
+      hasAnswer: true,
+    };
+  }
   return {
     id,
     type: 'short_answer',
@@ -190,7 +202,17 @@ export function updateQuestion(
   content: QuizContent,
   id: string,
   patch: Partial<
-    Pick<QuizQuestion, 'question' | 'analysis' | 'commentPrompt' | 'points' | 'hasAnswer'>
+    Pick<
+      QuizQuestion,
+      | 'question'
+      | 'analysis'
+      | 'commentPrompt'
+      | 'points'
+      | 'hasAnswer'
+      | 'answer'
+      | 'tolerance'
+      | 'unit'
+    >
   >,
 ): QuizContent {
   return mapQuestion(content, id, (q) => ({ ...q, ...patch }));
@@ -200,6 +222,8 @@ export function updateQuestion(
  * Switch a question's type, applying the structural transition:
  *   choice → short_answer : drop options + answer, seed grading fields.
  *   short_answer → choice : seed two blank options, empty answer.
+ *   any → numeric         : drop options, seed one numeric answer slot.
+ *   numeric → any         : drop the numeric-only fields.
  *   single ↔ multiple     : keep options; collapsing to single keeps only
  *                           the first correct answer.
  */
@@ -211,15 +235,26 @@ export function setQuestionType(
   return mapQuestion(content, id, (q) => {
     if (q.type === type) return q;
 
-    if (!isChoice(type)) {
-      // → short_answer
-      const { options: _o, answer: _a, ...rest } = q;
-      return { ...rest, type: 'short_answer', hasAnswer: q.hasAnswer ?? false };
+    if (type === 'numeric') {
+      const { options: _o, commentPrompt: _c, ...rest } = q;
+      return {
+        ...rest,
+        type,
+        answer: [q.answer?.[0] ?? ''],
+        tolerance: q.tolerance ?? 0,
+        unit: q.unit ?? '',
+        hasAnswer: true,
+      };
     }
 
+    if (type === 'short_answer') {
+      const { options: _o, answer: _a, tolerance: _t, unit: _u, ...rest } = q;
+      return { ...rest, type, hasAnswer: false };
+    }
+
+    // Target is a choice type.
+    const { commentPrompt: _c, tolerance: _t, unit: _u, hasAnswer: _h, ...rest } = q;
     if (!isChoice(q.type)) {
-      // short_answer → choice
-      const { commentPrompt: _c, hasAnswer: _h, ...rest } = q;
       return {
         ...rest,
         type,
@@ -233,7 +268,7 @@ export function setQuestionType(
 
     // single ↔ multiple: keep options; single keeps at most one correct.
     const answer = type === 'single' ? (q.answer ?? []).slice(0, 1) : (q.answer ?? []);
-    return { ...q, type, answer };
+    return { ...rest, type, answer };
   });
 }
 

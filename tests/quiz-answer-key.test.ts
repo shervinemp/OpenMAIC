@@ -6,7 +6,10 @@ import {
   resolveAnswerKeyToValue,
 } from '@/lib/quiz/grading';
 import {
+  findQuizOptionsContractFailure,
   generateSceneContent,
+  normalizeNumericAnswer,
+  normalizeNumericTolerance,
   normalizeQuizAnswer,
 } from '../packages/@openmaic/generation/src/scene-generator';
 import type { QuizQuestion } from '@/lib/types/stage';
@@ -252,6 +255,42 @@ describe('generateSceneContent quiz option contract', () => {
 
     expect(content).toBeNull();
     expect(failures).toEqual([{ code: 'invalid-model-output' }]);
+  });
+});
+
+describe('numeric quiz generation', () => {
+  const numericQuestion: QuizQuestion = {
+    id: 'n1',
+    type: 'numeric',
+    question: 'How many centimeters are in 1.5 meters?',
+    answer: ['150'],
+    tolerance: 0,
+    unit: 'cm',
+    analysis: '1.5 m x 100 cm/m = 150 cm.',
+    hasAnswer: true,
+  };
+
+  test('normalizes the numeric answer aliases', () => {
+    expect(normalizeNumericAnswer({ answer: 0.392 })).toEqual(['0.392']);
+    expect(normalizeNumericAnswer({ correctAnswer: '1,234' })).toEqual(['1234']);
+    expect(normalizeNumericAnswer({ answer: '0,392' })).toEqual(['0.392']);
+    expect(normalizeNumericAnswer({ answer: [] })).toBeUndefined();
+    expect(normalizeNumericAnswer({ answer: 'not a number' })).toBeUndefined();
+  });
+
+  test('keeps a negative tolerance for the contract to reject', () => {
+    expect(normalizeNumericTolerance(-1)).toBe(-1);
+    expect(normalizeNumericTolerance('abc')).toBeUndefined();
+  });
+
+  test('accepts a numeric question and rejects an invalid key or tolerance', () => {
+    expect(findQuizOptionsContractFailure([numericQuestion])).toBeNull();
+    expect(
+      findQuizOptionsContractFailure([{ ...numericQuestion, answer: ['not a number'] }]),
+    ).toContain('numeric');
+    expect(findQuizOptionsContractFailure([{ ...numericQuestion, tolerance: -1 }])).toContain(
+      'tolerance',
+    );
   });
 });
 

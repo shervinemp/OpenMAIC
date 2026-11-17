@@ -460,14 +460,22 @@
       "type": {
         "single": "Einfachauswahl",
         "multiple": "Mehrfachauswahl",
-        "short_answer": "Kurzantwort"
+        "short_answer": "Kurzantwort",
+        "numeric": "Numerisch"
       },
       "shortAnswerGradingNote": "Kurzantworten werden immer von der KI anhand der folgenden Hinweise bewertet.",
+      "numericAnswerLabel": "Richtiger Wert",
+      "numericAnswerPlaceholder": "z. B. 3,14",
+      "numericToleranceLabel": "Toleranz (±)",
+      "numericUnitLabel": "Einheit",
+      "numericUnitPlaceholder": "z. B. m",
+      "numericHint": "Antworten innerhalb der ±Toleranz gelten als richtig. Die Einheit dient nur der Anzeige.",
       "hint": {
         "emptyText": "Frage {{n}}: Fragetext hinzufügen",
         "fewOptions": "Frage {{n}}: mindestens zwei Antwortmöglichkeiten hinzufügen",
         "emptyOption": "Frage {{n}}: eine Antwortmöglichkeit ist leer",
-        "noCorrect": "Frage {{n}}: eine richtige Antwort markieren"
+        "noCorrect": "Frage {{n}}: eine richtige Antwort markieren",
+        "badNumber": "Frage {{n}}: eine gültige Zahl als Antwort eingeben"
       }
     },
     "cue": {
@@ -737,6 +745,9 @@
     "next": "Weiter",
     "practiceComplete": "Übung abgeschlossen",
     "practiceNote": "Übungsversuche werden nicht bewertet.",
+    "numeric": "Numerisch",
+    "numericPlaceholder": "Zahl eingeben...",
+    "expectedAnswer": "Erwartete Antwort:",
     "answering": "In Bearbeitung",
     "submitAnswers": "Antworten abgeben",
     "aiGrading": "Die KI wertet aus...",
@@ -1121,6 +1132,7 @@
     "quizTypeSingle": "Einfachauswahl",
     "quizTypeMultiple": "Mehrfachauswahl",
     "quizTypeText": "Kurzantwort",
+    "quizTypeNumeric": "Numerisch",
     "alwaysReviewOutlines": "Gliederungen vor der Generierung immer prüfen",
     "outlineEditorEyebrow": "KI-generierte Gliederung",
     "outlineEditorStreamingProgress": "Übertragung läuft · Szenen bereit: {{count}}",

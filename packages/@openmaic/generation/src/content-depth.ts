@@ -667,13 +667,27 @@ export function validateQuizDepth(
       substantiveCount++;
     }
 
-    if (question.type !== 'short_answer') {
+    if (question.type === 'single' || question.type === 'multiple') {
       const optionCount = question.options?.length ?? 0;
       if (optionCount < floor.minOptions) {
         findings.push(
           `question "${question.id}" has ${optionCount} option(s); need at least ${floor.minOptions} plausible distractors`,
         );
       }
+    }
+    if (question.type === 'numeric') {
+      const key = question.answer?.[0];
+      if (key === undefined || key.trim() === '' || !Number.isFinite(Number(key))) {
+        findings.push(`question "${question.id}" numeric answer key is missing or not a number`);
+      }
+      if (
+        question.tolerance !== undefined &&
+        (!Number.isFinite(question.tolerance) || question.tolerance < 0)
+      ) {
+        findings.push(`question "${question.id}" numeric tolerance must be a non-negative number`);
+      }
+    }
+    if (question.type !== 'short_answer') {
       if (!question.analysis || !question.analysis.trim()) {
         findings.push(`question "${question.id}" is missing the explanation (analysis) field`);
       }

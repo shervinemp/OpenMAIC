@@ -84,14 +84,79 @@ export function answerIncludesOption(q: QuizQuestion, optionValue: string): bool
   return toArray(q.answer).some((a) => resolveAnswerKeyToValue(q, a) === optionValue);
 }
 
-/** Grade choice questions locally. Returns results only for non-short-answer questions. */
+/**
+ * Parse a learner's numeric input. Accepts integers, decimals, scientific
+ * notation, simple fractions ("3/4"), a trailing unit ("12 cm"), thousands
+ * separators ("1,234") and a decimal comma ("1,5"). Returns null when no
+ * finite number is present.
+ */
+export function parseNumericAnswer(raw: string): number | null {
+  let text = raw.trim().toLowerCase();
+  if (!text) return null;
+  const fraction = text.match(/^(-?\d+(?:\.\d+)?)\s*\/\s*(-?\d+(?:\.\d+)?)/);
+  if (fraction) {
+    const denominator = Number(fraction[2]);
+    if (!Number.isFinite(denominator) || denominator === 0) return null;
+    const value = Number(fraction[1]) / denominator;
+    return Number.isFinite(value) ? value : null;
+  }
+  // A comma followed by three digits is a thousands separator, except after a
+  // leading zero (0,392 is a decimal comma). Any other comma is a decimal comma.
+  if (/^-?\d{1,3}(?:,\d{3})+$/.test(text) && !/^-?0,\d{3}$/.test(text)) {
+    text = text.replace(/,/g, '');
+  } else if (/^-?\d+,\d+$/.test(text)) {
+    text = text.replace(',', '.');
+  }
+  const match = text.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/);
+  if (!match) return null;
+  const value = Number(match[0]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function gradeNumericAnswer(q: QuizQuestion, raw: string): QuestionResult {
+  const points = q.points ?? 1;
+  const key = q.answer?.[0];
+  const expected = Number(key);
+  if (key === undefined || key.trim() === '' || !Number.isFinite(expected)) {
+    // A malformed key is a data error, not a learner mistake: do not score it.
+    return {
+      questionId: q.id,
+      correct: null,
+      status: 'ungraded',
+      earned: 0,
+      aiComment: 'This numeric question has no valid answer key, so it was not graded.',
+    };
+  }
+  const submitted = parseNumericAnswer(raw);
+  if (submitted === null) {
+    return { questionId: q.id, correct: false, status: 'incorrect', earned: 0 };
+  }
+  const rawTolerance = Number(q.tolerance);
+  const tolerance = Number.isFinite(rawTolerance) ? Math.max(0, rawTolerance) : 0;
+  const correct = Math.abs(submitted - expected) <= tolerance + 1e-12;
+  return {
+    questionId: q.id,
+    correct,
+    status: correct ? 'correct' : 'incorrect',
+    earned: correct ? points : 0,
+  };
+}
+
+/**
+ * Grade locally checkable questions (single, multiple, numeric). Short-answer
+ * questions are graded by the LLM and are not returned here.
+ */
 export function gradeChoiceQuestions(
   questions: QuizQuestion[],
   answers: Record<string, string | string[]>,
 ): QuestionResult[] {
   return questions
-    .filter((q) => !isShortAnswer(q))
+    .filter((q) => q.type === 'single' || q.type === 'multiple' || q.type === 'numeric')
     .map((q) => {
+      if (q.type === 'numeric') {
+        const raw = answers[q.id];
+        return gradeNumericAnswer(q, typeof raw === 'string' ? raw : (raw?.[0] ?? ''));
+      }
       const pts = q.points ?? 1;
       // Compatibility resolution applies to the persisted key only. The
       // submission is a value the UI produced from the options, so resolving
