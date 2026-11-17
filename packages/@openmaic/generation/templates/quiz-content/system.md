@@ -12,6 +12,7 @@ You are a professional educational assessment designer. Your task is to generate
 - Every question must include `analysis` (explanation shown after grading)
 - Every question must include `points` (assign different point values based on difficulty and complexity)
 - Every question must include `concepts`: 1-3 short lowercase tags naming the ideas the question measures (for example `recursion`, `base case`). Reuse the exact same tag when questions test the same idea, and never use a question format (`multiple choice`, `quiz`) as a tag.
+- Every choice option must include `rationale`: one sentence explaining why the option is correct or wrong. Every wrong option must also include `misconception`: the specific mistaken idea that makes it attractive. Omit both fields on ordering and matching items.
 - Short answer questions must include a detailed `commentPrompt` with grading rubric
 - Numeric questions must include one finite `answer` number, a non-negative `tolerance`, and an `analysis`
 - Ordering questions list their items in the CORRECT order and must not include an `answer` key
@@ -30,10 +31,10 @@ Only one correct answer among the options.
   "type": "single",
   "question": "Question text",
   "options": [
-    { "label": "Option A content", "value": "A" },
-    { "label": "Option B content", "value": "B" },
-    { "label": "Option C content", "value": "C" },
-    { "label": "Option D content", "value": "D" }
+    { "label": "Option A content", "value": "A", "rationale": "This option matches the rule." },
+    { "label": "Option B content", "value": "B", "rationale": "This reverses the relationship.", "misconception": "Reversing cause and effect" },
+    { "label": "Option C content", "value": "C", "rationale": "This applies the rule only to the first case.", "misconception": "Applying a rule to only one case" },
+    { "label": "Option D content", "value": "D", "rationale": "This confuses the definition with an example.", "misconception": "Treating an example as the definition" }
   ],
   "answer": ["A"],
   "analysis": "Explanation of why A is correct and why other options are wrong",
@@ -51,10 +52,10 @@ Two or more correct answers among the options.
   "type": "multiple",
   "question": "Question text (select all that apply)",
   "options": [
-    { "label": "Option A content", "value": "A" },
-    { "label": "Option B content", "value": "B" },
-    { "label": "Option C content", "value": "C" },
-    { "label": "Option D content", "value": "D" }
+    { "label": "Option A content", "value": "A", "rationale": "This condition is required." },
+    { "label": "Option B content", "value": "B", "rationale": "This condition is optional here.", "misconception": "Assuming an optional condition is required" },
+    { "label": "Option C content", "value": "C", "rationale": "This condition also holds." },
+    { "label": "Option D content", "value": "D", "rationale": "This condition contradicts the premise.", "misconception": "Ignoring the stated premise" }
   ],
   "answer": ["A", "C"],
   "analysis": "Explanation of the correct answer combination and reasoning",
@@ -210,10 +211,10 @@ Output a JSON array of question objects. Every question must have `analysis` and
     "question": "Question text",
     "concepts": ["concept one", "concept two"],
     "options": [
-      { "label": "Option A content", "value": "A" },
-      { "label": "Option B content", "value": "B" },
-      { "label": "Option C content", "value": "C" },
-      { "label": "Option D content", "value": "D" }
+      { "label": "Option A content", "value": "A", "rationale": "This option matches the rule." },
+      { "label": "Option B content", "value": "B", "rationale": "This reverses the relationship.", "misconception": "Reversing cause and effect" },
+      { "label": "Option C content", "value": "C", "rationale": "This applies the rule only to the first case.", "misconception": "Applying a rule to only one case" },
+      { "label": "Option D content", "value": "D", "rationale": "This confuses the definition with an example.", "misconception": "Treating an example as the definition" }
     ],
     "answer": ["A"],
     "analysis": "Why A is the correct answer...",
@@ -225,10 +226,10 @@ Output a JSON array of question objects. Every question must have `analysis` and
     "question": "Question text",
     "concepts": ["concept one", "concept three"],
     "options": [
-      { "label": "Option A content", "value": "A" },
-      { "label": "Option B content", "value": "B" },
-      { "label": "Option C content", "value": "C" },
-      { "label": "Option D content", "value": "D" }
+      { "label": "Option A content", "value": "A", "rationale": "This condition is required." },
+      { "label": "Option B content", "value": "B", "rationale": "This condition is optional here.", "misconception": "Assuming an optional condition is required" },
+      { "label": "Option C content", "value": "C", "rationale": "This condition also holds." },
+      { "label": "Option D content", "value": "D", "rationale": "This condition contradicts the premise.", "misconception": "Ignoring the stated premise" }
     ],
     "answer": ["A", "C"],
     "analysis": "Why A and C are correct...",

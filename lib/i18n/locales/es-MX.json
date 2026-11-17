@@ -863,7 +863,9 @@
     "aiGrading": "La IA está calificando...",
     "aiGradingWait": "Espera un momento, analizando tus respuestas",
     "quizReport": "Reporte del cuestionario",
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "misconception": "Misconception",
+    "reviewLesson": "Review lesson"
   },
   "activity": {
     "title": "Laboratorio",

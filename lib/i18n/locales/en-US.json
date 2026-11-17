@@ -863,7 +863,9 @@
     "aiGrading": "AI is grading...",
     "aiGradingWait": "Please wait, analyzing your answers",
     "quizReport": "Quiz Report",
-    "retry": "Retry"
+    "retry": "Retry",
+    "misconception": "Misconception",
+    "reviewLesson": "Review lesson"
   },
   "activity": {
     "title": "Lab",

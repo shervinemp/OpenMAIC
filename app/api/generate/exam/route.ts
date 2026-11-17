@@ -19,7 +19,12 @@ import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveQuizAnswerVerifier } from '@/lib/server/quiz-verifier';
 import { blindQuizQuestions, quizAnswerDisagreements } from '@openmaic/generation';
-import { normalizeConceptTags, type QuizQuestion } from '@openmaic/dsl';
+import {
+  normalizeConceptTags,
+  normalizeOptionNote,
+  type QuizOption,
+  type QuizQuestion,
+} from '@openmaic/dsl';
 import { parseJsonResponse } from '@/lib/generation/json-repair';
 import type { CourseBlueprint, SceneOutline } from '@/lib/types/generation';
 import type { ExamChoiceQuestion, ExamFreeResponse, ExamKind, ExamSpec } from '@/lib/types/exam';
@@ -43,7 +48,7 @@ export function coerceChoiceQuestion(raw: unknown, index: number): ExamChoiceQue
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const options = Array.isArray(r.options) ? r.options : [];
-  const coercedOptions: Array<{ label: string; value: string }> = [];
+  const coercedOptions: QuizOption[] = [];
   options.forEach((o, optionIndex) => {
     if (!o || typeof o !== 'object') return;
     const opt = o as Record<string, unknown>;
@@ -56,7 +61,14 @@ export function coerceChoiceQuestion(raw: unknown, index: number): ExamChoiceQue
       .slice(0, 1)
       .toUpperCase();
     if (!value) return;
-    coercedOptions.push({ label, value });
+    const rationale = normalizeOptionNote(opt.rationale);
+    const misconception = normalizeOptionNote(opt.misconception);
+    coercedOptions.push({
+      label,
+      value,
+      ...(rationale ? { rationale } : {}),
+      ...(misconception ? { misconception } : {}),
+    });
   });
   if (coercedOptions.length < 2) return null;
   // Two options sharing a value make the key ambiguous.
@@ -70,10 +82,20 @@ export function coerceChoiceQuestion(raw: unknown, index: number): ExamChoiceQue
   const question = typeof r.question === 'string' ? r.question.trim() : '';
   if (!question) return null;
   const analysis = typeof r.analysis === 'string' ? r.analysis.trim() : '';
+  // A misconception describes a wrong option; drop a stray one on the key.
+  const optionsForSpec = coercedOptions.map((option) =>
+    answerValues.includes(option.value) && option.misconception
+      ? {
+          label: option.label,
+          value: option.value,
+          ...(option.rationale ? { rationale: option.rationale } : {}),
+        }
+      : option,
+  );
   return {
     id: `mc_${index + 1}`,
     question,
-    options: coercedOptions,
+    options: optionsForSpec,
     answer: answerValues,
     analysis,
     points: 1,
@@ -200,7 +222,7 @@ Write a QUESTION POOL, not a single paper: the course platform draws a different
 Output ONLY JSON:
 {
   "mcQuestions": [
-    { "question": "<scenario/application stem: a situation the learner must reason about, NOT a bare definition>", "concepts": ["<1-3 short lowercase concept tags>"], "options": [{"label":"<answer option one>","value":"A"}, {"label":"...","value":"B"}, {"label":"...","value":"C"}, {"label":"...","value":"D"}], "answer": ["<value of the correct option>"], "analysis": "<why the correct option is right and the best distractor is wrong>" }
+    { "question": "<scenario/application stem: a situation the learner must reason about, NOT a bare definition>", "concepts": ["<1-3 short lowercase concept tags>"], "options": [{"label":"<answer option one>","value":"A","rationale":"<why this option is right or wrong>"}, {"label":"<plausible distractor>","value":"B","rationale":"<why it is wrong>","misconception":"<the specific wrong idea it encodes>"}, {"label":"...","value":"C"}, {"label":"...","value":"D"}], "answer": ["<value of the correct option>"], "analysis": "<why the correct option is right and the best distractor is wrong>" }
     // at least ${MIN_MC_QUESTIONS} distinct questions, exactly 4-5 options each, exactly one correct answer, distractors must be plausible common misconceptions
   ],
   "frQuestions": [
@@ -212,7 +234,7 @@ The ${kind === 'midterm' ? 'midterm' : 'final'} form draws ${form.mcCount} MC qu
 Rules:
 - Ground every question in the covered material below; no trivia-only recall.
 - Every question must carry "concepts": 1-3 short lowercase tags naming the ideas it measures, reused for the same idea across the pool. Never tag the question format.
-- MC questions must carry real diagnosis: each distractor must encode a specific misconception.
+- MC questions must carry real diagnosis: each distractor must encode a specific misconception, and every option should include "rationale" plus "misconception" on wrong options.
 - The FR tasks must be answerable by a serious student with roughly 8-14 sentences each; do not require data or tools not provided.
 - Do not repeat a stem, scenario, or task; a duplicate wastes pool space and will be rejected.
 - Course title: "${blueprint.title ?? 'the course'}". Audience: "${blueprint.audience ?? 'intermediate learners'}".

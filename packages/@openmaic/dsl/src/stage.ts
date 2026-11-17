@@ -194,6 +194,19 @@ export interface SlideContent {
 export interface QuizOption {
   label: string; // Display text
   value: string; // Selection key: "A", "B", "C", "D"
+  /**
+   * Choice questions only. The specific wrong idea this distractor encodes
+   * (for example "a bigger input always terminates recursion"). Shown when the
+   * learner picks it, so the review names the error instead of only saying
+   * "incorrect".
+   */
+  misconception?: string;
+  /**
+   * Choice questions only. Why this option is correct or wrong. Shown beside
+   * each option after grading; the correct option's rationale doubles as the
+   * short explanation.
+   */
+  rationale?: string;
 }
 
 export interface QuizQuestion {
@@ -231,6 +244,13 @@ export interface QuizQuestion {
    * `normalizeConceptTags` before persisting. Absent on legacy content.
    */
   concepts?: string[];
+  /**
+   * Outline id of the teaching scene that covers this item. Generation sets it
+   * from the preceding outlines' key points; the review UI resolves it to the
+   * live scene and offers a "review lesson" link. Absent when no candidate
+   * shares a concept.
+   */
+  remediationOutlineId?: string;
 }
 
 /**

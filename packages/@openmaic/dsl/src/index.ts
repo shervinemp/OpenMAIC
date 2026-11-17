@@ -26,6 +26,7 @@ export * from './slides.js';
 export * from './guards.js';
 export * from './stage.js';
 export * from './concepts.js';
+export * from './quiz-options.js';
 export * from './activity.js';
 export * from './interactive.js';
 export * from './pbl.js';

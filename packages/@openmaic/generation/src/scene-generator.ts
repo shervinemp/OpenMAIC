@@ -29,6 +29,7 @@ import {
   isWidgetType,
   normalizeConceptTags,
   normalizeElement,
+  normalizeOptionNote,
   validateActivityContent,
 } from '@openmaic/dsl';
 import {
@@ -84,6 +85,7 @@ import { isSlideLikeOutline } from './outline-type.js';
 import { postProcessInteractiveHtml } from './interactive-post-processor.js';
 import { findInteractiveScriptSyntaxFailure } from './interactive-script-validator.js';
 import { collectLearnerText, detectLanguageDrift } from './language-drift.js';
+import { attachQuizRemediation } from './quiz-remediation.js';
 import {
   blindQuizQuestions,
   quizAnswerDisagreements,
@@ -226,6 +228,12 @@ export interface SceneContentOptions {
    * missing verdicts are ignored. Absent = no verification, no extra calls.
    */
   verifyQuizAnswers?: QuizAnswerVerifier;
+  /**
+   * Every outline in the course. Quiz generation uses this to point each item
+   * at the preceding teaching scene that covers its concepts; other scene
+   * kinds ignore it.
+   */
+  allOutlines?: readonly SceneOutline[];
 }
 
 export interface SceneActionsOptions {
@@ -470,6 +478,7 @@ async function generateSceneContentOnce(
         log,
         options.onFailure,
         options.verifyQuizAnswers,
+        options.allOutlines,
       );
     case 'activity':
       return generateActivityContent(
@@ -1692,6 +1701,7 @@ async function generateQuizContent(
   log: GenerationLogger = noopGenerationLogger,
   onFailure?: (failure: SceneContentFailure) => void,
   verifyQuizAnswers?: QuizAnswerVerifier,
+  allOutlines?: readonly SceneOutline[],
 ): Promise<GeneratedQuizContent | null> {
   const quizConfig = outline.quizConfig || {
     questionCount: 3,
@@ -1732,6 +1742,10 @@ async function generateQuizContent(
   let depthFeedback: string | undefined;
   let parseFeedback: string | undefined;
 
+  const finalizeQuestions = (items: QuizQuestion[]): GeneratedQuizContent => ({
+    questions: attachQuizRemediation(items, outline, allOutlines ?? []),
+  });
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let attemptUserPrompt = depthFeedback
       ? `${baseUserPrompt}\n\n## Depth Correction Required\n\n${depthFeedback}`
@@ -1764,15 +1778,22 @@ async function generateQuizContent(
       const isNumeric = q.type === 'numeric';
       const isOrdering = q.type === 'ordering';
       const isMatching = q.type === 'matching';
-      const options =
+      const isChoice = q.type === 'single' || q.type === 'multiple';
+      const rawOptions =
         isText || isNumeric
           ? undefined
           : isOrdering
             ? normalizeOrderingOptions(q as unknown as Record<string, unknown>)
             : normalizeQuizOptions(q.options);
+      // Rationales/misconceptions describe a choice. Ordering items and
+      // matching pairs are not distractors, so a model that decorates them
+      // anyway must not leak those notes into playback or video export.
+      const options = isChoice ? rawOptions : stripQuizOptionNotes(rawOptions);
       const matches = isMatching
-        ? normalizeQuizOptions(
-            (q as unknown as Record<string, unknown>).matches as unknown[] | undefined,
+        ? stripQuizOptionNotes(
+            normalizeQuizOptions(
+              (q as unknown as Record<string, unknown>).matches as unknown[] | undefined,
+            ),
           )
         : undefined;
       const answer =
@@ -1787,7 +1808,7 @@ async function generateQuizContent(
       return {
         ...q,
         id: q.id || `q_${nanoid(8)}`,
-        options,
+        options: withoutCorrectMisconception(options, answer),
         answer,
         hasAnswer: isText ? false : true,
         concepts,
@@ -1851,12 +1872,12 @@ async function generateQuizContent(
         log.error(
           `Quiz answer verification still disagreed for "${outline.title}" after ${maxAttempts} attempt(s); keeping the generated keys: ${findings.join('; ')}`,
         );
-        return { questions };
+        return finalizeQuestions(questions);
       }
       if (attempt > 1) {
         recordSceneDepthSummary(outline.id, { reworked: true, attempts: attempt, findings: [] });
       }
-      return { questions };
+      return finalizeQuestions(questions);
     }
 
     if (attempt < maxAttempts) {
@@ -2099,7 +2120,12 @@ async function generateValidatedStructured<T>(
   return null;
 }
 
-type NormalizedQuizOption = { value: string; label: string };
+type NormalizedQuizOption = {
+  value: string;
+  label: string;
+  misconception?: string;
+  rationale?: string;
+};
 
 /** Run the rendered elements through the standard slide post-pipeline. */
 function finalizeRenderedElements(
@@ -2256,11 +2282,40 @@ async function generateTradeoffsContent(
   return finalizeRenderedElements(renderTradeoffsToElements(outline, payload));
 }
 
+/** Drop the prose fields that only a choice option can use. */
+function stripQuizOptionNotes(
+  options: NormalizedQuizOption[] | undefined,
+): NormalizedQuizOption[] | undefined {
+  return options?.map((option) => ({ value: option.value, label: option.label }));
+}
+
+/**
+ * A misconception belongs to a wrong option. Models sometimes fill it on the
+ * key as well; keeping it there would show "this mistake" beside the correct
+ * answer. The rationale is useful on every option and stays.
+ */
+function withoutCorrectMisconception(
+  options: NormalizedQuizOption[] | undefined,
+  answer: string[] | undefined,
+): NormalizedQuizOption[] | undefined {
+  if (!options || !answer || answer.length === 0) return options;
+  const correct = new Set(answer);
+  return options.map((option) =>
+    correct.has(option.value) && option.misconception
+      ? {
+          value: option.value,
+          label: option.label,
+          ...(option.rationale ? { rationale: option.rationale } : {}),
+        }
+      : option,
+  );
+}
+
 /**
  * Normalize quiz options from AI response.
  * AI may generate plain strings ["OptionA", "OptionB"] or QuizOption objects.
  * Plain strings become { value: "A", label: "OptionA" }. Object `value` and
- * `label` are kept as provided — a letter in `label` with content in `value`
+ * `label` are kept as provided - a letter in `label` with content in `value`
  * is not swapped.
  */
 export function normalizeQuizOptions(
@@ -2277,9 +2332,13 @@ export function normalizeQuizOptions(
 
     if (typeof opt === 'object' && opt !== null) {
       const obj = opt as Record<string, unknown>;
+      const misconception = normalizeOptionNote(obj.misconception);
+      const rationale = normalizeOptionNote(obj.rationale);
       return {
         value: typeof obj.value === 'string' ? obj.value : letter,
         label: typeof obj.label === 'string' ? obj.label : String(obj.value || obj.text || letter),
+        ...(misconception ? { misconception } : {}),
+        ...(rationale ? { rationale } : {}),
       };
     }
 

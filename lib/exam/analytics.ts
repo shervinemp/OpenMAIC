@@ -18,6 +18,16 @@ export interface ExamMcStat {
   correct: number;
   /** 0-1, always defined for a stat that exists. */
   accuracy: number;
+  /** Most-chosen wrong options, strongest first. */
+  misconceptions: ExamMisconceptionStat[];
+}
+
+/** One wrong option and the error it encodes, aggregated across attempts. */
+export interface ExamMisconceptionStat {
+  optionValue: string;
+  label: string;
+  misconception?: string;
+  count: number;
 }
 
 export interface ExamFrStat {
@@ -65,6 +75,7 @@ export function computeExamAnalytics(
 
   const mcById = new Map(spec.mcQuestions.map((question) => [question.id, question]));
   const mcTally = new Map<string, { attempts: number; correct: number }>();
+  const mcWrong = new Map<string, Map<string, number>>();
   const frTally = new Map<string, { attempts: number; totalPct: number }>();
   const frById = new Map(spec.frQuestions.map((question) => [question.id, question]));
 
@@ -75,7 +86,18 @@ export function computeExamAnalytics(
       if (!result) continue;
       const tally = mcTally.get(question.id) ?? { attempts: 0, correct: 0 };
       tally.attempts += 1;
-      if (result.correct) tally.correct += 1;
+      if (result.correct) {
+        tally.correct += 1;
+      } else {
+        // The chosen value is the diagnosis: an attempt that left the question
+        // blank has no distractor to learn from.
+        const picked = attempt.mcAnswers?.[question.id];
+        if (typeof picked === 'string' && picked.trim()) {
+          const wrong = mcWrong.get(question.id) ?? new Map<string, number>();
+          wrong.set(picked, (wrong.get(picked) ?? 0) + 1);
+          mcWrong.set(question.id, wrong);
+        }
+      }
       mcTally.set(question.id, tally);
     }
     for (const grade of attempt.frGrades ?? []) {
@@ -88,13 +110,33 @@ export function computeExamAnalytics(
   }
 
   const mc: ExamMcStat[] = [...mcTally.entries()]
-    .map(([questionId, tally]) => ({
-      questionId,
-      question: mcById.get(questionId)?.question ?? questionId,
-      attempts: tally.attempts,
-      correct: tally.correct,
-      accuracy: tally.attempts > 0 ? tally.correct / tally.attempts : 0,
-    }))
+    .map(([questionId, tally]) => {
+      const question = mcById.get(questionId);
+      const wrong = mcWrong.get(questionId);
+      const misconceptions: ExamMisconceptionStat[] = wrong
+        ? [...wrong.entries()]
+            .map(([optionValue, count]) => {
+              const option = question?.options.find((entry) => entry.value === optionValue);
+              return {
+                optionValue,
+                label: option?.label ?? optionValue,
+                ...(option?.misconception ? { misconception: option.misconception } : {}),
+                count,
+              };
+            })
+            .sort((a, b) => b.count - a.count || a.optionValue.localeCompare(b.optionValue))
+            .slice(0, 3)
+        : [];
+
+      return {
+        questionId,
+        question: question?.question ?? questionId,
+        attempts: tally.attempts,
+        correct: tally.correct,
+        accuracy: tally.attempts > 0 ? tally.correct / tally.attempts : 0,
+        misconceptions,
+      };
+    })
     .sort(
       (a, b) =>
         a.accuracy - b.accuracy ||

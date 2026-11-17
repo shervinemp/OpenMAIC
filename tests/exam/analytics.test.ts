@@ -109,9 +109,50 @@ describe('computeExamAnalytics', () => {
     ]);
     expect(analytics.mc.map((stat) => stat.questionId)).toEqual(['mc_2', 'mc_3', 'mc_1']);
     expect(analytics.mc).toEqual([
-      { questionId: 'mc_2', question: 'Question 2?', attempts: 3, correct: 1, accuracy: 1 / 3 },
-      { questionId: 'mc_3', question: 'Question 3?', attempts: 3, correct: 1, accuracy: 1 / 3 },
-      { questionId: 'mc_1', question: 'Question 1?', attempts: 3, correct: 2, accuracy: 2 / 3 },
+      {
+        questionId: 'mc_2',
+        question: 'Question 2?',
+        attempts: 3,
+        correct: 1,
+        accuracy: 1 / 3,
+        misconceptions: [],
+      },
+      {
+        questionId: 'mc_3',
+        question: 'Question 3?',
+        attempts: 3,
+        correct: 1,
+        accuracy: 1 / 3,
+        misconceptions: [],
+      },
+      {
+        questionId: 'mc_1',
+        question: 'Question 1?',
+        attempts: 3,
+        correct: 2,
+        accuracy: 2 / 3,
+        misconceptions: [],
+      },
+    ]);
+  });
+
+  it('aggregates the chosen distractor misconception per question', () => {
+    const spec = examSpec();
+    spec.mcQuestions[1]!.options = [
+      { label: 'right', value: 'A' },
+      { label: 'wrong B', value: 'B', misconception: 'Reverses the relation' },
+      { label: 'wrong C', value: 'C', misconception: 'Ignores the premise' },
+    ];
+    const analytics = computeExamAnalytics(spec, [
+      attempt('a', { mcAnswers: { mc_2: 'B' } }),
+      attempt('b', { mcAnswers: { mc_2: 'B' } }),
+      attempt('c', { mcAnswers: { mc_2: 'C' } }),
+    ]);
+
+    const stat = analytics.mc.find((entry) => entry.questionId === 'mc_2');
+    expect(stat?.misconceptions).toEqual([
+      { optionValue: 'B', label: 'wrong B', misconception: 'Reverses the relation', count: 2 },
+      { optionValue: 'C', label: 'wrong C', misconception: 'Ignores the premise', count: 1 },
     ]);
   });
 

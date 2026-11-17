@@ -863,7 +863,9 @@
     "aiGrading": "AI 正在批改中...",
     "aiGradingWait": "请稍候，正在分析你的答案",
     "quizReport": "答题报告",
-    "retry": "重新答题"
+    "retry": "重新答题",
+    "misconception": "Misconception",
+    "reviewLesson": "Review lesson"
   },
   "activity": {
     "title": "实验",

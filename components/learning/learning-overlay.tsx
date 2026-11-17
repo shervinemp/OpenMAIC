@@ -8,6 +8,7 @@ import {
   Loader2,
   RotateCcw,
   Sparkles,
+  BookOpenText,
 } from 'lucide-react';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -76,17 +77,21 @@ function ConceptChips({ conceptIds }: { conceptIds: readonly string[] }) {
 function DueCard({
   card,
   question,
+  lessonTitle,
   revealed,
   saving,
   onReveal,
   onRate,
+  onOpenLesson,
 }: {
   card: ReviewCard;
   question: QuizQuestion;
+  lessonTitle?: string;
   revealed: boolean;
   saving: boolean;
   onReveal: () => void;
   onRate: (rating: ReviewRating) => void;
+  onOpenLesson?: () => void;
 }) {
   const { t } = useI18n();
   const showOptions = question.type === 'single' || question.type === 'multiple';
@@ -172,6 +177,17 @@ function DueCard({
               ))}
             </div>
           </div>
+
+          {lessonTitle && onOpenLesson && (
+            <button
+              type="button"
+              onClick={onOpenLesson}
+              className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 px-3 py-1 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-50 dark:border-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/40"
+            >
+              <BookOpenText className="h-3.5 w-3.5" />
+              {t('quiz.reviewLesson')}: {lessonTitle}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -189,6 +205,7 @@ function DueCard({
 export function LearningOverlay({ stageId, open, onOpenChange }: LearningOverlayProps) {
   const { t, locale } = useI18n();
   const scenes = useStageStore((s) => s.scenes);
+  const setCurrentSceneId = useStageStore((s) => s.setCurrentSceneId);
   const [state, setState] = useState<LearningState | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -243,16 +260,23 @@ export function LearningOverlay({ stageId, open, onOpenChange }: LearningOverlay
         .map((card) => {
           const location = cardLocation(card);
           const key = itemKey(location.sceneId, location.itemId);
-          return {
-            card,
-            question: key ? questionByItem.get(key) : undefined,
-          };
+          const question = key ? questionByItem.get(key) : undefined;
+          const lesson =
+            question?.remediationOutlineId !== undefined
+              ? scenes.find((scene) => scene.outlineId === question.remediationOutlineId)
+              : undefined;
+          return { card, question, lesson };
         })
         .filter(
-          (entry): entry is { card: ReviewCard; question: QuizQuestion } =>
-            entry.question !== undefined,
+          (
+            entry,
+          ): entry is {
+            card: ReviewCard;
+            question: QuizQuestion;
+            lesson: (typeof scenes)[number] | undefined;
+          } => entry.question !== undefined,
         ),
-    [due, questionByItem],
+    [due, questionByItem, scenes],
   );
   const orphaned = due.length - reviewable.length;
   const mastery = useMemo(() => masteryByConcept(state?.evidence ?? []), [state]);
@@ -362,15 +386,24 @@ export function LearningOverlay({ stageId, open, onOpenChange }: LearningOverlay
         </div>
       ) : (
         <div className="grid gap-3">
-          {reviewable.map(({ card, question }) => (
+          {reviewable.map(({ card, question, lesson }) => (
             <DueCard
               key={card.cardId}
               card={card}
               question={question}
+              lessonTitle={lesson?.title}
               revealed={revealed === card.cardId}
               saving={ratingCardId === card.cardId}
               onReveal={() => setRevealed(card.cardId)}
               onRate={(rating) => void rate(card, rating)}
+              onOpenLesson={
+                lesson
+                  ? () => {
+                      setCurrentSceneId(lesson.id);
+                      onOpenChange(false);
+                    }
+                  : undefined
+              }
             />
           ))}
         </div>

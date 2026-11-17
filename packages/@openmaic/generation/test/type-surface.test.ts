@@ -36,6 +36,7 @@ type _SceneContentKeys = Assert<
     | 'retrievalContext'
     | 'unitContext'
     | 'verifyQuizAnswers'
+    | 'allOutlines'
   >
 >;
 type _SceneActionKeys = Assert<

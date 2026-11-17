@@ -108,10 +108,17 @@ into one card.
   legacy cards without those fields fall back to decoding the card id. A card
   whose scene or question was deleted stays out of the review session and is
   reported as orphaned.
+- Choice options carry a per-option `rationale`, and wrong options also carry
+  the `misconception` they encode. The quiz review shows both, and the exam
+  analytics panel groups the chosen distractors into misconception counts.
+- Quiz generation points each tagged item at the preceding teaching outline
+  whose key points cover its concepts (`attachQuizRemediation`). The review
+  screen and the learning overlay resolve that outline to the live scene and
+  offer a "review lesson" jump.
 
 ## Next
 
-1. Add distractor-to-misconception diagnosis and remediation links.
-2. Attach exam and activity producers to the same log.
+1. Attach exam and activity producers to the same evidence log.
+2. Add remediation links to exam review (the pool has no single scene today).
 3. Add a placement / adaptive-routing decision on top of real evidence.
 4. Compact very old evidence records in the runtime store.

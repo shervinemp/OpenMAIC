@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useStageStore } from '@/lib/store';
 import { getCurrentModelConfig, getStageRoutesHeaderValue } from '@/lib/utils/model-config';
 import { createLogger } from '@/lib/logger';
 
@@ -265,6 +266,7 @@ function SingleChoiceQuestion({
   disabled?: boolean;
   result?: QuestionResult;
 }) {
+  const { t } = useI18n();
   const isReview = !!result;
 
   return (
@@ -328,6 +330,16 @@ function SingleChoiceQuestion({
                 )}
               >
                 <QuizMathText text={opt.label} />
+                {isReview && opt.rationale && (
+                  <span className="mt-1 block text-xs font-normal leading-relaxed text-gray-500 dark:text-gray-400">
+                    <QuizMathText text={opt.rationale} />
+                  </span>
+                )}
+                {isReview && isWrong && opt.misconception && (
+                  <span className="mt-1 block text-xs font-normal leading-relaxed text-red-600 dark:text-red-400">
+                    {t('quiz.misconception')}: {opt.misconception}
+                  </span>
+                )}
               </span>
               {isReview && isCorrectOpt && (
                 <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
@@ -433,6 +445,16 @@ function MultipleChoiceQuestion({
                 )}
               >
                 <QuizMathText text={opt.label} />
+                {isReview && opt.rationale && (
+                  <span className="mt-1 block text-xs font-normal leading-relaxed text-gray-500 dark:text-gray-400">
+                    <QuizMathText text={opt.rationale} />
+                  </span>
+                )}
+                {isReview && isWrong && opt.misconception && (
+                  <span className="mt-1 block text-xs font-normal leading-relaxed text-red-600 dark:text-red-400">
+                    {t('quiz.misconception')}: {opt.misconception}
+                  </span>
+                )}
               </span>
               {isReview && isCorrectOpt && (
                 <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
@@ -942,6 +964,12 @@ function QuestionCard({
   const { t } = useI18n();
   const isReview = !!result;
   const pts = quizQuestionPoints(question.points);
+  const scenes = useStageStore((state) => state.scenes);
+  const setCurrentSceneId = useStageStore((state) => state.setCurrentSceneId);
+  const remediationScene =
+    isReview && question.remediationOutlineId
+      ? scenes.find((scene) => scene.outlineId === question.remediationOutlineId)
+      : undefined;
 
   return (
     <motion.div
@@ -1033,6 +1061,17 @@ function QuestionCard({
           <span className="font-medium">{t('quiz.analysis')}</span>
           <QuizMathText text={question.analysis} allowDisplayMode />
         </div>
+      )}
+
+      {remediationScene && (
+        <button
+          type="button"
+          onClick={() => setCurrentSceneId(remediationScene.id)}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-violet-200 px-3 py-1 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-50 dark:border-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/40"
+        >
+          <BookOpenText className="h-3.5 w-3.5" />
+          {t('quiz.reviewLesson')}: {remediationScene.title}
+        </button>
       )}
     </motion.div>
   );

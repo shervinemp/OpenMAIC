@@ -863,7 +863,9 @@
     "aiGrading": "AI проверяет...",
     "aiGradingWait": "Пожалуйста подождите, анализируем ваши ответы",
     "quizReport": "Результаты теста",
-    "retry": "Повторить"
+    "retry": "Повторить",
+    "misconception": "Misconception",
+    "reviewLesson": "Review lesson"
   },
   "activity": {
     "title": "Практикум",

@@ -863,7 +863,9 @@
     "aiGrading": "Die KI wertet aus...",
     "aiGradingWait": "Bitte warten, deine Antworten werden ausgewertet",
     "quizReport": "Quizbericht",
-    "retry": "Erneut versuchen"
+    "retry": "Erneut versuchen",
+    "misconception": "Misconception",
+    "reviewLesson": "Review lesson"
   },
   "activity": {
     "title": "Lab",

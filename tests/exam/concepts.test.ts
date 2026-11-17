@@ -12,8 +12,18 @@ const choice = {
   question: 'Which layer keeps raw events unchanged?',
   concepts: [' Bronze Layer ', 'bronze layer.', 'Quiz'],
   options: [
-    { label: 'Bronze', value: 'A' },
-    { label: 'Silver', value: 'B' },
+    {
+      label: 'Bronze',
+      value: 'A',
+      rationale: ' Bronze stores the raw ingestion output. ',
+      misconception: 'This should be dropped from the key.',
+    },
+    {
+      label: 'Silver',
+      value: 'B',
+      rationale: 'Silver cleans the data first.',
+      misconception: ' Silver is the raw layer. ',
+    },
     { label: 'Gold', value: 'C' },
   ],
   answer: ['A'],
@@ -36,6 +46,20 @@ describe('exam concept tags', () => {
   test('normalizes choice-question concepts', () => {
     const question = coerceChoiceQuestion(choice, 0);
     expect(question?.concepts).toEqual(['bronze layer']);
+  });
+
+  test('carries normalized option rationales and misconceptions', () => {
+    const question = coerceChoiceQuestion(choice, 0);
+    expect(question?.options[0]).toMatchObject({
+      value: 'A',
+      rationale: 'Bronze stores the raw ingestion output.',
+    });
+    expect(question?.options[0]).not.toHaveProperty('misconception');
+    expect(question?.options[1]).toMatchObject({
+      value: 'B',
+      misconception: 'Silver is the raw layer.',
+    });
+    expect(question?.options[2]).toEqual({ label: 'Gold', value: 'C' });
   });
 
   test('normalizes free-response concepts', () => {

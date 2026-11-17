@@ -641,17 +641,29 @@ function ExamAnalyticsPanel({
             </h4>
             <ul className="space-y-1.5">
               {analytics.mc.slice(0, 3).map((stat) => (
-                <li key={stat.questionId} className="flex items-start justify-between gap-3">
-                  <span className="min-w-0 truncate text-zinc-600 dark:text-zinc-300">
-                    {stat.question}
-                  </span>
-                  <span className="shrink-0 tabular-nums text-zinc-500 dark:text-zinc-400">
-                    {t('exams.analyticsAccuracy', {
-                      pct: Math.round(stat.accuracy * 100),
-                      correct: stat.correct,
-                      attempts: stat.attempts,
-                    })}
-                  </span>
+                <li key={stat.questionId} className="space-y-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="min-w-0 truncate text-zinc-600 dark:text-zinc-300">
+                      {stat.question}
+                    </span>
+                    <span className="shrink-0 tabular-nums text-zinc-500 dark:text-zinc-400">
+                      {t('exams.analyticsAccuracy', {
+                        pct: Math.round(stat.accuracy * 100),
+                        correct: stat.correct,
+                        attempts: stat.attempts,
+                      })}
+                    </span>
+                  </div>
+                  {stat.misconceptions.length > 0 && (
+                    <ul className="space-y-0.5 pl-3 text-[11px] text-amber-600 dark:text-amber-400">
+                      {stat.misconceptions.slice(0, 2).map((entry) => (
+                        <li key={entry.optionValue}>
+                          {t('quiz.misconception')}: {entry.misconception ?? entry.label}{' '}
+                          <span className="text-zinc-400 dark:text-zinc-500">({entry.count})</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               ))}
             </ul>
@@ -1023,7 +1035,7 @@ function ExamReview({
                   <li
                     key={opt.value}
                     className={
-                      'flex items-center gap-2 rounded-md px-2 py-1.5 ' +
+                      'flex items-start gap-2 rounded-md px-2 py-1.5 ' +
                       (isAnswer
                         ? 'bg-green-50 dark:bg-green-900/20'
                         : isPicked
@@ -1032,13 +1044,25 @@ function ExamReview({
                     }
                   >
                     {isAnswer ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-600" />
+                      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" />
                     ) : isPicked ? (
-                      <XCircle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                      <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
                     ) : (
-                      <MinusCircle className="h-3.5 w-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" />
+                      <MinusCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" />
                     )}
-                    <span className="text-zinc-700 dark:text-zinc-200">{`${opt.value}. ${opt.label}`}</span>
+                    <span className="flex-1 text-zinc-700 dark:text-zinc-200">
+                      {`${opt.value}. ${opt.label}`}
+                      {opt.rationale && (
+                        <span className="mt-0.5 block text-[11px] font-normal text-zinc-500 dark:text-zinc-400">
+                          {opt.rationale}
+                        </span>
+                      )}
+                      {isPicked && !isAnswer && opt.misconception && (
+                        <span className="mt-0.5 block text-[11px] font-normal text-red-600 dark:text-red-400">
+                          {t('quiz.misconception')}: {opt.misconception}
+                        </span>
+                      )}
+                    </span>
                   </li>
                 );
               })}

@@ -449,6 +449,7 @@ export async function POST(req: NextRequest) {
       // Phase 2 §15.5: prerequisite coherence — thread what the unit has
       // already taught so this scene builds on it instead of repeating it.
       unitContext: buildUnitContext(effectiveOutline, allOutlines),
+      allOutlines,
       ...(verifyQuizAnswers ? { verifyQuizAnswers } : {}),
       // The multi-step planner runs when the single-call PBL planner fails
       // on a non-provider error (same wiring as the server generation paths).
