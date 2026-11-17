@@ -41,6 +41,7 @@ import type { VideoProviderId } from '@/lib/media/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
+import { groupIdenticalMediaRequests } from '@/lib/media/prompt-dedupe';
 import { resolveImageSize } from '@/lib/server/image-sizing';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { decodeDataUrl, fetchProviderResultUrl } from '@/lib/server/provider-result-fetch';
@@ -169,7 +170,10 @@ export async function generateMediaForClassroom(
   const videoRequests = requests.filter((r) => r.type === 'video' && videoProviderIds.length > 0);
 
   const generateImages = async () => {
-    for (const req of imageRequests) {
+    // Identical prompts are one purchase; each element id gets its own file so
+    // placeholder replacement stays a per-slot lookup.
+    for (const group of groupIdenticalMediaRequests(imageRequests)) {
+      const req = group.leader;
       try {
         const providerId = imageProviderIds[0] as ImageProviderId;
         const apiKey = resolveImageApiKey(providerId);
@@ -228,10 +232,17 @@ export async function generateMediaForClassroom(
           continue;
         }
 
-        const filename = `${req.elementId}.${ext}`;
-        await fs.writeFile(path.join(mediaDir, filename), buf);
-        mediaMap[req.elementId] = mediaServingUrl(baseUrl, classroomId, `media/${filename}`);
-        log.info(`Generated image: ${filename}`);
+        for (const request of [req, ...group.duplicates]) {
+          const filename = `${request.elementId}.${ext}`;
+          await fs.writeFile(path.join(mediaDir, filename), buf);
+          mediaMap[request.elementId] = mediaServingUrl(baseUrl, classroomId, `media/${filename}`);
+        }
+        log.info(
+          `Generated image: ${req.elementId}.${ext}` +
+            (group.duplicates.length > 0
+              ? ` (reused for ${group.duplicates.length} identical request(s))`
+              : ''),
+        );
       } catch (err) {
         log.warn(`Image generation failed for ${req.elementId}:`, err);
       }
@@ -239,7 +250,8 @@ export async function generateMediaForClassroom(
   };
 
   const generateVideos = async () => {
-    for (const req of videoRequests) {
+    for (const group of groupIdenticalMediaRequests(videoRequests)) {
+      const req = group.leader;
       try {
         const providerId = videoProviderIds[0] as VideoProviderId;
         const apiKey = resolveVideoApiKey(providerId);
@@ -275,10 +287,17 @@ export async function generateMediaForClassroom(
         );
 
         const buf = await downloadToBuffer(result.url);
-        const filename = `${req.elementId}.mp4`;
-        await fs.writeFile(path.join(mediaDir, filename), buf);
-        mediaMap[req.elementId] = mediaServingUrl(baseUrl, classroomId, `media/${filename}`);
-        log.info(`Generated video: ${filename}`);
+        for (const request of [req, ...group.duplicates]) {
+          const filename = `${request.elementId}.mp4`;
+          await fs.writeFile(path.join(mediaDir, filename), buf);
+          mediaMap[request.elementId] = mediaServingUrl(baseUrl, classroomId, `media/${filename}`);
+        }
+        log.info(
+          `Generated video: ${req.elementId}.mp4` +
+            (group.duplicates.length > 0
+              ? ` (reused for ${group.duplicates.length} identical request(s))`
+              : ''),
+        );
       } catch (err) {
         log.warn(`Video generation failed for ${req.elementId}:`, err);
       }

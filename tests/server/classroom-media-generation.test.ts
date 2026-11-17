@@ -420,4 +420,56 @@ describe('generateMediaForClassroom model fallback', () => {
       'http://localhost/api/classroom-media/cls-grok/media/gen_img_grok.jpg',
     );
   });
+
+  test('buys an identical prompt once and serves both element ids', async () => {
+    vi.stubEnv('IMAGE_SEEDREAM_API_KEY', 'sk-seedream');
+    vi.resetModules();
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: [{ url: 'https://cdn.example.com/shared.png' }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { generateMediaForClassroom } = await import('@/lib/server/classroom-media-generation');
+
+    const outlines = [
+      {
+        id: 'outline_a',
+        type: 'slide',
+        title: 'Scene A',
+        description: 'd',
+        order: 1,
+        mediaGenerations: [
+          { type: 'image', prompt: 'a labelled water cycle', elementId: 'gen_img_a' },
+        ],
+      },
+      {
+        id: 'outline_b',
+        type: 'slide',
+        title: 'Scene B',
+        description: 'd',
+        order: 2,
+        mediaGenerations: [
+          { type: 'image', prompt: 'A   LABELLED water cycle', elementId: 'gen_img_b' },
+        ],
+      },
+    ] as unknown as SceneOutline[];
+
+    const mediaMap = await generateMediaForClassroom(outlines, 'cls-dedupe', 'http://localhost');
+
+    // One provider call and one download, two served files.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(mediaMap).toEqual({
+      gen_img_a: 'http://localhost/api/classroom-media/cls-dedupe/media/gen_img_a.png',
+      gen_img_b: 'http://localhost/api/classroom-media/cls-dedupe/media/gen_img_b.png',
+    });
+  });
 });

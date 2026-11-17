@@ -324,6 +324,75 @@ describe('server-backed classic media orchestrator', () => {
     });
   });
 
+  it('buys an identical prompt once and reuses the bytes for the other slot', async () => {
+    serveImage();
+    mocks.putAsset
+      .mockReset()
+      .mockResolvedValueOnce('ast_first')
+      .mockResolvedValueOnce('ast_second');
+    const secondRef = 'gen_img_server_second';
+
+    await generateMediaForOutlines(
+      [
+        outlineWith(1, { type: 'image', prompt: 'A diagram', elementId: imageRef }),
+        outlineWith(2, { type: 'image', prompt: '  a   DIAGRAM ', elementId: secondRef }),
+      ],
+      stageId,
+    );
+
+    // One provider purchase, two pool allocations and two document rewrites.
+    expect(providerCallCount()).toBe(1);
+    expect(mocks.putAsset).toHaveBeenCalledTimes(2);
+    expect(mocks.persistReference).toHaveBeenCalledTimes(2);
+    expect(mocks.persistReference).toHaveBeenCalledWith(
+      expect.objectContaining({ placeholderRef: imageRef, assetId: 'ast_first' }),
+    );
+    expect(mocks.persistReference).toHaveBeenCalledWith(
+      expect.objectContaining({ placeholderRef: secondRef, assetId: 'ast_second' }),
+    );
+    const tasks = useMediaGenerationStore.getState().tasks;
+    expect(tasks.ast_first).toMatchObject({ status: 'done', placeholderRef: imageRef });
+    expect(tasks.ast_second).toMatchObject({ status: 'done', placeholderRef: secondRef });
+  });
+
+  it('shares a structured refusal instead of buying the same refusal twice', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/generate/image') {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'The provider rejected this prompt',
+            errorCode: 'CONTENT_SENSITIVE',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    });
+    const secondRef = 'gen_img_server_refused';
+
+    await generateMediaForOutlines(
+      [
+        outlineWith(1, { type: 'image', prompt: 'A diagram', elementId: imageRef }),
+        outlineWith(2, { type: 'image', prompt: 'A diagram', elementId: secondRef }),
+      ],
+      stageId,
+    );
+
+    expect(providerCallCount()).toBe(1);
+    const tasks = useMediaGenerationStore.getState().tasks;
+    expect(tasks[imageRef]).toMatchObject({
+      status: 'failed',
+      errorCode: 'CONTENT_SENSITIVE',
+    });
+    expect(tasks[secondRef]).toMatchObject({
+      status: 'failed',
+      errorCode: 'CONTENT_SENSITIVE',
+    });
+    // The refusal is persisted for both slots, so a reload does not retry it.
+    expect(mocks.mediaPut).toHaveBeenCalledTimes(2);
+  });
+
   it('caches the bytes locally under the allocated id, and survives a cache failure', async () => {
     serveImage();
     mocks.mediaPut.mockRejectedValue(new Error('quota exceeded'));
@@ -1248,7 +1317,11 @@ describe('server-backed classic media orchestrator', () => {
 
     await generateMediaForOutlines(
       refs.map((ref, index) =>
-        outlineWith(index + 1, { type: 'image', prompt: 'A diagram', elementId: ref }),
+        outlineWith(index + 1, {
+          type: 'image',
+          prompt: `A diagram ${index + 1}`,
+          elementId: ref,
+        }),
       ),
       stageId,
     );
@@ -1413,7 +1486,11 @@ describe('server-backed classic media orchestrator', () => {
       generationComplete: false,
     });
     const outlines = refs.map((ref, index) =>
-      outlineWith(index + 1, { type: 'image', prompt: 'A diagram', elementId: ref }),
+      outlineWith(index + 1, {
+        type: 'image',
+        prompt: `A diagram ${index + 1}`,
+        elementId: ref,
+      }),
     );
 
     let allocated = 0;

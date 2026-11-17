@@ -16,6 +16,7 @@ import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useStageStore } from '@/lib/store/stage';
 import { mediaProviderBudgets, takeWithinMediaCaps } from '@/lib/media/provider-budgets';
+import { groupIdenticalMediaRequests } from '@/lib/media/prompt-dedupe';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { db, mediaFileKey, type MediaFileRecord } from '@/lib/device-storage/database';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -367,21 +368,33 @@ async function collectAndGenerate(
   // each class. Both passes are capped: the first pass must not buy every
   // outline-declared image and video in one click, and a repair pass must not
   // re-buy a whole backlog. Capped work waits for the next pass.
+  //
+  // Identical prompts are grouped BEFORE the caps because they are one
+  // purchase. The outline model re-describes the same diagram in different
+  // scenes, and every request has its own element id because it fills its own
+  // slot; buying each of those separately is paying twice for the same bytes.
+  // A duplicate rides its leader's dispatch slot instead of consuming one.
   const budgets = mediaProviderBudgets();
   const costRank = (type: MediaGenerationRequest['type']): number =>
     type === 'video' ? budgets.video.costWeight : budgets.image.costWeight;
   const dispatchCaps = options.repair
     ? { image: budgets.image.requeueCap, video: budgets.video.requeueCap }
     : { image: budgets.image.generationCap, video: budgets.video.generationCap };
-  const dispatchable = takeWithinMediaCaps(
-    [...allRequests].sort((a, b) => costRank(a.type) - costRank(b.type)),
+  const requestGroups = groupIdenticalMediaRequests(allRequests);
+  const cappedGroups = takeWithinMediaCaps(
+    requestGroups
+      .map((group) => ({ type: group.leader.type, group }))
+      .sort((a, b) => costRank(a.type) - costRank(b.type)),
     dispatchCaps,
   );
-  if (dispatchable.length < allRequests.length) {
+  const dispatchGroups = cappedGroups.map((entry) => entry.group);
+  // The leader first, then the slots that reuse its bytes.
+  const dispatchable = dispatchGroups.flatMap((group) => [group.leader, ...group.duplicates]);
+  if (cappedGroups.length < requestGroups.length) {
     log.warn(
       `Media ${options.repair ? 'repair' : 'generation'} capped at ` +
-        `${dispatchable.length}/${allRequests.length} requests this pass ` +
-        '(the rest wait for the next pass)',
+        `${cappedGroups.length}/${requestGroups.length} provider purchase(s) ` +
+        `(${dispatchable.length}/${allRequests.length} element(s); the rest wait for the next pass)`,
     );
   }
 
@@ -404,7 +417,9 @@ async function collectAndGenerate(
   // element that needs it.
   const scan = createCachedMediaScan();
 
-  // Process requests serially — image/video APIs have limited concurrency
+  // Process provider purchases serially — image/video APIs have limited
+  // concurrency — and commit an identical request's slots from the bytes the
+  // group's leader already paid for.
   const mediaStats = new Map<string, { total: number; done: number; failed: number }>();
   // Totals span every request an outline has in this pass, dispatched or
   // capped: an outline is only settled when all of its media is.
@@ -439,20 +454,24 @@ async function collectAndGenerate(
     if (stats.failed === 0) useStageStore.getState().settleFailedOutline(outlineId);
   };
 
-  for (const [index, req] of dispatchable.entries()) {
+  let storageFull = false;
+  let processed = 0;
+  for (const group of dispatchGroups) {
     if (abortSignal?.aborted) break;
-    const outlineId = outlineByElement.get(req.elementId);
-    if (outlineId && !phaseStarted.has(outlineId)) {
-      phaseStarted.add(outlineId);
-      useStageStore.getState().recordScenePhase(outlineId, 'media', { status: 'running' });
+    const leader = group.leader;
+    const leaderOutlineId = outlineByElement.get(leader.elementId);
+    if (leaderOutlineId && !phaseStarted.has(leaderOutlineId)) {
+      phaseStarted.add(leaderOutlineId);
+      useStageStore.getState().recordScenePhase(leaderOutlineId, 'media', { status: 'running' });
     }
-    const attempt = await generateSingleMedia(req, stageId, abortSignal, undefined, scan);
-    if (!abortSignal?.aborted) recordOutcome(req);
-    if (!attempt.storageFull) continue;
+    const attempt = await generateSingleMedia(leader, stageId, abortSignal, undefined, scan);
+    processed += 1;
+    if (!abortSignal?.aborted) recordOutcome(leader);
+
     // The store checks each write against the headroom it has left, so a
     // refusal is evidence about one blob and only weak evidence about the next.
     // The pass stops the deck anyway, and that is a judgement about cost rather
-    // than about certainty: every element it attempts costs a provider call
+    // than about certainty: every purchase it attempts costs a provider call
     // before the store is asked, so continuing to pay for elements that will
     // probably be refused is the worse bet. A path whose refusals are free
     // makes the opposite call -- narration adoption attempts every clip it
@@ -462,10 +481,50 @@ async function collectAndGenerate(
     // for them, so a later load may still generate them once — but they show
     // the same "storage is full" state as the one that was refused, because
     // that is the condition they are waiting on.
+    if (attempt.storageFull) {
+      storageFull = true;
+      break;
+    }
+
+    // A duplicate rides its leader's outcome. When the leader bought bytes,
+    // each duplicate commits them under its own placeholder — a separate pool
+    // allocation and document write-back, but no provider call. When the
+    // leader failed, the outcome is shared: an identical prompt would only be
+    // refused (or bought twice) again.
+    for (const duplicate of group.duplicates) {
+      if (abortSignal?.aborted) break;
+      const duplicateOutlineId = outlineByElement.get(duplicate.elementId);
+      if (duplicateOutlineId && !phaseStarted.has(duplicateOutlineId)) {
+        phaseStarted.add(duplicateOutlineId);
+        useStageStore
+          .getState()
+          .recordScenePhase(duplicateOutlineId, 'media', { status: 'running' });
+      }
+
+      let outcome: MediaAttemptOutcome;
+      if (attempt.bytes) {
+        outcome = await generateSingleMedia(duplicate, stageId, abortSignal, attempt.bytes, scan);
+      } else if (attempt.failure) {
+        await shareMediaFailure(duplicate, stageId, attempt.failure);
+        outcome = ATTEMPT_FAILED;
+      } else {
+        // Aborted before the leader produced an outcome; leave the rest to a
+        // later pass rather than inventing one.
+        break;
+      }
+      processed += 1;
+      if (!abortSignal?.aborted) recordOutcome(duplicate);
+      if (!outcome.storageFull) continue;
+      storageFull = true;
+      break;
+    }
+    if (storageFull) break;
+  }
+
+  if (storageFull) {
     log.warn(`Asset storage is full; stopping the media pass for ${stageId}.`);
     await markAssetStorageFull(stageId);
-    markStorageFull(dispatchable.slice(index + 1));
-    break;
+    markStorageFull(dispatchable.slice(processed));
   }
 
   // Outlines this pass started but could not finish (capped items, a
@@ -511,6 +570,40 @@ function markStorageFull(requests: readonly MediaGenerationRequest[]): void {
       ASSET_QUOTA_EXCEEDED,
     );
   }
+}
+
+/**
+ * Report a duplicate's failure without asking a provider for a second answer.
+ *
+ * A structured refusal (content policy, generation disabled) is persisted the
+ * same way the leader's is, so a reload neither restores the duplicate as
+ * pending nor buys the same refused prompt again. A transient failure stays in
+ * memory only and is retried by the next pass — which re-runs the group's
+ * leader and shares whatever that attempt settles as.
+ */
+async function shareMediaFailure(
+  req: MediaGenerationRequest,
+  stageId: string,
+  failure: NonNullable<MediaAttemptOutcome['failure']>,
+): Promise<void> {
+  useMediaGenerationStore.getState().markFailed(req.elementId, failure.message, failure.errorCode);
+  if (!failure.errorCode) return;
+  await db.mediaFiles
+    .put({
+      id: mediaFileKey(stageId, req.elementId),
+      stageId,
+      type: req.type,
+      blob: new Blob(),
+      mimeType: req.type === 'image' ? 'image/png' : 'video/mp4',
+      size: 0,
+      placeholderRef: req.elementId,
+      prompt: req.prompt,
+      params: JSON.stringify({ aspectRatio: req.aspectRatio, style: req.style }),
+      error: failure.message,
+      errorCode: failure.errorCode,
+      createdAt: Date.now(),
+    })
+    .catch(() => {}); // best-effort
 }
 
 /**
@@ -1012,10 +1105,10 @@ async function commitCachedMedia(
   paramsJson: string,
   abortSignal?: AbortSignal,
   scan?: CachedMediaScan,
-): Promise<boolean> {
+): Promise<RefusedMediaBytes | undefined> {
   const cached = await adoptableCachedMedia(stageId, req.elementId, scan);
   const blob = cached?.blob;
-  if (!cached || !blob || blob.size === 0) return false;
+  if (!cached || !blob || blob.size === 0) return undefined;
   // The read above is the only thing that has happened so far, and it is
   // cheap. Everything after it is not: a `put` cannot be cancelled and its
   // write-back cannot be half-undone, so a pass whose course has already been
@@ -1024,17 +1117,22 @@ async function commitCachedMedia(
   throwIfAborted(abortSignal);
 
   const poster = cached.poster && cached.poster.size > 0 ? cached.poster : undefined;
+  const bytes: RefusedMediaBytes = {
+    blob,
+    mimeType: storedMediaType(blob, req.type === 'video' ? 'video/mp4' : 'image/png'),
+    ...(poster ? { poster, posterMimeType: storedMediaType(poster, 'image/jpeg') } : {}),
+  };
   log.info(`Adopting locally cached bytes for ${req.elementId}; no provider call.`);
   await commitPooledMedia({
     req,
     stageId,
     paramsJson,
-    blob,
-    mimeType: storedMediaType(blob, req.type === 'video' ? 'video/mp4' : 'image/png'),
-    posterBlob: poster,
-    ...(poster ? { posterMimeType: storedMediaType(poster, 'image/jpeg') } : {}),
+    blob: bytes.blob,
+    mimeType: bytes.mimeType,
+    ...(bytes.poster ? { posterBlob: bytes.poster } : {}),
+    ...(bytes.posterMimeType ? { posterMimeType: bytes.posterMimeType } : {}),
   });
-  return true;
+  return bytes;
 }
 
 /**
@@ -1056,10 +1154,20 @@ interface MediaAttemptOutcome {
   readonly storageFull: boolean;
   /** Bytes reached the store and the element is finished. */
   readonly committed: boolean;
+  /**
+   * The bytes this attempt produced or adopted. Identical requests reuse them
+   * instead of buying the same prompt again.
+   */
+  readonly bytes?: RefusedMediaBytes;
+  /** Why the attempt failed, for identical requests to report without a call. */
+  readonly failure?: { readonly message: string; readonly errorCode?: string };
 }
 
 const ATTEMPT_FAILED: MediaAttemptOutcome = { storageFull: false, committed: false };
-const ATTEMPT_COMMITTED: MediaAttemptOutcome = { storageFull: false, committed: true };
+
+function committedWith(bytes: RefusedMediaBytes): MediaAttemptOutcome {
+  return { storageFull: false, committed: true, bytes };
+}
 
 /**
  * Generate (or re-store) one element, and say what happened.
@@ -1070,9 +1178,9 @@ const ATTEMPT_COMMITTED: MediaAttemptOutcome = { storageFull: false, committed: 
  * the obvious substitute -- "the task is no longer failed" -- is a fact about a
  * table a course switch clears out from under it.
  *
- * `refusedBytes` short-circuits the provider entirely: it is what a Retry hands
- * back after a full store kept the bytes, so the retry re-attempts the upload
- * rather than buying the media a second time.
+ * `providedBytes` short-circuits the provider entirely: it is what a Retry hands
+ * back after a full store kept the bytes, and what an identical request hands
+ * over after its group's leader already bought them.
  */
 /**
  * In-pass recovery for the provider call (the recovery policy's first layer):
@@ -1112,7 +1220,7 @@ async function generateSingleMedia(
   req: MediaGenerationRequest,
   stageId: string,
   abortSignal?: AbortSignal,
-  refusedBytes?: RefusedMediaBytes,
+  providedBytes?: RefusedMediaBytes,
   scan?: CachedMediaScan,
 ): Promise<MediaAttemptOutcome> {
   const store = useMediaGenerationStore.getState();
@@ -1124,25 +1232,24 @@ async function generateSingleMedia(
       style: req.style,
     });
 
-    if (refusedBytes) {
+    if (providedBytes) {
       await commitPooledMedia({
         req,
         stageId,
         paramsJson,
-        blob: refusedBytes.blob,
-        mimeType: refusedBytes.mimeType,
-        ...(refusedBytes.poster ? { posterBlob: refusedBytes.poster } : {}),
-        ...(refusedBytes.posterMimeType ? { posterMimeType: refusedBytes.posterMimeType } : {}),
+        blob: providedBytes.blob,
+        mimeType: providedBytes.mimeType,
+        ...(providedBytes.poster ? { posterBlob: providedBytes.poster } : {}),
+        ...(providedBytes.posterMimeType ? { posterMimeType: providedBytes.posterMimeType } : {}),
       });
-      return ATTEMPT_COMMITTED;
+      return committedWith(providedBytes);
     }
 
     // Bytes this browser already holds for the placeholder (a store that
     // refused them earlier kept them) are already paid for, so they are
     // committed instead of bought again.
-    if (await commitCachedMedia(req, stageId, paramsJson, abortSignal, scan)) {
-      return ATTEMPT_COMMITTED;
-    }
+    const adopted = await commitCachedMedia(req, stageId, paramsJson, abortSignal, scan);
+    if (adopted) return committedWith(adopted);
 
     if (req.type === 'image') {
       const result = await withProviderRecovery(req, abortSignal, () =>
@@ -1153,14 +1260,18 @@ async function generateSingleMedia(
       throwIfAborted(abortSignal);
       const blob = await fetchAsBlob(result.ossUrl || result.url);
       throwIfAborted(abortSignal);
+      const bytes: RefusedMediaBytes = {
+        blob,
+        mimeType: storedMediaType(blob, 'image/png'),
+      };
       await commitPooledMedia({
         req,
         stageId,
         paramsJson,
-        blob,
-        mimeType: storedMediaType(blob, 'image/png'),
+        blob: bytes.blob,
+        mimeType: bytes.mimeType,
       });
-      return ATTEMPT_COMMITTED;
+      return committedWith(bytes);
     }
     const result = await withProviderRecovery(req, abortSignal, () =>
       callVideoApi(req, abortSignal),
@@ -1172,16 +1283,23 @@ async function generateSingleMedia(
       ? await fetchAsBlob(posterSource).catch(() => undefined)
       : undefined;
     throwIfAborted(abortSignal);
+    const bytes: RefusedMediaBytes = {
+      blob,
+      mimeType: storedMediaType(blob, 'video/mp4'),
+      ...(posterBlob
+        ? { poster: posterBlob, posterMimeType: storedMediaType(posterBlob, 'image/jpeg') }
+        : {}),
+    };
     await commitPooledMedia({
       req,
       stageId,
       paramsJson,
-      blob,
-      mimeType: storedMediaType(blob, 'video/mp4'),
-      posterBlob,
-      ...(posterBlob ? { posterMimeType: storedMediaType(posterBlob, 'image/jpeg') } : {}),
+      blob: bytes.blob,
+      mimeType: bytes.mimeType,
+      ...(bytes.poster ? { posterBlob: bytes.poster } : {}),
+      ...(bytes.posterMimeType ? { posterMimeType: bytes.posterMimeType } : {}),
     });
-    return ATTEMPT_COMMITTED;
+    return committedWith(bytes);
   } catch (err) {
     if (abortSignal?.aborted) {
       // A submitted video MaaS task keeps running to a billable terminal state
@@ -1206,11 +1324,11 @@ async function generateSingleMedia(
     // freshly generated element these are bytes already paid for. Either way a
     // Retry after the ceiling is raised re-attempts the upload and calls no
     // provider.
-    // A retry that was handed bytes still holds them when it fails for some
+    // A request that was handed bytes still holds them when it fails for some
     // other reason -- a dropped connection, a 500 -- and that failure must not
     // be the thing that finally throws them away.
     const refused =
-      err instanceof MediaStorageRefusalError ? err.refused : (refusedBytes ?? undefined);
+      err instanceof MediaStorageRefusalError ? err.refused : (providedBytes ?? undefined);
 
     // Persist the failure so it survives a page refresh: a restored task
     // carrying an error is a `failed` task, and a pass never re-runs one. A
@@ -1235,7 +1353,11 @@ async function generateSingleMedia(
         })
         .catch(() => {}); // best-effort
     }
-    return { storageFull: isStorageFullFailure(errorCode), committed: false };
+    return {
+      storageFull: isStorageFullFailure(errorCode),
+      committed: false,
+      failure: { message, ...(errorCode ? { errorCode } : {}) },
+    };
   }
 }
 
