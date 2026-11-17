@@ -47,6 +47,7 @@ import {
   type ExamSection,
 } from '@/lib/exam/timing';
 import { computeExamAnalytics, type ExamAnalytics } from '@/lib/exam/analytics';
+import { recordExamLearning } from '@/lib/learning/record-exam';
 
 const log = createLogger('ExamView');
 
@@ -105,6 +106,7 @@ export default function ExamOverlay({
   onOpenChange: (open: boolean) => void;
 }) {
   const { t, locale } = useI18n();
+  const stageId = useStageStore((s) => s.stage?.id ?? null);
   const blueprint = useStageStore((s) => s.blueprint);
   const exams = useStageStore((s) => s.exams);
   const examAttempts = useStageStore((s) => s.examAttempts);
@@ -309,6 +311,7 @@ export default function ExamOverlay({
         id: `attempt_${Date.now()}`,
         kind: activeKind,
         variantSeed: variant.seed,
+        specGeneratedAt: target.generatedAt,
         mcAnswers,
         frAnswers,
         mcResults,
@@ -341,6 +344,18 @@ export default function ExamOverlay({
   useEffect(() => {
     submitRef.current = submit;
   }, [submit]);
+
+  // A graded attempt feeds concept mastery whether it was just submitted or
+  // reopened from history. Evidence ids are idempotent, so a retry is safe;
+  // legacy attempts and regenerated pools are skipped by the bridge.
+  useEffect(() => {
+    if (phase !== 'reviewing' || !reviewing || !stageId) return;
+    const spec = exams[reviewing.kind];
+    if (!spec) return;
+    void recordExamLearning({ stageId, spec, attempt: reviewing }).catch((error) => {
+      log.warn('Failed to record exam learning evidence:', error);
+    });
+  }, [phase, reviewing, stageId, exams]);
 
   /**
    * Whole-section budget. A timed MC section hands over to the written section

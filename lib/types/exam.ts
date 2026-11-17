@@ -107,6 +107,13 @@ export interface ExamAttempt {
    * the whole spec in stored order.
    */
   variantSeed?: string;
+  /**
+   * `ExamSpec.generatedAt` this attempt was drawn from. Guards learning
+   * evidence against a regenerated pool: the same seed resolves to different
+   * questions after regeneration. Absent on legacy attempts, which are not
+   * backfilled.
+   */
+  specGeneratedAt?: number;
   /** Picked option value per MC question ("A"). */
   mcAnswers: Record<string, string>;
   frAnswers: Record<string, string>;
