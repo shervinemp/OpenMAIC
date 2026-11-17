@@ -431,12 +431,14 @@ async function collectAndGenerate(
     mediaStats.set(outlineId, stats);
   }
   const phaseStarted = new Set<string>();
-  const recordOutcome = (req: MediaGenerationRequest) => {
+  const recordOutcome = (req: MediaGenerationRequest, outcome: MediaAttemptOutcome) => {
     const outlineId = outlineByElement.get(req.elementId);
     const stats = outlineId ? mediaStats.get(outlineId) : undefined;
     if (!outlineId || !stats) return;
-    const task = useMediaGenerationStore.getState().getTask(req.elementId);
-    if (task?.status === 'done') stats.done += 1;
+    // Read the outcome the attempt returned, not the store: a delivered
+    // element is re-keyed from its placeholder to the allocated asset id, so
+    // `getTask(placeholder)` misses for exactly the commits that succeeded.
+    if (outcome.committed) stats.done += 1;
     else stats.failed += 1;
     if (stats.done + stats.failed !== stats.total) return;
     useStageStore
@@ -466,7 +468,7 @@ async function collectAndGenerate(
     }
     const attempt = await generateSingleMedia(leader, stageId, abortSignal, undefined, scan);
     processed += 1;
-    if (!abortSignal?.aborted) recordOutcome(leader);
+    if (!abortSignal?.aborted) recordOutcome(leader, attempt);
 
     // The store checks each write against the headroom it has left, so a
     // refusal is evidence about one blob and only weak evidence about the next.
@@ -513,7 +515,7 @@ async function collectAndGenerate(
         break;
       }
       processed += 1;
-      if (!abortSignal?.aborted) recordOutcome(duplicate);
+      if (!abortSignal?.aborted) recordOutcome(duplicate, outcome);
       if (!outcome.storageFull) continue;
       storageFull = true;
       break;

@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   takeAllocations: vi.fn(),
   mediaWhere: vi.fn(),
   placeAllocations: vi.fn(),
+  recordPhase: vi.fn(),
 }));
 
 vi.mock('@/lib/store/settings', () => ({
@@ -31,10 +32,11 @@ vi.mock('@/lib/store/settings', () => ({
 }));
 
 vi.mock('@/lib/store/stage', () => ({
-  // The pass records per-outline media phases; those actions are inert here.
+  // The pass records per-outline media phases; the outcome is asserted here,
+  // the rest of the stage actions are inert.
   useStageStore: {
     getState: () => ({
-      recordScenePhase: () => undefined,
+      recordScenePhase: mocks.recordPhase,
       retryFailedOutline: () => undefined,
       settleFailedOutline: () => undefined,
       ...mocks.stageState(),
@@ -203,6 +205,7 @@ describe('server-backed classic media orchestrator', () => {
       }),
     }));
     mocks.placeAllocations.mockReset().mockReturnValue(false);
+    mocks.recordPhase.mockReset();
     mocks.stageState.mockReset().mockReturnValue({
       stage: { id: stageId },
       scenes: [sceneWithImage(1, imageRef)],
@@ -322,6 +325,22 @@ describe('server-backed classic media orchestrator', () => {
       placeholderRef: imageRef,
       objectUrl: 'blob:server-1',
     });
+  });
+
+  it('records a successful outline media phase as done after the task is re-keyed', async () => {
+    // The task is re-keyed from the placeholder to the allocated id, so the
+    // outcome cannot be read back from the placeholder key and a store lookup
+    // would report every delivered image as a failure.
+    serveImage();
+
+    await runImageGeneration();
+
+    expect(mocks.recordPhase).toHaveBeenCalledWith('outline-1', 'media', { status: 'done' });
+    expect(mocks.recordPhase).not.toHaveBeenCalledWith(
+      'outline-1',
+      'media',
+      expect.objectContaining({ status: 'failed' }),
+    );
   });
 
   it('buys an identical prompt once and reuses the bytes for the other slot', async () => {
