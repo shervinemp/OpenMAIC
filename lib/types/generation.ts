@@ -28,8 +28,8 @@ export interface PdfImage {
    * images carry `storageId` instead — never both.
    */
   assetId?: string; // Allocated asset-pool id (server-backed transport)
-  width?: number; // Image width (px or normalized)
-  height?: number; // Image height (px or normalized)
+  width?: number; // Intrinsic width in pixels; undefined when unmeasured
+  height?: number; // Intrinsic height in pixels; undefined when unmeasured
   originalId?: string; // ID assigned by the extractor before bundle-level normalization
   sourceDocumentId?: string; // DocumentBundle source ID
   sourceDocumentName?: string; // Original source filename for citation back to material

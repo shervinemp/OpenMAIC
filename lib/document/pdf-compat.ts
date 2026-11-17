@@ -1,4 +1,5 @@
 import type { ParsedPdfContent } from '@/lib/types/pdf';
+import { imageDimensionsFromDataUrl } from '@/lib/pdf/image-header-dimensions';
 import type {
   DocumentArtifact,
   DocumentAsset,
@@ -101,24 +102,38 @@ export function parsedPdfToDocumentArtifact(
   });
 
   const pdfImages = parsed.metadata?.pdfImages;
+  // MinerU used to report its page-layout box here. Ignore any width/height a
+  // cached parse still carries from that era and read the image header instead,
+  // so old cached documents are corrected on their next load.
+  const reportsLayoutBoxes = isMinerUMarkdownParser(parsed.metadata?.parser);
   const assets: DocumentAsset[] =
     pdfImages && pdfImages.length > 0
-      ? pdfImages.map((image) => ({
-          id: image.id,
-          type: 'image',
-          mimeType: dataUrlMimeType(image.src),
-          data: image.src,
-          pageNumber: image.pageNumber,
-          description: image.description,
-          width: image.width,
-          height: image.height,
-        }))
-      : parsed.images.map((src, index) => ({
-          id: `img_${index + 1}`,
-          type: 'image',
-          mimeType: dataUrlMimeType(src),
-          data: src,
-        }));
+      ? pdfImages.map((image) => {
+          // An extractor that could not measure an image leaves a gap; fill it
+          // from the image header so width/height always mean pixels.
+          const needsMeasurement = reportsLayoutBoxes || !image.width || !image.height;
+          const measured = needsMeasurement ? imageDimensionsFromDataUrl(image.src) : undefined;
+          return {
+            id: image.id,
+            type: 'image',
+            mimeType: dataUrlMimeType(image.src),
+            data: image.src,
+            pageNumber: image.pageNumber,
+            description: image.description,
+            width: reportsLayoutBoxes ? measured?.width : image.width || measured?.width,
+            height: reportsLayoutBoxes ? measured?.height : image.height || measured?.height,
+          };
+        })
+      : parsed.images.map((src, index) => {
+          const measured = imageDimensionsFromDataUrl(src);
+          return {
+            id: `img_${index + 1}`,
+            type: 'image',
+            mimeType: dataUrlMimeType(src),
+            data: src,
+            ...(measured ? { width: measured.width, height: measured.height } : {}),
+          };
+        });
 
   return {
     metadata: {

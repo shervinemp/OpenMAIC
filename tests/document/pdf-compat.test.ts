@@ -4,6 +4,10 @@ import { documentArtifactToParsedPdfContent, parsedPdfToDocumentArtifact } from 
 import type { DocumentArtifact } from '@/lib/document';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 
+// 1×1 PNG. Its IHDR is the source of truth for pixel dimensions.
+const ONE_PIXEL_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
 describe('PDF compatibility adapter', () => {
   it('normalizes parsed PDF output into a document artifact', () => {
     const parsed: ParsedPdfContent = {
@@ -100,10 +104,67 @@ describe('PDF compatibility adapter', () => {
         data: 'data:image/png;base64,abc',
         pageNumber: 1,
         description: 'Device overview',
-        width: 640,
-        height: 480,
+        // MinerU's cached numbers were a page-layout box, and these bytes are
+        // not a readable image, so the dimensions stay unknown rather than
+        // re-entering the pipeline as if they were pixels.
+        width: undefined,
+        height: undefined,
       },
     ]);
+  });
+
+  it('re-measures cached MinerU dimensions from the image header', () => {
+    // The cached width/height below are what an old MinerU parse stored (a
+    // layout box in page units), not the image's pixel size.
+    const parsed: ParsedPdfContent = {
+      text: '# Cached',
+      images: [ONE_PIXEL_PNG],
+      metadata: {
+        pageCount: 1,
+        parser: 'mineru',
+        pdfImages: [
+          {
+            id: 'img_1',
+            src: ONE_PIXEL_PNG,
+            pageNumber: 1,
+            width: 640,
+            height: 480,
+          },
+        ],
+      },
+    };
+
+    const artifact = parsedPdfToDocumentArtifact(parsed, {
+      buffer: Buffer.from('pdf'),
+      fileName: 'cached.pdf',
+      fileSize: 1,
+      mimeType: 'application/pdf',
+      config: { providerId: 'mineru' },
+    });
+
+    expect(artifact.assets[0]).toMatchObject({ id: 'img_1', width: 1, height: 1 });
+  });
+
+  it('measures dimensions when a provider returns only image sources', () => {
+    const parsed: ParsedPdfContent = {
+      text: 'Plain text',
+      images: [ONE_PIXEL_PNG],
+      metadata: { pageCount: 1, parser: 'custom' },
+    };
+
+    const artifact = parsedPdfToDocumentArtifact(parsed, {
+      buffer: Buffer.from('pdf'),
+      fileName: 'custom.pdf',
+      fileSize: 1,
+      mimeType: 'application/pdf',
+      config: { providerId: 'custom' },
+    });
+
+    expect(artifact.assets[0]).toMatchObject({
+      id: 'img_1',
+      width: 1,
+      height: 1,
+    });
   });
 
   it('normalizes MinerU Cloud markdown output into a markdown document block', () => {

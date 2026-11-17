@@ -15,6 +15,7 @@
 import { tryParseJson } from './json-repair';
 import type { AICallFn } from './pipeline-types';
 import type { PdfImage } from '@/lib/types/generation';
+import { imageDimensionsFromDataUrl } from '@/lib/pdf/image-header-dimensions';
 import {
   CAPTION_BATCH_IMAGES,
   CAPTION_BATCH_TILES,
@@ -50,13 +51,11 @@ export interface ImageCaption {
  *
  * Logos, bullets, rules and icon-sized decorations caption to "a small icon"
  * at the same price as a diagram that teaches something. Dimensions are
- * assumed to be intrinsic pixels — the extractors that populate them from
- * image bytes (unpdf) do. An extractor that reports page-layout coordinates
- * instead (MinerU's bbox) is outside this filter's contract; its values are
- * not pixel sizes and may skip a small figure. Unmeasurable images (missing
- * dimensions) stay eligible: absent dimensions are not evidence of a tiny
- * image. A zero side is treated as unmeasured for the same reason — a broken
- * measurement is likelier than a zero-pixel image that decoded.
+ * intrinsic pixels — every extractor now reports them that way, and an
+ * extractor that reports page-layout coordinates must leave them undefined.
+ * Unmeasurable images stay eligible: absent dimensions are not evidence of a
+ * tiny image. A zero side is treated as unmeasured for the same reason — a
+ * broken measurement is likelier than a zero-pixel image that decoded.
  */
 export function isCaptionWorthyImage(image: Pick<PdfImage, 'width' | 'height'>): boolean {
   const { width, height } = image;
@@ -78,7 +77,7 @@ export function isCaptionWorthyImage(image: Pick<PdfImage, 'width' | 'height'>):
  * Estimated vision tiles one image occupies, on a 1024-pixel grid. One tile is
  * the floor, so unknown dimensions cannot make a batch unbounded; a page-sized
  * scan of 4096×3072 costs twelve tiles and shares its call with two others.
- * Like `isCaptionWorthyImage`, this assumes dimensions are intrinsic pixels.
+ * Like `isCaptionWorthyImage`, this expects intrinsic pixel dimensions.
  */
 export function captionImageTiles(image: Pick<PdfImage, 'width' | 'height'>): number {
   const { width, height } = image;
@@ -214,9 +213,17 @@ export async function captionDocumentImages(
   images: PdfImage[],
   options: CaptionPassOptions,
 ): Promise<Map<string, ImageCaption>> {
+  // Re-read the dimensions the image itself declares when its bytes are
+  // available. This corrects callers holding a layout box (a legacy MinerU
+  // parse, a session saved before dimensions were normalized) and keeps the
+  // filter and tile estimate on one unit: intrinsic pixels.
+  const measuredImages = images.map((image) => {
+    const measured = imageDimensionsFromDataUrl(image.src);
+    return measured ? { ...image, width: measured.width, height: measured.height } : image;
+  });
   // Tiny decorations are not course material. Skipping them saves their vision
   // tokens and, when a document is mostly icons, saves the call entirely.
-  const eligible = images.filter(isCaptionWorthyImage);
+  const eligible = measuredImages.filter(isCaptionWorthyImage);
   const batches = planCaptionBatches(eligible, options.batchSize ?? CAPTION_BATCH_IMAGES);
   const byId = new Map(eligible.map((image) => [image.id, image]));
   const result = new Map<string, ImageCaption>();

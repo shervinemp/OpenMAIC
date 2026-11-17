@@ -27,6 +27,15 @@ function sizedImages(count: number, width: number, height: number) {
   }));
 }
 
+/** A base64 PNG whose IHDR declares the given pixel size. */
+function pngDataUrl(width: number, height: number): string {
+  const bytes = Buffer.alloc(26);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  bytes.writeUInt32BE(width, 16);
+  bytes.writeUInt32BE(height, 20);
+  return `data:image/png;base64,${bytes.toString('base64')}`;
+}
+
 describe('planCaptionBatches', () => {
   test('batches all images, ordered by page, within batch size', () => {
     const batches = planCaptionBatches(images(23));
@@ -174,6 +183,32 @@ describe('captionDocumentImages', () => {
 
     expect(seen).toEqual(['chart']);
     expect([...captions.keys()]).toEqual(['chart']);
+  });
+
+  test('reads dimensions from the image itself instead of trusting caller units', async () => {
+    const seen: string[] = [];
+    await captionDocumentImages(
+      [
+        // A page-layout box that looks icon-sized, but the image is a figure.
+        { id: 'figure', src: pngDataUrl(640, 480), pageNumber: 1, width: 100, height: 60 },
+        // A large layout box that describes a 1×1 decoration.
+        { id: 'icon', src: pngDataUrl(1, 1), pageNumber: 2, width: 600, height: 400 },
+      ],
+      {
+        aiCall: async (_system, _user, batchImages) => {
+          seen.push(...(batchImages ?? []).map((image) => image.id));
+          return JSON.stringify({
+            images: (batchImages ?? []).map((image) => ({
+              id: image.id,
+              caption: `Caption for ${image.id}`,
+              kind: 'diagram',
+            })),
+          });
+        },
+      },
+    );
+
+    expect(seen).toEqual(['figure']);
   });
 
   test('makes no vision call when every image is a decoration', async () => {

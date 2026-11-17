@@ -6,6 +6,7 @@
 
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { createLogger } from '@/lib/logger';
+import { imageDimensionsFromDataUrl } from './image-header-dimensions';
 
 const log = createLogger('MinerUParser');
 
@@ -23,7 +24,7 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
   }
 
   // Parse content_list to build image metadata lookup (img_path → metadata)
-  const imageMetaLookup = new Map<string, { pageIdx: number; bbox: number[]; caption?: string }>();
+  const imageMetaLookup = new Map<string, { pageIdx: number; caption?: string }>();
   let contentList: unknown;
   try {
     contentList =
@@ -45,7 +46,6 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
       if (item.type === 'image' && item.img_path) {
         const metaEntry = {
           pageIdx: item.page_idx ?? 0,
-          bbox: item.bbox || [0, 0, 1000, 1000],
           caption: Array.isArray(item.image_caption) ? item.image_caption[0] : undefined,
         };
         // Store under both the full path and basename so lookup works
@@ -75,13 +75,17 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
     imageMapping[imageId] = base64Url;
     // Try exact key first, then with 'images/' prefix (MinerU content_list uses prefixed paths)
     const meta = imageMetaLookup.get(key) || imageMetaLookup.get(`images/${key}`);
+    // content_list's bbox is a page-layout box, not a pixel size. Reading the
+    // image header gives the same intrinsic dimensions unpdf reports; if the
+    // format is unreadable, leave them unknown rather than pass layout units
+    // off as pixels.
+    const dimensions = imageDimensionsFromDataUrl(base64Url);
     pdfImages.push({
       id: imageId,
       src: base64Url,
       pageNumber: meta ? meta.pageIdx + 1 : 0,
       description: meta?.caption,
-      width: meta ? meta.bbox[2] - meta.bbox[0] : undefined,
-      height: meta ? meta.bbox[3] - meta.bbox[1] : undefined,
+      ...(dimensions ?? {}),
     });
   });
 

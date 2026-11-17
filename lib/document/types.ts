@@ -115,6 +115,7 @@ export interface DocumentAsset {
   data?: string;
   pageNumber?: number;
   description?: string;
+  /** Intrinsic pixel dimensions; layout units must never be stored here. */
   width?: number;
   height?: number;
   metadata?: Record<string, unknown>;

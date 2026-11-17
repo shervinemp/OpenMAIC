@@ -51,6 +51,7 @@ export interface ParsedPdfContent {
       src: string;
       pageNumber: number;
       description?: string;
+      /** Intrinsic image dimensions in pixels, when the extractor measured them. */
       width?: number;
       height?: number;
       /**
