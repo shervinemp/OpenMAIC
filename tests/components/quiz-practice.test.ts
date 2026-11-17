@@ -20,6 +20,11 @@ const translations = vi.hoisted(() => ({
   'quiz.correct': 'correct',
   'quiz.incorrect': 'incorrect',
   'quiz.ungraded': 'Not graded',
+  'quiz.ordering': 'Ordering',
+  'quiz.orderingHint': 'Put the items in the correct order.',
+  'quiz.correctOrder': 'Correct order:',
+  'quiz.moveUp': 'Move up',
+  'quiz.moveDown': 'Move down',
 }));
 
 vi.mock('@/lib/hooks/use-i18n', () => ({
@@ -139,5 +144,55 @@ describe('QuizPractice', () => {
     expect(container.textContent).toContain('Next');
     await click('Next');
     expect(container.textContent).toContain('Practice complete');
+  });
+
+  it('shuffles an ordering question and grades the restored sequence', async () => {
+    const labels = ['Ingest raw events', 'Validate and clean', 'Aggregate into marts'];
+    const ordering: QuizQuestion = {
+      id: 'o1',
+      type: 'ordering',
+      question: 'Put the pipeline stages in the order they run.',
+      options: labels.map((label, index) => ({ label, value: 'ABC'[index] })),
+      analysis: 'Ingest, then clean, then aggregate.',
+      hasAnswer: true,
+      points: 1,
+    };
+    renderPractice([ordering]);
+
+    const visible = () =>
+      [...container.querySelectorAll('ol > li')].map(
+        (row) => labels.find((label) => row.textContent?.includes(label))!,
+      );
+
+    // The stored order is the key, so the first paint must not show it.
+    expect(visible()).not.toEqual(labels);
+    expect([...visible()].sort()).toEqual([...labels].sort());
+
+    const moveTo = async (label: string, target: number) => {
+      for (let guard = 0; guard < labels.length + 1; guard += 1) {
+        const rows = [...container.querySelectorAll('ol > li')];
+        const position = rows.findIndex((row) => row.textContent?.includes(label));
+        if (position === target) return;
+        const button = [...rows[position].querySelectorAll('button')].find(
+          (candidate) =>
+            candidate.getAttribute('aria-label') === (position > target ? 'Move up' : 'Move down'),
+        );
+        expect(button, `move handle for ${label}`).toBeTruthy();
+        await act(async () => {
+          button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+      }
+      throw new Error(`could not move ${label} to ${target}`);
+    };
+
+    await moveTo(labels[0], 0);
+    await moveTo(labels[1], 1);
+    expect(visible()).toEqual(labels);
+
+    await click('Check answer');
+    expect(container.textContent).toContain('Next');
+    await click('Next');
+    expect(container.textContent).toContain('Practice complete');
+    expect(container.textContent).not.toContain('Practice missed (');
   });
 });

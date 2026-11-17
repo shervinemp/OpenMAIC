@@ -344,11 +344,11 @@ Rules:
 {
   "questionCount": 2,
   "difficulty": "easy" | "medium" | "hard",
-  "questionTypes": ["single", "multiple", "short_answer", "numeric"]
+  "questionTypes": ["single", "multiple", "short_answer", "numeric", "ordering"]
 }
 ```
 
-`numeric` questions ask for one computed number (with an optional tolerance and unit); use them for calculations, measurements, dates and counts.
+`numeric` questions ask for one computed number (with an optional tolerance and unit); use them for calculations, measurements, dates and counts. `ordering` questions ask the learner to restore a sequence; use them for processes, timelines, precedence and ranked steps.
 
 ### interactiveConfig Structure
 

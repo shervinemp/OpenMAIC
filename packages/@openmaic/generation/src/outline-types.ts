@@ -111,7 +111,7 @@ export interface SceneOutline {
   quizConfig?: {
     questionCount: number;
     difficulty: 'easy' | 'medium' | 'hard';
-    questionTypes: ('single' | 'multiple' | 'text' | 'numeric')[];
+    questionTypes: ('single' | 'multiple' | 'text' | 'numeric' | 'ordering')[];
   };
   /**
    * @deprecated Use widgetType + widgetOutline instead

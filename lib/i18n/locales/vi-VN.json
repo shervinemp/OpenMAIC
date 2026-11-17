@@ -461,7 +461,8 @@
         "single": "Chọn một đáp án",
         "multiple": "Chọn nhiều đáp án",
         "short_answer": "Trả lời ngắn",
-        "numeric": "Số"
+        "numeric": "Số",
+        "ordering": "Sắp xếp"
       },
       "shortAnswerGradingNote": "Câu trả lời ngắn luôn do AI chấm dựa trên hướng dẫn bên dưới.",
       "numericAnswerLabel": "Giá trị đúng",
@@ -470,6 +471,8 @@
       "numericUnitLabel": "Đơn vị",
       "numericUnitPlaceholder": "ví dụ: m",
       "numericHint": "Câu trả lời trong khoảng ±sai số được tính đúng. Đơn vị chỉ để hiển thị.",
+      "orderingItemsLabel": "Các mục (theo đúng thứ tự)",
+      "orderingHint": "Học viên thấy các mục này được xáo trộn.",
       "hint": {
         "emptyText": "Câu {{n}}: hãy nhập nội dung câu hỏi",
         "fewOptions": "Câu {{n}}: cần ít nhất hai phương án",
@@ -747,6 +750,11 @@
     "practiceNote": "Luyện tập không được tính vào điểm của bạn.",
     "numeric": "Số",
     "numericPlaceholder": "Nhập một số...",
+    "ordering": "Sắp xếp",
+    "orderingHint": "Sắp xếp các mục theo đúng thứ tự.",
+    "correctOrder": "Thứ tự đúng:",
+    "moveUp": "Di chuyển lên",
+    "moveDown": "Di chuyển xuống",
     "expectedAnswer": "Đáp án mong đợi:",
     "answering": "Đang làm",
     "submitAnswers": "Nộp bài",
@@ -1133,6 +1141,7 @@
     "quizTypeMultiple": "Chọn nhiều đáp án",
     "quizTypeText": "Trả lời ngắn",
     "quizTypeNumeric": "Số",
+    "quizTypeOrdering": "Sắp xếp",
     "alwaysReviewOutlines": "Luôn xem lại đề cương trước khi tạo",
     "outlineEditorEyebrow": "Đề cương do AI tạo",
     "outlineEditorStreamingProgress": "Đang nhận · {{count}} cảnh đã xong",

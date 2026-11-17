@@ -32,6 +32,28 @@ const measured: QuizLayoutProbe = {
 };
 
 describe('Quiz question-list preparation', () => {
+  it('projects an ordering question without its stored sequence', () => {
+    const [projected] = prepareQuizQuestionList(
+      scene([
+        {
+          id: 'order',
+          type: 'ordering',
+          question: 'Put these stages in order',
+          options: [
+            { value: 'A', label: 'SECRET_FIRST' },
+            { value: 'B', label: 'SECRET_SECOND' },
+          ],
+          analysis: 'SECRET_ANALYSIS',
+        },
+      ]),
+    );
+    expect(projected).toEqual({
+      id: 'order',
+      type: 'ordering',
+      question: 'Put these stages in order',
+    });
+  });
+
   it('projects a numeric question without options or the answer key', () => {
     const [projected] = prepareQuizQuestionList(
       scene([

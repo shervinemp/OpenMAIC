@@ -461,7 +461,8 @@
         "single": "単一選択",
         "multiple": "複数選択",
         "short_answer": "記述",
-        "numeric": "数値"
+        "numeric": "数値",
+        "ordering": "並べ替え"
       },
       "shortAnswerGradingNote": "記述式は下の採点ガイドに基づき AI が自動採点します。",
       "numericAnswerLabel": "正しい値",
@@ -470,6 +471,8 @@
       "numericUnitLabel": "単位",
       "numericUnitPlaceholder": "例: m",
       "numericHint": "±許容誤差内の回答を正解とします。単位は表示のみです。",
+      "orderingItemsLabel": "項目（正しい順序）",
+      "orderingHint": "学習者にはこれらの項目がシャッフルされて表示されます。",
       "hint": {
         "emptyText": "問題 {{n}}：問題文を入力してください",
         "fewOptions": "問題 {{n}}：選択肢は2つ以上必要です",
@@ -747,6 +750,11 @@
     "practiceNote": "練習の記録は成績に反映されません。",
     "numeric": "数値",
     "numericPlaceholder": "数値を入力...",
+    "ordering": "並べ替え",
+    "orderingHint": "項目を正しい順序に並べ替えてください。",
+    "correctOrder": "正しい順序：",
+    "moveUp": "上へ",
+    "moveDown": "下へ",
     "expectedAnswer": "正解：",
     "answering": "回答中",
     "submitAnswers": "回答を提出",
@@ -1141,6 +1149,7 @@
     "quizTypeMultiple": "複数選択",
     "quizTypeText": "記述式",
     "quizTypeNumeric": "数値",
+    "quizTypeOrdering": "並べ替え",
     "alwaysReviewOutlines": "生成前に常にアウトラインを確認",
     "outlineEditorEyebrow": "AI 生成のアウトライン",
     "outlineEditorStreamingProgress": "生成中 · {{count}} シーン到着",

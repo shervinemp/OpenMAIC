@@ -457,7 +457,11 @@ function validationError(scene: Scene): string | null {
       const unknown = Object.keys(question).filter((key) => !allowed.includes(key));
       if (unknown.length)
         return `/content/questions/${index}: unknown field(s) ${unknown.join(', ')}`;
-      if (!['single', 'multiple', 'short_answer', 'numeric'].includes(String(question.type))) {
+      if (
+        !['single', 'multiple', 'short_answer', 'numeric', 'ordering'].includes(
+          String(question.type),
+        )
+      ) {
         return `/content/questions/${index}/type: unknown quiz question type`;
       }
       if (typeof question.id !== 'string' || typeof question.question !== 'string') {

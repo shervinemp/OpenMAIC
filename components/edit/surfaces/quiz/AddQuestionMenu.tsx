@@ -1,6 +1,13 @@
 'use client';
 
-import { Calculator, CircleDot, ListChecks, PencilLine, type LucideIcon } from 'lucide-react';
+import {
+  Calculator,
+  CircleDot,
+  ListChecks,
+  ListOrdered,
+  PencilLine,
+  type LucideIcon,
+} from 'lucide-react';
 import { PopoverClose } from '@/components/ui/popover';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { QuizQuestionType } from '@/lib/types/stage';
@@ -31,11 +38,17 @@ const TYPES: { type: QuizQuestionType; labelKey: string; Icon: LucideIcon; tint:
     Icon: Calculator,
     tint: 'bg-cyan-100 text-cyan-600 dark:bg-cyan-500/15 dark:text-cyan-300',
   },
+  {
+    type: 'ordering',
+    labelKey: 'edit.quiz.type.ordering',
+    Icon: ListOrdered,
+    tint: 'bg-teal-100 text-teal-600 dark:bg-teal-500/15 dark:text-teal-300',
+  },
 ];
 
 /**
  * Popover body for the inline "Add question" button — a small menu of the
- * three question types, each with its accent colour. Each entry appends a blank
+ * question types, each with its accent colour. Each entry appends a blank
  * question of that type (one undo step) and closes the popover via Radix's
  * PopoverClose.
  */

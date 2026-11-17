@@ -392,6 +392,60 @@ describe('numeric quiz depth', () => {
   });
 });
 
+describe('ordering quiz depth', () => {
+  const outline: SceneOutline = {
+    id: 'oq',
+    type: 'quiz',
+    title: 'Process order',
+    description: 'Restore the sequence of a pipeline.',
+    keyPoints: ['pipeline stages'],
+    order: 1,
+    depthLevel: 'university',
+    quizConfig: { questionCount: 2, difficulty: 'medium', questionTypes: ['ordering'] },
+  };
+
+  function orderingQuestions(): QuizQuestion[] {
+    return [
+      {
+        id: 'o1',
+        type: 'ordering',
+        question: 'Put the stages of the medallion pipeline in the order they run.',
+        options: [
+          { value: 'A', label: 'Ingest raw events' },
+          { value: 'B', label: 'Validate and clean' },
+          { value: 'C', label: 'Aggregate into marts' },
+        ],
+        analysis: 'Raw events are ingested, cleaned, and only then aggregated for reporting.',
+        hasAnswer: true,
+      },
+      {
+        id: 'o2',
+        type: 'ordering',
+        question: 'Arrange these steps for onboarding a new engineer into the correct sequence.',
+        options: [
+          { value: 'A', label: 'Provision accounts' },
+          { value: 'B', label: 'Walk through the architecture' },
+          { value: 'C', label: 'Ship a first small change' },
+        ],
+        analysis: 'Access comes first, then context, then a low-risk first contribution.',
+        hasAnswer: true,
+      },
+    ];
+  }
+
+  test('accepts three distinct items without an answer key', () => {
+    expect(validateQuizDepth(outline, orderingQuestions()).adequate).toBe(true);
+  });
+
+  test('rejects fewer items than the depth floor', () => {
+    const questions = orderingQuestions();
+    questions[0].options = questions[0].options!.slice(0, 2);
+    const report = validateQuizDepth(outline, questions);
+    expect(report.adequate).toBe(false);
+    expect(report.findings.some((finding) => finding.includes('item(s) to order'))).toBe(true);
+  });
+});
+
 describe('feedback + failure side channel', () => {
   test('summarizeDepthFindings is concrete and actionable', () => {
     const report = validateSlideDepth(slideOutline('Delta Lake Architecture'), [

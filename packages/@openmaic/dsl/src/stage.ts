@@ -195,10 +195,15 @@ export interface QuizOption {
 
 export interface QuizQuestion {
   id: string;
-  type: 'single' | 'multiple' | 'short_answer' | 'numeric';
+  type: 'single' | 'multiple' | 'short_answer' | 'numeric' | 'ordering';
   question: string;
+  /**
+   * Choice options (single/multiple), the sequence items for `ordering`
+   * (stored in the CORRECT order — the runtime shuffles them for display), or
+   * undefined for text/numeric questions.
+   */
   options?: QuizOption[];
-  answer?: string[]; // Correct answer values: ["A"], ["A","C"], a numeric string, or undefined for text
+  answer?: string[]; // Correct answer values: ["A"], ["A","C"], a numeric string, or undefined for text/ordering
   /**
    * Absolute tolerance for a `numeric` answer (default 0). Ignored by every
    * other type. Grading accepts any submitted value within ±tolerance.

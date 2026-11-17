@@ -10,6 +10,7 @@ import {
   generateSceneContent,
   normalizeNumericAnswer,
   normalizeNumericTolerance,
+  normalizeOrderingOptions,
   normalizeQuizAnswer,
 } from '../packages/@openmaic/generation/src/scene-generator';
 import type { QuizQuestion } from '@/lib/types/stage';
@@ -291,6 +292,75 @@ describe('numeric quiz generation', () => {
     expect(findQuizOptionsContractFailure([{ ...numericQuestion, tolerance: -1 }])).toContain(
       'tolerance',
     );
+  });
+});
+
+describe('ordering quiz generation', () => {
+  const ordering: QuizQuestion = {
+    id: 'o1',
+    type: 'ordering',
+    question: 'Put these stages in order.',
+    options: [
+      { value: 'A', label: 'Ingest' },
+      { value: 'B', label: 'Clean' },
+      { value: 'C', label: 'Aggregate' },
+    ],
+    analysis: 'The pipeline runs in this order.',
+    hasAnswer: true,
+  };
+
+  test('accepts distinct items with no answer key', () => {
+    expect(findQuizOptionsContractFailure([ordering])).toBeNull();
+  });
+
+  test('rejects fewer than two items', () => {
+    const failing = [ordering, { ...ordering, options: [ordering.options![0]] }];
+    expect(findQuizOptionsContractFailure(failing)).toContain('at least two');
+  });
+
+  test('rejects repeated item values', () => {
+    const duplicate = {
+      ...ordering,
+      options: [
+        { value: 'A', label: 'First' },
+        { value: 'A', label: 'Second' },
+      ],
+    };
+    expect(findQuizOptionsContractFailure([duplicate])).toContain('repeated');
+  });
+
+  test('honors an explicit correct sequence by permuting the items', () => {
+    const normalized = normalizeOrderingOptions({
+      options: [
+        { label: 'Clean', value: 'A' },
+        { label: 'Ingest', value: 'B' },
+        { label: 'Aggregate', value: 'C' },
+      ],
+      answer: ['B', 'A', 'C'],
+    });
+    expect(normalized?.map((option) => option.label)).toEqual(['Ingest', 'Clean', 'Aggregate']);
+  });
+
+  test('ignores an incomplete or unknown correct sequence', () => {
+    const options = [
+      { label: 'Clean', value: 'A' },
+      { label: 'Ingest', value: 'B' },
+    ];
+    expect(normalizeOrderingOptions({ options, answer: ['B'] })?.map((o) => o.value)).toEqual([
+      'A',
+      'B',
+    ]);
+    expect(normalizeOrderingOptions({ options, answer: ['B', 'Z'] })?.map((o) => o.value)).toEqual([
+      'A',
+      'B',
+    ]);
+  });
+
+  test('normalizes plain string items to lettered options', () => {
+    expect(normalizeOrderingOptions({ options: ['First', 'Second'] })).toEqual([
+      { value: 'A', label: 'First' },
+      { value: 'B', label: 'Second' },
+    ]);
   });
 });
 

@@ -675,6 +675,15 @@ export function validateQuizDepth(
         );
       }
     }
+    if (question.type === 'ordering') {
+      const itemCount = question.options?.length ?? 0;
+      const required = Math.max(2, floor.minOptions);
+      if (itemCount < required) {
+        findings.push(
+          `question "${question.id}" has ${itemCount} item(s) to order; need at least ${required} distinct steps`,
+        );
+      }
+    }
     if (question.type === 'numeric') {
       const key = question.answer?.[0];
       if (key === undefined || key.trim() === '' || !Number.isFinite(Number(key))) {

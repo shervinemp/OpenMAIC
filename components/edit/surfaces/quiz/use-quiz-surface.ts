@@ -11,6 +11,7 @@ import {
   deleteOption,
   deleteQuestion,
   isChoice,
+  isOrdered,
   reorderOptions,
   reorderQuestions,
   setQuestionType,
@@ -108,12 +109,14 @@ export function buildQuizHints(
     if (hints.length >= MAX_HINTS) return;
     const n = i + 1;
     const choice = isChoice(q.type);
+    const ordered = isOrdered(q.type);
+    const rows = choice || ordered;
     let issue: { severity: EditorHint['severity']; key: string } | null = null;
     if (!q.question.trim()) {
       issue = { severity: 'suggestion', key: 'emptyText' };
-    } else if (choice && (q.options?.length ?? 0) < 2) {
+    } else if (rows && (q.options?.length ?? 0) < 2) {
       issue = { severity: 'warning', key: 'fewOptions' };
-    } else if (choice && (q.options ?? []).some((o) => !o.label.trim())) {
+    } else if (rows && (q.options ?? []).some((o) => !o.label.trim())) {
       issue = { severity: 'suggestion', key: 'emptyOption' };
     } else if (choice && (q.answer?.length ?? 0) === 0) {
       issue = { severity: 'warning', key: 'noCorrect' };

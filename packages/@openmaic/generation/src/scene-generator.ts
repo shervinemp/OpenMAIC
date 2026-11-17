@@ -1185,12 +1185,19 @@ async function generateQuizContent(
     const questions: QuizQuestion[] = generatedQuestions.map((q) => {
       const isText = q.type === 'short_answer';
       const isNumeric = q.type === 'numeric';
-      const options = isText || isNumeric ? undefined : normalizeQuizOptions(q.options);
-      const answer = isText
-        ? undefined
-        : isNumeric
-          ? normalizeNumericAnswer(q as unknown as Record<string, unknown>)
-          : normalizeQuizAnswer(q as unknown as Record<string, unknown>, options);
+      const isOrdering = q.type === 'ordering';
+      const options =
+        isText || isNumeric
+          ? undefined
+          : isOrdering
+            ? normalizeOrderingOptions(q as unknown as Record<string, unknown>)
+            : normalizeQuizOptions(q.options);
+      const answer =
+        isText || isOrdering
+          ? undefined
+          : isNumeric
+            ? normalizeNumericAnswer(q as unknown as Record<string, unknown>)
+            : normalizeQuizAnswer(q as unknown as Record<string, unknown>, options);
       const tolerance = isNumeric ? normalizeNumericTolerance(q.tolerance) : undefined;
       const unit = isNumeric && typeof q.unit === 'string' ? q.unit.trim() || undefined : undefined;
       return {
@@ -1210,11 +1217,14 @@ async function generateQuizContent(
     if (contractFailure) {
       log.error(`Quiz question contract failed for "${outline.title}": ${contractFailure}`);
       if (attempt < maxAttempts) {
+        const orderingIssue = contractFailure.includes('ordering');
         const numericIssue = contractFailure.includes('numeric');
         parseFeedback = `Your previous reply broke the quiz question contract (${contractFailure}). ${
           numericIssue
             ? 'A numeric question has no options: give one finite number as "answer" (a string array) and a non-negative "tolerance".'
-            : 'Every choice option must be { "label": "<content>", "value": "<one letter A-Z>" } and "answer" must list those letters.'
+            : orderingIssue
+              ? 'An ordering question lists its items in the correct order in "options" (at least two distinct items) and has no "answer" key.'
+              : 'Every choice option must be { "label": "<content>", "value": "<one letter A-Z>" } and "answer" must list those letters.'
         }`;
         continue;
       }
@@ -1285,6 +1295,8 @@ const QUIZ_OPTION_VALUE = /^[A-Z]$/;
  *
  * Choice questions need a non-empty option list whose `value`s are single
  * ASCII letters A-Z, and every answer entry must equal one of those values.
+ * Ordering questions carry the correct sequence in `options` (at least two
+ * distinct items) and no answer key.
  * Numeric questions need one finite answer and a non-negative tolerance.
  * Short-answer questions are skipped.
  */
@@ -1294,6 +1306,23 @@ export function findQuizOptionsContractFailure(questions: readonly QuizQuestion[
     if (!question) continue;
 
     const where = question.id ? `question ${index + 1} (${question.id})` : `question ${index + 1}`;
+    if (question.type === 'ordering') {
+      const items = question.options;
+      if (!items || items.length < 2) {
+        return `${where}: ordering question needs at least two items`;
+      }
+      const seen = new Set<string>();
+      for (const item of items) {
+        if (typeof item.value !== 'string' || item.value === '') {
+          return `${where}: ordering item is missing its value`;
+        }
+        if (seen.has(item.value)) {
+          return `${where}: ordering item value ${JSON.stringify(item.value)} is repeated`;
+        }
+        seen.add(item.value);
+      }
+      continue;
+    }
     if (question.type === 'numeric') {
       const key = question.answer?.[0];
       if (key === undefined || key.trim() === '' || !Number.isFinite(Number(key))) {
@@ -1619,6 +1648,32 @@ export function normalizeQuizOptions(
 
     return { value: letter, label: String(opt) };
   });
+}
+
+/**
+ * Normalize an ordering question's items. The stored item order is the answer
+ * key, so a model that also emits an explicit sequence through the usual
+ * `answer` / `correctAnswer` aliases is honored by permuting the items into
+ * that order. An incomplete, repeated or unknown sequence is ignored rather
+ * than partially applied — the listed order remains the key.
+ */
+export function normalizeOrderingOptions(
+  question: Record<string, unknown>,
+): NormalizedQuizOption[] | undefined {
+  const options = normalizeQuizOptions(question.options as unknown[] | undefined);
+  if (!options) return undefined;
+  const raw = question.answer ?? question.correctAnswer ?? question.correct_answer;
+  if (raw === undefined || raw === null) return options;
+  const key = (Array.isArray(raw) ? raw : [raw]).map(String);
+  if (key.length !== options.length) return options;
+  const byValue = new Map(options.map((option) => [option.value, option]));
+  const ordered: NormalizedQuizOption[] = [];
+  for (const value of key) {
+    const option = byValue.get(value);
+    if (!option || ordered.includes(option)) return options;
+    ordered.push(option);
+  }
+  return ordered;
 }
 
 /**

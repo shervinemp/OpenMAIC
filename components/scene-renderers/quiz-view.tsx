@@ -9,6 +9,8 @@ import {
   XCircle,
   RotateCcw,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Check,
   BookOpenText,
   Loader2,
@@ -32,6 +34,7 @@ import {
 } from '@/lib/quiz/grading';
 import { renderQuizMathText } from '@/lib/quiz/math-text';
 import { hasPracticeAnswer, summarizePractice } from '@/lib/quiz/practice';
+import { displayOrder } from '@/lib/quiz/shuffle';
 import { writeDraftRecovery } from '@/lib/quiz/persistence';
 import {
   createQuizAttemptWriter,
@@ -441,6 +444,156 @@ function MultipleChoiceQuestion({
   );
 }
 
+function OrderingQuestion({
+  question,
+  index,
+  value,
+  onChange,
+  disabled,
+  result,
+}: {
+  question: QuizQuestion;
+  index: number;
+  value?: string[];
+  onChange: (value: string[]) => void;
+  disabled?: boolean;
+  result?: QuestionResult;
+}) {
+  const { t } = useI18n();
+  const isReview = !!result;
+  const items = useMemo(() => question.options ?? [], [question.options]);
+  const values = useMemo(() => items.map((item) => item.value), [items]);
+  const labels = useMemo(() => new Map(items.map((item) => [item.value, item.label])), [items]);
+  // The stored order is the answer key, so the learner sees a seeded shuffle.
+  const display = useMemo(
+    () => displayOrder(question.id, values.length),
+    [question.id, values.length],
+  );
+
+  // An ordering question always holds a complete arrangement: until the learner
+  // moves anything, the scrambled display order is their answer. Seed it once
+  // so the "answered" count and submit readiness are honest.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || isReview || values.length === 0) return;
+    if (value && value.length === values.length) return;
+    seeded.current = true;
+    onChange(display.map((position) => values[position]));
+  }, [display, isReview, onChange, value, values]);
+
+  const order =
+    value && value.length === values.length ? value : display.map((position) => values[position]);
+
+  const move = (from: number, to: number) => {
+    if (disabled || isReview || to < 0 || to >= order.length) return;
+    const next = order.slice();
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    onChange(next);
+  };
+
+  if (isReview) {
+    return (
+      <QuestionCard question={question} index={index} result={result}>
+        <div className="space-y-3">
+          <div className="grid gap-2">
+            {order.map((itemValue, position) => {
+              const atCorrectSpot = position < values.length && values[position] === itemValue;
+              return (
+                <div
+                  key={itemValue}
+                  className={cn(
+                    'flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm',
+                    atCorrectSpot
+                      ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-900/30'
+                      : 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/30',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg font-mono text-xs font-bold',
+                      atCorrectSpot
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-red-400 text-white dark:bg-red-500',
+                    )}
+                  >
+                    {position + 1}
+                  </span>
+                  <span className="flex-1 text-gray-700 dark:text-gray-200">
+                    <QuizMathText text={labels.get(itemValue) ?? itemValue} />
+                  </span>
+                  {atCorrectSpot ? (
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
+                  ) : (
+                    <XCircle className="h-5 w-5 shrink-0 text-red-400" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {result.status === 'incorrect' &&
+            values.length >= 2 &&
+            new Set(values).size === values.length && (
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 dark:border-emerald-800 dark:bg-emerald-900/20">
+                <p className="mb-1 text-xs text-emerald-600/80 dark:text-emerald-400/80">
+                  {t('quiz.correctOrder')}
+                </p>
+                <ol className="list-decimal space-y-0.5 pl-5 text-sm text-emerald-700 dark:text-emerald-300">
+                  {values.map((itemValue) => (
+                    <li key={itemValue}>
+                      <QuizMathText text={labels.get(itemValue) ?? itemValue} />
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+        </div>
+      </QuestionCard>
+    );
+  }
+
+  return (
+    <QuestionCard question={question} index={index}>
+      <p className="mb-2 text-xs text-gray-400 dark:text-gray-500">{t('quiz.orderingHint')}</p>
+      <ol className="grid gap-2">
+        {order.map((itemValue, position) => (
+          <li
+            key={itemValue}
+            className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-800/50"
+          >
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100 font-mono text-xs font-bold text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+              {position + 1}
+            </span>
+            <span className="flex-1 text-gray-700 dark:text-gray-200">
+              <QuizMathText text={labels.get(itemValue) ?? itemValue} />
+            </span>
+            <span className="flex shrink-0 items-center">
+              <button
+                type="button"
+                aria-label={t('quiz.moveUp')}
+                disabled={disabled || position === 0}
+                onClick={() => move(position, position - 1)}
+                className="rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:pointer-events-none disabled:opacity-30 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+              >
+                <ChevronUp className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                aria-label={t('quiz.moveDown')}
+                disabled={disabled || position === order.length - 1}
+                onClick={() => move(position, position + 1)}
+                className="rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:pointer-events-none disabled:opacity-30 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </QuestionCard>
+  );
+}
+
 function ShortAnswerQuestion({
   question,
   index,
@@ -714,7 +867,9 @@ function QuestionCard({
                   ? t('quiz.multipleChoice')
                   : question.type === 'numeric'
                     ? t('quiz.numeric')
-                    : t('quiz.shortAnswer')}
+                    : question.type === 'ordering'
+                      ? t('quiz.ordering')
+                      : t('quiz.shortAnswer')}
               {' · '}
               {pts} {t('quiz.pointsSuffix')}
             </p>
@@ -1056,6 +1211,16 @@ export function QuizPractice({
         )}
         {question?.type === 'multiple' && (
           <MultipleChoiceQuestion
+            question={question}
+            index={index}
+            value={answer as string[] | undefined}
+            onChange={(value) => setAnswers((previous) => ({ ...previous, [question.id]: value }))}
+            disabled={!!currentResult}
+            result={currentResult ?? undefined}
+          />
+        )}
+        {question?.type === 'ordering' && (
+          <OrderingQuestion
             question={question}
             index={index}
             value={answer as string[] | undefined}
@@ -1414,6 +1579,17 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                     />
                   );
                 }
+                if (q.type === 'ordering') {
+                  return (
+                    <OrderingQuestion
+                      key={q.id}
+                      question={q}
+                      index={i}
+                      value={answers[q.id] as string[] | undefined}
+                      onChange={(v) => handleSetAnswer(q.id, v)}
+                    />
+                  );
+                }
                 if (q.type === 'numeric') {
                   return (
                     <NumericQuestion
@@ -1536,6 +1712,19 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                 if (q.type === 'multiple') {
                   return (
                     <MultipleChoiceQuestion
+                      key={q.id}
+                      question={q}
+                      index={i}
+                      value={answers[q.id] as string[] | undefined}
+                      onChange={() => {}}
+                      disabled
+                      result={r}
+                    />
+                  );
+                }
+                if (q.type === 'ordering') {
+                  return (
+                    <OrderingQuestion
                       key={q.id}
                       question={q}
                       index={i}

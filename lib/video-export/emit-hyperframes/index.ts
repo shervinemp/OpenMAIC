@@ -105,6 +105,8 @@ export interface VideoExportLabels extends QuizQuestionListLabels {
   shortAnswer: string;
   /** `quiz.numeric` — static question type label. */
   numeric: string;
+  /** `quiz.ordering` — static question type label. */
+  ordering: string;
   /** `quiz.inputPlaceholder` — text shown inside the visual-only answer box. */
   answerPlaceholder: string;
   /** `pbl.v2.hero.title` — the PBL card's eyebrow. */
@@ -206,6 +208,7 @@ const DEFAULT_VIDEO_EXPORT_LABELS: VideoExportLabels = {
   multipleChoice: 'Multiple',
   shortAnswer: 'Short answer',
   numeric: 'Numeric',
+  ordering: 'Ordering',
   answerPlaceholder: 'Type your answer here...',
   pbl: 'Project-Based Learning',
   stages: 'Stages',

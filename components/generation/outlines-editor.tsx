@@ -1181,6 +1181,7 @@ function QuizConfigDisclosure({
                 ['multiple', 'generation.quizTypeMultiple'],
                 ['text', 'generation.quizTypeText'],
                 ['numeric', 'generation.quizTypeNumeric'],
+                ['ordering', 'generation.quizTypeOrdering'],
               ] as const
             ).map(([type, labelKey]) => {
               const current = config.questionTypes ?? ['single'];

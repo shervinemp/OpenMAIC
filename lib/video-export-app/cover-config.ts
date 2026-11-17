@@ -197,6 +197,7 @@ export function getVideoExportCoverLabels(locale: Locale): VideoExportLabels {
     multipleChoice: at('quiz.multipleChoice'),
     shortAnswer: at('quiz.shortAnswer'),
     numeric: at('quiz.numeric'),
+    ordering: at('quiz.ordering'),
     answerPlaceholder: at('quiz.inputPlaceholder'),
     pbl: at('pbl.v2.hero.title'),
     stages: at('pbl.v2.hero.stage'),

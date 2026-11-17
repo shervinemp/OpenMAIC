@@ -389,7 +389,8 @@
         "single": "單選",
         "multiple": "多選",
         "short_answer": "簡答",
-        "numeric": "數值"
+        "numeric": "數值",
+        "ordering": "排序"
       },
       "shortAnswerGradingNote": "簡答題一律由 AI 依下方評分指引自動評分。",
       "numericAnswerLabel": "正確答案",
@@ -398,6 +399,8 @@
       "numericUnitLabel": "單位",
       "numericUnitPlaceholder": "例如 m",
       "numericHint": "在 ±容差範圍內的答案算正確；單位僅供顯示。",
+      "orderingItemsLabel": "項目（依正確順序）",
+      "orderingHint": "學習者看到的項目順序是打亂的。",
       "hint": {
         "emptyText": "題目 {{n}}：請輸入題目內容",
         "fewOptions": "題目 {{n}}：至少需要 2 個選項",
@@ -724,6 +727,11 @@
     "practiceNote": "練習紀錄不計入成績。",
     "numeric": "數值",
     "numericPlaceholder": "輸入數值...",
+    "ordering": "排序",
+    "orderingHint": "將下列項目依正確順序排列。",
+    "correctOrder": "正確順序：",
+    "moveUp": "上移",
+    "moveDown": "下移",
     "expectedAnswer": "正確答案：",
     "answering": "答題中",
     "submitAnswers": "提交答案",
@@ -1118,6 +1126,7 @@
     "quizTypeMultiple": "多選",
     "quizTypeText": "簡答",
     "quizTypeNumeric": "數值",
+    "quizTypeOrdering": "排序題",
     "alwaysReviewOutlines": "以後生成前都審閱大綱",
     "outlineEditorEyebrow": "AI 生成的大綱",
     "outlineEditorStreamingProgress": "生成中 · 已就位 {{count}} 個場景",

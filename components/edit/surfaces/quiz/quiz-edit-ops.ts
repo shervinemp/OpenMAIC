@@ -97,9 +97,14 @@ export function toRows(q: QuizQuestion): OptionRow[] {
   }));
 }
 
-/** Re-derive `options` (value = positional letter) + `answer` from rows. */
-export function fromRows(rows: OptionRow[]): Pick<QuizQuestion, 'options' | 'answer'> {
+/** Re-derive `options` (value = positional letter) + `answer` from rows. For
+ * an ordering question the row order IS the key, so no answer is stored. */
+export function fromRows(
+  rows: OptionRow[],
+  mode: 'choice' | 'ordering' = 'choice',
+): Pick<QuizQuestion, 'options' | 'answer'> {
   const options = rows.map((r, i) => ({ label: r.label, value: optionLetter(i) }));
+  if (mode === 'ordering') return { options, answer: undefined };
   const answer = rows
     .map((r, i) => ({ correct: r.correct, value: optionLetter(i) }))
     .filter((r) => r.correct)
@@ -113,6 +118,16 @@ export function fromRows(rows: OptionRow[]): Pick<QuizQuestion, 'options' | 'ans
 
 export function isChoice(type: QuizQuestionType): boolean {
   return type === 'single' || type === 'multiple';
+}
+
+/** Whether the type stores an explicit sequence in `options`. */
+export function isOrdered(type: QuizQuestionType): boolean {
+  return type === 'ordering';
+}
+
+/** Whether the type's option rows are editable at all. */
+export function hasOptionRows(type: QuizQuestionType): boolean {
+  return isChoice(type) || isOrdered(type);
 }
 
 /** A new blank question of the given type with sensible defaults. */
@@ -131,6 +146,20 @@ export function createBlankQuestion(
       ],
       answer: [],
       points: 1,
+    };
+  }
+  if (type === 'ordering') {
+    return {
+      id,
+      type,
+      question: '',
+      options: [
+        { label: '', value: 'A' },
+        { label: '', value: 'B' },
+        { label: '', value: 'C' },
+      ],
+      points: 1,
+      hasAnswer: true,
     };
   }
   if (type === 'numeric') {
@@ -224,6 +253,8 @@ export function updateQuestion(
  *   short_answer → choice : seed two blank options, empty answer.
  *   any → numeric         : drop options, seed one numeric answer slot.
  *   numeric → any         : drop the numeric-only fields.
+ *   any → ordering        : keep choice options, seed three blank items
+ *                           otherwise; the row order becomes the answer key.
  *   single ↔ multiple     : keep options; collapsing to single keeps only
  *                           the first correct answer.
  */
@@ -234,6 +265,23 @@ export function setQuestionType(
 ): QuizContent {
   return mapQuestion(content, id, (q) => {
     if (q.type === type) return q;
+
+    if (type === 'ordering') {
+      const { commentPrompt: _c, answer: _a, tolerance: _t, unit: _u, ...rest } = q;
+      return {
+        ...rest,
+        type,
+        options:
+          isChoice(q.type) && (q.options?.length ?? 0) >= 2
+            ? (q.options ?? [])
+            : [
+                { label: '', value: 'A' },
+                { label: '', value: 'B' },
+                { label: '', value: 'C' },
+              ],
+        hasAnswer: true,
+      };
+    }
 
     if (type === 'numeric') {
       const { options: _o, commentPrompt: _c, ...rest } = q;
@@ -254,7 +302,7 @@ export function setQuestionType(
 
     // Target is a choice type.
     const { commentPrompt: _c, tolerance: _t, unit: _u, hasAnswer: _h, ...rest } = q;
-    if (!isChoice(q.type)) {
+    if (!hasOptionRows(q.type)) {
       return {
         ...rest,
         type,
@@ -273,7 +321,7 @@ export function setQuestionType(
 }
 
 // ---------------------------------------------------------------------------
-// Option mutations (choice questions only; no-op on short_answer)
+// Option mutations (choice + ordering questions; no-op elsewhere)
 // ---------------------------------------------------------------------------
 
 function mapRows(
@@ -282,8 +330,9 @@ function mapRows(
   fn: (rows: OptionRow[]) => OptionRow[],
 ): QuizContent {
   return mapQuestion(content, id, (q) => {
-    if (!isChoice(q.type)) return q;
-    return { ...q, ...fromRows(fn(toRows(q))) };
+    if (!hasOptionRows(q.type)) return q;
+    const mode = isOrdered(q.type) ? 'ordering' : 'choice';
+    return { ...q, ...fromRows(fn(toRows(q)), mode) };
   });
 }
 

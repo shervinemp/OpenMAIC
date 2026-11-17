@@ -161,6 +161,44 @@ describe('setQuestionType transitions', () => {
     const back = setQuestionType(content(single), 'q1', 'numeric').questions[0];
     expect(back).toMatchObject({ type: 'numeric', answer: [''], tolerance: 0, unit: '' });
   });
+
+  it('createBlankQuestion seeds three ordering items and no answer key', () => {
+    const question = createBlankQuestion('ordering', 'q1');
+    expect(question).toMatchObject({ type: 'ordering', points: 1, hasAnswer: true });
+    expect(question.options?.map((option) => option.value)).toEqual(['A', 'B', 'C']);
+    expect(question.answer).toBeUndefined();
+  });
+
+  it('ordering row edits keep the sequence and never invent an answer key', () => {
+    const blank = content(createBlankQuestion('ordering', 'q1'));
+    const named = updateOptionLabel(
+      updateOptionLabel(updateOptionLabel(blank, 'q1', 0, 'Ingest'), 'q1', 1, 'Clean'),
+      'q1',
+      2,
+      'Aggregate',
+    );
+    const moved = reorderOptions(named, 'q1', 2, 0).questions[0];
+
+    expect(moved.options?.map((option) => option.label)).toEqual(['Aggregate', 'Ingest', 'Clean']);
+    expect(moved.options?.map((option) => option.value)).toEqual(['A', 'B', 'C']);
+    expect(moved.answer).toBeUndefined();
+  });
+
+  it('choice → ordering keeps the items and drops the answer key', () => {
+    const question = setQuestionType(content(choiceQuestion()), 'q1', 'ordering').questions[0];
+    expect(question.type).toBe('ordering');
+    expect(question.options?.map((option) => option.label)).toEqual(['Paris', 'Lyon', 'Nice']);
+    expect(question.answer).toBeUndefined();
+    expect(question.hasAnswer).toBe(true);
+  });
+
+  it('ordering → choice keeps the items but starts with no correct answer', () => {
+    const ordering = content(createBlankQuestion('ordering', 'q1'));
+    const choice = setQuestionType(ordering, 'q1', 'multiple').questions[0];
+    expect(choice.type).toBe('multiple');
+    expect(choice.options).toHaveLength(3);
+    expect(choice.answer).toEqual([]);
+  });
 });
 
 describe('option mutations keep value=letter and answer correct', () => {

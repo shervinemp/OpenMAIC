@@ -25,7 +25,7 @@ import {
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import type { QuizQuestion, QuizQuestionType } from '@/lib/types/stage';
-import { MAX_OPTIONS, isChoice, optionLetter } from './quiz-edit-ops';
+import { MAX_OPTIONS, isChoice, isOrdered, optionLetter } from './quiz-edit-ops';
 import {
   addQuizOption,
   deleteQuizOption,
@@ -37,7 +37,7 @@ import {
   typeQuizQuestion,
 } from './use-quiz-surface';
 
-const TYPES: QuizQuestionType[] = ['single', 'multiple', 'short_answer', 'numeric'];
+const TYPES: QuizQuestionType[] = ['single', 'multiple', 'short_answer', 'numeric', 'ordering'];
 
 /** Per-type accent: a quiz scene's question types read at a glance by colour. */
 const TYPE_ACCENT: Record<QuizQuestionType, { badge: string; rail: string }> = {
@@ -56,6 +56,10 @@ const TYPE_ACCENT: Record<QuizQuestionType, { badge: string; rail: string }> = {
   numeric: {
     badge: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300',
     rail: 'from-cyan-400 to-cyan-600',
+  },
+  ordering: {
+    badge: 'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300',
+    rail: 'from-teal-400 to-teal-600',
   },
 };
 
@@ -76,6 +80,7 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
   const { t } = useI18n();
   const controls = useDragControls();
   const choice = isChoice(q.type);
+  const ordering = isOrdered(q.type);
   const accent = TYPE_ACCENT[q.type];
 
   return (
@@ -225,12 +230,21 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
             </Field>
           </div>
 
-          {/* Options (choice questions only) */}
-          {choice && (
-            <Field label={t('edit.quiz.optionsLabel')}>
+          {/* Options (choice) or sequence items (ordering). Ordering rows are
+              listed in the CORRECT order and carry no per-row correctness
+              toggle - their position is the answer key. */}
+          {(choice || ordering) && (
+            <Field
+              label={ordering ? t('edit.quiz.orderingItemsLabel') : t('edit.quiz.optionsLabel')}
+            >
               <div className="flex flex-col gap-1.5">
+                {ordering && (
+                  <p className="text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
+                    {t('edit.quiz.orderingHint')}
+                  </p>
+                )}
                 {(q.options ?? []).map((opt, i) => {
-                  const correct = answerIncludesOption(q, opt.value);
+                  const correct = choice && answerIncludesOption(q, opt.value);
                   // `opt.value` is the positional letter (A/B/C…), so this key
                   // is positional, not identity-stable. That's intentional:
                   // QuizOption has no id, and reorder is driven by the up/down
@@ -246,22 +260,35 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
                           : 'border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800/40',
                       )}
                     >
-                      <button
-                        type="button"
-                        aria-label={t('edit.quiz.markCorrect')}
-                        aria-pressed={correct}
-                        onPointerDown={stopDrag}
-                        onClick={() => toggleQuizCorrect(q.id, i)}
-                        className={cn(
-                          'relative flex h-8 w-8 shrink-0 items-center justify-center border font-mono text-xs font-bold transition-all',
-                          q.type === 'single' ? 'rounded-full' : 'rounded-lg',
-                          correct
-                            ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm shadow-emerald-500/30'
-                            : 'border-zinc-300 bg-white text-zinc-400 hover:border-emerald-400 hover:text-emerald-500 dark:border-zinc-600 dark:bg-zinc-800',
-                        )}
-                      >
-                        {correct ? <Check className="h-4 w-4" strokeWidth={3} /> : optionLetter(i)}
-                      </button>
+                      {choice ? (
+                        <button
+                          type="button"
+                          aria-label={t('edit.quiz.markCorrect')}
+                          aria-pressed={correct}
+                          onPointerDown={stopDrag}
+                          onClick={() => toggleQuizCorrect(q.id, i)}
+                          className={cn(
+                            'relative flex h-8 w-8 shrink-0 items-center justify-center border font-mono text-xs font-bold transition-all',
+                            q.type === 'single' ? 'rounded-full' : 'rounded-lg',
+                            correct
+                              ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm shadow-emerald-500/30'
+                              : 'border-zinc-300 bg-white text-zinc-400 hover:border-emerald-400 hover:text-emerald-500 dark:border-zinc-600 dark:bg-zinc-800',
+                          )}
+                        >
+                          {correct ? (
+                            <Check className="h-4 w-4" strokeWidth={3} />
+                          ) : (
+                            optionLetter(i)
+                          )}
+                        </button>
+                      ) : (
+                        <span
+                          aria-hidden
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 font-mono text-xs font-bold text-zinc-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                        >
+                          {i + 1}
+                        </span>
+                      )}
                       <Input
                         value={opt.label}
                         onPointerDown={stopDrag}

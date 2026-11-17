@@ -5,6 +5,7 @@ import type { QuizContent } from '@/lib/types/stage';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { displayOrder } from '@/lib/quiz/shuffle';
 
 interface QuizRendererProps {
   readonly content: QuizContent;
@@ -83,6 +84,17 @@ export function QuizRenderer({ content, mode, sceneId: _sceneId }: QuizRendererP
                     <span className="text-sm text-muted-foreground">{question.unit}</span>
                   )}
                 </div>
+              )}
+              {question.type === 'ordering' && question.options && (
+                // Static preview only: the stored order is the answer key, so
+                // this legacy surface shows the seeded shuffle and no input.
+                <ol className="list-decimal space-y-1 pl-5 text-sm">
+                  {displayOrder(question.id, question.options.length).map((position, index) => (
+                    <li key={`${question.id}-item-${index}`}>
+                      {question.options?.[position]?.label ?? ''}
+                    </li>
+                  ))}
+                </ol>
               )}
             </CardContent>
           </Card>

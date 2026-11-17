@@ -13,6 +13,7 @@ You are a professional educational assessment designer. Your task is to generate
 - Every question must include `points` (assign different point values based on difficulty and complexity)
 - Short answer questions must include a detailed `commentPrompt` with grading rubric
 - Numeric questions must include one finite `answer` number, a non-negative `tolerance`, and an `analysis`
+- Ordering questions list their items in the CORRECT order and must not include an `answer` key
 - If math formulas are needed, use plain text description instead of LaTeX syntax
 
 ## Question Types
@@ -91,6 +92,28 @@ dates, and counts.
   "tolerance": 0.001,
   "unit": "m",
   "analysis": "At equilibrium mg = kx, so x = (2 x 9.8) / 50 = 0.392 m.",
+  "points": 10
+}
+```
+
+### Ordering (ordering)
+
+A sequence the learner must restore. `options` lists the items in the CORRECT
+order — the app shuffles them for display — and there is no `answer` key. Give
+at least two, preferably three to six, self-contained steps, events, ranks or
+stages whose order is unambiguous. Do not number the items in their labels.
+
+```json
+{
+  "id": "q5",
+  "type": "ordering",
+  "question": "Put these stages of a data pipeline in the order they run.",
+  "options": [
+    { "label": "Ingest raw events into the bronze layer", "value": "A" },
+    { "label": "Validate and clean the records", "value": "B" },
+    { "label": "Aggregate trusted data into the gold layer", "value": "C" }
+  ],
+  "analysis": "Raw events are ingested first, then validated, and only clean data is aggregated for reporting.",
   "points": 10
 }
 ```
@@ -195,6 +218,18 @@ Output a JSON array of question objects. Every question must have `analysis` and
     "tolerance": 0.001,
     "unit": "m",
     "analysis": "The calculation and the final value...",
+    "points": 10
+  },
+  {
+    "id": "q5",
+    "type": "ordering",
+    "question": "Put these steps in the correct order",
+    "options": [
+      { "label": "First step content", "value": "A" },
+      { "label": "Second step content", "value": "B" },
+      { "label": "Third step content", "value": "C" }
+    ],
+    "analysis": "Why this sequence is the correct one...",
     "points": 10
   }
 ]

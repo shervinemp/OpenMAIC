@@ -112,6 +112,64 @@ describe('numeric grading', () => {
   });
 });
 
+describe('ordering grading', () => {
+  function ordered(overrides: Partial<QuizQuestion> = {}): QuizQuestion {
+    return q({
+      type: 'ordering',
+      options: [
+        { value: 'A', label: 'Ingest raw events' },
+        { value: 'B', label: 'Validate and clean' },
+        { value: 'C', label: 'Aggregate into marts' },
+      ],
+      answer: undefined,
+      ...overrides,
+    });
+  }
+
+  it('accepts the stored sequence', () => {
+    const [result] = gradeChoiceQuestions([ordered()], { q1: ['A', 'B', 'C'] });
+    expect(result).toMatchObject({ status: 'correct', correct: true, earned: 1 });
+  });
+
+  it('rejects a different sequence even when every item is present', () => {
+    const [result] = gradeChoiceQuestions([ordered()], { q1: ['A', 'C', 'B'] });
+    expect(result).toMatchObject({ status: 'incorrect', earned: 0 });
+  });
+
+  it('rejects a missing item', () => {
+    const [result] = gradeChoiceQuestions([ordered()], { q1: ['A', 'B'] });
+    expect(result).toMatchObject({ status: 'incorrect', earned: 0 });
+  });
+
+  it('rejects an unanswered ordering question', () => {
+    const [result] = gradeChoiceQuestions([ordered()], {});
+    expect(result).toMatchObject({ status: 'incorrect', earned: 0 });
+  });
+
+  it('leaves a question with fewer than two items ungraded', () => {
+    const [result] = gradeChoiceQuestions(
+      [ordered({ options: [{ value: 'A', label: 'Only item' }] })],
+      { q1: ['A'] },
+    );
+    expect(result).toMatchObject({ status: 'ungraded', correct: null, earned: 0 });
+  });
+
+  it('leaves duplicate item values ungraded instead of guessing', () => {
+    const [result] = gradeChoiceQuestions(
+      [
+        ordered({
+          options: [
+            { value: 'A', label: 'First' },
+            { value: 'A', label: 'Second' },
+          ],
+        }),
+      ],
+      { q1: ['A', 'A'] },
+    );
+    expect(result).toMatchObject({ status: 'ungraded', earned: 0 });
+  });
+});
+
 describe('ungradedResult', () => {
   it('marks the question ungraded without inventing a score', () => {
     const result = ungradedResult('s1', 'en-US');

@@ -461,7 +461,8 @@
         "single": "Einfachauswahl",
         "multiple": "Mehrfachauswahl",
         "short_answer": "Kurzantwort",
-        "numeric": "Numerisch"
+        "numeric": "Numerisch",
+        "ordering": "Reihenfolge"
       },
       "shortAnswerGradingNote": "Kurzantworten werden immer von der KI anhand der folgenden Hinweise bewertet.",
       "numericAnswerLabel": "Richtiger Wert",
@@ -470,6 +471,8 @@
       "numericUnitLabel": "Einheit",
       "numericUnitPlaceholder": "z. B. m",
       "numericHint": "Antworten innerhalb der ±Toleranz gelten als richtig. Die Einheit dient nur der Anzeige.",
+      "orderingItemsLabel": "Elemente (in richtiger Reihenfolge)",
+      "orderingHint": "Lernende sehen diese Elemente in gemischter Reihenfolge.",
       "hint": {
         "emptyText": "Frage {{n}}: Fragetext hinzufügen",
         "fewOptions": "Frage {{n}}: mindestens zwei Antwortmöglichkeiten hinzufügen",
@@ -747,6 +750,11 @@
     "practiceNote": "Übungsversuche werden nicht bewertet.",
     "numeric": "Numerisch",
     "numericPlaceholder": "Zahl eingeben...",
+    "ordering": "Reihenfolge",
+    "orderingHint": "Bringe die Elemente in die richtige Reihenfolge.",
+    "correctOrder": "Richtige Reihenfolge:",
+    "moveUp": "Nach oben",
+    "moveDown": "Nach unten",
     "expectedAnswer": "Erwartete Antwort:",
     "answering": "In Bearbeitung",
     "submitAnswers": "Antworten abgeben",
@@ -1133,6 +1141,7 @@
     "quizTypeMultiple": "Mehrfachauswahl",
     "quizTypeText": "Kurzantwort",
     "quizTypeNumeric": "Numerisch",
+    "quizTypeOrdering": "Reihenfolge",
     "alwaysReviewOutlines": "Gliederungen vor der Generierung immer prüfen",
     "outlineEditorEyebrow": "KI-generierte Gliederung",
     "outlineEditorStreamingProgress": "Übertragung läuft · Szenen bereit: {{count}}",

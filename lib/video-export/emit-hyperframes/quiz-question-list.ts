@@ -8,6 +8,7 @@ export interface QuizQuestionListLabels {
   multipleChoice: string;
   shortAnswer: string;
   numeric?: string;
+  ordering?: string;
   answerPlaceholder: string;
 }
 
@@ -33,6 +34,7 @@ function typeLabel(question: QuizQuestionListQuestion, labels: QuizQuestionListL
   if (question.type === 'single') return labels.singleChoice;
   if (question.type === 'multiple') return labels.multipleChoice;
   if (question.type === 'numeric') return labels.numeric ?? labels.shortAnswer;
+  if (question.type === 'ordering') return labels.ordering ?? labels.shortAnswer;
   return labels.shortAnswer;
 }
 
@@ -51,7 +53,7 @@ function renderQuestion(
   labels: QuizQuestionListLabels,
 ): string {
   const body =
-    question.type === 'short_answer' || question.type === 'numeric'
+    question.type === 'short_answer' || question.type === 'numeric' || question.type === 'ordering'
       ? `<div class="quiz-list-answer-box"><span>${escapeHtml(labels.answerPlaceholder)}</span></div>`
       : `<div class="quiz-list-options">${renderChoiceOptions(question)}</div>`;
   return [

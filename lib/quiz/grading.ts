@@ -143,16 +143,54 @@ function gradeNumericAnswer(q: QuizQuestion, raw: string): QuestionResult {
 }
 
 /**
- * Grade locally checkable questions (single, multiple, numeric). Short-answer
- * questions are graded by the LLM and are not returned here.
+ * Grade a `ordering` answer. The options are stored in the correct sequence;
+ * the learner submits the same values in their chosen order. Exact sequence
+ * equality only — a missing item or a duplicate is wrong, and a question with
+ * fewer than two unique items (or duplicate values) is a malformed key, so it
+ * is left ungraded rather than scored against the learner.
+ */
+function gradeOrderingAnswer(q: QuizQuestion, submitted: string[]): QuestionResult {
+  const points = q.points ?? 1;
+  const key = (q.options ?? []).map((option) => option.value);
+  if (key.length < 2 || new Set(key).size !== key.length) {
+    return {
+      questionId: q.id,
+      correct: null,
+      status: 'ungraded',
+      earned: 0,
+      aiComment: 'This ordering question has no valid answer key, so it was not graded.',
+    };
+  }
+  const correct =
+    submitted.length === key.length && submitted.every((value, index) => value === key[index]);
+  return {
+    questionId: q.id,
+    correct,
+    status: correct ? 'correct' : 'incorrect',
+    earned: correct ? points : 0,
+  };
+}
+
+/**
+ * Grade locally checkable questions (single, multiple, numeric, ordering).
+ * Short-answer questions are graded by the LLM and are not returned here.
  */
 export function gradeChoiceQuestions(
   questions: QuizQuestion[],
   answers: Record<string, string | string[]>,
 ): QuestionResult[] {
   return questions
-    .filter((q) => q.type === 'single' || q.type === 'multiple' || q.type === 'numeric')
+    .filter(
+      (q) =>
+        q.type === 'single' ||
+        q.type === 'multiple' ||
+        q.type === 'numeric' ||
+        q.type === 'ordering',
+    )
     .map((q) => {
+      if (q.type === 'ordering') {
+        return gradeOrderingAnswer(q, toArray(answers[q.id]));
+      }
       if (q.type === 'numeric') {
         const raw = answers[q.id];
         return gradeNumericAnswer(q, typeof raw === 'string' ? raw : (raw?.[0] ?? ''));

@@ -73,11 +73,17 @@ export function prepareQuizQuestionList(scene: CompilerScene): QuizQuestionListQ
     if (
       !id ||
       !question ||
-      (type !== 'single' && type !== 'multiple' && type !== 'short_answer' && type !== 'numeric')
+      (type !== 'single' &&
+        type !== 'multiple' &&
+        type !== 'short_answer' &&
+        type !== 'numeric' &&
+        type !== 'ordering')
     ) {
       continue;
     }
-    if (type === 'short_answer' || type === 'numeric') {
+    // Ordering stores its items in the answer sequence, so projecting them
+    // would leak the key. Export shows an answer area instead.
+    if (type === 'short_answer' || type === 'numeric' || type === 'ordering') {
       questions.push({ id, type, question });
       continue;
     }
