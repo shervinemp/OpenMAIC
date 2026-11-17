@@ -46,10 +46,23 @@ export const DIGEST_BATCH_CHARS = 4_500;
 // merge into the preceding card (their headings are all preserved).
 export const DIGEST_MIN_SECTION_CHARS = 700;
 
-// Upload-time captioning pass: images per vision call. All images are
-// captioned (cached by content hash) so every image carries a real text
-// description — no "metadata-only" image anywhere in the pipeline.
+// Upload-time captioning pass. Images are captioned in batched vision calls
+// (cached by content hash) so every substantive image carries a real text
+// description. `CAPTION_BATCH_IMAGES` bounds one call by count, and
+// `CAPTION_BATCH_TILES` bounds it by estimated vision tiles so a batch of
+// page-sized scans cannot be ten times the vision cost of a batch of diagrams.
 export const CAPTION_BATCH_IMAGES = 10;
+
+// Estimated 1024×1024 vision tiles per caption call. Ten ordinary diagram
+// images (one tile each) fill a batch; a single page-sized scan consumes
+// several tiles and therefore shares its call with fewer images.
+export const CAPTION_BATCH_TILES = 40;
+
+// Below this size an extracted image is an icon, rule, bullet or logo rather
+// than course material. Both conditions must clear before it is captioned;
+// images whose dimensions are unknown are always eligible.
+export const CAPTION_MIN_IMAGE_SIDE = 64;
+export const CAPTION_MIN_IMAGE_PIXELS = 16_384;
 
 // Per-call vision budget at scene content generation: only images relevant
 // to the scene (suggested ids) get vision; the rest use their captions.

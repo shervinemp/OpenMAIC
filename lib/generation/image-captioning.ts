@@ -13,7 +13,12 @@
 import { tryParseJson } from './json-repair';
 import type { AICallFn } from './pipeline-types';
 import type { PdfImage } from '@/lib/types/generation';
-import { CAPTION_BATCH_IMAGES } from '@/lib/constants/generation';
+import {
+  CAPTION_BATCH_IMAGES,
+  CAPTION_BATCH_TILES,
+  CAPTION_MIN_IMAGE_PIXELS,
+  CAPTION_MIN_IMAGE_SIDE,
+} from '@/lib/constants/generation';
 
 // ==================== Types ====================
 
@@ -39,18 +44,81 @@ export interface ImageCaption {
 // ==================== Batch planning ====================
 
 /**
+ * Whether an extracted image is substantive enough to deserve a vision call.
+ *
+ * Logos, bullets, rules and icon-sized decorations caption to "a small icon"
+ * at the same price as a diagram that teaches something. Unmeasurable images
+ * (legacy or non-image-typed sources) stay eligible: absent dimensions are not
+ * evidence of a tiny image.
+ */
+export function isCaptionWorthyImage(image: Pick<PdfImage, 'width' | 'height'>): boolean {
+  const { width, height } = image;
+  if (
+    typeof width !== 'number' ||
+    typeof height !== 'number' ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height)
+  ) {
+    return true;
+  }
+  if (width <= 0 || height <= 0) return false;
+  return (
+    Math.min(width, height) >= CAPTION_MIN_IMAGE_SIDE && width * height >= CAPTION_MIN_IMAGE_PIXELS
+  );
+}
+
+/**
+ * Estimated vision tiles one image occupies, on a 1024-pixel grid. One tile is
+ * the floor, so unknown dimensions cannot make a batch unbounded; a page-sized
+ * scan of 4096×3072 costs twelve tiles and shares its call with two others.
+ */
+export function captionImageTiles(image: Pick<PdfImage, 'width' | 'height'>): number {
+  const { width, height } = image;
+  if (
+    typeof width !== 'number' ||
+    typeof height !== 'number' ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return 1;
+  }
+  return Math.max(1, Math.ceil(width / 1024) * Math.ceil(height / 1024));
+}
+
+/**
  * Split images into caption batches. Images are ordered by page (stable
- * source order) so batch boundaries follow the document flow.
+ * source order) so batch boundaries follow the document flow. A batch is
+ * bounded by BOTH the image count and the estimated vision-tile budget; the
+ * first image of a batch is always admitted, so an image larger than the
+ * whole budget still gets captioned.
  */
 export function planCaptionBatches(
-  images: Array<Pick<PdfImage, 'id' | 'pageNumber'>>,
+  images: Array<Pick<PdfImage, 'id' | 'pageNumber' | 'width' | 'height'>>,
   batchSize: number = CAPTION_BATCH_IMAGES,
+  tileBudget: number = CAPTION_BATCH_TILES,
 ): string[][] {
   const ordered = [...images].sort((a, b) => a.pageNumber - b.pageNumber);
+  const maxImages = Math.max(1, Math.floor(batchSize));
+  const maxTiles = Math.max(1, Math.floor(tileBudget));
   const batches: string[][] = [];
-  for (let i = 0; i < ordered.length; i += batchSize) {
-    batches.push(ordered.slice(i, i + batchSize).map((image) => image.id));
+  let current: string[] = [];
+  let tiles = 0;
+
+  for (const image of ordered) {
+    const imageTiles = captionImageTiles(image);
+    const overCount = current.length >= maxImages;
+    const overTiles = current.length > 0 && tiles + imageTiles > maxTiles;
+    if (overCount || overTiles) {
+      batches.push(current);
+      current = [];
+      tiles = 0;
+    }
+    current.push(image.id);
+    tiles += imageTiles;
   }
+  if (current.length > 0) batches.push(current);
   return batches;
 }
 
@@ -138,8 +206,11 @@ export async function captionDocumentImages(
   images: PdfImage[],
   options: CaptionPassOptions,
 ): Promise<Map<string, ImageCaption>> {
-  const batches = planCaptionBatches(images, options.batchSize ?? CAPTION_BATCH_IMAGES);
-  const byId = new Map(images.map((image) => [image.id, image]));
+  // Tiny decorations are not course material. Skipping them saves their vision
+  // tokens and, when a document is mostly icons, saves the call entirely.
+  const eligible = images.filter(isCaptionWorthyImage);
+  const batches = planCaptionBatches(eligible, options.batchSize ?? CAPTION_BATCH_IMAGES);
+  const byId = new Map(eligible.map((image) => [image.id, image]));
   const result = new Map<string, ImageCaption>();
   const language = options.language ?? 'English';
 

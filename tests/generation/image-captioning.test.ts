@@ -2,6 +2,8 @@ import { describe, expect, test } from 'vitest';
 import {
   buildCaptionPrompt,
   captionDocumentImages,
+  captionImageTiles,
+  isCaptionWorthyImage,
   parseCaptionResponse,
   planCaptionBatches,
 } from '@/lib/generation/image-captioning';
@@ -12,6 +14,16 @@ function images(count: number) {
     id: `img_${i + 1}`,
     src: `data:image/png;base64,AA==`,
     pageNumber: i + 1,
+  }));
+}
+
+function sizedImages(count: number, width: number, height: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `img_${i + 1}`,
+    src: 'data:image/png;base64,AA==',
+    pageNumber: i + 1,
+    width,
+    height,
   }));
 }
 
@@ -27,6 +39,47 @@ describe('planCaptionBatches', () => {
 
   test('empty input yields no batches', () => {
     expect(planCaptionBatches([])).toEqual([]);
+  });
+
+  test('bounds a batch by estimated vision tiles, not only by count', () => {
+    // 4096×3072 = 4×3 = 12 tiles per image; the 40-tile budget admits three.
+    const batches = planCaptionBatches(sizedImages(8, 4096, 3072));
+    expect(batches.map((batch) => batch.length)).toEqual([3, 3, 2]);
+  });
+
+  test('admits the first image even when it exceeds the whole tile budget', () => {
+    const batches = planCaptionBatches([
+      { id: 'huge', pageNumber: 1, width: 20_000, height: 15_000 },
+    ]);
+    expect(batches).toEqual([['huge']]);
+  });
+
+  test('orders by page before applying the tile budget', () => {
+    const batches = planCaptionBatches([
+      { id: 'late', pageNumber: 3, width: 4096, height: 3072 },
+      { id: 'early', pageNumber: 1, width: 256, height: 256 },
+    ]);
+    expect(batches.flat()).toEqual(['early', 'late']);
+  });
+
+  test('unknown dimensions keep the count-based batch size', () => {
+    expect(planCaptionBatches(images(23)).map((batch) => batch.length)).toEqual([10, 10, 3]);
+    expect(captionImageTiles({ width: undefined, height: undefined })).toBe(1);
+  });
+});
+
+describe('caption worthiness', () => {
+  test('skips icons and fixed-size decorations', () => {
+    expect(isCaptionWorthyImage({ width: 32, height: 32 })).toBe(false);
+    expect(isCaptionWorthyImage({ width: 100, height: 100 })).toBe(false);
+    expect(isCaptionWorthyImage({ width: 48, height: 800 })).toBe(false);
+    expect(isCaptionWorthyImage({ width: 800, height: 600 })).toBe(true);
+    expect(isCaptionWorthyImage({ width: 128, height: 128 })).toBe(true);
+  });
+
+  test('unmeasured images stay eligible', () => {
+    expect(isCaptionWorthyImage({ width: undefined, height: undefined })).toBe(true);
+    expect(isCaptionWorthyImage({ width: Number.NaN, height: 800 })).toBe(true);
   });
 });
 
@@ -93,5 +146,66 @@ describe('captionDocumentImages', () => {
       aiCall: async () => 'garbage',
     });
     expect(captions.size).toBe(0);
+  });
+
+  test('skips icon-sized images and captions only substantive ones', async () => {
+    const seen: string[] = [];
+    const captions = await captionDocumentImages(
+      [
+        { id: 'icon', src: 'data:image/png;base64,AA==', pageNumber: 1, width: 32, height: 32 },
+        { id: 'rule', src: 'data:image/png;base64,AA==', pageNumber: 2, width: 48, height: 800 },
+        { id: 'chart', src: 'data:image/png;base64,AA==', pageNumber: 3, width: 800, height: 600 },
+      ],
+      {
+        aiCall: async (_system, _user, batchImages) => {
+          seen.push(...(batchImages ?? []).map((image) => image.id));
+          return JSON.stringify({
+            images: (batchImages ?? []).map((image) => ({
+              id: image.id,
+              caption: `Caption for ${image.id}`,
+              kind: 'diagram',
+            })),
+          });
+        },
+      },
+    );
+
+    expect(seen).toEqual(['chart']);
+    expect([...captions.keys()]).toEqual(['chart']);
+  });
+
+  test('makes no vision call when every image is a decoration', async () => {
+    let calls = 0;
+    const captions = await captionDocumentImages(
+      [{ id: 'icon', src: 'data:image/png;base64,AA==', pageNumber: 1, width: 16, height: 16 }],
+      {
+        aiCall: async () => {
+          calls += 1;
+          return '{}';
+        },
+      },
+    );
+
+    expect(calls).toBe(0);
+    expect(captions.size).toBe(0);
+  });
+
+  test('still captions images whose dimensions are unknown', async () => {
+    let calls = 0;
+    const captions = await captionDocumentImages(images(1), {
+      aiCall: async (_system, _user, batchImages) => {
+        calls += 1;
+        return JSON.stringify({
+          images: (batchImages ?? []).map((image) => ({
+            id: image.id,
+            caption: 'A diagram',
+            kind: 'diagram',
+          })),
+        });
+      },
+    });
+
+    expect(calls).toBe(1);
+    expect(captions.get('img_1')?.caption).toBe('A diagram');
   });
 });
