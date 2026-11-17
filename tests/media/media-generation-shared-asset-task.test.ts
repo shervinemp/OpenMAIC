@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useMediaGenerationStore, type MediaTask } from '@/lib/store/media-generation';
 
@@ -14,7 +14,14 @@ function task(elementId: string): MediaTask {
   };
 }
 
+let revokeObjectURL: ReturnType<typeof vi.spyOn>;
+
+beforeEach(() => {
+  revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+});
+
 afterEach(() => {
+  revokeObjectURL.mockRestore();
   useMediaGenerationStore.setState({ tasks: {} });
 });
 
@@ -37,5 +44,33 @@ describe('media task re-keying', () => {
       status: 'done',
       objectUrl: 'blob:a',
     });
+    // The duplicate's URL was minted for a task this update discarded, so it
+    // is released instead of pinning the shared bytes for the tab's lifetime.
+    expect(revokeObjectURL).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:b');
+  });
+
+  it('releases a discarded duplicate task’s displayed URL and poster', () => {
+    useMediaGenerationStore.setState({
+      tasks: {
+        gen_a: task('gen_a'),
+        // The held path marks the duplicate done under its placeholder before
+        // reconciliation re-keys it onto the shared asset.
+        gen_b: {
+          ...task('gen_b'),
+          status: 'done',
+          objectUrl: 'blob:b',
+          poster: 'blob:b-poster',
+        },
+      },
+    });
+
+    const store = useMediaGenerationStore.getState();
+    store.rekeyDone('gen_a', 'ast_shared', 'blob:a');
+    store.rekeyDone('gen_b', 'ast_shared', 'blob:b', 'blob:b-poster');
+
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:b');
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:b-poster');
+    expect(revokeObjectURL).not.toHaveBeenCalledWith('blob:a');
   });
 });

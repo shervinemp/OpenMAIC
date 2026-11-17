@@ -80,6 +80,17 @@ export function isMediaPlaceholder(src: string): boolean {
   return !!src && !CONCRETE_URL.test(src);
 }
 
+/**
+ * Release a URL this store minted, and nothing else.
+ *
+ * `objectUrl` is usually a blob URL, but a restored task can carry a durable
+ * hosted URL (`ossKey`) instead. Revoking one of those would be a no-op today;
+ * the guard keeps that an accident rather than a relied-upon behaviour.
+ */
+function revokeBlobUrl(url: string | undefined): void {
+  if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
+}
+
 // ==================== Store ====================
 
 export const useMediaGenerationStore = create<MediaGenerationState>()((set, get) => ({
@@ -135,7 +146,10 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
       };
     }),
 
-  rekeyDone: (oldRef, newRef, objectUrl, poster, posterAssetId) =>
+  rekeyDone: (oldRef, newRef, objectUrl, poster, posterAssetId) => {
+    // URLs a dropped task leaves behind are unreachable from the task table
+    // afterwards, so collect them inside the update and release them after it.
+    const orphaned: string[] = [];
     set((s) => {
       const task = s.tasks[oldRef];
       if (!task) return s;
@@ -146,8 +160,19 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
       // names the same bytes, and the first slot's placeholder reference is
       // still the one late reconciliation looks up. Overwriting it would also
       // put a URL this entry does not own in front of a slot that does.
+      //
+      // The incoming URLs were minted for a task this update discards, so they
+      // are orphaned too -- whether the task was already displaying them (the
+      // held path) or had not been given them yet (the immediate path). A
+      // duplicate video easily pins tens of megabytes that way.
       const existing = Object.hasOwn(tasks, newRef) ? tasks[newRef] : undefined;
-      if (existing?.status === 'done') return { tasks };
+      if (existing?.status === 'done') {
+        const kept = new Set([existing.objectUrl, existing.poster]);
+        for (const url of [objectUrl, poster, task.objectUrl, task.poster]) {
+          if (url && !kept.has(url)) orphaned.push(url);
+        }
+        return { tasks };
+      }
       tasks[newRef] = {
         ...task,
         elementId: newRef,
@@ -160,7 +185,9 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
         errorCode: undefined,
       };
       return { tasks };
-    }),
+    });
+    for (const url of new Set(orphaned)) revokeBlobUrl(url);
+  },
 
   markFailed: (elementId, error, errorCode) =>
     set((s) => {
