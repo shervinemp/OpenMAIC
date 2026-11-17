@@ -3,15 +3,14 @@
  *
  * Tracks per-element media generation status (pending → generating → done/failed).
  * Drives skeleton loading in slide renderer components.
- * Persistence is handled by IndexedDB (mediaFiles table), not Zustand middleware.
+ *
+ * The task table is in-memory only. Durable media lives in IndexedDB and is
+ * restored by the classroom loader (`lib/classroom/load-classroom.ts`), which
+ * can defer blob materialization until a scene is near the viewport.
  */
 
 import { create } from 'zustand';
 import type { MediaGenerationRequest } from '@/lib/media/types';
-import { db } from '@/lib/device-storage/database';
-import { createLogger } from '@/lib/logger';
-
-const log = createLogger('MediaGenerationStore');
 
 // ==================== Types ====================
 
@@ -62,9 +61,6 @@ interface MediaGenerationState {
   // Queries
   getTask: (elementId: string) => MediaTask | undefined;
   isReady: (elementId: string) => boolean;
-
-  // Restore from IndexedDB on page load
-  restoreFromDB: (stageId: string) => Promise<void>;
 
   // Cleanup
   clearStage: (stageId: string) => void;
@@ -222,64 +218,6 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
   getTask: (elementId) => get().tasks[elementId],
 
   isReady: (elementId) => get().tasks[elementId]?.status === 'done',
-
-  restoreFromDB: async (stageId) => {
-    try {
-      const records = await db.mediaFiles.where('stageId').equals(stageId).toArray();
-      const restored: Record<string, MediaTask> = {};
-      for (const rec of records) {
-        // Extract elementId from compound key (stageId:elementId)
-        const elementId = rec.id.includes(':') ? rec.id.split(':').slice(1).join(':') : rec.id;
-        const params = JSON.parse(rec.params || '{}');
-
-        if (rec.error) {
-          // Restore as failed task (persisted non-retryable error)
-          restored[elementId] = {
-            elementId,
-            placeholderRef: rec.placeholderRef,
-            type: rec.type,
-            status: 'failed',
-            prompt: rec.prompt,
-            params,
-            error: rec.error,
-            errorCode: rec.errorCode,
-            retryCount: 0,
-            stageId,
-          };
-        } else {
-          // Prefer a durable hosted URL when present; otherwise materialize
-          // the classic IndexedDB bytes as browser object URLs.
-          const objectUrl = rec.ossKey
-            ? rec.ossKey
-            : URL.createObjectURL(
-                rec.blob.type ? rec.blob : new Blob([rec.blob], { type: rec.mimeType }),
-              );
-          const poster = rec.posterOssKey
-            ? rec.posterOssKey
-            : rec.poster
-              ? URL.createObjectURL(rec.poster)
-              : undefined;
-          restored[elementId] = {
-            elementId,
-            placeholderRef: rec.placeholderRef,
-            type: rec.type,
-            status: 'done',
-            prompt: rec.prompt,
-            params,
-            objectUrl,
-            poster,
-            retryCount: 0,
-            stageId,
-          };
-        }
-      }
-      if (Object.keys(restored).length > 0) {
-        set((s) => ({ tasks: { ...s.tasks, ...restored } }));
-      }
-    } catch (err) {
-      log.error('Failed to restore from DB:', err);
-    }
-  },
 
   clearStage: (stageId) =>
     set((s) => {
