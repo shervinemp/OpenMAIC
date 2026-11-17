@@ -96,6 +96,27 @@ describe('numeric grading', () => {
     expect(parseNumericAnswer('no digits here')).toBeNull();
   });
 
+  it('keeps thousands grouping when a unit or decimal follows', () => {
+    expect(parseNumericAnswer('1,234 cm')).toBe(1234);
+    expect(parseNumericAnswer('1,234.5')).toBe(1234.5);
+    expect(parseNumericAnswer('-1,234.5 kg')).toBe(-1234.5);
+    expect(parseNumericAnswer('1,234,567.89')).toBe(1234567.89);
+    expect(parseNumericAnswer('1,234,567')).toBe(1234567);
+    expect(parseNumericAnswer('0,392 m')).toBe(0.392);
+  });
+
+  it('reads the later separator as the decimal mark when both are present', () => {
+    expect(parseNumericAnswer('1.234,5')).toBe(1234.5);
+    expect(parseNumericAnswer('1.234.567')).toBe(1234567);
+    expect(parseNumericAnswer('12,34')).toBe(12.34);
+  });
+
+  it('rejects malformed grouping instead of truncating the answer', () => {
+    expect(parseNumericAnswer('1,23,456')).toBeNull();
+    expect(parseNumericAnswer('1.2.3')).toBeNull();
+    expect(parseNumericAnswer('1,234.5.6')).toBeNull();
+  });
+
   it('marks an empty answer incorrect', () => {
     const [result] = gradeChoiceQuestions([numeric()], {});
     expect(result).toMatchObject({ status: 'incorrect', earned: 0 });

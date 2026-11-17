@@ -89,28 +89,124 @@ export function answerIncludesOption(q: QuizQuestion, optionValue: string): bool
  * notation, simple fractions ("3/4"), a trailing unit ("12 cm"), thousands
  * separators ("1,234") and a decimal comma ("1,5"). Returns null when no
  * finite number is present.
+ *
+ * A numeric field is free text, so the parser cannot assume the number is the
+ * whole string: "1,234 cm" and "1,234.5" are the same value with a unit or a
+ * fraction attached, and reading only the digits before the first separator
+ * would turn them into 1. The separator normalization below therefore runs on
+ * the numeric token itself and understands mixed conventions:
+ *
+ * - both separators present: the later one is the decimal mark, the earlier
+ *   one groups thousands ("1,234.5" and "1.234,5" both mean 1234.5);
+ * - one comma: a three-digit tail after one to three leading digits is
+ *   grouping, except after a leading zero ("0,392" is a decimal comma);
+ * - repeated separators: valid only when every group after the first has
+ *   three digits, so "1,23,456" is rejected instead of silently becoming 1.
  */
 export function parseNumericAnswer(raw: string): number | null {
-  let text = raw.trim().toLowerCase();
+  const text = raw.trim().toLowerCase();
   if (!text) return null;
-  const fraction = text.match(/^(-?\d+(?:\.\d+)?)\s*\/\s*(-?\d+(?:\.\d+)?)/);
+
+  // A number with separators and an optional exponent. The trailing `\d`
+  // keeps sentence punctuation out ("chapter 1, section 2" yields 1, not "1,").
+  const numberToken = '-?\\d(?:[\\d.,]*\\d)?(?:e[+-]?\\d+)?';
+  const fraction = text.match(new RegExp(`^(${numberToken})\\s*\\/\\s*(${numberToken})`));
   if (fraction) {
-    const denominator = Number(fraction[2]);
-    if (!Number.isFinite(denominator) || denominator === 0) return null;
-    const value = Number(fraction[1]) / denominator;
+    const numerator = parseNumericToken(fraction[1]!);
+    const denominator = parseNumericToken(fraction[2]!);
+    if (numerator === null || denominator === null || denominator === 0) return null;
+    const value = numerator / denominator;
     return Number.isFinite(value) ? value : null;
   }
-  // A comma followed by three digits is a thousands separator, except after a
-  // leading zero (0,392 is a decimal comma). Any other comma is a decimal comma.
-  if (/^-?\d{1,3}(?:,\d{3})+$/.test(text) && !/^-?0,\d{3}$/.test(text)) {
-    text = text.replace(/,/g, '');
-  } else if (/^-?\d+,\d+$/.test(text)) {
-    text = text.replace(',', '.');
-  }
-  const match = text.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/);
+
+  const match = text.match(new RegExp(numberToken));
   if (!match) return null;
-  const value = Number(match[0]);
+  return parseNumericToken(match[0]);
+}
+
+/**
+ * Parse one numeric token, honoring thousands grouping and decimal commas.
+ *
+ * The sign and exponent are stripped first so they cannot be mistaken for
+ * separators; the mantissa is then normalized to plain `digits.digits`, and
+ * anything that does not describe one unambiguous number is rejected.
+ */
+function parseNumericToken(token: string): number | null {
+  const exponentMatch = token.match(/e[+-]?\d+$/);
+  const exponent = exponentMatch ? exponentMatch[0] : '';
+  const mantissa = exponent ? token.slice(0, -exponent.length) : token;
+  const negative = mantissa.startsWith('-');
+  const body = negative ? mantissa.slice(1) : mantissa;
+  if (!body) return null;
+
+  const normalized = normalizeNumericSeparators(body);
+  if (normalized === null) return null;
+
+  const value = Number(`${negative ? '-' : ''}${normalized}${exponent}`);
   return Number.isFinite(value) ? value : null;
+}
+
+/** Rewrite a mantissa's grouping/decimal separators to `digits.digits`. */
+function normalizeNumericSeparators(body: string): string | null {
+  const lastDot = body.lastIndexOf('.');
+  const lastComma = body.lastIndexOf(',');
+  if (lastDot < 0 && lastComma < 0) return /^\d+$/.test(body) ? body : null;
+
+  if (lastDot >= 0 && lastComma >= 0) {
+    // The separator that comes last is the decimal mark; the other groups.
+    const decimal = lastDot > lastComma ? '.' : ',';
+    const grouping = decimal === '.' ? ',' : '.';
+    return normalizeGroupedDecimal(body, decimal, grouping);
+  }
+
+  if (lastComma >= 0) {
+    const commaParts = body.split(',');
+    if (commaParts.length === 2) {
+      const [integerPart, fractionPart] = commaParts as [string, string];
+      const grouping = integerPart.length <= 3 && fractionPart.length === 3 && integerPart !== '0';
+      if (grouping) {
+        return /^\d+$/.test(integerPart) && /^\d+$/.test(fractionPart)
+          ? `${integerPart}${fractionPart}`
+          : null;
+      }
+      return /^\d+$/.test(integerPart) && /^\d+$/.test(fractionPart)
+        ? `${integerPart}.${fractionPart}`
+        : null;
+    }
+    return normalizeGroupedInteger(body, ',');
+  }
+
+  const dotParts = body.split('.');
+  if (dotParts.length === 2) {
+    return /^\d+$/.test(dotParts[0]!) && /^\d+$/.test(dotParts[1]!)
+      ? `${dotParts[0]}.${dotParts[1]}`
+      : null;
+  }
+  // Repeated dots are European grouping ("1.234.567"); only accept whole
+  // three-digit groups so a malformed number is rejected rather than truncated.
+  return normalizeGroupedInteger(body, '.');
+}
+
+function normalizeGroupedDecimal(
+  body: string,
+  decimal: '.' | ',',
+  grouping: '.' | ',',
+): string | null {
+  const decimalIndex = body.lastIndexOf(decimal);
+  if (body.indexOf(decimal) !== decimalIndex) return null;
+  const integerPart = body.slice(0, decimalIndex);
+  const fractionPart = body.slice(decimalIndex + 1);
+  if (!/^\d+$/.test(fractionPart)) return null;
+  const grouped = normalizeGroupedInteger(integerPart, grouping);
+  return grouped === null ? null : `${grouped}.${fractionPart}`;
+}
+
+function normalizeGroupedInteger(text: string, grouping: '.' | ','): string | null {
+  const groups = text.split(grouping);
+  if (groups.length < 2) return null;
+  if (!/^\d{1,3}$/.test(groups[0]!)) return null;
+  if (!groups.slice(1).every((group) => /^\d{3}$/.test(group))) return null;
+  return groups.join('');
 }
 
 function gradeNumericAnswer(q: QuizQuestion, raw: string): QuestionResult {
