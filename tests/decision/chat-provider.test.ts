@@ -76,4 +76,22 @@ describe('chat decision provider', () => {
     expect(result.answers.size).toBe(0);
     expect(result.abstained.has('__score')).toBe(true);
   });
+
+  it('requests decoder-level JSON only when jsonMode is enabled', async () => {
+    const seen: Array<boolean | undefined> = [];
+    mocks.callLLM.mockImplementation(async () => {
+      const { jsonOutputContext } = await import('@/lib/ai/json-output-context');
+      seen.push(jsonOutputContext.getStore());
+      return { text: JSON.stringify({ answers: { q1: { noul: 0.5 } } }) };
+    });
+    const request = {
+      state: 'x',
+      questions: [{ id: 'q1', kind: 'noul' as const, prompt: 'Is it?' }],
+    };
+
+    await createChatDecisionProvider(config(), { resolve }).decide(request);
+    await createChatDecisionProvider(config({ jsonMode: true }), { resolve }).decide(request);
+
+    expect(seen).toEqual([undefined, true]);
+  });
 });

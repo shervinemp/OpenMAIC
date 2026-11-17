@@ -51,6 +51,7 @@ describe('/api/decision/status', () => {
         model: 'ollama:qwen3:4b',
         mode: 'replace',
         apiKey: 'should-not-leak',
+        jsonMode: true,
       },
     });
     resetDecisionConfigForTests();
@@ -69,6 +70,7 @@ describe('/api/decision/status', () => {
       provider: 'chat',
       mode: 'replace',
       model: 'ollama:qwen3:4b',
+      jsonMode: true,
     });
     expect(body.sites[0]).not.toHaveProperty('apiKey');
     expect(body.telemetry).toEqual({ counters: [], shadow: [] });

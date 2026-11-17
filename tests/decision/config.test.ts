@@ -79,6 +79,53 @@ describe('decision config', () => {
     });
   });
 
+  it('enables decoder-level JSON mode for a chat site', () => {
+    const routes = parseDecisionRoutes(
+      JSON.stringify({
+        'quiz-grade': {
+          provider: 'chat',
+          model: 'ollama:qwen3:4b',
+          jsonMode: true,
+        },
+      }),
+      env(),
+    );
+
+    expect(routes.get('quiz-grade')).toMatchObject({ jsonMode: true });
+  });
+
+  it('keeps jsonMode out of typed sites instead of failing the site', () => {
+    const routes = parseDecisionRoutes(
+      JSON.stringify({
+        'quiz-verify': {
+          provider: 'laya',
+          endpoint: 'http://127.0.0.1:8090',
+          jsonMode: true,
+        },
+      }),
+      env(),
+    );
+
+    const site = routes.get('quiz-verify');
+    expect(site?.provider).toBe('laya');
+    expect(site?.jsonMode).toBeUndefined();
+  });
+
+  it('ignores a non-boolean jsonMode', () => {
+    const routes = parseDecisionRoutes(
+      JSON.stringify({
+        'quiz-grade': {
+          provider: 'chat',
+          model: 'ollama:qwen3:4b',
+          jsonMode: 'yes',
+        },
+      }),
+      env(),
+    );
+
+    expect(routes.get('quiz-grade')?.jsonMode).toBeUndefined();
+  });
+
   it('defaults chat to replace and a cold-start timeout', () => {
     const routes = parseDecisionRoutes(
       JSON.stringify({

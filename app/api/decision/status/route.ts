@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
     maxInputChars: config.maxInputChars,
     ...(config.model ? { model: config.model } : {}),
     ...(config.endpoint ? { endpoint: config.endpoint } : {}),
+    ...(config.jsonMode ? { jsonMode: true } : {}),
   }));
 
   return apiSuccess({

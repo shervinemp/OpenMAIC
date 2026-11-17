@@ -180,6 +180,19 @@ export function parseDecisionRoutes(
       continue;
     }
 
+    let jsonMode = false;
+    if (entry.jsonMode !== undefined) {
+      if (typeof entry.jsonMode !== 'boolean') {
+        log.warn(`Decision site "${site}" has a non-boolean jsonMode; ignored.`);
+      } else if (entry.jsonMode && provider !== 'chat') {
+        log.warn(
+          `Decision site "${site}" sets jsonMode for provider "${provider}"; only chat uses it.`,
+        );
+      } else {
+        jsonMode = entry.jsonMode;
+      }
+    }
+
     configs.set(site, {
       site,
       provider,
@@ -187,6 +200,7 @@ export function parseDecisionRoutes(
       ...(model ? { model } : {}),
       ...(endpoint ? { endpoint } : {}),
       ...(apiKey ? { apiKey } : {}),
+      ...(jsonMode ? { jsonMode: true } : {}),
       timeoutMs: readNumber(
         entry.timeoutMs,
         provider === 'chat' ? DEFAULT_CHAT_TIMEOUT_MS : DEFAULT_TIMEOUT_MS,

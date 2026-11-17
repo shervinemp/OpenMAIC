@@ -48,6 +48,12 @@ export interface DecisionSiteConfig {
   /** Longer inputs go to the fallback: encoders have a bounded window. */
   maxInputChars: number;
   fallback: DecisionFallback;
+  /**
+   * Chat only: ask the server to enforce a JSON object at the decoder
+   * (`response_format: json_object`) instead of relying on the prompt alone.
+   * Opt-in because not every OpenAI-compatible server accepts the field.
+   */
+  jsonMode?: boolean;
 }
 
 export type DecisionQuestion =

@@ -2201,6 +2201,50 @@ function requestUrlString(input: RequestInfo | URL): string {
   return input.url;
 }
 
+/**
+ * True when the current call asked for decoder-enforced JSON output.
+ *
+ * Read through `globalThis` because this module is also evaluated on the
+ * client; only the server-side context module imports `node:async_hooks`.
+ */
+function jsonObjectOutputRequested(): boolean {
+  const ctx = (globalThis as Record<string, unknown>).__jsonOutputContext as
+    | { getStore?: () => unknown }
+    | undefined;
+  return ctx?.getStore?.() === true;
+}
+
+/**
+ * Add an OpenAI-compatible JSON-object response constraint when the caller
+ * asked for one. Deliberately narrow:
+ *
+ * - only `/chat/completions` — the Responses API spells this as `text.format`;
+ * - only when the body is a JSON string and does not already carry a
+ *   `response_format`, so an explicit caller choice wins;
+ * - a server that rejects the field returns a normal provider error, which the
+ *   decision router already treats as a failed decision and falls back from.
+ *
+ * This is opt-in per decision site (chat `jsonMode`), never a global default.
+ */
+function withJsonObjectResponseFormat(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+): RequestInit | undefined {
+  if (!jsonObjectOutputRequested()) return init;
+  if (!requestUrlString(input).includes('/chat/completions')) return init;
+  if (!init?.body || typeof init.body !== 'string') return init;
+  try {
+    const body = JSON.parse(init.body) as Record<string, unknown>;
+    if (body.response_format !== undefined) return init;
+    return {
+      ...init,
+      body: JSON.stringify({ ...body, response_format: { type: 'json_object' } }),
+    };
+  } catch {
+    return init;
+  }
+}
+
 function appendChatDelta(value: unknown): string {
   if (typeof value === 'string') return value;
   if (!Array.isArray(value)) return '';
@@ -2604,6 +2648,10 @@ export function getModel(config: ModelConfig): ModelWithInfo {
               /* leave body as-is */
             }
           }
+          // Decoder-enforced JSON is opt-in per decision site. Apply it after
+          // the thinking/reasoning body edits so the wire body is final.
+          init = withJsonObjectResponseFormat(url, init);
+
           const response = useStreamingChatCompat
             ? await fetchCustomOpenAIChat(url, init, transportFetch)
             : await transportFetch(url, init);
@@ -2667,7 +2715,10 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       } else {
         // Native OpenAI / Responses transport: route requests through the
         // shared transport so they carry the extended-timeout dispatcher too.
-        openaiOptions.fetch = transportFetch;
+        // The JSON-object constraint is limited to chat completions inside the
+        // wrapper; the Responses API keeps its own format handling.
+        openaiOptions.fetch = ((input, init) =>
+          transportFetch(input, withJsonObjectResponseFormat(input, init))) as typeof fetch;
       }
 
       const openai = createOpenAI(openaiOptions);

@@ -43,7 +43,8 @@ repeated judgments:
     "provider": "chat",
     "model": "ollama:qwen3:4b",
     "mode": "replace",
-    "maxInputChars": 6000
+    "maxInputChars": 6000,
+    "jsonMode": true
   }
 }
 ```
@@ -61,6 +62,7 @@ Fields:
 | `minConfidence` | `triage` threshold | `0.9` |
 | `maxInputChars` | Longer inputs skip the decision | `12000` |
 | `fallback` | `llm` or `none` | `llm` |
+| `jsonMode` | Chat only: ask the server to enforce a JSON object at the decoder | `false` |
 
 `DECISION_MODELS_ENABLED=false` disables every site without editing the routes.
 
@@ -136,10 +138,15 @@ seconds loading before it answers.
 Local providers still need an explicit base URL. A localhost endpoint needs
 `ALLOW_LOCAL_NETWORKS=true`, exactly like a local Ollama endpoint.
 
-For stricter output, a provider that supports schema-constrained decoding
-(Ollama `format`, vLLM guided JSON, llama.cpp grammars) can enforce the
-`answers` shape at the decoder. Wiring that through the chat adapter is a
-future extension; the normalizer already accepts the resulting JSON.
+For stricter output, set `jsonMode: true` on a chat site. The shared transport
+then adds `response_format: {"type":"json_object"}` to the chat-completions
+request, which OpenAI-compatible servers implement with their decoder
+(Ollama's JSON format, vLLM guided JSON, llama.cpp grammars, OpenAI JSON mode).
+The prompt stays schema-only and the normalizer still validates the shape; the
+constraint only guarantees that the reply parses as an object. It is opt-in
+because a server that does not know the field would reject the request, and a
+rejected request follows the normal fallback path. The constraint is limited to
+`/chat/completions`; the Responses API and non-OpenAI providers are untouched.
 
 ## Sites
 

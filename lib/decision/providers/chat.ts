@@ -12,6 +12,7 @@
  */
 
 import { callLLM } from '@/lib/ai/llm';
+import { withJsonObjectOutput } from '@/lib/ai/json-output-context';
 import { clampOutputBudget } from '@/lib/ai/output-budget';
 import { parseJsonResponse } from '@/lib/generation/json-repair';
 import { resolveModel } from '@/lib/server/resolve-model';
@@ -82,28 +83,34 @@ export function createChatDecisionProvider(
       const deadline = withDeadline(signal, config.timeoutMs);
       const startedAt = Date.now();
       try {
-        const result = await callLLM(
-          {
-            model: resolved.model,
-            system: SYSTEM_PROMPT,
-            prompt: `STATE:\n${request.state}\n\nQUESTIONS:\n${JSON.stringify(
-              questionPayload(request),
-              null,
-              2,
-            )}`,
-            maxOutputTokens: clampOutputBudget(
-              1_200,
-              resolved.modelInfo?.outputWindow,
-              resolved.thinkingConfig,
-            ),
-            // No temperature: some reasoning models reject or ignore it.
-            abortSignal: deadline.signal,
-          },
-          `decision:${config.site}`,
-          undefined,
-          resolved.thinkingConfig,
-          { serverManaged: resolved.serverManaged },
-        );
+        const generate = () =>
+          callLLM(
+            {
+              model: resolved.model,
+              system: SYSTEM_PROMPT,
+              prompt: `STATE:\n${request.state}\n\nQUESTIONS:\n${JSON.stringify(
+                questionPayload(request),
+                null,
+                2,
+              )}`,
+              maxOutputTokens: clampOutputBudget(
+                1_200,
+                resolved.modelInfo?.outputWindow,
+                resolved.thinkingConfig,
+              ),
+              // No temperature: some reasoning models reject or ignore it.
+              abortSignal: deadline.signal,
+            },
+            `decision:${config.site}`,
+            undefined,
+            resolved.thinkingConfig,
+            { serverManaged: resolved.serverManaged },
+          );
+        // Opt-in decoder enforcement: the shared transport adds
+        // `response_format: json_object` for OpenAI-compatible endpoints. The
+        // prompt stays schema-only either way, and a server that rejects the
+        // field still fails into the normal fallback path.
+        const result = config.jsonMode ? await withJsonObjectOutput(generate) : await generate();
         const parsed = parseJsonResponse<{ answers?: unknown }>(result.text);
         if (!parsed) throw new Error('Decision model returned unparseable JSON');
         return normalizeDecisionResult({
