@@ -6,12 +6,16 @@ const openAiMock = vi.hoisted(() => ({
   createOpenAI: vi.fn(),
 }));
 
+const azureMock = vi.hoisted(() => ({
+  createAzure: vi.fn(),
+}));
+
 vi.mock('@ai-sdk/openai', () => ({
   createOpenAI: openAiMock.createOpenAI,
 }));
 
 vi.mock('@ai-sdk/azure', () => ({
-  createAzure: vi.fn(),
+  createAzure: azureMock.createAzure,
 }));
 
 vi.mock('@ai-sdk/anthropic', () => ({
@@ -68,16 +72,18 @@ async function captureRequest(input: {
   }) as unknown as typeof fetch;
 
   getModel({
-    providerId: 'ollama',
+    providerId: input.model?.providerId ?? 'ollama',
     modelId: 'qwen3:4b',
     apiKey: '',
     fetchImpl,
     ...input.model,
   });
 
-  const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
-    | { fetch?: typeof fetch }
-    | undefined;
+  const providerId = input.model?.providerId ?? 'ollama';
+  const options =
+    providerId === 'azure'
+      ? (azureMock.createAzure.mock.calls.at(-1)?.[0] as { fetch?: typeof fetch } | undefined)
+      : (openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as { fetch?: typeof fetch } | undefined);
   if (!options?.fetch) throw new Error('compat fetch was not installed');
 
   const send = () =>
@@ -107,6 +113,8 @@ beforeEach(() => {
     chat: openAiMock.chat,
     responses: openAiMock.responses,
   });
+  azureMock.createAzure.mockReset();
+  azureMock.createAzure.mockReturnValue((modelId: string) => ({ endpoint: 'azure', modelId }));
 });
 
 describe('decoder-enforced JSON output', () => {
@@ -138,6 +146,20 @@ describe('decoder-enforced JSON output', () => {
       url: 'http://127.0.0.1:11434/v1/embeddings',
     });
     expect(request.body.response_format).toBeUndefined();
+  });
+
+  it('applies to the Azure OpenAI chat path too', async () => {
+    const request = await captureRequest({
+      model: {
+        providerId: 'azure',
+        modelId: 'gpt-4o-mini',
+        apiKey: 'sk-azure',
+        baseUrl: 'https://example.openai.azure.com/openai',
+      },
+      insideJsonContext: true,
+      url: 'https://example.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-10-21',
+    });
+    expect(request.body.response_format).toEqual({ type: 'json_object' });
   });
 
   it('applies to the native OpenAI chat path too', async () => {

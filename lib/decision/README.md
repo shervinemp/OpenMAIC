@@ -141,7 +141,8 @@ Local providers still need an explicit base URL. A localhost endpoint needs
 For stricter output, set `jsonMode: true` on a chat site. The shared transport
 then adds `response_format: {"type":"json_object"}` to the chat-completions
 request, which OpenAI-compatible servers implement with their decoder
-(Ollama's JSON format, vLLM guided JSON, llama.cpp grammars, OpenAI JSON mode).
+(Ollama's JSON format, vLLM guided JSON, llama.cpp grammars, OpenAI JSON mode,
+Azure OpenAI).
 The prompt stays schema-only and the normalizer still validates the shape; the
 constraint only guarantees that the reply parses as an object. It is opt-in
 because a server that does not know the field would reject the request, and a

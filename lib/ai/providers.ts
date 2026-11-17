@@ -2548,7 +2548,10 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         apiKey: effectiveApiKey,
         baseURL: normalizeAzureBaseUrl(effectiveBaseUrl),
       };
-      azureOptions.fetch = transportFetch;
+      // Azure exposes the same chat-completions response_format contract as
+      // OpenAI; apply the decision-layer constraint when one was requested.
+      azureOptions.fetch = ((input, init) =>
+        transportFetch(input, withJsonObjectResponseFormat(input, init))) as typeof fetch;
       const azure = createAzure(azureOptions);
       model = azure(config.modelId);
       break;
