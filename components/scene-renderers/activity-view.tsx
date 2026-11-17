@@ -198,6 +198,7 @@ export function ActivityView({ content, sceneId }: ActivityViewProps) {
             type="button"
             onClick={reset}
             disabled={running}
+            data-testid="activity-reset"
             className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
           >
             <RotateCcw className="h-4 w-4" />
@@ -207,6 +208,7 @@ export function ActivityView({ content, sceneId }: ActivityViewProps) {
             type="button"
             onClick={runLab}
             disabled={running}
+            data-testid="activity-run"
             className="inline-flex items-center gap-1.5 rounded-md bg-cyan-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-cyan-700 disabled:opacity-60"
           >
             {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
@@ -408,6 +410,7 @@ export function ActivityView({ content, sceneId }: ActivityViewProps) {
               readOnly={activeFile?.editable === false}
               spellCheck={false}
               aria-label={activePath}
+              data-testid="activity-code"
               className="min-h-0 flex-1 resize-none bg-zinc-950 p-4 font-mono text-[13px] leading-relaxed text-zinc-100 outline-none read-only:text-zinc-400"
               onKeyDown={(event) => {
                 if (event.key !== 'Tab' || activeFile?.editable === false) return;
@@ -431,6 +434,7 @@ export function ActivityView({ content, sceneId }: ActivityViewProps) {
               </h2>
               {run && (
                 <span
+                  data-testid="activity-status"
                   className={cn(
                     'rounded-full px-2 py-0.5 text-[11px] font-medium',
                     run.evaluation.passed

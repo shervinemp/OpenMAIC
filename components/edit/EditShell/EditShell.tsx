@@ -143,7 +143,10 @@ export function EditShell({
           />
         )}
         {state?.hasSelection && <FloatingToolbar actions={state.floatingActions} />}
-        <HintRail hints={state?.hints} reserveSpace={scene.type === 'quiz'} />
+        <HintRail
+          hints={state?.hints}
+          reserveSpace={scene.type === 'quiz' || scene.type === 'activity'}
+        />
       </Frame>
     </>
   );

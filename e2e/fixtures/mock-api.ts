@@ -66,6 +66,20 @@ export class MockApi {
     });
   }
 
+  /**
+   * Mock the generation readiness pre-flight. E2E has no media stack, and the
+   * gate must never block a flow under test, so every check list is empty.
+   */
+  async mockGenerationReadiness() {
+    await this.page.route('**/api/generation-readiness', (route) => {
+      route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checks: [] }),
+      });
+    });
+  }
+
   /** Mock the server providers endpoint (returns empty — client-side config only) */
   async mockServerProviders() {
     await this.page.route('**/api/server-providers', (route) => {

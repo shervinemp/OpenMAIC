@@ -204,7 +204,7 @@ export function SlideNavRail() {
   const handleInsertAt = useCallback(
     (insertIndex: number, type: EditableSceneType) => {
       if (!stage) return;
-      const title = type === 'slide' ? t('edit.nav.untitledSlide') : t('edit.sceneType.quiz');
+      const title = type === 'slide' ? t('edit.nav.untitledSlide') : t(`edit.sceneType.${type}`);
       const scene = createBlankEditableScene(type, stage.id, title, insertIndex + 1);
       setScenes(insertSceneAtIndex(scenes, scene, insertIndex));
       setCurrentSceneId(scene.id);
@@ -442,6 +442,7 @@ export function SlideNavRail() {
                     label={t('edit.nav.addPage')}
                     slideLabel={t('edit.sceneType.slide')}
                     quizLabel={t('edit.sceneType.quiz')}
+                    activityLabel={t('edit.sceneType.activity')}
                     onInsert={(type) => handleInsertAt(0, type)}
                   />
                 ) : null}
@@ -461,6 +462,7 @@ export function SlideNavRail() {
                         label={t('edit.nav.addPage')}
                         slideLabel={t('edit.sceneType.slide')}
                         quizLabel={t('edit.sceneType.quiz')}
+                        activityLabel={t('edit.sceneType.activity')}
                         onInsert={(type) => handleInsertAt(index + 1, type)}
                       />
                     )}

@@ -12,7 +12,7 @@ import type {
   SceneContent,
   SlideContent,
   QuizContent,
-  ActivityContent,
+  CodeActivityContent,
   InteractiveContent,
   PBLContent,
 } from '@/lib/types/stage';
@@ -90,7 +90,7 @@ export function createDefaultQuizContent(): QuizContent {
  * generator normally supplies a complete activity; this exists so a manually
  * inserted scene is structurally valid instead of throwing.
  */
-export function createDefaultActivityContent(): ActivityContent {
+export function createDefaultActivityContent(): CodeActivityContent {
   return {
     type: 'activity',
     kind: 'code',

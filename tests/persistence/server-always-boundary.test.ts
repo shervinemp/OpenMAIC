@@ -110,6 +110,11 @@ const FILE_BACKEND_SWITCH_READERS = new Set([
   'lib/persistence/bootstrap.ts',
   'lib/persistence/server-auth.ts',
   '.env.example',
+  // The e2e harness intentionally runs the file backend: the Playwright
+  // server config supplies the token on both sides, and the seed helper sends
+  // it with its direct document writes.
+  'playwright.config.ts',
+  'e2e/fixtures/server-seed.ts',
 ]);
 
 /** Fork tools that open a browser database: full backups and the old migrator. */

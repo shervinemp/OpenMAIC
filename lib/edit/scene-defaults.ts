@@ -1,8 +1,9 @@
 import { nanoid } from 'nanoid';
 import type { Scene, QuizContent } from '@/lib/types/stage';
 import { createBlankSlideScene } from '@/lib/edit/slide-defaults';
+import { createDefaultActivityContent } from '@/lib/api/stage-api-defaults';
 
-export type EditableSceneType = 'slide' | 'quiz';
+export type EditableSceneType = 'slide' | 'quiz' | 'activity';
 
 /** Build the valid empty content used when a quiz first enters authoring. */
 export function createBlankQuizScene(stageId: string, title: string, order: number): Scene {
@@ -21,6 +22,22 @@ export function createBlankQuizScene(stageId: string, title: string, order: numb
   };
 }
 
+/** Build the valid empty code lab used when a lab first enters authoring. */
+export function createBlankActivityScene(stageId: string, title: string, order: number): Scene {
+  const now = Date.now();
+  return {
+    id: nanoid(),
+    stageId,
+    type: 'activity',
+    title,
+    order,
+    content: createDefaultActivityContent(),
+    actions: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 /** Build a fresh scene for one of the page types exposed by the rail chooser. */
 export function createBlankEditableScene(
   type: EditableSceneType,
@@ -28,9 +45,9 @@ export function createBlankEditableScene(
   title: string,
   order: number,
 ): Scene {
-  return type === 'slide'
-    ? createBlankSlideScene(stageId, title, order)
-    : createBlankQuizScene(stageId, title, order);
+  if (type === 'slide') return createBlankSlideScene(stageId, title, order);
+  if (type === 'activity') return createBlankActivityScene(stageId, title, order);
+  return createBlankQuizScene(stageId, title, order);
 }
 
 /**

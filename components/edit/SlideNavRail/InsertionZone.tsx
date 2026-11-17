@@ -1,6 +1,6 @@
 'use client';
 
-import { ListChecks, Plus, Presentation } from 'lucide-react';
+import { ListChecks, Plus, Presentation, SquareTerminal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { EditableSceneType } from '@/lib/edit/scene-defaults';
@@ -9,6 +9,7 @@ interface InsertionZoneProps {
   readonly label: string;
   readonly slideLabel: string;
   readonly quizLabel: string;
+  readonly activityLabel: string;
   readonly onInsert: (type: EditableSceneType) => void;
 }
 
@@ -21,7 +22,13 @@ interface InsertionZoneProps {
  * on its own z-layer with a solid background + soft drop shadow so it
  * clearly floats above any adjacent violet ring.
  */
-export function InsertionZone({ label, slideLabel, quizLabel, onInsert }: InsertionZoneProps) {
+export function InsertionZone({
+  label,
+  slideLabel,
+  quizLabel,
+  activityLabel,
+  onInsert,
+}: InsertionZoneProps) {
   // `z-20` lifts the whole zone above adjacent `Reorder.Item` siblings.
   // Without this, the next-in-DOM-order ThumbItem (which has a `transform`
   // via motion's Reorder, creating its own stacking context) paints on
@@ -79,6 +86,12 @@ export function InsertionZone({ label, slideLabel, quizLabel, onInsert }: Insert
             onInsert={onInsert}
           />
           <SceneTypeChoice type="quiz" label={quizLabel} Icon={ListChecks} onInsert={onInsert} />
+          <SceneTypeChoice
+            type="activity"
+            label={activityLabel}
+            Icon={SquareTerminal}
+            onInsert={onInsert}
+          />
         </PopoverContent>
       </div>
     </Popover>

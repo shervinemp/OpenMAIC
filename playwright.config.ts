@@ -51,6 +51,11 @@ export default defineConfig({
       // shared .data/persistence root), so without this override every e2e
       // run synced its mock courses into the developer's actual workspace.
       PERSISTENCE_DIR: join(process.cwd(), '.data', 'persistence-e2e'),
+      // The file-backed backend authenticates with the development token, not
+      // the anonymous owner cookie. Both sides must carry the same value; the
+      // public one is compiled into the browser bundle by `next dev`.
+      PERSISTENCE_DEV_TOKEN: 'e2e-persistence-token',
+      NEXT_PUBLIC_PERSISTENCE_TOKEN: 'e2e-persistence-token',
     },
   },
 });

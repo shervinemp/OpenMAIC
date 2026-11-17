@@ -13,6 +13,14 @@ import type { Page } from '@playwright/test';
 // The workspace packages are ESM-only while Playwright loads specs as
 // CommonJS, so they are imported dynamically where they are used.
 
+/**
+ * Matches PERSISTENCE_DEV_TOKEN / NEXT_PUBLIC_PERSISTENCE_TOKEN in
+ * `playwright.config.ts`. The e2e server runs the file-backed backend, whose
+ * credential is this token rather than the anonymous owner cookie.
+ */
+const E2E_PERSISTENCE_TOKEN = 'e2e-persistence-token';
+const E2E_AUTH_HEADERS = { authorization: `Bearer ${E2E_PERSISTENCE_TOKEN}` };
+
 export interface SeedDocument {
   readonly stage: { readonly id: string } & Record<string, unknown>;
   readonly scenes: ReadonlyArray<Record<string, unknown>>;
@@ -34,6 +42,7 @@ export async function seedServerDocument(page: Page, document: SeedDocument): Pr
   const path = `/api/persistence/documents/${encodeURIComponent(document.stage.id)}`;
   const response = await page.request.put(path, {
     data: { dslVersion: DSL_VERSION, ...document },
+    headers: E2E_AUTH_HEADERS,
   });
   if (response.status() !== 204) {
     throw new Error(
@@ -49,6 +58,7 @@ export async function readServerDocument(
 ): Promise<{ stage: Record<string, unknown>; scenes: Array<Record<string, unknown>> } | null> {
   const response = await page.request.get(
     `/api/persistence/documents/${encodeURIComponent(stageId)}`,
+    { headers: E2E_AUTH_HEADERS },
   );
   if (response.status() === 404) return null;
   if (!response.ok()) {
