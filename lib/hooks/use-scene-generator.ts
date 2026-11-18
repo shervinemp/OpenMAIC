@@ -1605,6 +1605,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       // Create a new AbortController for this generation run
       fetchAbortRef.current = new AbortController();
       const signal = fetchAbortRef.current.signal;
+      // One media signal for the whole run. The orchestrator already serializes
+      // passes per stage, so per-scene launches queue instead of overlapping.
+      // Aborting the previous scene's pass whenever the next scene's content
+      // lands used to cancel legitimate work: a slow image for scene 1 was
+      // dropped as soon as scene 2 finished, leaving the slide with its
+      // unresolved `gen_img_*` placeholder. stop() still aborts this signal.
+      mediaAbortRef.current?.abort();
+      mediaAbortRef.current = new AbortController();
 
       const state = store.getState();
       const { outlines, scenes, stage } = state;
@@ -1680,16 +1688,13 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       // image/video was bought even when the model dropped the element. The
       // pass still overlaps the remaining actions/TTS phases.
       //
-      // Abort whatever the ref held first: replacing it would orphan that loop
-      // with a signal nothing can ever fire, leaving it calling providers and
-      // storing assets - real spend and real storage - for a course the user
-      // may already have left, and leaving `stop()` able to reach only the
-      // newest pass. The orchestrator serializes passes per stage, so the
-      // per-scene launches queue rather than overlap.
-      mediaAbortRef.current?.abort();
-      mediaAbortRef.current = new AbortController();
+      // All per-scene launches share the run's media signal: the orchestrator
+      // serializes passes per stage, so this queues rather than overlaps. Do
+      // not abort/replace it here — that cancelled the previous scene's media
+      // (and its image) the moment the next scene's content arrived.
       const mediaController = mediaAbortRef.current;
       const launchMediaForContentOutline = (outline: SceneOutline, content: unknown): void => {
+        if (!mediaController) return;
         const wantedRefs = contentMediaPlaceholders(content);
         const stageNow = useStageStore.getState().stage;
         for (const ref of stageMediaPlaceholders(stageNow)) wantedRefs.add(ref);

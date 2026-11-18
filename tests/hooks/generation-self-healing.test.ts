@@ -62,6 +62,8 @@ vi.stubGlobal('fetch', mockFetch);
 import { runOutlineJob, useSceneGenerator } from '@/lib/hooks/use-scene-generator';
 import { useStageStore } from '@/lib/store/stage';
 import { computeActionsSourceHash } from '@/lib/utils/content-hash';
+import { createDefaultImageElement } from '@/lib/edit/slide-edit-elements';
+import { contentMediaPlaceholders } from '@/lib/media/generated-media-references';
 
 const STAGE_ID = 'stage-heal';
 
@@ -116,6 +118,10 @@ function blueprintFor(outlines: SceneOutline[]): CourseBlueprint {
   return {
     lessons: [{ title: 'Lesson 1', objectives: [], outlines }],
   } as unknown as CourseBlueprint;
+}
+
+function imageElement(order: number) {
+  return createDefaultImageElement(`img-${order}`, `gen_img_${order}`);
 }
 
 function landStage(state: Record<string, unknown>): void {
@@ -337,6 +343,56 @@ describe('useSceneGenerator', () => {
     expect(useStageStore.getState().generationStatus).toBe('paused');
     expect(useStageStore.getState().generationComplete).toBe(false);
     expect(useStageStore.getState().failedOutlines.map((o) => o.id)).toEqual(['outline-1']);
+  });
+
+  it('recognizes a generated image placeholder in a content payload', () => {
+    const image = createDefaultImageElement('img-0', 'gen_img_0');
+    expect([...contentMediaPlaceholders({ elements: [image] })]).toEqual(['gen_img_0']);
+  });
+
+  it('runs all per-scene media passes on one signal, so a later scene cannot abort an earlier image', async () => {
+    landStage({ outlines: [outline(1), outline(2)] });
+    const signals: AbortSignal[] = [];
+    mocks.generateMedia.mockImplementation(async (...args: unknown[]) => {
+      signals.push(args[2] as AbortSignal);
+    });
+
+    const image = (order: number) => imageElement(order);
+    const respond = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => body,
+    });
+    mockFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? (JSON.parse(String(init.body)) as { outline?: SceneOutline }) : {};
+      const order = body.outline?.order ?? 0;
+      if (String(url).includes('/scene-content')) {
+        return respond({
+          success: true,
+          content: { elements: [image(order)] },
+        });
+      }
+      if (String(url).includes('/scene-actions')) {
+        const assembled = scene(order);
+        assembled.content = {
+          type: 'slide',
+          canvas: { id: `canvas-${order}`, elements: [image(order)] },
+        } as never;
+        return respond({ success: true, scene: assembled });
+      }
+      return respond({ success: true });
+    });
+
+    const api = await mountGenerator();
+    await act(async () => {
+      await api.generateRemaining({ stageInfo: { name: 'Course' } });
+    });
+
+    expect(signals).toHaveLength(2);
+    expect(signals[0]).toBe(signals[1]);
+    expect(signals[0].aborted).toBe(false);
+    expect(signals[1].aborted).toBe(false);
   });
 
   it('stop() aborts a retry that is in flight', async () => {

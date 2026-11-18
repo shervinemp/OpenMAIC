@@ -48,6 +48,11 @@ const SERVICES = {
       'ComfyUI\\main.py',
       '--windows-standalone-build',
       '--use-flash-attention',
+      // DynamicVRAM's disk-backed loading can fail with "GetOverlappedResult
+      // failed error=1450" under memory pressure, which crashes ComfyUI while a
+      // large text encoder loads. Keep weights in unpinned RAM instead; image
+      // generation then measures ~2-3 min on the 12 GB card.
+      '--disable-fast-disk',
     ],
     cwd: COMFYUI_DIR,
     healthUrl: 'http://localhost:8188/system_stats',
