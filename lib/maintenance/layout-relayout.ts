@@ -276,6 +276,11 @@ export function demoteCoveredDecoratives(scene: { content?: unknown }): number {
  * an older pin-all-shapes pass repeats the shape to every part: geometry-legal
  * (no collision error) but a bright box covering nothing on screen.
  *
+ * Images are content, never decoration: a generated figure or photograph is
+ * allowed to stand alone in its own region (the common text-left/image-right
+ * layout), so treating it as an orphan would delete real media. Only `shape`
+ * elements are considered.
+ *
  * Edge-hugging frame shapes (headers/banners/dividers by design, e.g. the 3px
  * title rule) are exempt — they belong to the shared frame, not to one row of
  * content. Delete-only; returns the number removed.
@@ -305,7 +310,7 @@ export function hasOrphanDecoratives(scene: { content?: unknown }, canvasHeight?
       : 1000 * ((canvas as unknown as { viewportRatio?: number }).viewportRatio ?? 0.5625);
   const elements = canvas.elements;
   for (const shape of elements) {
-    if (shape.type !== 'shape' && shape.type !== 'image') continue;
+    if (shape.type !== 'shape') continue;
     if (shape.width <= 0 || shape.height <= 0) continue;
     const bottom = shape.top + shape.height;
     // Frame membership: touches a canvas edge — or is a hairline (≤6px
@@ -368,7 +373,7 @@ export function stripOrphanDecoratives(
   const elements = canvas.elements;
   for (let i = elements.length - 1; i >= 0; i--) {
     const shape = elements[i];
-    if (shape.type !== 'shape' && shape.type !== 'image') continue;
+    if (shape.type !== 'shape') continue;
     if (shape.width <= 0 || shape.height <= 0) continue;
     const bottom = shape.top + shape.height;
     // Frame membership: touches a canvas edge — or is a hairline (≤6px
