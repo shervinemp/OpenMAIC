@@ -24,6 +24,7 @@ You are a programming and data instructor who designs short, runnable practice l
 - The debrief is a short concept recap shown after every check passes (1–3 sentences).
 - Keep the lab solvable in 5–15 minutes.
 - Do not repeat a task or restate the reference in the starter.
+- Tag the lab with 1-4 \`concepts\`: short lower-case noun phrases naming the ideas it measures. Reuse the outline's key-point vocabulary; do not tag the format (\`code\`, \`sql\`, \`terminal\`, \`lab\`). Every check is evidence about these concepts.
 
 
 
@@ -41,6 +42,7 @@ You are a programming and data instructor who designs short, runnable practice l
 \`\`\`json
 {
   "instructions": "Markdown task brief for the learner.",
+  "concepts": ["registry lookup", "missing keys"],
   "entryFile": "main.py",
   "files": [{ "path": "main.py", "content": "starter code", "editable": true }],
   "tests": [
@@ -370,6 +372,33 @@ function updateButton(text) {
 - Don't create objects in render loop
 - Throttle slider input events if needed
 
+### 12. Model Integrity (CRITICAL)
+
+A simulation is a model, not just an animation. A widget whose numbers
+contradict its own labels is wrong, however polished it looks.
+
+- **One source of truth.** Compute the model's quantities in ONE function and
+  derive every readout, badge, particle spawn, and preset description from that
+  result. Never add a second independent threshold (for example
+  \`humidity > 85 && temp < 15\`) that decides whether an advertised effect is
+  visible while the readout uses a different rule.
+- **Opposite effects must be reachable.** If the title, description, or a
+  preset names two competing or opposing processes (evaporation vs
+  condensation, gain vs loss, charging vs discharging), the model must be able
+  to show both directions. Do not silently clamp away one direction with
+  \`Math.max(0, ...)\`.
+- **Units must be honest.** Label a number only with the unit it actually has.
+  A saturation-pressure difference in hPa is not a molar flux in mol/m²s;
+  either convert with an explicit, stated constant or label it as an index.
+- **Published state must match the screen.** Every value in \`publishState()\`
+  must agree with the badges and numeric displays visible at the same instant.
+- **Presets must demonstrate their names.** A preset called "Rainy
+  (condensation)" must actually produce the condensation state in both the
+  published values and the visuals.
+- **State your simplifications.** If one temperature stands in for both the
+  surface and the air, or a saturation formula is approximate, say so in the
+  UI rather than presenting the result as exact.
+
 ## Common Bugs to Avoid
 
 | Bug | Cause | Solution |
@@ -418,6 +447,11 @@ const objectY = baseY - BOTTOM_MARGIN - (value / maxValue) * playableHeight;
 - [ ] Simulation objects are visible and not hidden under UI overlays
 - [ ] **Visible animation: Objects visibly move/rotate when simulation runs**
 - [ ] **Animation is OBVIOUS, not subtle - user can tell simulation is running**
+- [ ] **ONE computation drives numbers, badges, and particles**
+- [ ] **Every advertised process is reachable (no one-sided clamp)**
+- [ ] **Numeric labels describe the actual physical quantity**
+- [ ] **Each preset produces the effect its name promises**
+- [ ] **Published state matches the on-screen readouts**
 
 
 ## REQUIRED: declared current state for newly generated interactive content (v1)
@@ -715,6 +749,8 @@ You are a professional educational assessment designer. Your task is to generate
 - Accurate correct answers
 - Every question must include \`analysis\` (explanation shown after grading)
 - Every question must include \`points\` (assign different point values based on difficulty and complexity)
+- Every question must include \`concepts\`: 1-3 short lowercase tags naming the ideas the question measures (for example \`recursion\`, \`base case\`). Reuse the exact same tag when questions test the same idea, and never use a question format (\`multiple choice\`, \`quiz\`) as a tag.
+- Every choice option must include \`rationale\`: one sentence explaining why the option is correct or wrong. Every wrong option must also include \`misconception\`: the specific mistaken idea that makes it attractive. Omit both fields on ordering and matching items.
 - Short answer questions must include a detailed \`commentPrompt\` with grading rubric
 - Numeric questions must include one finite \`answer\` number, a non-negative \`tolerance\`, and an \`analysis\`
 - Ordering questions list their items in the CORRECT order and must not include an \`answer\` key
@@ -733,10 +769,10 @@ Only one correct answer among the options.
   "type": "single",
   "question": "Question text",
   "options": [
-    { "label": "Option A content", "value": "A" },
-    { "label": "Option B content", "value": "B" },
-    { "label": "Option C content", "value": "C" },
-    { "label": "Option D content", "value": "D" }
+    { "label": "Option A content", "value": "A", "rationale": "This option matches the rule." },
+    { "label": "Option B content", "value": "B", "rationale": "This reverses the relationship.", "misconception": "Reversing cause and effect" },
+    { "label": "Option C content", "value": "C", "rationale": "This applies the rule only to the first case.", "misconception": "Applying a rule to only one case" },
+    { "label": "Option D content", "value": "D", "rationale": "This confuses the definition with an example.", "misconception": "Treating an example as the definition" }
   ],
   "answer": ["A"],
   "analysis": "Explanation of why A is correct and why other options are wrong",
@@ -754,10 +790,10 @@ Two or more correct answers among the options.
   "type": "multiple",
   "question": "Question text (select all that apply)",
   "options": [
-    { "label": "Option A content", "value": "A" },
-    { "label": "Option B content", "value": "B" },
-    { "label": "Option C content", "value": "C" },
-    { "label": "Option D content", "value": "D" }
+    { "label": "Option A content", "value": "A", "rationale": "This condition is required." },
+    { "label": "Option B content", "value": "B", "rationale": "This condition is optional here.", "misconception": "Assuming an optional condition is required" },
+    { "label": "Option C content", "value": "C", "rationale": "This condition also holds." },
+    { "label": "Option D content", "value": "D", "rationale": "This condition contradicts the premise.", "misconception": "Ignoring the stated premise" }
   ],
   "answer": ["A", "C"],
   "analysis": "Explanation of the correct answer combination and reasoning",
@@ -911,11 +947,12 @@ Output a JSON array of question objects. Every question must have \`analysis\` a
     "id": "q1",
     "type": "single",
     "question": "Question text",
+    "concepts": ["concept one", "concept two"],
     "options": [
-      { "label": "Option A content", "value": "A" },
-      { "label": "Option B content", "value": "B" },
-      { "label": "Option C content", "value": "C" },
-      { "label": "Option D content", "value": "D" }
+      { "label": "Option A content", "value": "A", "rationale": "This option matches the rule." },
+      { "label": "Option B content", "value": "B", "rationale": "This reverses the relationship.", "misconception": "Reversing cause and effect" },
+      { "label": "Option C content", "value": "C", "rationale": "This applies the rule only to the first case.", "misconception": "Applying a rule to only one case" },
+      { "label": "Option D content", "value": "D", "rationale": "This confuses the definition with an example.", "misconception": "Treating an example as the definition" }
     ],
     "answer": ["A"],
     "analysis": "Why A is the correct answer...",
@@ -925,11 +962,12 @@ Output a JSON array of question objects. Every question must have \`analysis\` a
     "id": "q2",
     "type": "multiple",
     "question": "Question text",
+    "concepts": ["concept one", "concept three"],
     "options": [
-      { "label": "Option A content", "value": "A" },
-      { "label": "Option B content", "value": "B" },
-      { "label": "Option C content", "value": "C" },
-      { "label": "Option D content", "value": "D" }
+      { "label": "Option A content", "value": "A", "rationale": "This condition is required." },
+      { "label": "Option B content", "value": "B", "rationale": "This condition is optional here.", "misconception": "Assuming an optional condition is required" },
+      { "label": "Option C content", "value": "C", "rationale": "This condition also holds." },
+      { "label": "Option D content", "value": "D", "rationale": "This condition contradicts the premise.", "misconception": "Ignoring the stated premise" }
     ],
     "answer": ["A", "C"],
     "analysis": "Why A and C are correct...",
@@ -939,6 +977,7 @@ Output a JSON array of question objects. Every question must have \`analysis\` a
     "id": "q3",
     "type": "short_answer",
     "question": "Short answer question text",
+    "concepts": ["concept two"],
     "commentPrompt": "Rubric: (1) Key concept A - 40% (2) Key concept B - 30% (3) Clarity - 30%",
     "analysis": "Reference answer covering the key points...",
     "points": 20
@@ -947,6 +986,7 @@ Output a JSON array of question objects. Every question must have \`analysis\` a
     "id": "q4",
     "type": "numeric",
     "question": "Numeric question text that asks for one quantity",
+    "concepts": ["unit conversion"],
     "answer": ["0.392"],
     "tolerance": 0.001,
     "unit": "m",
@@ -957,6 +997,7 @@ Output a JSON array of question objects. Every question must have \`analysis\` a
     "id": "q5",
     "type": "ordering",
     "question": "Put these steps in the correct order",
+    "concepts": ["data pipeline stages"],
     "options": [
       { "label": "First step content", "value": "A" },
       { "label": "Second step content", "value": "B" },
@@ -969,6 +1010,7 @@ Output a JSON array of question objects. Every question must have \`analysis\` a
     "id": "q6",
     "type": "matching",
     "question": "Match each term with its definition",
+    "concepts": ["terminology"],
     "options": [
       { "label": "Term A", "value": "A" },
       { "label": "Term B", "value": "B" },
@@ -996,8 +1038,10 @@ Teach in English.
 
 
 
+Every question must also carry \`concepts\`: 1-3 short lowercase tags naming the ideas it measures. Reuse the same tag when two questions test the same idea.
+
 Output a JSON array directly (no explanation, no code blocks, no LaTeX). Each choice option MUST be \`{ "label": "<content text>", "value": "<one ASCII uppercase letter A-Z>" }\`. \`value\` is an enum A-Z and is never the option content; \`label\` is the content text and is never just the letter. Never reverse them (invalid: \`{ "value": "(6, 2)", "label": "A" }\`). \`answer\` MUST be an array of those \`value\` letters, never the content text. A numeric question has no options; its \`answer\` is \`["<number>"]\` with an optional non-negative \`tolerance\` and display \`unit\`. An ordering question lists its items in the correct order in \`options\` (at least two distinct items) and has NO \`answer\` key. A matching question has one left item in \`options\` and its partner at the same index in \`matches\` (equal length, at least two pairs, distinct right-hand labels) and NO \`answer\` key:
-[{"id":"q1","type":"single","question":"Question text","options":[{"label":"Option A content","value":"A"},{"label":"Option B content","value":"B"},{"label":"Option C content","value":"C"},{"label":"Option D content","value":"D"}],"answer":["A"]},{"id":"q2","type":"numeric","question":"Question text asking for one quantity","answer":["0.392"],"tolerance":0.001,"unit":"m","analysis":"How the value is obtained.","points":10},{"id":"q3","type":"ordering","question":"Put these steps in the correct order","options":[{"label":"First step content","value":"A"},{"label":"Second step content","value":"B"},{"label":"Third step content","value":"C"}],"analysis":"Why this sequence is correct.","points":10},{"id":"q4","type":"matching","question":"Match each term with its definition","options":[{"label":"Term A","value":"A"},{"label":"Term B","value":"B"}],"matches":[{"label":"Definition of term A","value":"A"},{"label":"Definition of term B","value":"B"}],"analysis":"Why each pairing is correct.","points":10}]",
+[{"id":"q1","concepts":["concept one"],"type":"single","question":"Question text","options":[{"label":"Option A content","value":"A","rationale":"This option matches the rule."},{"label":"Option B content","value":"B","rationale":"This reverses the relationship.","misconception":"Reversing cause and effect"},{"label":"Option C content","value":"C","rationale":"This applies the rule only to the first case.","misconception":"Applying a rule to only one case"},{"label":"Option D content","value":"D","rationale":"This confuses the definition with an example.","misconception":"Treating an example as the definition"}],"answer":["A"]},{"id":"q2","concepts":["unit conversion"],"type":"numeric","question":"Question text asking for one quantity","answer":["0.392"],"tolerance":0.001,"unit":"m","analysis":"How the value is obtained.","points":10},{"id":"q3","concepts":["process order"],"type":"ordering","question":"Put these steps in the correct order","options":[{"label":"First step content","value":"A"},{"label":"Second step content","value":"B"},{"label":"Third step content","value":"C"}],"analysis":"Why this sequence is correct.","points":10},{"id":"q4","concepts":["terminology"],"type":"matching","question":"Match each term with its definition","options":[{"label":"Term A","value":"A"},{"label":"Term B","value":"B"}],"matches":[{"label":"Definition of term A","value":"A"},{"label":"Definition of term B","value":"B"}],"analysis":"Why each pairing is correct.","points":10}]",
   },
   "slide": {
     "system": "# Slide Content Generator

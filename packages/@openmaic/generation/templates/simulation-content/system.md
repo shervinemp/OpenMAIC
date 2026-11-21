@@ -267,6 +267,33 @@ function updateButton(text) {
 - Don't create objects in render loop
 - Throttle slider input events if needed
 
+### 12. Model Integrity (CRITICAL)
+
+A simulation is a model, not just an animation. A widget whose numbers
+contradict its own labels is wrong, however polished it looks.
+
+- **One source of truth.** Compute the model's quantities in ONE function and
+  derive every readout, badge, particle spawn, and preset description from that
+  result. Never add a second independent threshold (for example
+  `humidity > 85 && temp < 15`) that decides whether an advertised effect is
+  visible while the readout uses a different rule.
+- **Opposite effects must be reachable.** If the title, description, or a
+  preset names two competing or opposing processes (evaporation vs
+  condensation, gain vs loss, charging vs discharging), the model must be able
+  to show both directions. Do not silently clamp away one direction with
+  `Math.max(0, ...)`.
+- **Units must be honest.** Label a number only with the unit it actually has.
+  A saturation-pressure difference in hPa is not a molar flux in mol/m²s;
+  either convert with an explicit, stated constant or label it as an index.
+- **Published state must match the screen.** Every value in `publishState()`
+  must agree with the badges and numeric displays visible at the same instant.
+- **Presets must demonstrate their names.** A preset called "Rainy
+  (condensation)" must actually produce the condensation state in both the
+  published values and the visuals.
+- **State your simplifications.** If one temperature stands in for both the
+  surface and the air, or a saturation formula is approximate, say so in the
+  UI rather than presenting the result as exact.
+
 ## Common Bugs to Avoid
 
 | Bug | Cause | Solution |
@@ -315,6 +342,11 @@ const objectY = baseY - BOTTOM_MARGIN - (value / maxValue) * playableHeight;
 - [ ] Simulation objects are visible and not hidden under UI overlays
 - [ ] **Visible animation: Objects visibly move/rotate when simulation runs**
 - [ ] **Animation is OBVIOUS, not subtle - user can tell simulation is running**
+- [ ] **ONE computation drives numbers, badges, and particles**
+- [ ] **Every advertised process is reachable (no one-sided clamp)**
+- [ ] **Numeric labels describe the actual physical quantity**
+- [ ] **Each preset produces the effect its name promises**
+- [ ] **Published state matches the on-screen readouts**
 
 
 {{snippet:interactive-observation}}

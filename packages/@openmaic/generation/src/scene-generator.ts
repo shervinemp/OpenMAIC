@@ -93,6 +93,12 @@ import {
   type QuizAnswerDisagreement,
   type QuizAnswerVerifier,
 } from './quiz-verification.js';
+import {
+  summarizeWidgetIssues,
+  verifyWidgetArtifact,
+  widgetClaims,
+  type WidgetVerifier,
+} from './widget-verification.js';
 import { parseActionsFromStructuredOutput } from './action-parser.js';
 import { parseJsonResponse } from './json-repair.js';
 import {
@@ -228,6 +234,14 @@ export interface SceneContentOptions {
    * missing verdicts are ignored. Absent = no verification, no extra calls.
    */
   verifyQuizAnswers?: QuizAnswerVerifier;
+  /**
+   * Blind widget-claim verifier. Receives the widget's declared variables,
+   * presets and an observed-behaviour table — never its source — and returns
+   * contradictions. Mechanical checks run first; a well-formed issue list
+   * drives one corrective re-prompt inside the widget loop. Absent = no
+   * claim verification at all (the existing syntax/format gates still run).
+   */
+  verifyWidgetClaims?: WidgetVerifier;
   /**
    * Every outline in the course. Quiz generation uses this to point each item
    * at the preceding teaching scene that covers its concepts; other scene
@@ -446,6 +460,7 @@ async function generateSceneContentOnce(
       allowProceduralSkill,
       logger: log,
       onFailure: options.onFailure,
+      verifyWidgetClaims: options.verifyWidgetClaims,
     });
   }
 
@@ -2621,6 +2636,7 @@ export async function generateWidgetContent(
     allowProceduralSkill?: boolean;
     logger?: GenerationLogger;
     onFailure?: (failure: SceneContentFailure) => void;
+    verifyWidgetClaims?: WidgetVerifier;
   } = {},
 ): Promise<GeneratedInteractiveContent | null> {
   const log = options.logger ?? noopGenerationLogger;
@@ -2776,6 +2792,51 @@ export async function generateWidgetContent(
     if (html) {
       // Extract widget config from HTML if present
       const widgetConfig = extractWidgetConfig(html, widgetType);
+
+      if (widgetType === 'simulation' && options.verifyWidgetClaims) {
+        // Verification is opt-in, like quiz verification: hosts pass
+        // `createAiWidgetVerifier(aiCall)` when they want the claim check.
+        // Deterministic probes run first and the blind verifier is consulted
+        // only when the mechanical pass is clean — a minimal or partial widget
+        // is never punished for lacking probe hooks the host never asked for.
+        const claims = widgetClaims(widgetConfig as Record<string, unknown> | undefined);
+        const verifier = options.verifyWidgetClaims;
+        const { issues } = await verifyWidgetArtifact(
+          html,
+          {
+            widgetType,
+            title: outline.title,
+            description: outline.description ?? '',
+            keyPoints: outline.keyPoints ?? [],
+            claims,
+          },
+          verifier,
+          log,
+        );
+        if (issues.length > 0) {
+          if (attempt < maxAttempts) {
+            parseFeedback = summarizeWidgetIssues(issues);
+            log.warn(
+              `Widget claim verification found ${issues.length} issue(s) for "${outline.title}" (attempt ${attempt}/${maxAttempts}); re-prompting`,
+            );
+            continue;
+          }
+          // A blind check is not grounds to discard otherwise valid HTML. Keep
+          // the generated widget and surface the findings, exactly as the quiz
+          // answer verifier does.
+          const findings = issues.map((issue) => `[${issue.code}] ${issue.message}`);
+          recordSceneDepthSummary(outline.id, {
+            reworked: true,
+            attempts: attempt,
+            findings,
+          });
+          log.error(
+            `Widget claim verification still disagreed for "${outline.title}" after ${maxAttempts} attempt(s); keeping generated HTML: ${findings.join('; ')}`,
+          );
+        } else if (attempt > 1) {
+          recordSceneDepthSummary(outline.id, { reworked: true, attempts: attempt, findings: [] });
+        }
+      }
 
       return {
         html: postProcessInteractiveHtml(html),

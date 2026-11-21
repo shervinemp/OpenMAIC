@@ -11,6 +11,7 @@ import type { StageStore } from '@/lib/api/stage-api-types';
 import {
   applyOutlineFallbacks,
   chunkSourceText,
+  createAiWidgetVerifier,
   formatRetrievalContext,
   generateSceneOutlinesFromRequirements,
   generateSceneActions,
@@ -747,6 +748,12 @@ export async function generateClassroom(
                 // Phase 2 §15.5: prerequisite coherence — thread what the unit
                 // has already taught so this scene builds on it.
                 unitContext: buildUnitContext(safeOutline, outlines),
+                // Blind claim/behaviour check for simulation widgets. There
+                // is no operator route here, so build the verifier from the
+                // same provider-bound call used for content.
+                ...(safeOutline.widgetType === 'simulation'
+                  ? { verifyWidgetClaims: createAiWidgetVerifier(contentCall.aiCall) }
+                  : {}),
                 ...(safeOutline.type === 'pbl'
                   ? {
                       pblLoopFallback: (input) =>

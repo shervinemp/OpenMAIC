@@ -12,6 +12,7 @@ import { isLlmOutputTruncatedError } from '@/lib/ai/llm-truncation';
 import { SCENE_CONTENT_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import {
   applyOutlineFallbacks,
+  createAiWidgetVerifier,
   generateSceneContent,
   buildVisionUserContent,
   partitionImagesForVision,
@@ -432,6 +433,16 @@ export async function POST(req: NextRequest) {
         ? await resolveQuizAnswerVerifier({ req, modelString, log })
         : undefined;
 
+    /**
+     * Simulation widgets get a blind claim/behaviour check built from the same
+     * call handle. It runs in a fresh call with no source code, so it can catch
+     * a widget that parses perfectly but contradicts its own presets. Like
+     * quiz verification it is fail-open and only re-prompts on a well-formed
+     * disagreement.
+     */
+    const verifyWidgetClaims =
+      effectiveOutline.widgetType === 'simulation' ? createAiWidgetVerifier(aiCall) : undefined;
+
     const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
       imageMapping: visionImageMapping,
@@ -451,6 +462,7 @@ export async function POST(req: NextRequest) {
       unitContext: buildUnitContext(effectiveOutline, allOutlines),
       allOutlines,
       ...(verifyQuizAnswers ? { verifyQuizAnswers } : {}),
+      ...(verifyWidgetClaims ? { verifyWidgetClaims } : {}),
       // The multi-step planner runs when the single-call PBL planner fails
       // on a non-provider error (same wiring as the server generation paths).
       ...(effectiveOutline.type === 'pbl'

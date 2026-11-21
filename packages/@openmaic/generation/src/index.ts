@@ -43,6 +43,23 @@ export {
 } from './specialized-scene-render.js';
 export { parseActionsFromStructuredOutput } from './action-parser.js';
 export { postProcessInteractiveHtml } from './interactive-post-processor.js';
+export {
+  buildBlindWidgetPrompt,
+  createAiWidgetVerifier,
+  deterministicWidgetIssues,
+  summarizeWidgetIssues,
+  verifyWidgetArtifact,
+  verifyWidgetSafely,
+  widgetClaims,
+} from './widget-verification.js';
+export type {
+  WidgetObservation,
+  WidgetVerificationContext,
+  WidgetVerificationIssue,
+  WidgetVerifier,
+  WidgetPresetClaim,
+  WidgetVariableClaim,
+} from './widget-verification.js';
 export { generatePBLV2ProjectSingleCall } from './pbl/planner-single-call.js';
 export type { PlannerSingleCallFn } from './pbl/planner-single-call.js';
 export type { PBLPlannerV2Input, PriorQuizResult } from './pbl/types.js';
