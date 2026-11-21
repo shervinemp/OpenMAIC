@@ -2464,7 +2464,9 @@ export function isProviderKeyRequired(providerId: string): boolean {
  */
 function isOpenCodeGateway(baseUrl: string | undefined): boolean {
   if (!baseUrl) return false;
-  return /^https?:\/\/opencode\.ai\/(?:inference\/go|zen)(?:\/|$)/i.test(baseUrl);
+  return /^https?:\/\/(?:opencode\.ai\/(?:inference\/go|zen)|(?:127\.0\.0\.1|localhost):8787)(?:\/|$)/i.test(
+    baseUrl,
+  );
 }
 
 const OPENCODE_SESSION_ID = process.env.OPENCODE_SESSION_ID || `openmaic-${process.pid}`;

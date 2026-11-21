@@ -672,7 +672,12 @@ export function resolveApiKey(providerId: string, clientKey?: string): string {
   // into requests to other providers.
   if (providerId === 'openrouter') {
     const base = resolveBaseUrl(providerId);
-    if (base && /^https?:\/\/opencode\.ai\/(?:inference\/go|zen)(?:\/|$)/i.test(base)) {
+    if (
+      base &&
+      /^https?:\/\/(?:opencode\.ai\/(?:inference\/go|zen)|(?:127\.0\.0\.1|localhost):8787)(?:\/|$)/i.test(
+        base,
+      )
+    ) {
       return process.env.OPENCODE_API_KEY?.trim() || key;
     }
   }
