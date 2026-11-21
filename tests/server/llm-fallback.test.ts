@@ -103,6 +103,26 @@ describe('isRetryableLlmError (real AI SDK errors)', () => {
     expect(isRetryableLlmError('not an error')).toBe(false);
   });
 
+  it('treats a malformed provider response as retryable even when the SDK flags it false', () => {
+    // The SDK's non-streaming response handler throws exactly this for a 200
+    // whose body fails its schema check, with isRetryable: false. One such
+    // response must not kill a whole server-side generation job: retry it and
+    // let the configured fallback model take over.
+    expect(isRetryableLlmError(apiError(200, 'Invalid JSON response', false))).toBe(true);
+    expect(isRetryableLlmError(apiError(200, 'Invalid JSON response'))).toBe(true);
+    expect(isRetryableLlmError(retryError(apiError(200, 'Invalid JSON response', false)))).toBe(
+      true,
+    );
+
+    // A genuine 4xx is a deterministic request error and stays fatal even if
+    // its message happens to mention JSON.
+    expect(isRetryableLlmError(apiError(400, 'Invalid JSON response', false))).toBe(false);
+    expect(isRetryableLlmError(apiError(400, 'Invalid JSON response'))).toBe(false);
+
+    // Near-miss messages are untouched.
+    expect(isRetryableLlmError(apiError(200, 'Invalid JSON response body', false))).toBe(false);
+  });
+
   it('never message-matches before the flag or status code', () => {
     // A 400 whose message happens to contain "timeout" is a caller error, not
     // a transport timeout: the flag/status decision must win over the regex.

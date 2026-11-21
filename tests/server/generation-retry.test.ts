@@ -66,6 +66,31 @@ describe('generation retry helper', () => {
     expect(isRetryableGenerationError({ isRetryable: true, statusCode: 400 })).toBe(true);
   });
 
+  it('retries a malformed provider response even when the SDK flags it non-retryable', () => {
+    expect(
+      isRetryableGenerationError(
+        Object.assign(new Error('Invalid JSON response'), {
+          statusCode: 200,
+          isRetryable: false,
+        }),
+      ),
+    ).toBe(true);
+    expect(isRetryableGenerationError(new Error('Invalid JSON response'))).toBe(true);
+    expect(
+      isRetryableGenerationError({
+        lastError: { message: 'Invalid JSON response', isRetryable: false },
+      }),
+    ).toBe(true);
+
+    // Definitive 4xx and near-miss messages must stay fatal.
+    expect(
+      isRetryableGenerationError(
+        Object.assign(new Error('Invalid JSON response'), { statusCode: 400 }),
+      ),
+    ).toBe(false);
+    expect(isRetryableGenerationError(new Error('Invalid JSON response body'))).toBe(false);
+  });
+
   it('classifies permanent request and auth failures as non-retryable', () => {
     expect(isRetryableGenerationError({ statusCode: 400 })).toBe(false);
     expect(isRetryableGenerationError({ statusCode: 401 })).toBe(false);

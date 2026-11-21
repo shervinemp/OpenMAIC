@@ -99,6 +99,28 @@ const NETWORK_ERROR_RE =
   /Cannot connect to API|failed to connect|ECONN|ENOTFOUND|EAI_AGAIN|UND_ERR|socket hang up|fetch failed|timed ?out|timeout/i;
 
 /**
+ * The AI SDK's non-streaming response handler throws exactly this message when
+ * a provider answers (usually 200 OK) with a body that fails its JSON schema
+ * check. The SDK marks the error non-retryable because it cannot distinguish a
+ * transient gateway hiccup from a deterministic request error — but a malformed
+ * *response* is never a bad request: replaying it, or routing to the configured
+ * fallback, is the correct recovery. Without this, one malformed response kills
+ * a whole server-side classroom job.
+ *
+ * Match the exact message and exclude definitive 4xx codes so a genuine 400
+ * ("Invalid value for 'timeout'", auth failures) is never laundered into a
+ * retry.
+ */
+const MALFORMED_RESPONSE_RE = /^Invalid JSON response$/i;
+
+export function isMalformedProviderResponse(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (!MALFORMED_RESPONSE_RE.test(error.message.trim())) return false;
+  const statusCode = (error as { statusCode?: unknown }).statusCode;
+  return typeof statusCode !== 'number' || statusCode < 400 || statusCode >= 500;
+}
+
+/**
  * Whether an error falls into the retryable set that may trigger a fallback.
  *
  * Decision order, matching what the AI SDK actually throws:
@@ -119,7 +141,11 @@ export function isRetryableLlmError(error: unknown): boolean {
   if (!(err instanceof Error)) return false;
 
   if (APICallError.isInstance(err)) {
-    // The SDK's own classification wins before any message matching: a
+    // A malformed upstream response is recoverable even though the SDK flags
+    // it non-retryable. Check it before the SDK flag, which is a coarse
+    // status-code classification and cannot see this case.
+    if (isMalformedProviderResponse(err)) return true;
+    // The SDK's own classification wins before any other message matching: a
     // message-based check first would misread e.g. a 400
     // "Invalid value for 'timeout'" as a transport timeout.
     if (typeof err.isRetryable === 'boolean') return err.isRetryable;
@@ -142,6 +168,7 @@ export function isRetryableLlmError(error: unknown): boolean {
     return statusCode === 408 || statusCode === 409 || statusCode === 429 || statusCode >= 500;
   }
 
+  if (isMalformedProviderResponse(err)) return true;
   return NETWORK_ERROR_RE.test(err.message);
 }
 

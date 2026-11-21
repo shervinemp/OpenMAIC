@@ -48,12 +48,14 @@ const ENV_PREFIXES_TO_CLEAR = [
   'IMAGE_NANO_BANANA',
   'IMAGE_MINIMAX',
   'IMAGE_GROK',
+  'IMAGE_COMFYUI',
   'VIDEO_SEEDANCE',
   'VIDEO_KLING',
   'VIDEO_VEO',
   'VIDEO_SORA',
   'VIDEO_MINIMAX',
   'VIDEO_GROK',
+  'VIDEO_COMFYUI',
   'EXA',
   'BOCHA',
   'WEB_SEARCH_MINIMAX',
@@ -611,6 +613,46 @@ pdf:
       expect(isServerConfiguredProvider('image', 'lemonade')).toBe(true);
       expect(getServerImageProviders().lemonade).toBeDefined();
       expect(resolveImageApiKey('lemonade')).toBe('');
+    });
+
+    it('activates local ComfyUI image and video from a base URL alone', async () => {
+      vi.stubEnv('IMAGE_COMFYUI_BASE_URL', 'http://localhost:8188');
+      vi.stubEnv('IMAGE_COMFYUI_MODELS', 'comfyui-qwen-image-21-uc.json');
+      vi.stubEnv('VIDEO_COMFYUI_BASE_URL', 'http://localhost:8188');
+      vi.stubEnv('VIDEO_COMFYUI_MODELS', 'comfyui-minimax-h3.json');
+      const {
+        getServerImageProviders,
+        getServerVideoProviders,
+        resolveImageBaseUrl,
+        resolveVideoBaseUrl,
+        resolveImageModel,
+        resolveVideoModel,
+        isServerConfiguredProvider,
+      } = await import('@/lib/server/provider-config');
+
+      expect(isServerConfiguredProvider('image', 'comfyui-image')).toBe(true);
+      expect(isServerConfiguredProvider('video', 'comfyui-video')).toBe(true);
+      expect(getServerImageProviders()['comfyui-image']?.models).toEqual([
+        'comfyui-qwen-image-21-uc.json',
+      ]);
+      expect(getServerVideoProviders()['comfyui-video']?.models).toEqual([
+        'comfyui-minimax-h3.json',
+      ]);
+      expect(resolveImageBaseUrl('comfyui-image')).toBe('http://localhost:8188');
+      expect(resolveVideoBaseUrl('comfyui-video')).toBe('http://localhost:8188');
+      expect(resolveImageModel('comfyui-image')).toBe('comfyui-qwen-image-21-uc.json');
+      expect(resolveVideoModel('comfyui-video')).toBe('comfyui-minimax-h3.json');
+    });
+
+    it('lets operators force-disable ComfyUI fleet-wide via the _ENABLED switches', async () => {
+      vi.stubEnv('IMAGE_COMFYUI_BASE_URL', 'http://localhost:8188');
+      vi.stubEnv('VIDEO_COMFYUI_BASE_URL', 'http://localhost:8188');
+      vi.stubEnv('IMAGE_COMFYUI_ENABLED', 'false');
+      vi.stubEnv('VIDEO_COMFYUI_ENABLED', 'false');
+      const { getServerImageProviders, getServerVideoProviders } =
+        await import('@/lib/server/provider-config');
+      expect(getServerImageProviders()['comfyui-image']?.disabled).toBe(true);
+      expect(getServerVideoProviders()['comfyui-video']?.disabled).toBe(true);
     });
   });
 

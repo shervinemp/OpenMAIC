@@ -120,6 +120,11 @@ const IMAGE_ENV_MAP: Record<string, string> = {
   IMAGE_GROK: 'grok-image',
   IMAGE_LEMONADE: 'lemonade',
   IMAGE_OPENROUTER: 'openrouter-image',
+  // Keyless local ComfyUI: a base URL is the whole credential. Adding it here
+  // (and to keylessProviders below) makes it server-configured, so the
+  // server-side classroom-media path can generate images without depending on
+  // a browser's localStorage Settings.
+  IMAGE_COMFYUI: 'comfyui-image',
 };
 
 const VIDEO_ENV_MAP: Record<string, string> = {
@@ -130,6 +135,8 @@ const VIDEO_ENV_MAP: Record<string, string> = {
   VIDEO_GROK: 'grok-video',
   VIDEO_HAPPYHORSE: 'happyhorse',
   VIDEO_OPENROUTER: 'openrouter-video',
+  // Keyless local ComfyUI video (same rationale as IMAGE_COMFYUI).
+  VIDEO_COMFYUI: 'comfyui-video',
 };
 
 const WEB_SEARCH_ENV_MAP: Record<string, string> = {
@@ -176,11 +183,10 @@ const DISABLE_ENV_MAPS: Record<CapabilitySection, Record<string, string>> = {
   },
   image: {
     ...IMAGE_ENV_MAP,
-    // comfyui-image lives in the client-side catalog only (no credential env),
-    // but operators may still want to force it off fleet-wide.
-    IMAGE_COMFYUI: 'comfyui-image',
   },
-  video: { ...VIDEO_ENV_MAP },
+  video: {
+    ...VIDEO_ENV_MAP,
+  },
   webSearch: { ...WEB_SEARCH_ENV_MAP },
 };
 
@@ -502,7 +508,7 @@ function applyBedrockProviderConfig(
 function buildConfig(yamlData: YamlData): ServerConfig {
   const image = applyOpenAIImageFallback(
     loadEnvSection(IMAGE_ENV_MAP, yamlData.image, {
-      keylessProviders: new Set(['lemonade']),
+      keylessProviders: new Set(['lemonade', 'comfyui-image']),
     }),
     yamlData.image,
   );
@@ -529,7 +535,9 @@ function buildConfig(yamlData: YamlData): ServerConfig {
       yamlData.pdf,
     ),
     image,
-    video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
+    video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video, {
+      keylessProviders: new Set(['comfyui-video']),
+    }),
     webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search'], {
       keylessProviders: new Set(['brave', 'searxng']),
     }),

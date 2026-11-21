@@ -2,8 +2,11 @@
   "1": {
     "class_type": "UnetLoaderGGUF",
     "inputs": {
-      "unet_name": "minimax_h3_fl2va_pruned_fp8_Q4_0.gguf",
+      "unet_name": "fasth3_omniref_8step_pruned-Q3_K_M.gguf",
       "dequant_dtype": "default"
+    },
+    "_meta": {
+      "title": "Load FastH3 OmniRef (8-step, Q3_K_M)"
     }
   },
   "2": {
@@ -39,12 +42,12 @@
   "6": {
     "class_type": "KSampler",
     "inputs": {
-      "model": ["1", 0],
+      "model": ["18", 0],
       "positive": ["5", 0],
       "negative": ["7", 0],
       "latent_image": ["5", 1],
       "seed": 123456789,
-      "steps": 20,
+      "steps": 8,
       "cfg": 1.0,
       "sampler_name": "res_multistep",
       "scheduler": "simple",
@@ -147,6 +150,17 @@
     },
     "_meta": {
       "title": "FPS"
+    }
+  },
+  "18": {
+    "class_type": "MiniMaxH3SigmaShift",
+    "inputs": {
+      "model": ["1", 0],
+      "shift_video": 12.0,
+      "shift_audio": 3.0
+    },
+    "_meta": {
+      "title": "ModelSamplingMiniMaxH3"
     }
   }
 }

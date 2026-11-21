@@ -113,6 +113,22 @@ function retryableByMessage(value: unknown): boolean {
   );
 }
 
+/**
+ * The AI SDK throws `APICallError("Invalid JSON response")` when a provider
+ * answers 200 OK with a body that fails its response-schema check. It flags
+ * that error non-retryable (it cannot tell a transient gateway hiccup from a
+ * bad request), but a malformed *response* is not a deterministic request
+ * error — replaying it is the correct recovery. Match the exact message and
+ * exclude definitive 4xx codes so real request/auth failures stay fatal.
+ */
+const MALFORMED_RESPONSE_RE = /^Invalid JSON response$/i;
+
+function isMalformedProviderResponse(value: unknown): boolean {
+  if (!MALFORMED_RESPONSE_RE.test(messageFrom(value).trim())) return false;
+  const statusCode = statusCodeFrom(value);
+  return statusCode === undefined || statusCode < 400 || statusCode >= 500;
+}
+
 function unwrapErrors(value: unknown): unknown[] {
   if (!isRecord(value)) return [];
 
@@ -131,6 +147,7 @@ export function isRetryableGenerationError(error: unknown, seen = new Set<unknow
   seen.add(error);
 
   if (isAbortError(error)) return false;
+  if (isMalformedProviderResponse(error)) return true;
 
   if (isRecord(error)) {
     const explicitRetryable = booleanField(error, 'isRetryable');
