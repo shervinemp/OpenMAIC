@@ -148,6 +148,7 @@ export {
   deriveContractForRequest,
   perLessonSceneCap,
   deriveCourseContract,
+  inferCourseDomain,
   inferCourseType,
   parseDurationFromText,
   renderCourseContract,
@@ -162,7 +163,7 @@ export {
   validateBlueprint,
   MAX_BLUEPRINT_ATTEMPTS,
 } from './blueprint.js';
-export type { ResolvedRequestDuration } from './blueprint.js';
+export type { CourseDomain, ResolvedRequestDuration } from './blueprint.js';
 export type {
   BlueprintValidationOptions,
   BlueprintValidationResult,

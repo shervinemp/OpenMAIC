@@ -14,6 +14,7 @@ export {
   deriveContractForRequest,
   perLessonSceneCap,
   deriveCourseContract,
+  inferCourseDomain,
   inferCourseType,
   parseDurationFromText,
   renderCourseContract,
@@ -27,7 +28,7 @@ export {
   validateBlueprint,
   MAX_BLUEPRINT_ATTEMPTS,
 } from '@openmaic/generation';
-export type { ResolvedRequestDuration } from '@openmaic/generation';
+export type { CourseDomain, ResolvedRequestDuration } from '@openmaic/generation';
 export type {
   BlueprintValidationOptions,
   BlueprintValidationResult,

@@ -62,6 +62,7 @@ import {
   buildCourseBlueprint,
   clampDurationMinutes,
   deriveContractForRequest,
+  inferCourseDomain,
   inferCourseType,
   parseDurationFromText,
   renderCourseContract,
@@ -870,7 +871,12 @@ async function generateMultiUnitOutlines(
       ...run.baseVariables,
       requirement: `${run.requirement}\n\n${lessonContext}`,
       researchContext: unitResearchContext,
-      courseContract: renderLessonScopedContract(courseContract, lessonIndex, run.courseType),
+      courseContract: renderLessonScopedContract(
+        courseContract,
+        lessonIndex,
+        run.courseType,
+        inferCourseDomain(run.requirement),
+      ),
     });
     if (!lessonPrompts) throw new Error('Lesson outline prompt template not found');
 
@@ -1237,6 +1243,7 @@ export async function POST(req: NextRequest) {
     // task-engine path has its own normalization and keeps legacy counts.
     const contractMode = !taskEngineMode;
     const courseType = inferCourseType(requirements.requirement);
+    const courseDomain = inferCourseDomain(requirements.requirement);
     const requestDuration = contractMode
       ? resolveRequestDuration(sizePreset, durationMinutes, requirements.requirement)
       : { minutes: undefined, source: 'preset' as const };
@@ -1251,7 +1258,7 @@ export async function POST(req: NextRequest) {
           DEFAULT_DURATION_MINUTES,
       );
     const courseContractText = courseContract
-      ? renderCourseContract(courseContract, courseType)
+      ? renderCourseContract(courseContract, courseType, courseDomain)
       : '';
 
     const baseVariables = {

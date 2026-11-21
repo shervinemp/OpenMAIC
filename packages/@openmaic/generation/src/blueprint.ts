@@ -151,6 +151,32 @@ const HANDS_ON_RE =
   /\b(hands[- ]on|build|building|project[- ]based|workshop|tutorial|lab|practice|practising|practicing|coding|programming|exercises?|homework|problem[- ]?set)\b/i;
 
 /**
+ * Subject domain, inferred from the requirement before the prompt is built.
+ * This decides which *practice medium* is appropriate. The scene-type set is
+ * domain-neutral, but a runnable code lab is only a good medium when the skill
+ * being taught is writing code/SQL/shell — emitting one for a water-cycle
+ * course teaches Python syntax instead of hydrology.
+ */
+export type CourseDomain = 'computing' | 'quantitative' | 'general';
+
+const COMPUTING_DOMAIN_RE =
+  /\b(python|javascript|typescript|java|c\+\+|c#|rust|ruby|php|swift|kotlin|sql|postgres(?:ql)?|mysql|mongodb|redis|html|css|react|node\.js|django|flask|fastapi|algorithms?|data structures?|programming|coding|software development|software engineering|web development|web app|git|terminal|shell|bash|powershell|databases?|machine learning|deep learning|neural networks?)\b/i;
+
+const QUANTITATIVE_DOMAIN_RE =
+  /\b(math|maths|algebra|calculus|statistics|statistical|probability|physics|chemistry|engineering|economics|econometrics|finance|accounting|geometry|trigonometry|thermodynamics|hydrology|water balance|fluid mechanics)\b/i;
+
+/**
+ * Infer the subject domain from the requirement text, not from a generated
+ * title. Computing wins over quantitative so "software engineering with
+ * statistics" still permits code labs.
+ */
+export function inferCourseDomain(text: string): CourseDomain {
+  if (COMPUTING_DOMAIN_RE.test(text)) return 'computing';
+  if (QUANTITATIVE_DOMAIN_RE.test(text)) return 'quantitative';
+  return 'general';
+}
+
+/**
  * Infer the course flavor from the requirement text (not the model's
  * title — the type must be known before the prompt is built).
  */
@@ -315,15 +341,32 @@ export function resolveRequestDuration(
  * no {{#each}}.
  */
 /** Scene-mix + specialization guidance shared by the contract renderers. */
-function renderCourseStyleGuide(contract: CourseContract, courseType: CourseType): string {
+function renderCourseStyleGuide(
+  contract: CourseContract,
+  courseType: CourseType,
+  domain: CourseDomain,
+): string {
+  const computing = domain === 'computing';
+  const quantitative = domain === 'quantitative';
+
   const typeMix =
     courseType === 'exam-prep'
       ? 'Exam-prep: quiz-heavy mix — one quiz every 3rd scene (course-wide), exam-objective phrasing in keyPoints, distractors mirroring real exam traps.'
       : courseType === 'hands-on'
-        ? 'Hands-on: practice-led mix - runnable code/SQL/terminal labs and coding/simulation/game interactive scenes, plus worked exercises throughout the course; at most 1 pbl per unit.'
-        : 'Balanced: alternate concept slides with active practice — spread interactive scenes (code/simulation/game) and worked exercises across the course instead of limiting them to 1-2; at most 1 pbl per unit.';
+        ? computing
+          ? 'Hands-on: practice-led mix - runnable code/SQL/terminal labs and coding/simulation/game interactive scenes, plus worked exercises throughout the course; at most 1 pbl per unit.'
+          : 'Hands-on: practice-led mix - demonstrations, simulation/game interactive scenes, and worked exercises throughout the course; at most 1 pbl per unit.'
+        : computing
+          ? 'Balanced: alternate concept slides with active practice — spread interactive scenes (code/simulation/game) and worked exercises across the course instead of limiting them to 1-2; at most 1 pbl per unit.'
+          : 'Balanced: alternate concept slides with active practice — spread simulation/diagram/game interactive scenes and worked exercises across the course instead of limiting them to 1-2; at most 1 pbl per unit.';
 
-  const specialization = `\n- Specialized scene types:\n  * "activity" - a runnable practice lab: a starter that fails at least one check, declarative checks, and an authoring-only reference. Choose the family that matches the skill: "code" for Python programming, "sql" for PostgreSQL queries, "terminal" for command-line basics in a simulated shell. Use one per practice-heavy lesson. Every activity needs activityConfig { "kind": "code", "language": "python" } | { "kind": "sql" } | { "kind": "terminal" }. Never request the server terminal runtime: it is operator-gated and not generated.\n  * "exercise" - fully-worked problems (concrete statement + worked solution) for computational, quantitative, and coding lessons - use these liberally wherever the material is computational.${contract.depthLevel === 'university' ? ' At university depth each problem also needs an "analysis" (why the method works / common pitfalls).' : ''}\n  * "derivation" - step-by-step proof/derivation scenes with LaTeX formulas, for formula-heavy lessons.\n  * "glossary" - one per unit: the unit's key terms with complete definitions.\n  * "reading" - one per unit: annotated further-reading list (title + why-read).\n  * "freeResponse" - a writing task: a full prompt, framing guidance, a grading rubric (criteria with what-to-look-for), and a strong sample answer. Use one per unit where written explanation is the skill being taught.`;
+  const activityBullet = computing
+    ? '  * "activity" - a runnable practice lab: a starter that fails at least one check, declarative checks, and an authoring-only reference. Choose the family that matches the skill: "code" for Python programming, "sql" for PostgreSQL queries, "terminal" for command-line basics in a simulated shell. Use one per practice-heavy lesson. Every activity needs activityConfig { "kind": "code", "language": "python" } | { "kind": "sql" } | { "kind": "terminal" }. Never request the server terminal runtime: it is operator-gated and not generated.'
+    : quantitative
+      ? '  * "activity" - RESERVED for teaching the learner to write code, SQL, or shell commands. This course is quantitative but its skill is not programming: express quantitative work as "exercise" (worked problems) or "derivation", and processes as "interactive" with a simulation widget. Do not emit an activity unless writing code is itself the objective.'
+      : '  * "activity" - RESERVED for teaching the learner to write code, SQL, or shell commands. This subject is not a programming course: do NOT emit "activity" scenes. Use "interactive" (simulation or diagram widget) for processes and "exercise" for worked problems.';
+
+  const specialization = `\n- Specialized scene types (choose by what the learner must be able to DO, not by a fixed quota):\n${activityBullet}\n  * "exercise" - fully-worked problems (concrete statement + worked solution) for computational, quantitative, and coding lessons - use these liberally wherever the material is computational.${contract.depthLevel === 'university' ? ' At university depth each problem also needs an "analysis" (why the method works / common pitfalls).' : ''}\n  * "derivation" - step-by-step proof/derivation scenes with LaTeX formulas, for formula-heavy lessons.\n  * "glossary" - one per unit: the unit's key terms with complete definitions.\n  * "reading" - one per unit: annotated further-reading list (title + why-read).\n  * "freeResponse" - a writing task: a full prompt, framing guidance, a grading rubric (criteria with what-to-look-for), and a strong sample answer. Use one per unit where written explanation is the skill being taught.`;
 
   return `- Scene types: ${typeMix}${specialization}`;
 }
@@ -335,7 +378,11 @@ function courseQuizPositions(contract: CourseContract): number[] {
   );
 }
 
-export function renderCourseContract(contract: CourseContract, courseType: CourseType): string {
+export function renderCourseContract(
+  contract: CourseContract,
+  courseType: CourseType,
+  domain: CourseDomain = 'general',
+): string {
   const lessons = contract.lessonSceneTargets
     .map(
       (target, index) =>
@@ -361,7 +408,7 @@ export function renderCourseContract(contract: CourseContract, courseType: Cours
 - Produce EXACTLY ${contract.lessonCount} lessons (sections), in this order:
 ${lessons}
 ${units ? `- Unit (chapter) structure — EXACTLY ${contract.unitCount} units:\n${units}\n` : ''}- Total scenes: ${contract.totalSceneTarget} — the sum of the per-lesson targets; you may not produce fewer.
-${renderCourseStyleGuide(contract, courseType)}
+${renderCourseStyleGuide(contract, courseType, domain)}
 - Quiz cadence (course-wide): a quiz at or near global outline #${quizPositions.join(', #')}.
 - Also emit "lessons": an array of ${contract.lessonCount} objects, each {"title": "...", "objectives": ["..."]} (1-2 objectives per lesson, teaching language)${contract.unitCount > 1 ? `, "units": an array of ${contract.unitCount} objects, each {"title": "...", "objectives": ["..."]} (1-2 objectives per unit, in order)` : ''}, plus course-level "audience" (string) and "objectives" (2-5 strings).`;
 }
@@ -378,6 +425,7 @@ export function renderLessonScopedContract(
   contract: CourseContract,
   lessonIndex: number,
   courseType: CourseType,
+  domain: CourseDomain = 'general',
 ): string {
   const target = contract.lessonSceneTargets[lessonIndex];
   const start = contract.lessonSceneTargets.slice(0, lessonIndex).reduce((a, b) => a + b, 0);
@@ -389,7 +437,7 @@ export function renderLessonScopedContract(
 - You are generating LESSON ${lessonIndex + 1} of ${contract.lessonCount} lessons (the other lessons are generated separately — output ONLY this lesson's scenes).
 - This lesson: EXACTLY ${target} scene outlines (global outline #${start + 1} through #${start + target}).
 - Course-wide total: ${contract.totalSceneTarget} scenes across all lessons.
-${renderCourseStyleGuide(contract, courseType)}
+${renderCourseStyleGuide(contract, courseType, domain)}
 - Quiz cadence: include a quiz only at these global positions (they fall inside your range): ${inRangeQuizPositions.length > 0 ? `#${inRangeQuizPositions.join(', #')}` : 'none — do not add a quiz to this lesson'}.
 - Lesson scope note: the "per unit" caps above are course-wide, not per-lesson — across this single lesson include at most one pbl (only for a substantial project) and at most one glossary / one reading (only if this lesson is their natural slot). Most lessons contain none of these.`;
 }

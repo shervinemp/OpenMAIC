@@ -5,6 +5,7 @@ import {
   clampDurationMinutes,
   deriveContractForRequest,
   deriveCourseContract,
+  inferCourseDomain,
   inferCourseType,
   parseDurationFromText,
   perLessonSceneCap,
@@ -133,6 +134,47 @@ describe('inferCourseType', () => {
     expect(inferCourseType('build a to-do app project')).toBe('hands-on');
     expect(inferCourseType('workshop on woodworking')).toBe('hands-on');
     expect(inferCourseType('teach me photosynthesis')).toBe('explainer');
+  });
+});
+
+describe('inferCourseDomain', () => {
+  test('classifies programming subjects as computing', () => {
+    expect(inferCourseDomain('Teach me Python loops and SQL queries')).toBe('computing');
+    expect(inferCourseDomain('a hands-on workshop on React web apps')).toBe('computing');
+  });
+
+  test('classifies quantitative non-programming subjects', () => {
+    expect(inferCourseDomain('calculus for engineers')).toBe('quantitative');
+  });
+
+  test('leaves a non-computing topic general even when it is hands-on', () => {
+    expect(
+      inferCourseDomain(
+        'a short hands-on lesson about the water cycle with a labeled diagram and an animation',
+      ),
+    ).toBe('general');
+  });
+});
+
+describe('domain-aware scene contract', () => {
+  test('does not offer runnable code labs for a non-computing subject', () => {
+    const text = renderCourseContract(deriveCourseContract(20), 'explainer', 'general');
+    expect(text).not.toContain('runnable practice lab');
+    expect(text).not.toContain('"kind": "code"');
+    expect(text).toContain('simulation');
+    expect(text).toContain('"activity" - RESERVED');
+  });
+
+  test('keeps code labs available for a computing subject', () => {
+    const text = renderCourseContract(deriveCourseContract(20), 'hands-on', 'computing');
+    expect(text).toContain('runnable practice lab');
+    expect(text).toContain('"kind": "code"');
+  });
+
+  test('steers quantitative subjects to worked problems and simulations', () => {
+    const text = renderCourseContract(deriveCourseContract(20), 'explainer', 'quantitative');
+    expect(text).toContain('express quantitative work as "exercise"');
+    expect(text).not.toContain('"kind": "code"');
   });
 });
 
