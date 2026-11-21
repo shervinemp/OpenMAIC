@@ -31,9 +31,8 @@ describe('generation profile (overall cost/quality knob)', () => {
     expect(p.profile).toBe('economy');
     expect(p.depthFloorScale).toBe(0.75);
     expect(p.contentAttempts).toBe(1);
-    // Verifier defects get a second pass even in economy: a concrete finding
-    // is actionable, and one pass was shipping wrong answers with a note.
-    expect(p.verificationAttempts).toBe(2);
+    // Extra verifier passes are opt-in; by default cost is unchanged.
+    expect(p.verificationAttempts).toBe(1);
     expect(p.thinkingPreset).toBe('lean');
     // floor scaling rounds toward integers, never below 1: intro's 2 citations
     // at 0.75x -> 2 (round), university's minSubstantive 6 -> 5 (4.5 rounds).

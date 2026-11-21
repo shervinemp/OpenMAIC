@@ -26,10 +26,11 @@ export interface GenerationProfilePolicy {
   contentAttempts: number;
   /**
    * Corrective passes available specifically to verifiers (scene audit and
-   * widget claim verification). Separate from `contentAttempts` because a
-   * concrete "these numbers contradict each other" finding is far more
-   * actionable than a generic depth nudge: one extra pass here fixes defects
-   * that would otherwise ship with a recorded finding.
+   * widget claim verification). A separate knob so operators can spend more on
+   * verifier corrections without changing shape/depth retries. It defaults to
+   * `contentAttempts` because live runs showed extra passes do not reliably
+   * converge — a rewrite often fixes one finding and introduces another while
+   * roughly doubling generation time. Raising it is an explicit opt-in.
    */
   verificationAttempts: number;
   thinkingPreset: 'lean' | 'quality' | undefined;
@@ -39,7 +40,7 @@ const PROFILE_POLICY: Record<GenerationProfile, Omit<GenerationProfilePolicy, 'p
   economy: {
     depthFloorScale: 0.75,
     contentAttempts: 1,
-    verificationAttempts: 2,
+    verificationAttempts: 1,
     thinkingPreset: 'lean',
   },
   balanced: {
@@ -51,7 +52,7 @@ const PROFILE_POLICY: Record<GenerationProfile, Omit<GenerationProfilePolicy, 'p
   premium: {
     depthFloorScale: 1,
     contentAttempts: 2,
-    verificationAttempts: 3,
+    verificationAttempts: 2,
     thinkingPreset: undefined,
   },
 };
