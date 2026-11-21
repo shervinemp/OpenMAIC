@@ -2458,6 +2458,26 @@ export function isProviderKeyRequired(providerId: string): boolean {
 }
 
 /**
+ * OpenCode Go (and Zen) reject requests that lack a stable session id and
+ * arrive with a generic SDK user agent. Only OpenAI-compatible gateways hosted
+ * on opencode.ai are touched; every other provider keeps its existing headers.
+ */
+function isOpenCodeGateway(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false;
+  return /^https?:\/\/opencode\.ai\/(?:inference\/go|zen)(?:\/|$)/i.test(baseUrl);
+}
+
+const OPENCODE_SESSION_ID = process.env.OPENCODE_SESSION_ID || `openmaic-${process.pid}`;
+
+function withOpenCodeHeaders(init: RequestInit | undefined): RequestInit | undefined {
+  if (!init) return init;
+  const headers = new Headers(init.headers);
+  if (!headers.has('x-opencode-session')) headers.set('x-opencode-session', OPENCODE_SESSION_ID);
+  if (!headers.has('user-agent')) headers.set('user-agent', 'openmaic/1.1.2');
+  return { ...init, headers };
+}
+
+/**
  * Get a configured language model instance with its info
  * Accepts individual parameters for flexibility and security
  */
@@ -2654,6 +2674,13 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           // Decoder-enforced JSON is opt-in per decision site. Apply it after
           // the thinking/reasoning body edits so the wire body is final.
           init = withJsonObjectResponseFormat(url, init);
+
+          // OpenCode Go requires a stable x-opencode-session and a client user
+          // agent. Inject last so it survives all earlier body/header edits,
+          // and only for opencode.ai gateways.
+          if (isOpenCodeGateway(effectiveBaseUrl)) {
+            init = withOpenCodeHeaders(init) ?? init;
+          }
 
           const response = useStreamingChatCompat
             ? await fetchCustomOpenAIChat(url, init, transportFetch)
