@@ -266,13 +266,13 @@ describe('blind widget verifier', () => {
     const verifier = vi
       .fn()
       .mockResolvedValueOnce([
-        { code: 'e1', message: 'defect one' },
-        { code: 'e2', message: 'defect two' },
+        { code: 'dead-control', message: 'defect one' },
+        { code: 'dead-control', message: 'defect two' },
       ])
-      .mockResolvedValueOnce([{ code: 'e3', message: 'one defect left' }])
+      .mockResolvedValueOnce([{ code: 'dead-control', message: 'one defect left' }])
       .mockResolvedValueOnce([
-        { code: 'e4', message: 'regression four' },
-        { code: 'e5', message: 'regression five' },
+        { code: 'dead-control', message: 'regression four' },
+        { code: 'dead-control', message: 'regression five' },
       ]);
     const outline = {
       id: 'scene_vapor_best',

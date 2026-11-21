@@ -30,6 +30,7 @@ export {
   examGradeFromResult,
   type ExamDecisionInput,
 } from './sites/exam-grading';
+export { buildClaimDecisionRequest, createClaimReviewHook } from './sites/claim-check';
 export {
   buildQuizDecisionRequest,
   compareQuizGrades,

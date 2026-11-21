@@ -131,13 +131,13 @@ describe('generic scene audit in the generation pipeline', () => {
     const auditor = vi
       .fn()
       .mockResolvedValueOnce([
-        { code: 'e1', message: 'first defect' },
-        { code: 'e2', message: 'second defect' },
+        { code: 'qualifier-conflict', message: 'first defect' },
+        { code: 'qualifier-conflict', message: 'second defect' },
       ])
-      .mockResolvedValueOnce([{ code: 'e3', message: 'one defect left' }])
+      .mockResolvedValueOnce([{ code: 'qualifier-conflict', message: 'one defect left' }])
       .mockResolvedValueOnce([
-        { code: 'e4', message: 'regression four' },
-        { code: 'e5', message: 'regression five' },
+        { code: 'qualifier-conflict', message: 'regression four' },
+        { code: 'qualifier-conflict', message: 'regression five' },
       ]);
 
     const content = await generateSceneContent(glossaryOutline, aiCall, {

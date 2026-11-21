@@ -77,7 +77,30 @@ Field rules:
 
 
 
-Do not wrap the response in a code fence, prose, or an array. Output only the JSON object.",
+Do not wrap the response in a code fence, prose, or an array. Output only the JSON object.
+
+## Outline agreement (authoritative)
+
+The outline is the contract this scene must satisfy. Do not contradict,
+tighten, or pre-emptively answer it.
+
+- Restate any figure the outline gives with the exact same value and unit.
+- If you introduce a figure of your own, derive it from a dataset shown in
+  this same scene and make the wording match it: a chart showing 1% is
+  "about 1%", not "under 1%"; 5.67x is "about 5.7x", not "nearly 6x".
+- Do not add a superlative, "raises to", "always"/"never", or a verdict
+  unless both the outline and the scene's own data support it.
+- For worked problems and data-reading tasks, state the claim neutrally
+  and let the shown data decide. Never label a claim "supported" when the
+  data you show refutes it.
+- If the outline and your intended wording disagree, keep the outline and
+  drop the conflicting statement.
+
+Outline title: Build the Injection Helper
+Outline description: Implement a helper that resolves a dependency from a registry.
+Outline key points:
+1. Return the registered instance
+2. Reject an unknown key",
     "user": "Title: Build the Injection Helper
 Description: Implement a helper that resolves a dependency from a registry.
 Key Points: 1. Return the registered instance
@@ -509,7 +532,30 @@ function publishState(observation) {
 }
 \`\`\`
 
-If the activity has an apply/run step, capture the inputs a run actually used when it starts, and write them to \`rendered\` only after that run has successfully become the displayed result. A cancelled or superseded run must not update \`rendered\`, and a parameter edit alone must never advance it.",
+If the activity has an apply/run step, capture the inputs a run actually used when it starts, and write them to \`rendered\` only after that run has successfully become the displayed result. A cancelled or superseded run must not update \`rendered\`, and a parameter edit alone must never advance it.
+
+## Outline agreement (authoritative)
+
+The outline is the contract this scene must satisfy. Do not contradict,
+tighten, or pre-emptively answer it.
+
+- Restate any figure the outline gives with the exact same value and unit.
+- If you introduce a figure of your own, derive it from a dataset shown in
+  this same scene and make the wording match it: a chart showing 1% is
+  "about 1%", not "under 1%"; 5.67x is "about 5.7x", not "nearly 6x".
+- Do not add a superlative, "raises to", "always"/"never", or a verdict
+  unless both the outline and the scene's own data support it.
+- For worked problems and data-reading tasks, state the claim neutrally
+  and let the shown data decide. Never label a claim "supported" when the
+  data you show refutes it.
+- If the outline and your intended wording disagree, keep the outline and
+  drop the conflicting statement.
+
+Outline title: Energy Widget
+Outline description: Explore how energy changes with a slider.
+Outline key points:
+1. Move the slider
+2. Observe the result",
     "user": "Create a simulation widget for: Energy transfer
 
 ## Concept Overview
@@ -720,7 +766,31 @@ Do not include \`id\`, \`status\`, \`order\`, \`assignee\`, or timestamps — th
 "Build a Python CSV analyser", beginner → M1 "Read the data" (open CSV / inspect columns / spot quality issues), M2 "Clean and aggregate" (handle missing / group by month / sum revenue), M3 "Visualise and report" (plot trend / write 3-sentence summary). Small, sequential, one coherent outcome. NOT: "M1 Learn what a CSV is → M2 Learn grouping → M3 Review charts" — that's an outline, not a project.
 
 Now design the project and output the single JSON object.
-</content>",
+</content>
+
+## Outline agreement (authoritative)
+
+The outline is the contract this scene must satisfy. Do not contradict,
+tighten, or pre-emptively answer it.
+
+- Restate any figure the outline gives with the exact same value and unit.
+- If you introduce a figure of your own, derive it from a dataset shown in
+  this same scene and make the wording match it: a chart showing 1% is
+  "about 1%", not "under 1%"; 5.67x is "about 5.7x", not "nearly 6x".
+- Do not add a superlative, "raises to", "always"/"never", or a verdict
+  unless both the outline and the scene's own data support it.
+- For worked problems and data-reading tasks, state the claim neutrally
+  and let the shown data decide. Never label a claim "supported" when the
+  data you show refutes it.
+- If the outline and your intended wording disagree, keep the outline and
+  drop the conflicting statement.
+
+Outline title: CSV Data Analyzer
+Outline description: Build a small CSV analysis project.
+Outline key points:
+1. CSV
+2. DataFrame
+3. Summary",
     "user": "Design the PBL project now. Output the single JSON object described in the system prompt — no prose, no code fences.
 
 Before output, verify it passes this exact structural validator:
@@ -1025,7 +1095,29 @@ Output a JSON array of question objects. Every question must have \`analysis\` a
     "points": 10
   }
 ]
-\`\`\`",
+\`\`\`
+
+## Outline agreement (authoritative)
+
+The outline is the contract this scene must satisfy. Do not contradict,
+tighten, or pre-emptively answer it.
+
+- Restate any figure the outline gives with the exact same value and unit.
+- If you introduce a figure of your own, derive it from a dataset shown in
+  this same scene and make the wording match it: a chart showing 1% is
+  "about 1%", not "under 1%"; 5.67x is "about 5.7x", not "nearly 6x".
+- Do not add a superlative, "raises to", "always"/"never", or a verdict
+  unless both the outline and the scene's own data support it.
+- For worked problems and data-reading tasks, state the claim neutrally
+  and let the shown data decide. Never label a claim "supported" when the
+  data you show refutes it.
+- If the outline and your intended wording disagree, keep the outline and
+  drop the conflicting statement.
+
+Outline title: Dependency Injection Check
+Outline description: Check the core idea.
+Outline key points:
+1. Injected collaborators",
     "user": "Title: Dependency Injection Check
 Description: Check the core idea.
 Test Points: 1. Injected collaborators
@@ -1963,7 +2055,30 @@ Before outputting JSON, verify:
 
 ## Output Format
 
-Output valid JSON only. No explanations, no code blocks, no additional text.",
+Output valid JSON only. No explanations, no code blocks, no additional text.
+
+## Outline agreement (authoritative)
+
+The outline is the contract this scene must satisfy. Do not contradict,
+tighten, or pre-emptively answer it.
+
+- Restate any figure the outline gives with the exact same value and unit.
+- If you introduce a figure of your own, derive it from a dataset shown in
+  this same scene and make the wording match it: a chart showing 1% is
+  "about 1%", not "under 1%"; 5.67x is "about 5.7x", not "nearly 6x".
+- Do not add a superlative, "raises to", "always"/"never", or a verdict
+  unless both the outline and the scene's own data support it.
+- For worked problems and data-reading tasks, state the claim neutrally
+  and let the shown data decide. Never label a claim "supported" when the
+  data you show refutes it.
+- If the outline and your intended wording disagree, keep the outline and
+  drop the conflicting statement.
+
+Outline title: Dependency Injection
+Outline description: Explain dependency injection with one concrete example.
+Outline key points:
+1. Caller owns dependencies
+2. Pure generation seam",
     "user": "# Generation Requirements
 
 ## Scene Information

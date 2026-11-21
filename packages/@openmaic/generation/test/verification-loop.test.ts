@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { correctUntilClean } from '../src/verification-loop.js';
+import { classifyFinding, correctUntilClean, correctiveBudget } from '../src/verification-loop.js';
 
 describe('correctUntilClean', () => {
   it('returns the initial artifact untouched when it is already clean', async () => {
@@ -41,7 +41,10 @@ describe('correctUntilClean', () => {
 
   it('accumulates findings across passes so an earlier fix is not forgotten', async () => {
     const generate = vi.fn(async () => 'rewrite');
-    const verdicts = [[{ code: 'a', message: 'first' }], [{ code: 'b', message: 'second' }]];
+    const verdicts = [
+      [{ code: 'dead-control', message: 'first' }],
+      [{ code: 'dead-control', message: 'second' }],
+    ];
     const verify = vi.fn(async () => verdicts.shift() ?? []);
     const summaries: string[] = [];
 
@@ -66,13 +69,13 @@ describe('correctUntilClean', () => {
       .mockResolvedValueOnce('two-defects');
     const verdicts = [
       [
-        { code: 'a', message: '1' },
-        { code: 'b', message: '2' },
+        { code: 'dead-control', message: '1' },
+        { code: 'dead-control', message: '2' },
       ],
-      [{ code: 'c', message: '1' }],
+      [{ code: 'dead-control', message: '1' }],
       [
-        { code: 'd', message: '1' },
-        { code: 'e', message: '2' },
+        { code: 'dead-control', message: '1' },
+        { code: 'dead-control', message: '2' },
       ],
     ];
     const verify = vi.fn(async () => verdicts.shift() ?? []);
@@ -105,5 +108,62 @@ describe('correctUntilClean', () => {
     expect(result.passes).toBe(1);
     expect(generate).toHaveBeenCalledTimes(1);
     expect(verify).toHaveBeenCalledTimes(1);
+  });
+
+  it('spends at most one pass on a semantic finding even with a larger budget', async () => {
+    const generate = vi.fn(async () => 'rewrite');
+    const verify = vi.fn(async () => [{ code: 'unsupported-claim', message: 'not supported' }]);
+
+    const result = await correctUntilClean('initial', {
+      generate,
+      verify,
+      summarize: (issues) => issues.map((issue) => issue.message).join('\n'),
+      maxAttempts: 3,
+    });
+
+    expect(result.passes).toBe(1);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(verify).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('finding classification', () => {
+  it('separates mechanical, semantic and environmental findings', () => {
+    expect(classifyFinding({ code: 'dead-control', message: 'slider x is dead' })).toBe(
+      'mechanical',
+    );
+    expect(classifyFinding({ code: 'qualifier-conflict', message: 'under 1% vs 1%' })).toBe(
+      'mechanical',
+    );
+    expect(classifyFinding({ code: 'claim-mismatch', message: 'state never advances' })).toBe(
+      'semantic',
+    );
+    expect(
+      classifyFinding({
+        code: 'script-error',
+        message: 'ReferenceError: CanvasRenderingContext2D is not defined',
+      }),
+    ).toBe('environmental');
+    expect(classifyFinding({ code: 'script-error', message: 'TypeError: bad widget state' })).toBe(
+      'mechanical',
+    );
+  });
+
+  it('budgets retries by class instead of uniformly', () => {
+    expect(correctiveBudget([], 3)).toBe(0);
+    expect(
+      correctiveBudget([{ code: 'script-error', message: 'ResizeObserver is not defined' }], 3),
+    ).toBe(0);
+    expect(correctiveBudget([{ code: 'claim-mismatch', message: 'x' }], 3)).toBe(1);
+    expect(correctiveBudget([{ code: 'dead-control', message: 'x' }], 3)).toBe(3);
+    expect(
+      correctiveBudget(
+        [
+          { code: 'claim-mismatch', message: 'x' },
+          { code: 'dead-control', message: 'y' },
+        ],
+        3,
+      ),
+    ).toBe(3);
   });
 });

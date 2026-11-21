@@ -38,6 +38,7 @@ type _SceneContentKeys = Assert<
     | 'verifyQuizAnswers'
     | 'verifyWidgetClaims'
     | 'auditScenes'
+    | 'reviewClaims'
     | 'allOutlines'
   >
 >;

@@ -33,6 +33,7 @@ import { createSceneWithActions } from '@/lib/server/scene-generation';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
+import { createClaimReviewHook, getDecisionSiteConfig } from '@/lib/decision';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 import { resolveModel } from '@/lib/server/resolve-model';
@@ -745,6 +746,11 @@ export async function generateClassroom(
       // gets the provider-bound AICallFn and the app injects its agentic PBL loop
       // as the classified fallback, preserving single-call → loop routing.
       const contentCall = await resolveSceneContentCall(safeOutline.type);
+      // Optional typed claim reviewer. No DECISION_ROUTES entry = no hook and
+      // no extra call, so the default generation path is unchanged. Shadow mode
+      // compares the typed verdict with the deterministic ledger for telemetry.
+      const claimSite = getDecisionSiteConfig('claim-check');
+      const reviewClaims = claimSite ? createClaimReviewHook(claimSite) : undefined;
       const content = await (async () => {
         try {
           return await withGenerationRetry(
@@ -771,6 +777,7 @@ export async function generateClassroom(
                   : {}),
                 // Generic semantic audit for every other structured scene kind.
                 auditScenes: createAiSceneAuditor(contentCall.aiCall),
+                ...(reviewClaims ? { reviewClaims } : {}),
                 ...(safeOutline.type === 'pbl'
                   ? {
                       pblLoopFallback: (input) =>

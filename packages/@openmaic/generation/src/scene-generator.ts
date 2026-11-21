@@ -107,7 +107,14 @@ import {
   verifySceneSafely,
   type SceneAuditor,
 } from './scene-audit.js';
-import { correctUntilClean } from './verification-loop.js';
+import { correctUntilClean, correctiveBudget } from './verification-loop.js';
+import { withOutlineAgreement } from './outline-contract.js';
+import {
+  checkClaimLedger,
+  repairClaimLedger,
+  reviewClaimsSafely,
+  type ClaimReviewHook,
+} from './claim-ledger.js';
 import { parseActionsFromStructuredOutput } from './action-parser.js';
 import { parseJsonResponse } from './json-repair.js';
 import {
@@ -258,6 +265,12 @@ export interface SceneContentOptions {
    */
   auditScenes?: SceneAuditor;
   /**
+   * Optional host reviewer for the deterministic claim ledger. A typed
+   * decision head can run in shadow mode here and learn whether it agrees with
+   * the code checks without changing any generated content. Absent = no call.
+   */
+  reviewClaims?: ClaimReviewHook;
+  /**
    * Every outline in the course. Quiz generation uses this to point each item
    * at the preceding teaching scene that covers its concepts; other scene
    * kinds ignore it.
@@ -392,22 +405,44 @@ export async function generateSceneContent(
   aiCall: AICallFn,
   options: SceneContentOptions = {},
 ): Promise<SceneContentResult> {
-  let content = await generateSceneContentOnce(outline, aiCall, options);
-  content = await applyLanguageGate(outline, content, aiCall, options);
-  if (!content || !options.auditScenes) return content;
+  // One wrapper carries the outline-agreement contract into EVERY content
+  // call (including depth and corrective retries). The host's verifiers keep
+  // the original aiCall, so they stay blind and independent.
+  const contractedAiCall = withOutlineAgreement(aiCall, outline);
+  let content = await generateSceneContentOnce(outline, contractedAiCall, options);
+  content = await applyLanguageGate(outline, content, contractedAiCall, options);
+  if (!content) return content;
+
+  const log = options.logger ?? noopGenerationLogger;
+
+  // Zero-token first pass: the outline's precise promises are compared with
+  // learner-facing content by code. A literal mismatch is more actionable than
+  // a model verdict and costs no extra call, so it wins the right to drive the
+  // corrective pass. Known qualifier mismatches are repaired deterministically.
+  const initialFindings = checkClaimLedger(outline, content);
+  if (initialFindings.length > 0) {
+    const repaired = repairClaimLedger(content, initialFindings);
+    content = repaired.content as typeof content;
+    if (repaired.repaired > 0) {
+      log.info(
+        `Claim ledger repaired ${repaired.repaired} qualifier(s) in "${outline.title}" without a model call`,
+      );
+    }
+  }
+
+  if (!options.auditScenes) return content;
 
   // Quizzes have a blind answer verifier and widgets have the claim/behaviour
   // verifier. Auditing them again would double the model cost for no new signal.
   if (outline.type === 'quiz' || outline.type === 'interactive') return content;
 
-  const log = options.logger ?? noopGenerationLogger;
   const auditor = options.auditScenes;
   // Correct and RE-VERIFY every rewrite. The old path audited once, rewrote
   // once, then shipped the rewrite unchecked — so a defect that survived one
   // pass was recorded and shipped, and a regression could not be detected.
   const result = await correctUntilClean(content, {
     generate: (feedback) =>
-      generateSceneContentOnce(outline, aiCall, {
+      generateSceneContentOnce(outline, contractedAiCall, {
         ...options,
         // `languageDirective` is the one directive channel every scene
         // template carries, so audit feedback reaches all structured kinds.
@@ -415,8 +450,21 @@ export async function generateSceneContent(
           .filter(Boolean)
           .join('\n\n'),
       }),
-    verify: (candidate) =>
-      verifySceneSafely(
+    verify: async (candidate) => {
+      // Deterministic findings run first and suppress the blind verifier:
+      // paying for a model opinion when we already have a literal contradiction
+      // is exactly the spend this layer exists to avoid.
+      const deterministic = checkClaimLedger(outline, candidate);
+      if (deterministic.length > 0) return deterministic;
+      // Optional typed reviewer (Laya shadow, etc.). In shadow mode the
+      // decision router returns the baseline, so this is telemetry only.
+      const reviewed = await reviewClaimsSafely(
+        options.reviewClaims,
+        { outline, content: candidate, findings: deterministic },
+        log,
+      );
+      if (reviewed.length > 0) return [...reviewed];
+      return verifySceneSafely(
         auditor,
         {
           sceneId: outline.id,
@@ -427,7 +475,8 @@ export async function generateSceneContent(
           payload: projectSceneContent(candidate),
         },
         log,
-      ),
+      );
+    },
     summarize: summarizeSceneAuditIssues,
     maxAttempts: readGenerationProfile().verificationAttempts,
     onProgress: ({ pass, issues }) => {
@@ -2966,10 +3015,14 @@ export async function generateWidgetContent(
         best = { html, widgetConfig, issues, observations };
       }
 
-      if (attempt < maxAttempts) {
+      // Spend retries only where they converge: mechanical/probe findings get
+      // the full budget, semantic disagreements at most one pass, and a harness
+      // gap none at all.
+      const allowedAttempts = correctiveBudget(issues, maxAttempts - 1) + 1;
+      if (attempt < allowedAttempts) {
         parseFeedback = summarizeWidgetIssues(issues, observations);
         log.warn(
-          `Widget claim verification found ${issues.length} issue(s) for "${outline.title}" (attempt ${attempt}/${maxAttempts}); re-prompting with probe evidence`,
+          `Widget claim verification found ${issues.length} issue(s) for "${outline.title}" (attempt ${attempt}/${allowedAttempts}); re-prompting with probe evidence`,
         );
         continue;
       }

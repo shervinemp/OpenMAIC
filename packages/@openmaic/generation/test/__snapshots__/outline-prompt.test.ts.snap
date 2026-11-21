@@ -114,6 +114,36 @@ resolved course duration and is **non-negotiable**:
 
 ---
 
+## Claim contract for \`description\` and \`keyPoints\`
+
+Every \`description\` and \`keyPoint\` becomes a promise the later content stage
+must repeat exactly. Write them so a scene can agree with them without having
+to guess at a number or a verdict:
+
+- **One claim per point.** Do not chain a claim with its evaluation, cause, or
+  example ("Claim 3 is supported because…"). State the claim neutrally; let the
+  scene evaluate it from the data it shows.
+- **No fragile qualifiers.** Avoid "under 1%", "nearly 6×", "raises to 30 mm",
+  "the most energy-hungry", "always", "never". A rounding difference in the
+  generated chart or worked solution turns any of these into a contradiction.
+  Prefer "a small share", "roughly five to six times", "increases", or name the
+  comparison explicitly.
+- **Numbers only when source-anchored.** Include a figure only when the user
+  requirement or retrieved source states it. Otherwise describe the
+  relationship qualitatively. When you do include a figure, keep its exact
+  value and unit here — that is the one authoritative figure the content stage
+  must restate, not a range to interpret.
+- **No verdict in the premise.** For quiz, exercise, and data-reading outlines,
+  never say whether a claim is true. State the claim; the scene's own data
+  decides.
+- **Charts describe data, not conclusions.** A chart keyPoint states the series
+  and values it will show. It does not assert what those values prove.
+
+A keyPoint that cannot be checked against the scene it produces is a defect,
+not pedagogical richness.
+
+---
+
 ## Special Element Design Guidelines
 
 ### Chart Elements
@@ -671,6 +701,36 @@ resolved course duration and is **non-negotiable**:
   flavor (explainer / hands-on / exam-prep). Follow it.
 - If a corrective note is appended after "## Correction Required", fix the
   listed findings exactly and return the corrected JSON.
+
+---
+
+## Claim contract for \`description\` and \`keyPoints\`
+
+Every \`description\` and \`keyPoint\` becomes a promise the later content stage
+must repeat exactly. Write them so a scene can agree with them without having
+to guess at a number or a verdict:
+
+- **One claim per point.** Do not chain a claim with its evaluation, cause, or
+  example ("Claim 3 is supported because…"). State the claim neutrally; let the
+  scene evaluate it from the data it shows.
+- **No fragile qualifiers.** Avoid "under 1%", "nearly 6×", "raises to 30 mm",
+  "the most energy-hungry", "always", "never". A rounding difference in the
+  generated chart or worked solution turns any of these into a contradiction.
+  Prefer "a small share", "roughly five to six times", "increases", or name the
+  comparison explicitly.
+- **Numbers only when source-anchored.** Include a figure only when the user
+  requirement or retrieved source states it. Otherwise describe the
+  relationship qualitatively. When you do include a figure, keep its exact
+  value and unit here — that is the one authoritative figure the content stage
+  must restate, not a range to interpret.
+- **No verdict in the premise.** For quiz, exercise, and data-reading outlines,
+  never say whether a claim is true. State the claim; the scene's own data
+  decides.
+- **Charts describe data, not conclusions.** A chart keyPoint states the series
+  and values it will show. It does not assert what those values prove.
+
+A keyPoint that cannot be checked against the scene it produces is a defect,
+not pedagogical richness.
 
 ---
 
@@ -1313,6 +1373,36 @@ resolved course duration and is **non-negotiable**:
 
 ---
 
+## Claim contract for \`description\` and \`keyPoints\`
+
+Every \`description\` and \`keyPoint\` becomes a promise the later content stage
+must repeat exactly. Write them so a scene can agree with them without having
+to guess at a number or a verdict:
+
+- **One claim per point.** Do not chain a claim with its evaluation, cause, or
+  example ("Claim 3 is supported because…"). State the claim neutrally; let the
+  scene evaluate it from the data it shows.
+- **No fragile qualifiers.** Avoid "under 1%", "nearly 6×", "raises to 30 mm",
+  "the most energy-hungry", "always", "never". A rounding difference in the
+  generated chart or worked solution turns any of these into a contradiction.
+  Prefer "a small share", "roughly five to six times", "increases", or name the
+  comparison explicitly.
+- **Numbers only when source-anchored.** Include a figure only when the user
+  requirement or retrieved source states it. Otherwise describe the
+  relationship qualitatively. When you do include a figure, keep its exact
+  value and unit here — that is the one authoritative figure the content stage
+  must restate, not a range to interpret.
+- **No verdict in the premise.** For quiz, exercise, and data-reading outlines,
+  never say whether a claim is true. State the claim; the scene's own data
+  decides.
+- **Charts describe data, not conclusions.** A chart keyPoint states the series
+  and values it will show. It does not assert what those values prove.
+
+A keyPoint that cannot be checked against the scene it produces is a defect,
+not pedagogical richness.
+
+---
+
 ## Special Element Design Guidelines
 
 ### Chart Elements
@@ -1911,6 +2001,36 @@ resolved course duration and is **non-negotiable**:
   flavor (explainer / hands-on / exam-prep). Follow it.
 - If a corrective note is appended after "## Correction Required", fix the
   listed findings exactly and return the corrected JSON.
+
+---
+
+## Claim contract for \`description\` and \`keyPoints\`
+
+Every \`description\` and \`keyPoint\` becomes a promise the later content stage
+must repeat exactly. Write them so a scene can agree with them without having
+to guess at a number or a verdict:
+
+- **One claim per point.** Do not chain a claim with its evaluation, cause, or
+  example ("Claim 3 is supported because…"). State the claim neutrally; let the
+  scene evaluate it from the data it shows.
+- **No fragile qualifiers.** Avoid "under 1%", "nearly 6×", "raises to 30 mm",
+  "the most energy-hungry", "always", "never". A rounding difference in the
+  generated chart or worked solution turns any of these into a contradiction.
+  Prefer "a small share", "roughly five to six times", "increases", or name the
+  comparison explicitly.
+- **Numbers only when source-anchored.** Include a figure only when the user
+  requirement or retrieved source states it. Otherwise describe the
+  relationship qualitatively. When you do include a figure, keep its exact
+  value and unit here — that is the one authoritative figure the content stage
+  must restate, not a range to interpret.
+- **No verdict in the premise.** For quiz, exercise, and data-reading outlines,
+  never say whether a claim is true. State the claim; the scene's own data
+  decides.
+- **Charts describe data, not conclusions.** A chart keyPoint states the series
+  and values it will show. It does not assert what those values prove.
+
+A keyPoint that cannot be checked against the scene it produces is a defect,
+not pedagogical richness.
 
 ---
 

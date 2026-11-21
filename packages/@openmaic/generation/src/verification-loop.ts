@@ -42,6 +42,71 @@ function issueKey(issue: VerificationIssue): string {
   return `${issue.code}::${issue.message}`;
 }
 
+export type FindingClass = 'environmental' | 'mechanical' | 'semantic';
+
+/** Deterministic findings: concrete, highly actionable, worth another pass. */
+const MECHANICAL_CODES = new Set([
+  'script-error',
+  'dead-control',
+  'outline-variable-missing',
+  'inert-preset',
+  'non-finite-state',
+  'no-observation',
+  'qualifier-conflict',
+  'premise-conflict',
+]);
+
+/** Harness gaps a re-prompt cannot fix; stub them in the probe instead. */
+const ENVIRONMENTAL_CODES = new Set(['probe-environment']);
+const BROWSER_GLOBALS = new Set([
+  'CanvasRenderingContext2D',
+  'CanvasGradient',
+  'CanvasPattern',
+  'ImageData',
+  'Path2D',
+  'HTMLCanvasElement',
+  'OffscreenCanvas',
+  'Image',
+  'AudioContext',
+  'ResizeObserver',
+  'IntersectionObserver',
+  'MutationObserver',
+  'TextEncoder',
+  'TextDecoder',
+  'Blob',
+  'FileReader',
+  'WebSocket',
+  'matchMedia',
+  'fetch',
+]);
+
+export function classifyFinding(issue: VerificationIssue): FindingClass {
+  if (ENVIRONMENTAL_CODES.has(issue.code)) return 'environmental';
+  if (MECHANICAL_CODES.has(issue.code)) {
+    // A "script error" can also be a missing browser global in the probe.
+    const missing = /\b([A-Za-z_$][\w$]*)\s+is not defined\b/.exec(issue.message)?.[1];
+    if (missing && BROWSER_GLOBALS.has(missing)) return 'environmental';
+    return 'mechanical';
+  }
+  return 'semantic';
+}
+
+/**
+ * Corrective passes allowed for a given finding set. Environmental findings
+ * get none, semantic findings get at most one (live runs showed a second pass
+ * trades one defect for another), and mechanical findings get the full budget.
+ */
+export function correctiveBudget(
+  issues: readonly VerificationIssue[],
+  maxAttempts: number,
+): number {
+  if (issues.length === 0 || maxAttempts <= 0) return 0;
+  const classes = new Set(issues.map(classifyFinding));
+  if (classes.size === 1 && classes.has('environmental')) return 0;
+  if (classes.has('mechanical')) return maxAttempts;
+  return Math.min(1, maxAttempts);
+}
+
 /** Accumulate findings across passes so fixing one cannot hide an earlier one. */
 function accumulate(
   prior: readonly VerificationIssue[],
@@ -73,7 +138,7 @@ export async function correctUntilClean<T>(
   let cumulative: readonly VerificationIssue[] = [];
   let passes = 0;
 
-  while (issues.length > 0 && passes < options.maxAttempts) {
+  while (issues.length > 0 && passes < correctiveBudget(issues, options.maxAttempts)) {
     passes += 1;
     cumulative = accumulate(cumulative, issues);
     options.onProgress?.({ pass: passes, issues });

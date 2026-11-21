@@ -11,7 +11,7 @@
  */
 
 /** Sites wired to the decision layer today. */
-export const DECISION_SITES = ['quiz-verify', 'exam-grading', 'quiz-grade'] as const;
+export const DECISION_SITES = ['quiz-verify', 'exam-grading', 'quiz-grade', 'claim-check'] as const;
 
 export type DecisionSiteId = (typeof DECISION_SITES)[number];
 

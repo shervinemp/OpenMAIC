@@ -51,6 +51,10 @@ export {
   verifySceneSafely,
 } from './scene-audit.js';
 export type { SceneAuditContext, SceneAuditIssue, SceneAuditor } from './scene-audit.js';
+export { checkClaimLedger, repairClaimLedger, reviewClaimsSafely } from './claim-ledger.js';
+export type { ClaimReviewContext, ClaimReviewHook } from './claim-ledger.js';
+export { classifyFinding, correctiveBudget } from './verification-loop.js';
+export type { VerificationIssue, FindingClass } from './verification-loop.js';
 export {
   buildBlindWidgetPrompt,
   createAiWidgetVerifier,
