@@ -195,6 +195,43 @@ describe('probeWidgetHtml', () => {
     expect(rainy?.visibleText['rate-display']).toBe('0.000');
   });
 
+  it('fires load/DOMContentLoaded so event-driven widgets publish an observation', () => {
+    const html = [
+      '<!DOCTYPE html><html><body><div id="experiment">',
+      '<input type="range" id="rate-slider" min="0" max="10" value="5">',
+      '<span id="rate-display"></span>',
+      '<script>',
+      'function publishState(o) {',
+      "  var root = document.getElementById('experiment');",
+      "  var node = root.querySelector('script[data-maic-observation]');",
+      "  if (!node) { node = document.createElement('script'); node.setAttribute('data-maic-observation',''); root.appendChild(node); }",
+      '  node.textContent = JSON.stringify(o);',
+      '}',
+      'function init() {',
+      "  var slider = document.getElementById('rate-slider');",
+      '  function update() {',
+      '    var rate = Number(slider.value);',
+      "    document.getElementById('rate-display').textContent = String(rate);",
+      '    publishState({ summary: "rate=" + rate, state: { rate: rate } });',
+      '  }',
+      "  slider.addEventListener('input', update);",
+      '  update();',
+      '}',
+      "window.addEventListener('load', init);",
+      '</script></div></body></html>',
+    ].join('');
+
+    const result = probeWidgetHtml(html, {
+      variables: [{ name: 'rate', min: 0, max: 10, default: 5 }],
+      presets: [],
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.snapshots[0]?.published).toEqual({
+      summary: 'rate=5',
+      state: { rate: 5 },
+    });
+  });
+
   it('shows the clamped-rate defect: rainy preset publishes 0 and no rate is negative', () => {
     const result = probeWidgetHtml(WATER_CYCLE_HTML, {
       variables: WATER_CYCLE_VARIABLES,

@@ -229,11 +229,21 @@ const SANDBOX_BOOTSTRAP = String.raw`
     this.nodeType = 1;
     this.childNodes = [];
     this.parentNode = null;
+    var host = this;
+    Object.defineProperty(this, 'parentElement', {
+      get: function () {
+        return host.parentNode && host.parentNode.nodeType === 1 ? host.parentNode : null;
+      },
+      configurable: true,
+    });
     this._attrs = Object.create(null);
     this._listeners = Object.create(null);
     this._text = null;
     this._classes = [];
     this._ctx = null;
+    // A plain mutable object is enough: generated widgets only assign CSS
+    // properties (style.width, style.cssText, style.display, ...).
+    this.style = { cssText: '', display: '', opacity: '', visibility: '' };
     var list = attrs || [];
     for (var i = 0; i < list.length; i++) {
       this._attrs[String(list[i][0]).toLowerCase()] = String(list[i][1]);
@@ -570,9 +580,31 @@ const SANDBOX_BOOTSTRAP = String.raw`
   globalThis.frames = globalThis;
   globalThis.top = globalThis;
   globalThis.parent = globalThis;
-  globalThis.addEventListener = noop;
+  var windowListeners = Object.create(null);
+  globalThis.addEventListener = function (type, listener) {
+    if (typeof listener !== 'function') return;
+    var key = String(type);
+    (windowListeners[key] || (windowListeners[key] = [])).push(listener);
+  };
   globalThis.removeEventListener = noop;
   globalThis.dispatchEvent = function () { return true; };
+
+  // Generated widgets commonly initialise inside load / DOMContentLoaded
+  // handlers. A browser fires those after parsing; the sandbox must do the
+  // same or a valid widget looks inert and publishes no observation.
+  globalThis.__maicFireReady = function () {
+    var ready = new Event('DOMContentLoaded', { bubbles: false });
+    var docHandlers = documentListeners['DOMContentLoaded'] || [];
+    for (var i = 0; i < docHandlers.length; i++) docHandlers[i].call(document, ready);
+    var loaded = new Event('load', { bubbles: false });
+    var winHandlers = windowListeners['load'] || [];
+    for (var j = 0; j < winHandlers.length; j++) winHandlers[j].call(globalThis, loaded);
+  };
+  // Widget templates load KaTeX and similar helpers from a CDN. External
+  // scripts are intentionally not executed, so stub their entry points to
+  // avoid a false "not defined" failure on DOMContentLoaded.
+  globalThis.renderMathInElement = noop;
+  globalThis.katex = { renderToString: function () { return ''; }, render: noop };
   globalThis.innerWidth = 1024;
   globalThis.innerHeight = 768;
   globalThis.outerWidth = 1024;
@@ -856,6 +888,9 @@ export function probeWidgetHtml(html: string, options: WidgetProbeOptions): Widg
       timeout: INIT_TIMEOUT_MS,
       displayErrors: true,
     });
+    // Let event-driven widgets initialise before the first probe, just as a
+    // browser would after parsing the document.
+    runExpression(context, '__maicFireReady()');
   } catch (error) {
     errors.push(describeError(error));
     return { snapshots, errors };

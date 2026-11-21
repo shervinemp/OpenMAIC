@@ -743,6 +743,9 @@ export async function generateClassroom(
             () =>
               generateSceneContent(safeOutline, contentCall.aiCall, {
                 agents,
+                // Surface verifier/audit findings in the job log. Without this,
+                // the correction loop ran but its warnings were discarded.
+                logger: log,
                 languageDirective,
                 allowProceduralSkill: vocationalActive,
                 retrievalContext: safeOutline.retrievalContext,
