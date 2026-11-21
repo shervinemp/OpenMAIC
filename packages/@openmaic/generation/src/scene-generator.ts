@@ -99,6 +99,12 @@ import {
   widgetClaims,
   type WidgetVerifier,
 } from './widget-verification.js';
+import {
+  projectSceneContent,
+  summarizeSceneAuditIssues,
+  verifySceneSafely,
+  type SceneAuditor,
+} from './scene-audit.js';
 import { parseActionsFromStructuredOutput } from './action-parser.js';
 import { parseJsonResponse } from './json-repair.js';
 import {
@@ -243,6 +249,12 @@ export interface SceneContentOptions {
    */
   verifyWidgetClaims?: WidgetVerifier;
   /**
+   * Generic semantic auditor for structured scene content (worked solutions,
+   * rubrics, comparisons, data readings, …). Quizzes and widgets already have
+   * dedicated verifiers and are skipped. Fail-open; one corrective pass.
+   */
+  auditScenes?: SceneAuditor;
+  /**
    * Every outline in the course. Quiz generation uses this to point each item
    * at the preceding teaching scene that covers its concepts; other scene
    * kinds ignore it.
@@ -377,7 +389,53 @@ export async function generateSceneContent(
   aiCall: AICallFn,
   options: SceneContentOptions = {},
 ): Promise<SceneContentResult> {
-  const content = await generateSceneContentOnce(outline, aiCall, options);
+  let content = await generateSceneContentOnce(outline, aiCall, options);
+  content = await applyLanguageGate(outline, content, aiCall, options);
+  if (!content || !options.auditScenes) return content;
+
+  // Quizzes have a blind answer verifier and widgets have the claim/behaviour
+  // verifier. Auditing them again would double the model cost for no new signal.
+  if (outline.type === 'quiz' || outline.type === 'interactive') return content;
+
+  const log = options.logger ?? noopGenerationLogger;
+  const issues = await verifySceneSafely(
+    options.auditScenes,
+    {
+      sceneId: outline.id,
+      kind: outline.type,
+      title: outline.title,
+      description: outline.description ?? '',
+      keyPoints: outline.keyPoints ?? [],
+      payload: projectSceneContent(content),
+    },
+    log,
+  );
+  if (issues.length === 0) return content;
+
+  const findings = issues.map((issue) => `[${issue.code}] ${issue.message}`);
+  log.warn(
+    `Scene audit found ${issues.length} issue(s) in "${outline.title}"; requesting one corrective rewrite`,
+  );
+  // `languageDirective` is the one directive channel every scene template
+  // carries, so the audit feedback reaches all structured kinds uniformly.
+  const retry = await generateSceneContentOnce(outline, aiCall, {
+    ...options,
+    languageDirective: [options.languageDirective?.trim() ?? '', summarizeSceneAuditIssues(issues)]
+      .filter(Boolean)
+      .join('\n\n'),
+  });
+  const final = retry ?? content;
+  recordSceneDepthSummary(outline.id, { reworked: true, attempts: 2, findings });
+  log.error(`Scene audit findings kept for "${outline.title}": ${findings.join('; ')}`);
+  return final;
+}
+
+async function applyLanguageGate(
+  outline: SceneOutline,
+  content: SceneContentResult,
+  aiCall: AICallFn,
+  options: SceneContentOptions,
+): Promise<SceneContentResult> {
   if (!content || !options.languageDirective?.trim()) return content;
 
   // Interactive widgets are mostly HTML/JS. Their visible prose is small and

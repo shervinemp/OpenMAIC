@@ -12,6 +12,7 @@ import { isLlmOutputTruncatedError } from '@/lib/ai/llm-truncation';
 import { SCENE_CONTENT_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import {
   applyOutlineFallbacks,
+  createAiSceneAuditor,
   createAiWidgetVerifier,
   generateSceneContent,
   buildVisionUserContent,
@@ -463,6 +464,7 @@ export async function POST(req: NextRequest) {
       allOutlines,
       ...(verifyQuizAnswers ? { verifyQuizAnswers } : {}),
       ...(verifyWidgetClaims ? { verifyWidgetClaims } : {}),
+      auditScenes: createAiSceneAuditor(aiCall),
       // The multi-step planner runs when the single-call PBL planner fails
       // on a non-provider error (same wiring as the server generation paths).
       ...(effectiveOutline.type === 'pbl'

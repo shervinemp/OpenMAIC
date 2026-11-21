@@ -44,6 +44,14 @@ export {
 export { parseActionsFromStructuredOutput } from './action-parser.js';
 export { postProcessInteractiveHtml } from './interactive-post-processor.js';
 export {
+  buildSceneAuditPrompt,
+  createAiSceneAuditor,
+  projectSceneContent,
+  summarizeSceneAuditIssues,
+  verifySceneSafely,
+} from './scene-audit.js';
+export type { SceneAuditContext, SceneAuditIssue, SceneAuditor } from './scene-audit.js';
+export {
   buildBlindWidgetPrompt,
   createAiWidgetVerifier,
   deterministicWidgetIssues,

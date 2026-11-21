@@ -11,6 +11,7 @@ import type { StageStore } from '@/lib/api/stage-api-types';
 import {
   applyOutlineFallbacks,
   chunkSourceText,
+  createAiSceneAuditor,
   createAiWidgetVerifier,
   formatRetrievalContext,
   generateSceneOutlinesFromRequirements,
@@ -754,6 +755,8 @@ export async function generateClassroom(
                 ...(safeOutline.widgetType === 'simulation'
                   ? { verifyWidgetClaims: createAiWidgetVerifier(contentCall.aiCall) }
                   : {}),
+                // Generic semantic audit for every other structured scene kind.
+                auditScenes: createAiSceneAuditor(contentCall.aiCall),
                 ...(safeOutline.type === 'pbl'
                   ? {
                       pblLoopFallback: (input) =>

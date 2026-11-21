@@ -413,7 +413,9 @@ describe('scene-content route — asset-id image transport', () => {
     // Generation proceeded with an empty resolved set: text-only (the aiCall
     // sees no vision images, so callLLM gets a plain `prompt`), no dangling
     // `[see attached]` promise.
-    expect(callLLMMock).toHaveBeenCalledTimes(1);
+    // One content call plus one generic scene-audit call. The first is the
+    // content prompt the vision assertions below inspect.
+    expect(callLLMMock).toHaveBeenCalledTimes(2);
     const prompt = callLLMMock.mock.calls[0][0].prompt as string;
     expect(prompt).not.toContain('[see attached]');
     expect(callLLMMock.mock.calls[0][0].messages).toBeUndefined();
@@ -449,7 +451,8 @@ describe('scene-content route — asset-id image transport', () => {
     expect(body.success).toBe(true);
     // Only the FIRST candidate was probed before the budget fired.
     expect(resolveVisionImagesMock).toHaveBeenCalledTimes(1);
-    expect(callLLMMock).toHaveBeenCalledTimes(1);
+    // One content call plus one generic scene-audit call.
+    expect(callLLMMock).toHaveBeenCalledTimes(2);
     const prompt = callLLMMock.mock.calls[0][0].prompt as string;
     expect(prompt).not.toContain('[see attached]');
     expect(callLLMMock.mock.calls[0][0].messages).toBeUndefined();
