@@ -429,7 +429,7 @@ export async function generateSceneContent(
         log,
       ),
     summarize: summarizeSceneAuditIssues,
-    maxAttempts: readGenerationProfile().contentAttempts,
+    maxAttempts: readGenerationProfile().verificationAttempts,
     onProgress: ({ pass, issues }) => {
       log.warn(
         `Scene audit found ${issues.length} issue(s) in "${outline.title}" (pass ${pass}); re-verifying after a corrective rewrite`,
@@ -2852,7 +2852,11 @@ export async function generateWidgetContent(
   // HTML document must come back; a stray fence or prose breaks extraction).
   // Give them the same bounded corrective loop the structured scene types
   // have — one extra parse-informed re-prompt instead of burning the scene.
-  const maxAttempts = readGenerationProfile().contentAttempts + 1;
+  const profile = readGenerationProfile();
+  // Verification findings are concrete and worth more correction attempts than
+  // generic shape/depth misses, so the widget loop honours whichever budget is
+  // larger. Parse/syntax retries still benefit from the extra room.
+  const maxAttempts = Math.max(profile.contentAttempts, profile.verificationAttempts) + 1;
   let parseFeedback: string | undefined;
 
   // Remember the cleanest verified artifact instead of returning whatever the

@@ -2,9 +2,10 @@
  * Generation profile (the overall cost/quality knob).
  *
  * `OPENMAIC_GENERATION_PROFILE` scales every quality/cost axis coherently so
- * operators tune one named value instead of six independent envs. Each axis
+ * operators tune one named value instead of independent envs. Each axis
  * remains individually overridable (`OPENMAIC_DEPTH_FLOOR_SCALE`,
- * `OPENMAIC_CONTENT_ATTEMPTS`, `OPENMAIC_THINKING_PRESET`).
+ * `OPENMAIC_CONTENT_ATTEMPTS`, `OPENMAIC_VERIFICATION_ATTEMPTS`,
+ * `OPENMAIC_THINKING_PRESET`).
  *
  * - economy — validator floors scaled 0.75×, one corrective retry, `lean`
  *   thinking (validated-JSON stages skip CoT). Meaningful saving (~half of a
@@ -23,13 +24,36 @@ export interface GenerationProfilePolicy {
   profile: GenerationProfile;
   depthFloorScale: number;
   contentAttempts: number;
+  /**
+   * Corrective passes available specifically to verifiers (scene audit and
+   * widget claim verification). Separate from `contentAttempts` because a
+   * concrete "these numbers contradict each other" finding is far more
+   * actionable than a generic depth nudge: one extra pass here fixes defects
+   * that would otherwise ship with a recorded finding.
+   */
+  verificationAttempts: number;
   thinkingPreset: 'lean' | 'quality' | undefined;
 }
 
 const PROFILE_POLICY: Record<GenerationProfile, Omit<GenerationProfilePolicy, 'profile'>> = {
-  economy: { depthFloorScale: 0.75, contentAttempts: 1, thinkingPreset: 'lean' },
-  balanced: { depthFloorScale: 1, contentAttempts: 2, thinkingPreset: 'lean' },
-  premium: { depthFloorScale: 1, contentAttempts: 2, thinkingPreset: undefined },
+  economy: {
+    depthFloorScale: 0.75,
+    contentAttempts: 1,
+    verificationAttempts: 2,
+    thinkingPreset: 'lean',
+  },
+  balanced: {
+    depthFloorScale: 1,
+    contentAttempts: 2,
+    verificationAttempts: 2,
+    thinkingPreset: 'lean',
+  },
+  premium: {
+    depthFloorScale: 1,
+    contentAttempts: 2,
+    verificationAttempts: 3,
+    thinkingPreset: undefined,
+  },
 };
 
 function positiveInt(value: string | undefined, fallback: number): number {
@@ -57,6 +81,10 @@ export function readGenerationProfile(env = process.env): GenerationProfilePolic
     profile,
     depthFloorScale: clampedScale(env.OPENMAIC_DEPTH_FLOOR_SCALE, base.depthFloorScale),
     contentAttempts: positiveInt(env.OPENMAIC_CONTENT_ATTEMPTS, base.contentAttempts),
+    verificationAttempts: positiveInt(
+      env.OPENMAIC_VERIFICATION_ATTEMPTS,
+      base.verificationAttempts,
+    ),
     thinkingPreset:
       ((env.OPENMAIC_THINKING_PRESET?.trim() || undefined) as
         | GenerationProfilePolicy['thinkingPreset']

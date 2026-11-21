@@ -192,8 +192,29 @@ const SANDBOX_BOOTSTRAP = String.raw`
   }
   TextNode.prototype.cloneNode = function () { return new TextNode(this.nodeValue); };
 
+  // Widgets commonly guard canvas setup with an instanceof check against
+  // CanvasRenderingContext2D, or construct gradient/ImageData/Path2D helpers.
+  // Without these globals the
+  // probe throws a ReferenceError on a perfectly valid chart widget, which the
+  // verifier then reports as a script error no rewrite can fix.
+  function CanvasRenderingContext2D() {}
+  function CanvasGradient() {}
+  function CanvasPattern() {}
+  function ImageData() {}
+  function Path2D() {}
+  function HTMLCanvasElement() {}
+  HTMLCanvasElement.prototype = Element.prototype;
+  function Image() {
+    this.width = 0;
+    this.height = 0;
+    this.complete = true;
+    this.onload = null;
+    this.onerror = null;
+  }
+
   function makeContext(canvas) {
-    var store = { canvas: canvas };
+    var store = Object.create(CanvasRenderingContext2D.prototype);
+    store.canvas = canvas;
     return new Proxy(store, {
       get: function (target, prop) {
         if (typeof prop === 'symbol') return undefined;
@@ -574,6 +595,13 @@ const SANDBOX_BOOTSTRAP = String.raw`
   globalThis.PointerEvent = Event;
   globalThis.UIEvent = Event;
   globalThis.FocusEvent = Event;
+  globalThis.CanvasRenderingContext2D = CanvasRenderingContext2D;
+  globalThis.CanvasGradient = CanvasGradient;
+  globalThis.CanvasPattern = CanvasPattern;
+  globalThis.ImageData = ImageData;
+  globalThis.Path2D = Path2D;
+  globalThis.HTMLCanvasElement = HTMLCanvasElement;
+  globalThis.Image = Image;
 
   globalThis.window = globalThis;
   globalThis.self = globalThis;

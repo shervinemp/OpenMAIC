@@ -317,4 +317,33 @@ describe('probeWidgetHtml', () => {
 
     expect(result.snapshots.length).toBeLessThanOrEqual(50);
   });
+
+  it('stubs canvas browser globals so a chart widget is not reported as a script error', () => {
+    const html = [
+      '<div id="experiment"><canvas id="chart"></canvas></div>',
+      '<script>',
+      'function publishState(o) {',
+      '  var root = document.getElementById("experiment");',
+      '  var node = document.createElement("script");',
+      '  node.setAttribute("data-maic-observation", "");',
+      '  node.textContent = JSON.stringify(o);',
+      '  root.appendChild(node);',
+      '}',
+      'var canvas = document.getElementById("chart");',
+      'var ctx = canvas.getContext("2d");',
+      'if (!(ctx instanceof CanvasRenderingContext2D)) throw new Error("bad context");',
+      'var gradient = ctx.createLinearGradient(0, 0, 10, 10);',
+      'gradient.addColorStop(0, "red");',
+      'var data = new ImageData(1, 1);',
+      'var path = new Path2D();',
+      'var img = new Image();',
+      'publishState({ summary: "canvas ok", ok: !!ctx && !!gradient && !!data && !!path && !!img });',
+      '</script>',
+    ].join('');
+
+    const result = probeWidgetHtml(html, { variables: [], presets: [] });
+
+    expect(result.errors).toEqual([]);
+    expect(result.snapshots[0]?.published?.ok).toBe(true);
+  });
 });

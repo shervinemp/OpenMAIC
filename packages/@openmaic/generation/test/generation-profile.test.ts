@@ -11,6 +11,7 @@ describe('generation profile (overall cost/quality knob)', () => {
     delete process.env.OPENMAIC_GENERATION_PROFILE;
     delete process.env.OPENMAIC_DEPTH_FLOOR_SCALE;
     delete process.env.OPENMAIC_CONTENT_ATTEMPTS;
+    delete process.env.OPENMAIC_VERIFICATION_ATTEMPTS;
     delete process.env.OPENMAIC_THINKING_PRESET;
   });
 
@@ -19,6 +20,7 @@ describe('generation profile (overall cost/quality knob)', () => {
       profile: 'balanced',
       depthFloorScale: 1,
       contentAttempts: 2,
+      verificationAttempts: 2,
       thinkingPreset: 'lean',
     });
   });
@@ -29,6 +31,9 @@ describe('generation profile (overall cost/quality knob)', () => {
     expect(p.profile).toBe('economy');
     expect(p.depthFloorScale).toBe(0.75);
     expect(p.contentAttempts).toBe(1);
+    // Verifier defects get a second pass even in economy: a concrete finding
+    // is actionable, and one pass was shipping wrong answers with a note.
+    expect(p.verificationAttempts).toBe(2);
     expect(p.thinkingPreset).toBe('lean');
     // floor scaling rounds toward integers, never below 1: intro's 2 citations
     // at 0.75x -> 2 (round), university's minSubstantive 6 -> 5 (4.5 rounds).
@@ -41,10 +46,12 @@ describe('generation profile (overall cost/quality knob)', () => {
     process.env.OPENMAIC_GENERATION_PROFILE = 'economy';
     process.env.OPENMAIC_DEPTH_FLOOR_SCALE = '1';
     process.env.OPENMAIC_CONTENT_ATTEMPTS = '3';
+    process.env.OPENMAIC_VERIFICATION_ATTEMPTS = '4';
     process.env.OPENMAIC_THINKING_PRESET = 'quality';
     const p = readGenerationProfile();
     expect(p.depthFloorScale).toBe(1);
     expect(p.contentAttempts).toBe(3);
+    expect(p.verificationAttempts).toBe(4);
     expect(p.thinkingPreset).toBe('quality');
   });
 
