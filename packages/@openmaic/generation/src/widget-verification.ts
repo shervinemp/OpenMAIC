@@ -60,6 +60,10 @@ export interface WidgetVerificationContext {
   claims: {
     variables: readonly WidgetVariableClaim[];
     presets: readonly WidgetPresetClaim[];
+    /** Variables the OUTLINE promised, as opposed to what the widget declared. */
+    expectedVariables: readonly string[];
+    /** Concept the outline asked the widget to model. */
+    expectedConcept?: string;
   };
   observations: readonly WidgetObservation[];
   scriptErrors: readonly string[];
@@ -119,6 +123,29 @@ function observableSignature(snapshot: WidgetProbeSnapshot): string {
   return `${published}::${text}`;
 }
 
+function wordTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length >= 3);
+}
+
+/** Outline wording and generated control names rarely match exactly. */
+function outlineVariableCovered(expected: string, generated: readonly WidgetVariableClaim[]) {
+  const expectedTokens = wordTokens(expected);
+  if (expectedTokens.length === 0) return true;
+  return generated.some((variable) => {
+    const genTokens = wordTokens(variable.name);
+    return expectedTokens.some((token) =>
+      genTokens.some(
+        (candidate) =>
+          candidate === token || candidate.startsWith(token) || token.startsWith(candidate),
+      ),
+    );
+  });
+}
+
 /**
  * Mechanical checks that need no domain knowledge and no model call. These
  * run for every widget before any verifier is consulted.
@@ -166,6 +193,18 @@ export function deterministicWidgetIssues(
     }
   }
 
+  // The outline is the authority: a control it promised must exist. This is
+  // the acceptance-criteria half of the contract — the prompt asks for it, and
+  // this check enforces it against the generated config.
+  for (const expected of claims.expectedVariables) {
+    if (!outlineVariableCovered(expected, claims.variables)) {
+      issues.push({
+        code: 'outline-variable-missing',
+        message: `The outline promised a control for "${expected}", but no generated variable corresponds to it.`,
+      });
+    }
+  }
+
   if (defaultSnapshot) {
     const defaultSignature = observableSignature(defaultSnapshot);
     for (const preset of claims.presets) {
@@ -197,8 +236,16 @@ function toObservations(snapshots: readonly WidgetProbeSnapshot[]): WidgetObserv
 /** Read declared sliders/presets from the embedded widget config. */
 export function widgetClaims(
   config: Record<string, unknown> | undefined,
+  expectedVariables: readonly string[] = [],
+  expectedConcept?: string,
 ): WidgetVerificationContext['claims'] {
-  if (!config) return { variables: [], presets: [] };
+  const claims: WidgetVerificationContext['claims'] = {
+    variables: [],
+    presets: [],
+    expectedVariables: [...expectedVariables],
+    ...(expectedConcept ? { expectedConcept } : {}),
+  };
+  if (!config) return claims;
 
   const variables: WidgetVariableClaim[] = [];
   const rawVariables = Array.isArray(config.variables) ? config.variables : [];
@@ -229,7 +276,9 @@ export function widgetClaims(
     if (name && Object.keys(values).length > 0) presets.push({ name, variables: values });
   }
 
-  return { variables, presets };
+  claims.variables = variables;
+  claims.presets = presets;
+  return claims;
 }
 
 /** Build the blind verifier prompt. The HTML source is never included. */
@@ -241,6 +290,7 @@ export function buildBlindWidgetPrompt(context: WidgetVerificationContext): {
     'You are an independent consistency checker for an educational simulation.',
     "You receive the simulation's own claims and a table of OBSERVED behaviour from probe runs.",
     'You do NOT receive its source code. Judge only what the observations show.',
+    'The outline is the authority: claims.expectedVariables and claims.expectedConcept describe what was promised; treat a missing or renamed control as a real finding.',
     'Report concrete contradictions between the claims and the observed behaviour, for example:',
     '- a preset named after an effect that never appears in the published state or visible text;',
     '- a quantity whose published values can never reach a state the description promises;',

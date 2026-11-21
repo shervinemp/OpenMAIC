@@ -2799,7 +2799,11 @@ export async function generateWidgetContent(
         // Deterministic probes run first and the blind verifier is consulted
         // only when the mechanical pass is clean — a minimal or partial widget
         // is never punished for lacking probe hooks the host never asked for.
-        const claims = widgetClaims(widgetConfig as Record<string, unknown> | undefined);
+        const claims = widgetClaims(
+          widgetConfig as Record<string, unknown> | undefined,
+          widgetOutline?.keyVariables ?? [],
+          widgetOutline?.concept,
+        );
         const verifier = options.verifyWidgetClaims;
         const { issues } = await verifyWidgetArtifact(
           html,

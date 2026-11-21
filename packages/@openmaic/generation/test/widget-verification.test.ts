@@ -17,6 +17,7 @@ import {
 const claims = {
   variables: [{ name: 'x', min: 0, max: 10, default: 5 }],
   presets: [{ name: 'Zero', variables: { x: 0 } }],
+  expectedVariables: ['x'],
 };
 
 const shape = {
@@ -103,11 +104,17 @@ describe('widgetClaims', () => {
     ).toEqual({
       variables: [{ name: 'temp', min: 0, max: 50, default: 20 }],
       presets: [{ name: 'Rainy', variables: { temp: 8, humidity: 100 } }],
+      expectedVariables: [],
     });
   });
 
-  it('returns empty claims when no config is embedded', () => {
-    expect(widgetClaims(undefined)).toEqual({ variables: [], presets: [] });
+  it('returns empty claims when no config is embedded, keeping outline promises', () => {
+    expect(widgetClaims(undefined, ['temperature'], 'vapor exchange')).toEqual({
+      variables: [],
+      presets: [],
+      expectedVariables: ['temperature'],
+      expectedConcept: 'vapor exchange',
+    });
   });
 });
 
@@ -143,6 +150,31 @@ describe('deterministicWidgetIssues', () => {
     expect(deterministicWidgetIssues(result, claims).map((issue) => issue.code)).toContain(
       'no-observation',
     );
+  });
+
+  it('enforces the outline promise that a control must exist', () => {
+    const result: WidgetProbeResult = {
+      snapshots: [snapshot('default', { state: { x: 5 } })],
+      errors: [],
+    };
+    const codes = deterministicWidgetIssues(result, {
+      ...claims,
+      expectedVariables: ['wind speed'],
+    }).map((issue) => issue.code);
+    expect(codes).toContain('outline-variable-missing');
+  });
+
+  it('accepts a differently named control when the outline wording overlaps', () => {
+    const result: WidgetProbeResult = {
+      snapshots: [snapshot('default', { state: { temp: 20 } })],
+      errors: [],
+    };
+    const codes = deterministicWidgetIssues(result, {
+      variables: [{ name: 'temp', min: 0, max: 50, default: 20 }],
+      presets: [],
+      expectedVariables: ['temperature'],
+    }).map((issue) => issue.code);
+    expect(codes).not.toContain('outline-variable-missing');
   });
 
   it('does not call a control dead when it changes only a text summary', () => {
