@@ -1232,11 +1232,25 @@ async function generateSlideContent(
       continue;
     }
 
+    // A depth finding is a quality signal, not missing content. Dropping the
+    // whole scene here used to cascade into the outer retry loop, which saw
+    // "empty result", retried the identical prompt six times and finally
+    // skipped the scene. Keep the usable content and record the finding,
+    // exactly as quiz/widget/audit disagreements are handled.
     recordSceneDepthReport(outline.id, depthReport);
+    recordSceneDepthSummary(outline.id, {
+      reworked: true,
+      attempts: attempt,
+      findings: depthReport.findings.map((finding) => `slide depth: ${finding}`),
+    });
     log.error(
-      `Slide depth contract not met for "${outline.title}" after ${maxAttempts} attempts: ${depthReport.findings.join('; ')}`,
+      `Slide depth contract still unmet for "${outline.title}" after ${maxAttempts} attempts; keeping generated content: ${depthReport.findings.join('; ')}`,
     );
-    return null;
+    return {
+      elements: processedElements,
+      background,
+      remark: generatedData.remark || outline.description,
+    };
   }
 
   return null;
