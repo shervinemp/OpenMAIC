@@ -2,11 +2,11 @@
   "1": {
     "class_type": "UnetLoaderGGUF",
     "inputs": {
-      "unet_name": "fasth3_omniref_8step_pruned-Q3_K_M.gguf",
+      "unet_name": "minimax_h3_fl2va_pruned_fp8_Q4_0.gguf",
       "dequant_dtype": "default"
     },
     "_meta": {
-      "title": "Load FastH3 OmniRef (8-step, Q3_K_M)"
+      "title": "Load MiniMax H3 FL2VA pruned FP8"
     }
   },
   "2": {
@@ -47,7 +47,7 @@
       "negative": ["7", 0],
       "latent_image": ["5", 1],
       "seed": 123456789,
-      "steps": 8,
+      "steps": 20,
       "cfg": 1.0,
       "sampler_name": "res_multistep",
       "scheduler": "simple",

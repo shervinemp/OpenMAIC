@@ -53,6 +53,12 @@ const SERVICES = {
       // large text encoder loads. Keep weights in unpinned RAM instead; image
       // generation then measures ~2-3 min on the 12 GB card.
       '--disable-fast-disk',
+      // The MiniMax H3 dual-stream (video + audio) diffusion model hits a
+      // tensor-shape mismatch inside ComfyUI's malloc-graph compiler
+      // (`out[0].copy_(graph_out[0])` in comfy/ldm/minimax/model.py) and kills
+      // the KSampler on the first step. Disable that compiler; H3 then samples
+      // end-to-end on a 12 GB card (slow, but stable).
+      '--disable-comfy-compiler',
     ],
     cwd: COMFYUI_DIR,
     healthUrl: 'http://localhost:8188/system_stats',

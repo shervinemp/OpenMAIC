@@ -4,10 +4,10 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * The FastH3 workflow is data, but it is data the video adapter patches by
- * node title and that ComfyUI executes with a strict node contract. A typo in
- * a title or a stale model name silently breaks generation (or, with the old
- * Q4_0 model, crashes ComfyUI), so pin the contract here.
+ * The H3 workflow is data, but it is data the video adapter patches by node
+ * title and that ComfyUI executes with a strict node contract. A typo in a
+ * title or a stale model name silently breaks generation, so pin the contract
+ * here.
  */
 const workflowPath = resolve(process.cwd(), 'public/comfyui-minimax-h3.json');
 const workflow = JSON.parse(readFileSync(workflowPath, 'utf8')) as Record<
@@ -24,16 +24,19 @@ function nodesByTitle(title: string) {
 }
 
 describe('comfyui-minimax-h3 workflow', () => {
-  it('uses the lean 8-step FastH3 GGUF, never the crashing Q4_0 build', () => {
+  it('uses the FL2VA GGUF build and its 20-step schedule', () => {
+    // The locally installed FastH3 OmniRef Q3_K_M build is incompatible with
+    // this ComfyUI build's MiniMaxH3 node: it fails in the first sampling step
+    // with a 32x latent/audio tensor-shape mismatch, even through the dedicated
+    // MiniMaxH3ReferenceToVideo node. The FL2VA Q4_0 build runs end-to-end when
+    // ComfyUI's malloc-graph compiler is disabled (see scripts/serve.mjs).
     const unet = Object.values(workflow).find((node) => node.class_type === 'UnetLoaderGGUF');
     expect(unet).toBeDefined();
-    const model = unet!.inputs.unet_name;
-    expect(model).toBe('fasth3_omniref_8step_pruned-Q3_K_M.gguf');
-    expect(String(model)).not.toMatch(/Q4_0/);
+    expect(unet!.inputs.unet_name).toBe('minimax_h3_fl2va_pruned_fp8_Q4_0.gguf');
 
     const sampler = nodesByTitle('KSampler')[0];
     expect(sampler?.class_type).toBe('KSampler');
-    expect(sampler?.inputs.steps).toBe(8);
+    expect(sampler?.inputs.steps).toBe(20);
     expect(sampler?.inputs.cfg).toBe(1);
   });
 
