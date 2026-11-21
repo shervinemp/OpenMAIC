@@ -66,6 +66,14 @@ import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agen
 
 const log = createLogger('Classroom');
 
+/**
+ * Repeated empty model output is a format failure, not a reason to repeat the
+ * identical prompt six times. Strengthen the directive on retry attempts so the
+ * model is explicitly told to emit the document without commentary.
+ */
+const EMPTY_CONTENT_CORRECTION =
+  'Your previous attempt produced no usable content. Reply with ONLY the complete scene content in the required format, with no commentary or explanation.';
+
 export function containPBLGenerationError(error: unknown, sceneTitle: string): null {
   if (!(error instanceof PBLGenerationError)) throw error;
   log.warn(`PBL generation failed for scene "${sceneTitle}": ${error.message}`);
@@ -740,13 +748,16 @@ export async function generateClassroom(
       const content = await (async () => {
         try {
           return await withGenerationRetry(
-            () =>
+            (attempt) =>
               generateSceneContent(safeOutline, contentCall.aiCall, {
                 agents,
                 // Surface verifier/audit findings in the job log. Without this,
                 // the correction loop ran but its warnings were discarded.
                 logger: log,
-                languageDirective,
+                languageDirective:
+                  attempt > 1
+                    ? `${languageDirective}\n\n${EMPTY_CONTENT_CORRECTION}`
+                    : languageDirective,
                 allowProceduralSkill: vocationalActive,
                 retrievalContext: safeOutline.retrievalContext,
                 // Phase 2 §15.5: prerequisite coherence — thread what the unit

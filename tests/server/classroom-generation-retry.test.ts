@@ -188,6 +188,14 @@ describe('classroom scene generation retries', () => {
     expect(progress.some((event) => event.message.includes('Retrying scene 1/1 content'))).toBe(
       true,
     );
+    // An empty result is a format failure: the retry must carry a stronger
+    // directive instead of repeating the identical prompt.
+    expect(mocks.generateSceneContent.mock.calls[0][2].languageDirective).not.toContain(
+      'no usable content',
+    );
+    expect(mocks.generateSceneContent.mock.calls[1][2].languageDirective).toContain(
+      'no usable content',
+    );
   });
 
   it('forwards classroom thinking config to scene retry LLM calls', async () => {

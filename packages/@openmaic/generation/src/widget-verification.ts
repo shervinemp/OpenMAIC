@@ -295,6 +295,7 @@ export function buildBlindWidgetPrompt(context: WidgetVerificationContext): {
     '- a preset named after an effect that never appears in the published state or visible text;',
     '- a quantity whose published values can never reach a state the description promises;',
     '- a unit label attached to a value with no plausible relation to the declared inputs;',
+    '- a published quantity that stays identical across every preset and control sweep while the inputs it depends on change;',
     '- visible text or a status badge that contradicts the published number.',
     'Do not speculate and do not suggest code. If the observations are consistent, return [].',
     'Reply with ONLY a JSON array of objects: [{"code":"claim-mismatch","message":"..."}].',

@@ -195,6 +195,7 @@ describe('blind widget verifier', () => {
   it('projects claims and observations but never the HTML source', () => {
     const { system, user } = buildBlindWidgetPrompt(context());
     expect(system).toMatch(/do NOT receive its source code/i);
+    expect(system).toContain('stays identical across every preset');
     expect(user).toContain('Zero');
     expect(user).toContain('can be negative');
     expect(user).not.toContain('<!DOCTYPE');
