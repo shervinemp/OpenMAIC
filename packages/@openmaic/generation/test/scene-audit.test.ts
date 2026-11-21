@@ -94,7 +94,7 @@ describe('AI scene auditor', () => {
 });
 
 describe('generic scene audit in the generation pipeline', () => {
-  it('feeds a concrete finding back into one corrective pass and keeps the content', async () => {
+  it('re-verifies each corrective pass and stops as soon as a rewrite is clean', async () => {
     const auditor = vi
       .fn()
       .mockResolvedValueOnce([{ code: 'wrong-definition', message: 'Term 2 is wrong' }])
@@ -107,11 +107,48 @@ describe('generic scene audit in the generation pipeline', () => {
       auditScenes: auditor,
     });
 
-    expect(auditor).toHaveBeenCalledTimes(1);
+    // The rewrite is audited before it is accepted: two verdicts, not one.
+    expect(auditor).toHaveBeenCalledTimes(2);
     expect(aiCall).toHaveBeenCalledTimes(2);
     expect(content).not.toBeNull();
     expect(aiCall.mock.calls[1][1]).toContain('[wrong-definition] Term 2 is wrong');
     expect(summarizeSceneAuditIssues([{ code: 'x', message: 'y' }])).toContain('[x] y');
+  });
+
+  it('keeps the cleanest rewrite when a later pass regresses instead of shipping the last one', async () => {
+    const makeContent = (label: string) =>
+      JSON.stringify({
+        terms: Array.from({ length: 6 }, (_, index) => ({
+          term: `${label} ${index}`,
+          definition: `${label} term ${index} is explained here with enough words to stay a substantive definition for the learner.`,
+        })),
+      });
+    const initial = makeContent('initial');
+    const candidateA = makeContent('candidateA');
+    const candidateB = makeContent('candidateB');
+    const responses = [initial, candidateA, candidateB];
+    const aiCall = vi.fn(async (): Promise<string> => responses.shift() ?? candidateB);
+    const auditor = vi
+      .fn()
+      .mockResolvedValueOnce([
+        { code: 'e1', message: 'first defect' },
+        { code: 'e2', message: 'second defect' },
+      ])
+      .mockResolvedValueOnce([{ code: 'e3', message: 'one defect left' }])
+      .mockResolvedValueOnce([
+        { code: 'e4', message: 'regression four' },
+        { code: 'e5', message: 'regression five' },
+      ]);
+
+    const content = await generateSceneContent(glossaryOutline, aiCall, {
+      auditScenes: auditor,
+    });
+
+    expect(auditor).toHaveBeenCalledTimes(3);
+    // The initial artifact had two findings, candidateA had one, candidateB
+    // regressed to two — candidateA is the one that must be shipped.
+    expect(JSON.stringify(content)).toContain('candidateA');
+    expect(JSON.stringify(content)).not.toContain('candidateB');
   });
 
   it('does not audit widgets, which have their own verifier', async () => {

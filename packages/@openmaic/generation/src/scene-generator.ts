@@ -97,6 +97,8 @@ import {
   summarizeWidgetIssues,
   verifyWidgetArtifact,
   widgetClaims,
+  type WidgetObservation,
+  type WidgetVerificationIssue,
   type WidgetVerifier,
 } from './widget-verification.js';
 import {
@@ -105,6 +107,7 @@ import {
   verifySceneSafely,
   type SceneAuditor,
 } from './scene-audit.js';
+import { correctUntilClean } from './verification-loop.js';
 import { parseActionsFromStructuredOutput } from './action-parser.js';
 import { parseJsonResponse } from './json-repair.js';
 import {
@@ -398,36 +401,54 @@ export async function generateSceneContent(
   if (outline.type === 'quiz' || outline.type === 'interactive') return content;
 
   const log = options.logger ?? noopGenerationLogger;
-  const issues = await verifySceneSafely(
-    options.auditScenes,
-    {
-      sceneId: outline.id,
-      kind: outline.type,
-      title: outline.title,
-      description: outline.description ?? '',
-      keyPoints: outline.keyPoints ?? [],
-      payload: projectSceneContent(content),
+  const auditor = options.auditScenes;
+  // Correct and RE-VERIFY every rewrite. The old path audited once, rewrote
+  // once, then shipped the rewrite unchecked — so a defect that survived one
+  // pass was recorded and shipped, and a regression could not be detected.
+  const result = await correctUntilClean(content, {
+    generate: (feedback) =>
+      generateSceneContentOnce(outline, aiCall, {
+        ...options,
+        // `languageDirective` is the one directive channel every scene
+        // template carries, so audit feedback reaches all structured kinds.
+        languageDirective: [options.languageDirective?.trim() ?? '', feedback ?? '']
+          .filter(Boolean)
+          .join('\n\n'),
+      }),
+    verify: (candidate) =>
+      verifySceneSafely(
+        auditor,
+        {
+          sceneId: outline.id,
+          kind: outline.type,
+          title: outline.title,
+          description: outline.description ?? '',
+          keyPoints: outline.keyPoints ?? [],
+          payload: projectSceneContent(candidate),
+        },
+        log,
+      ),
+    summarize: summarizeSceneAuditIssues,
+    maxAttempts: readGenerationProfile().contentAttempts,
+    onProgress: ({ pass, issues }) => {
+      log.warn(
+        `Scene audit found ${issues.length} issue(s) in "${outline.title}" (pass ${pass}); re-verifying after a corrective rewrite`,
+      );
     },
-    log,
-  );
-  if (issues.length === 0) return content;
-
-  const findings = issues.map((issue) => `[${issue.code}] ${issue.message}`);
-  log.warn(
-    `Scene audit found ${issues.length} issue(s) in "${outline.title}"; requesting one corrective rewrite`,
-  );
-  // `languageDirective` is the one directive channel every scene template
-  // carries, so the audit feedback reaches all structured kinds uniformly.
-  const retry = await generateSceneContentOnce(outline, aiCall, {
-    ...options,
-    languageDirective: [options.languageDirective?.trim() ?? '', summarizeSceneAuditIssues(issues)]
-      .filter(Boolean)
-      .join('\n\n'),
   });
-  const final = retry ?? content;
-  recordSceneDepthSummary(outline.id, { reworked: true, attempts: 2, findings });
-  log.error(`Scene audit findings kept for "${outline.title}": ${findings.join('; ')}`);
-  return final;
+
+  if (!result.clean) {
+    const findings = result.issues.map((issue) => `[${issue.code}] ${issue.message}`);
+    recordSceneDepthSummary(outline.id, {
+      reworked: result.passes > 0,
+      attempts: result.passes + 1,
+      findings,
+    });
+    log.error(
+      `Scene audit findings kept for "${outline.title}" after ${result.passes} corrective pass(es): ${findings.join('; ')}`,
+    );
+  }
+  return result.artifact;
 }
 
 async function applyLanguageGate(
@@ -2834,10 +2855,39 @@ export async function generateWidgetContent(
   const maxAttempts = readGenerationProfile().contentAttempts + 1;
   let parseFeedback: string | undefined;
 
+  // Remember the cleanest verified artifact instead of returning whatever the
+  // last attempt happened to produce. A corrective pass can introduce a new
+  // defect while fixing an old one; shipping the best-seen widget prevents a
+  // later pass from regressing a lesson that was already closer to correct.
+  let best: {
+    html: string;
+    widgetConfig: WidgetConfig | undefined;
+    issues: readonly WidgetVerificationIssue[];
+    observations: readonly WidgetObservation[];
+  } | null = null;
+
+  const finishWithBest = (): GeneratedInteractiveContent | null => {
+    if (!best) return null;
+    const findings = best.issues.map((issue) => `[${issue.code}] ${issue.message}`);
+    recordSceneDepthSummary(outline.id, {
+      reworked: true,
+      attempts: maxAttempts,
+      findings,
+    });
+    log.error(
+      `Widget claim verification findings kept for "${outline.title}" after ${maxAttempts} attempt(s); keeping the cleanest widget: ${findings.join('; ')}`,
+    );
+    return {
+      html: postProcessInteractiveHtml(best.html),
+      widgetType,
+      widgetConfig: best.widgetConfig,
+    };
+  };
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (parseFeedback) {
       log.warn(
-        `Widget HTML not extractable for "${outline.title}" (attempt ${attempt}/${maxAttempts}); re-prompting with format correction`,
+        `Widget correction pass ${attempt}/${maxAttempts} for "${outline.title}": ${parseFeedback.split('\n')[0]}`,
       );
     }
     const attemptUserPrompt = parseFeedback
@@ -2857,6 +2907,9 @@ export async function generateWidgetContent(
         parseFeedback = `Your previous HTML had invalid inline JavaScript in script #${scriptSyntaxFailure.scriptIndex} (${scriptSyntaxFailure.message}). Reply with the complete corrected HTML document.`;
         continue;
       }
+      // A verified widget from an earlier pass beats an unparseable final one.
+      const fallback = finishWithBest();
+      if (fallback) return fallback;
       options.onFailure?.({ code: 'invalid-model-output' });
       return null;
     }
@@ -2864,6 +2917,8 @@ export async function generateWidgetContent(
     if (html) {
       // Extract widget config from HTML if present
       const widgetConfig = extractWidgetConfig(html, widgetType);
+      let issues: readonly WidgetVerificationIssue[] = [];
+      let observations: readonly WidgetObservation[] = [];
 
       if (widgetType === 'simulation' && options.verifyWidgetClaims) {
         // Verification is opt-in, like quiz verification: hosts pass
@@ -2876,8 +2931,7 @@ export async function generateWidgetContent(
           widgetOutline?.keyVariables ?? [],
           widgetOutline?.concept,
         );
-        const verifier = options.verifyWidgetClaims;
-        const { issues } = await verifyWidgetArtifact(
+        const verified = await verifyWidgetArtifact(
           html,
           {
             widgetType,
@@ -2886,39 +2940,36 @@ export async function generateWidgetContent(
             keyPoints: outline.keyPoints ?? [],
             claims,
           },
-          verifier,
+          options.verifyWidgetClaims,
           log,
         );
-        if (issues.length > 0) {
-          if (attempt < maxAttempts) {
-            parseFeedback = summarizeWidgetIssues(issues);
-            log.warn(
-              `Widget claim verification found ${issues.length} issue(s) for "${outline.title}" (attempt ${attempt}/${maxAttempts}); re-prompting`,
-            );
-            continue;
-          }
-          // A blind check is not grounds to discard otherwise valid HTML. Keep
-          // the generated widget and surface the findings, exactly as the quiz
-          // answer verifier does.
-          const findings = issues.map((issue) => `[${issue.code}] ${issue.message}`);
-          recordSceneDepthSummary(outline.id, {
-            reworked: true,
-            attempts: attempt,
-            findings,
-          });
-          log.error(
-            `Widget claim verification still disagreed for "${outline.title}" after ${maxAttempts} attempt(s); keeping generated HTML: ${findings.join('; ')}`,
-          );
-        } else if (attempt > 1) {
-          recordSceneDepthSummary(outline.id, { reworked: true, attempts: attempt, findings: [] });
-        }
+        issues = verified.issues;
+        observations = verified.context.observations;
       }
 
-      return {
-        html: postProcessInteractiveHtml(html),
-        widgetType,
-        widgetConfig,
-      };
+      if (issues.length === 0) {
+        if (attempt > 1) {
+          recordSceneDepthSummary(outline.id, { reworked: true, attempts: attempt, findings: [] });
+        }
+        return {
+          html: postProcessInteractiveHtml(html),
+          widgetType,
+          widgetConfig,
+        };
+      }
+
+      if (!best || issues.length < best.issues.length) {
+        best = { html, widgetConfig, issues, observations };
+      }
+
+      if (attempt < maxAttempts) {
+        parseFeedback = summarizeWidgetIssues(issues, observations);
+        log.warn(
+          `Widget claim verification found ${issues.length} issue(s) for "${outline.title}" (attempt ${attempt}/${maxAttempts}); re-prompting with probe evidence`,
+        );
+        continue;
+      }
+      // Attempts exhausted: fall through to the best-artifact return.
     }
 
     if (attempt < maxAttempts) {
@@ -2927,6 +2978,9 @@ export async function generateWidgetContent(
       continue;
     }
   }
+
+  const fallback = finishWithBest();
+  if (fallback) return fallback;
 
   log.error(`Failed to extract HTML from ${widgetType} response for: ${outline.title}`);
   options.onFailure?.({ code: 'invalid-model-output' });

@@ -366,12 +366,56 @@ export async function verifyWidgetSafely(
   }
 }
 
+const MAX_FEEDBACK_ROWS = 12;
+const MAX_FEEDBACK_VALUE_CHARS = 220;
+
+function compactFeedbackValue(value: unknown): string {
+  let text: string;
+  try {
+    text = JSON.stringify(value) ?? String(value);
+  } catch {
+    text = String(value);
+  }
+  return text.length > MAX_FEEDBACK_VALUE_CHARS
+    ? `${text.slice(0, MAX_FEEDBACK_VALUE_CHARS)}…`
+    : text;
+}
+
+/**
+ * A compact observation table attached to corrective feedback. Findings alone
+ * tell the model *that* a preset or control is wrong; the table shows *where*
+ * by exposing the probe rows (without any source code). This is what turns a
+ * vague "state never advances" into a fixable, concrete discrepancy.
+ */
+export function formatObservationFeedback(observations: readonly WidgetObservation[]): string {
+  if (observations.length === 0) return '';
+  const rows = observations.slice(0, MAX_FEEDBACK_ROWS).map((observation) => {
+    const published = compactFeedbackValue(observation.published);
+    const text = compactFeedbackValue(observation.visibleText);
+    const values = compactFeedbackValue(observation.values);
+    return `- ${observation.label}: inputs=${values} published=${published} visible=${text}`;
+  });
+  const more =
+    observations.length > MAX_FEEDBACK_ROWS
+      ? `\n- …and ${observations.length - MAX_FEEDBACK_ROWS} more probe rows.`
+      : '';
+  return ['Observed behaviour from the probe runs (use this to locate the fault):', ...rows]
+    .join('\n')
+    .concat(more);
+}
+
 /** Compact, model-facing feedback for a corrective re-prompt. */
-export function summarizeWidgetIssues(issues: readonly WidgetVerificationIssue[]): string {
+export function summarizeWidgetIssues(
+  issues: readonly WidgetVerificationIssue[],
+  observations: readonly WidgetObservation[] = [],
+): string {
   const lines = issues.map((issue) => `- [${issue.code}] ${issue.message}`);
+  const observationBlock = formatObservationFeedback(observations);
   return [
     'Your previous simulation contradicted its own claims. Correct it and reply with the complete HTML document:',
     ...lines,
+    ...(observationBlock ? ['', observationBlock] : []),
+    '',
     'The published state, visible labels and presets must all agree with one model of the system.',
   ].join('\n');
 }

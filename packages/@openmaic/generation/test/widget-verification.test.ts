@@ -7,6 +7,7 @@ import {
   buildBlindWidgetPrompt,
   createAiWidgetVerifier,
   deterministicWidgetIssues,
+  formatObservationFeedback,
   summarizeWidgetIssues,
   verifyWidgetArtifact,
   verifyWidgetSafely,
@@ -249,6 +250,67 @@ describe('blind widget verifier', () => {
     expect(aiCall).toHaveBeenCalledTimes(2);
     expect(content?.widgetType).toBe('simulation');
     expect(aiCall.mock.calls[1][1]).toContain('Rainy preset cannot condense');
+    // Corrective feedback now carries the probe rows, not just the verdict.
+    expect(aiCall.mock.calls[1][1]).toContain('Observed behaviour from the probe runs');
     expect(summarizeWidgetIssues([{ code: 'x', message: 'y' }])).toContain('[x] y');
+  });
+
+  it('keeps the cleanest widget across attempts instead of the final regression', async () => {
+    const makeWidget = (variant: string) =>
+      WIDGET_HTML.replace('id="experiment"', `id="experiment" data-variant="${variant}"`);
+    const responses = [makeWidget('A'), makeWidget('B'), makeWidget('C')];
+    const aiCall = vi.fn(
+      async (_system: string, _user: string): Promise<string> =>
+        responses.shift() ?? makeWidget('C'),
+    );
+    const verifier = vi
+      .fn()
+      .mockResolvedValueOnce([
+        { code: 'e1', message: 'defect one' },
+        { code: 'e2', message: 'defect two' },
+      ])
+      .mockResolvedValueOnce([{ code: 'e3', message: 'one defect left' }])
+      .mockResolvedValueOnce([
+        { code: 'e4', message: 'regression four' },
+        { code: 'e5', message: 'regression five' },
+      ]);
+    const outline = {
+      id: 'scene_vapor_best',
+      title: 'Vapor Exchange',
+      description: 'Competing processes',
+      keyPoints: [],
+      type: 'interactive',
+      widgetType: 'simulation',
+      widgetOutline: { concept: 'vapor exchange' },
+    } as unknown as SceneOutline;
+
+    const content = await generateWidgetContent(outline, aiCall, 'Teach in English.', {
+      verifyWidgetClaims: verifier,
+    });
+
+    expect(verifier).toHaveBeenCalledTimes(3);
+    // Attempt B had the fewest findings; the final attempt regressed.
+    expect(content?.html).toContain('data-variant="B"');
+    expect(content?.html).not.toContain('data-variant="C"');
+    expect(aiCall.mock.calls[1][1]).toContain('defect one');
+    expect(aiCall.mock.calls[2][1]).toContain('one defect left');
+  });
+});
+
+describe('formatObservationFeedback', () => {
+  it('renders probe rows with inputs, published state and visible text', () => {
+    const feedback = formatObservationFeedback([
+      {
+        label: 'preset:Rainy',
+        values: { humidity: 100 },
+        published: { state: { phase: 'ready' } },
+        visibleText: { status: 'ready' },
+      },
+    ]);
+    expect(feedback).toContain('Observed behaviour from the probe runs');
+    expect(feedback).toContain('preset:Rainy');
+    expect(feedback).toContain('humidity');
+    expect(feedback).toContain('phase');
+    expect(feedback).toContain('status');
   });
 });
