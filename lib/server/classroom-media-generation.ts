@@ -255,8 +255,14 @@ export async function generateMediaForClassroom(
       const req = group.leader;
       try {
         const providerId = videoProviderIds[0] as VideoProviderId;
+        const providerConfig = VIDEO_PROVIDERS[providerId];
         const apiKey = resolveVideoApiKey(providerId);
-        if (!apiKey) {
+        // Mirror the image path: only a provider that actually requires a key
+        // is skipped for lacking one. Keyless local providers (comfyui-video)
+        // are configured by base URL alone and must stay usable — an
+        // unconditional `!apiKey` gate silently dropped every server-side
+        // video request for them.
+        if (providerConfig?.requiresApiKey && !apiKey) {
           log.warn(`No API key for video provider "${providerId}", skipping ${req.elementId}`);
           continue;
         }
@@ -266,7 +272,6 @@ export async function generateMediaForClassroom(
         // path is internal (no HTTP response to fail loud with), so the
         // adapter's requireModel must stay a backstop, never the primary
         // failure mode.
-        const providerConfig = VIDEO_PROVIDERS[providerId];
         const model = resolveVideoModel(providerId) ?? providerConfig?.models?.[0]?.id;
 
         const normalized = normalizeVideoOptions(providerId, {

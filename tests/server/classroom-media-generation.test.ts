@@ -271,6 +271,51 @@ describe('generateMediaForClassroom model fallback', () => {
     expect(genBody).toMatchObject({ model: 'gpt-image-2', size: '1536x1024' });
   });
 
+  test('does not require an API key for a keyless server-configured video provider', async () => {
+    // comfyui-video is configured by base URL alone. The video path used to
+    // gate on `!apiKey` unconditionally (unlike the image path), so every
+    // server-side video request was silently skipped for keyless providers.
+    vi.stubEnv('OPENAI_API_KEY', '');
+    for (const prefix of [
+      'VIDEO_SEEDANCE',
+      'VIDEO_KLING',
+      'VIDEO_VEO',
+      'VIDEO_SORA',
+      'VIDEO_MINIMAX',
+      'VIDEO_GROK',
+      'VIDEO_HAPPYHORSE',
+      'VIDEO_OPENROUTER',
+    ]) {
+      vi.stubEnv(`${prefix}_API_KEY`, '');
+      vi.stubEnv(`${prefix}_BASE_URL`, '');
+    }
+    vi.stubEnv('VIDEO_COMFYUI_BASE_URL', 'http://localhost:8188');
+    vi.stubEnv('VIDEO_COMFYUI_MODELS', 'comfyui-minimax-h3.json');
+    vi.resetModules();
+
+    const fetchMock = vi.fn().mockRejectedValue(new Error('stop after the adapter is reached'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { generateMediaForClassroom } = await import('@/lib/server/classroom-media-generation');
+    const outlines = [
+      {
+        id: 'outline_1',
+        type: 'slide',
+        title: 'Scene 1',
+        description: 'd',
+        order: 1,
+        mediaGenerations: [{ type: 'video', prompt: 'rain falling', elementId: 'gen_vid_keyless' }],
+      },
+    ] as unknown as SceneOutline[];
+
+    await generateMediaForClassroom(outlines, 'cls-keyless-video', 'http://localhost');
+
+    // With the bug no request is made at all. With the fix the adapter is
+    // reached and submits a prompt to ComfyUI.
+    expect(fetchMock).toHaveBeenCalled();
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/prompt');
+  });
+
   test('falls back to the first catalog video model when the server pins no models', async () => {
     // Key-only managed provider (no VIDEO_SEEDANCE_MODELS pin): the resolver
     // yields no model, so the classroom path must fall back to the first
