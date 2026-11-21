@@ -665,7 +665,18 @@ export function getServerProviders(): Record<string, { models?: string[] }> {
 
 /** Resolve API key. Managed provider ⇒ server key; otherwise client key. */
 export function resolveApiKey(providerId: string, clientKey?: string): string {
-  return resolveSectionApiKey('providers', providerId, clientKey);
+  const key = resolveSectionApiKey('providers', providerId, clientKey);
+  // OpenCode gateways are reached through the `openrouter` OpenAI-wire client,
+  // but authenticate with a dedicated OpenCode key. A separate env var means a
+  // real OpenRouter key is never shadowed, and the OpenCode key never leaks
+  // into requests to other providers.
+  if (providerId === 'openrouter') {
+    const base = resolveBaseUrl(providerId);
+    if (base && /^https?:\/\/opencode\.ai\/(?:inference\/go|zen)(?:\/|$)/i.test(base)) {
+      return process.env.OPENCODE_API_KEY?.trim() || key;
+    }
+  }
+  return key;
 }
 
 /** Resolve base URL. Managed provider ⇒ server URL; otherwise client URL. */
