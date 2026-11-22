@@ -12,7 +12,6 @@
  * on failure. A failure never blocks or changes the caller's model resolution.
  */
 
-import { getProvider } from '@/lib/ai/providers';
 import { fetchModels } from '@/lib/server/model-fetch';
 import { resolveApiKey, resolveBaseUrl } from '@/lib/server/provider-config';
 
@@ -55,9 +54,12 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<string[]>>();
 
-/** The configured base URL for the OpenCode provider (registry default if unset). */
+/**
+ * The operator-configured base URL. No registry fallback: without
+ * OPENCODE_BASE_URL the provider is opt-out and nothing is probed.
+ */
 function openCodeBaseUrl(): string | undefined {
-  return resolveBaseUrl(OPENCODE_PROVIDER_ID) || getProvider(OPENCODE_PROVIDER_ID)?.defaultBaseUrl;
+  return resolveBaseUrl(OPENCODE_PROVIDER_ID);
 }
 
 /**
