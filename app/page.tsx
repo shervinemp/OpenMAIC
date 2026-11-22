@@ -52,7 +52,10 @@ import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage
 import {
   saveGenerationSession,
   hasGenerationSessionEnvelope,
+  readGenerationSessionEnvelope,
+  clearGenerationSessionEnvelope,
 } from '@/lib/utils/generation-session-store';
+import { abortStageGeneration } from '@/lib/classroom/generation-abort';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import {
   courseMaterialFingerprint,
@@ -406,6 +409,11 @@ function HomePage() {
 
   const confirmDelete = async (id: string) => {
     setPendingDeleteId(null);
+    // Stop any generation still writing this stage before removing it;
+    // otherwise the in-flight scene writes recreate the document after delete.
+    abortStageGeneration(id);
+    const envelope = readGenerationSessionEnvelope();
+    if (envelope?.stageId === id) clearGenerationSessionEnvelope();
     try {
       await deleteStageData(id);
       await loadClassrooms();

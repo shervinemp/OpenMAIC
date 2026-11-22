@@ -37,6 +37,7 @@ import {
 } from '@/lib/media/generated-media-references';
 import { commitToPool } from '@/lib/media/commit-to-pool';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
+import { registerStageGeneration } from '@/lib/classroom/generation-abort';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { computeActionsSourceHash } from '@/lib/utils/content-hash';
 import { outlineFingerprint } from '@/lib/utils/outline-fingerprint';
@@ -1605,8 +1606,11 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         store.getState().setGeneratingOutlines((current) => current.filter((o) => !mine.has(o.id)));
       };
 
-      // Create a new AbortController for this generation run
+      // Create a new AbortController for this generation run. Register it by
+      // stage so deleting the course can stop these fetches immediately.
       fetchAbortRef.current = new AbortController();
+      const runStageId = store.getState().stage?.id;
+      if (runStageId) registerStageGeneration(runStageId, fetchAbortRef.current);
       const signal = fetchAbortRef.current.signal;
       // One media signal for the whole run. The orchestrator already serializes
       // passes per stage, so per-scene launches queue instead of overlapping.
