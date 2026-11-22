@@ -1342,6 +1342,21 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     ],
   },
 
+  /**
+   * OpenCode gateway (desktop o2api bridge or opencode.ai). Models are NOT
+   * pinned here — the server discovers them from /v1/models at runtime and
+   * exposes them through /api/server-providers for the Settings picker.
+   */
+  opencode: {
+    id: 'opencode',
+    name: 'OpenCode',
+    type: 'openai',
+    defaultBaseUrl: 'http://127.0.0.1:8787/v1',
+    requiresApiKey: false,
+    supportsModelDiscovery: true,
+    models: [],
+  },
+
   grok: {
     id: 'grok',
     name: 'Grok',
@@ -2459,10 +2474,12 @@ export function isProviderKeyRequired(providerId: string): boolean {
 
 /**
  * OpenCode Go (and Zen) reject requests that lack a stable session id and
- * arrive with a generic SDK user agent. Only OpenAI-compatible gateways hosted
- * on opencode.ai are touched; every other provider keeps its existing headers.
+ * arrive with a generic SDK user agent. The native `opencode` provider always
+ * gets these headers; a gateway URL pointed at by another OpenAI-compatible
+ * provider gets them too. All other providers keep their existing headers.
  */
-function isOpenCodeGateway(baseUrl: string | undefined): boolean {
+function usesOpenCodeHeaders(providerId: ProviderId, baseUrl: string | undefined): boolean {
+  if (providerId === 'opencode') return true;
   if (!baseUrl) return false;
   return /^https?:\/\/(?:opencode\.ai\/(?:inference\/go|zen)|(?:127\.0\.0\.1|localhost):8787)(?:\/|$)/i.test(
     baseUrl,
@@ -2680,7 +2697,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           // OpenCode Go requires a stable x-opencode-session and a client user
           // agent. Inject last so it survives all earlier body/header edits,
           // and only for opencode.ai gateways.
-          if (isOpenCodeGateway(effectiveBaseUrl)) {
+          if (usesOpenCodeHeaders(config.providerId, effectiveBaseUrl)) {
             init = withOpenCodeHeaders(init) ?? init;
           }
 
