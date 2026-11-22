@@ -207,7 +207,9 @@ export interface SettingsState {
    * ambiguous. Overrides the server's DECISION_ROUTES for this browser only.
    */
   decisionEnabled: boolean;
+  decisionProvider: 'chat' | 'laya' | 'jev';
   decisionModel: string;
+  decisionEndpoint: string;
   decisionMode: 'shadow' | 'replace';
 
   /** Course-level web search toggle: whether generation may search the web. */
@@ -434,7 +436,9 @@ export interface SettingsState {
   ) => void;
   setWebSearchEnabled: (enabled: boolean) => void;
   setDecisionEnabled: (enabled: boolean) => void;
+  setDecisionProvider: (provider: 'chat' | 'laya' | 'jev') => void;
   setDecisionModel: (model: string) => void;
+  setDecisionEndpoint: (endpoint: string) => void;
   setDecisionMode: (mode: 'shadow' | 'replace') => void;
   setThinkingConfig: (
     providerId: ProviderId,
@@ -1107,7 +1111,9 @@ export const useSettingsStore = create<SettingsState>()(
         llmStageRoutes: {},
         webSearchEnabled: false,
         decisionEnabled: false,
+        decisionProvider: 'chat',
         decisionModel: '',
+        decisionEndpoint: '',
         decisionMode: 'shadow',
         /** preset id → seed fingerprint applied last (drives startup reconcile). */
         tokenPlanSeedVersions: {},
@@ -1176,7 +1182,9 @@ export const useSettingsStore = create<SettingsState>()(
           }),
         setWebSearchEnabled: (enabled) => set({ webSearchEnabled: enabled }),
         setDecisionEnabled: (enabled) => set({ decisionEnabled: enabled }),
+        setDecisionProvider: (provider) => set({ decisionProvider: provider }),
         setDecisionModel: (model) => set({ decisionModel: model }),
+        setDecisionEndpoint: (endpoint) => set({ decisionEndpoint: endpoint }),
         setDecisionMode: (mode) => set({ decisionMode: mode }),
 
         setTokenPlanSeedVersion: (presetId, fingerprint) =>

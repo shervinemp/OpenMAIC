@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { parseDecisionRoutes, resetDecisionConfigForTests } from '@/lib/decision/config';
 import { runDecisionSite } from '@/lib/decision/router';
 import type {
   DecisionResult,
@@ -45,7 +44,6 @@ function run(deps: Parameters<typeof runDecisionSite>[1] = {}) {
 
 describe('decision router LLM fallback', () => {
   it('uses the LLM baseline when no decision model is provided', async () => {
-    resetDecisionConfigForTests();
     const outcome = await run();
 
     expect(outcome).toEqual({ source: 'baseline', value: 6 });
@@ -97,26 +95,5 @@ describe('decision router LLM fallback', () => {
     });
 
     expect(outcome).toEqual({ source: 'decision', value: 8, confidence: 0.8 });
-  });
-
-  it('keeps a valid decision-route config with an explicit llm fallback', () => {
-    resetDecisionConfigForTests();
-    const parsed = parseDecisionRoutes(
-      JSON.stringify({
-        'quiz-grade': {
-          provider: 'chat',
-          model: 'deepseek:deepseek-flash',
-          mode: 'replace',
-          fallback: 'llm',
-        },
-      }),
-    );
-
-    expect(parsed.get('quiz-grade')).toMatchObject({
-      provider: 'chat',
-      model: 'deepseek:deepseek-flash',
-      mode: 'replace',
-      fallback: 'llm',
-    });
   });
 });

@@ -7,7 +7,6 @@
  * confidence thresholds, and the kill switch, so sites cannot drift.
  */
 
-import { getDecisionSiteConfig } from './config';
 import { createChatDecisionProvider } from './providers/chat';
 import { createTypedHttpProvider } from './providers/laya';
 import { recordDecisionEvent, type DecisionTelemetryEvent } from './telemetry';
@@ -40,7 +39,7 @@ export interface DecisionRunInput<T> {
   signal?: AbortSignal;
 }
 
-/** Test seam: inject a provider and/or config instead of reading the env. */
+/** Test seam: inject a provider and/or the request-derived config. */
 export interface DecisionRunDeps {
   provider?: DecisionProvider;
   config?: DecisionSiteConfig;
@@ -139,7 +138,7 @@ export async function runDecisionSite<T>(
   input: DecisionRunInput<T>,
   deps: DecisionRunDeps = {},
 ): Promise<DecisionRunOutcome<T>> {
-  const config = deps.config ?? getDecisionSiteConfig(input.site);
+  const config = deps.config;
   if (!config || config.mode === 'off') {
     if (!input.baseline) return { source: 'none', reason: 'not-configured' };
     return { source: 'baseline', value: await input.baseline() };

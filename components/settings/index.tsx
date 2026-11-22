@@ -45,7 +45,9 @@ import {
   Boxes,
   GraduationCap,
   Sparkles,
+  Brain,
 } from 'lucide-react';
+import { DecisionConfigPanel } from './decision-config';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { toast } from 'sonner';
@@ -959,6 +961,19 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             </button>
 
             <button
+              onClick={() => setActiveSection('decision')}
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
+                activeSection === 'decision'
+                  ? 'bg-primary/10 text-primary font-medium'
+                  : 'hover:bg-muted',
+              )}
+            >
+              <Brain className="h-4 w-4 shrink-0" />
+              <span className="truncate">System 1 Decision</span>
+            </button>
+
+            <button
               onClick={() => setActiveSection('general')}
               className={cn(
                 'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
@@ -1008,6 +1023,8 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               {activeSection === 'token-plan' && <TokenPlanSettings />}
 
               {activeSection === 'course-models' && <CourseModelConfigPanel />}
+
+              {activeSection === 'decision' && <DecisionConfigPanel />}
 
               {activeSection === 'model-services' && (
                 <div className="flex h-full min-h-0 flex-col">

@@ -13,22 +13,25 @@ vi.mock('@/lib/ai/llm', () => ({
   callLLM: mocks.callLLM,
 }));
 
-import { resetDecisionConfigForTests } from '@/lib/decision/config';
 import { readDecisionTelemetry, resetDecisionTelemetryForTests } from '@/lib/decision/telemetry';
 
-const originalRoutes = process.env.DECISION_ROUTES;
-const originalEnabled = process.env.DECISION_MODELS_ENABLED;
+let decisionHeaders: Record<string, string> = {};
 
-function setDecisionRoutes(routes: unknown): void {
-  process.env.DECISION_ROUTES = JSON.stringify(routes);
-  resetDecisionConfigForTests();
+/** The one Settings choice, expressed as request headers. */
+function optIn(mode: 'replace' | 'shadow'): void {
+  decisionHeaders = {
+    'x-decision-enabled': '1',
+    'x-decision-provider': 'laya',
+    'x-decision-endpoint': 'http://decision.test',
+    'x-decision-mode': mode,
+  };
 }
 
 function post(url: string, body: unknown): NextRequest {
   return new Request(url, {
     method: 'POST',
     body: JSON.stringify(body),
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...decisionHeaders },
   }) as unknown as NextRequest;
 }
 
@@ -64,8 +67,8 @@ const quizBody = {
 };
 
 beforeEach(() => {
-  resetDecisionConfigForTests();
   resetDecisionTelemetryForTests();
+  decisionHeaders = {};
   mocks.resolveModel.mockReset();
   mocks.callLLM.mockReset();
   mocks.resolveModel.mockResolvedValue({
@@ -78,11 +81,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (originalRoutes === undefined) delete process.env.DECISION_ROUTES;
-  else process.env.DECISION_ROUTES = originalRoutes;
-  if (originalEnabled === undefined) delete process.env.DECISION_MODELS_ENABLED;
-  else process.env.DECISION_MODELS_ENABLED = originalEnabled;
-  resetDecisionConfigForTests();
+  decisionHeaders = {};
   vi.unstubAllGlobals();
 });
 
@@ -92,13 +91,7 @@ function decisionFetch(answers: Record<string, unknown>) {
 
 describe('decision grading routes', () => {
   it('grades an exam answer with the decision model and skips the LLM in replace mode', async () => {
-    setDecisionRoutes({
-      'exam-grading': {
-        provider: 'laya',
-        endpoint: 'http://decision.test',
-        mode: 'replace',
-      },
-    });
+    optIn('replace');
     const fetchMock = decisionFetch({
       r1: { noul: 0.95, confidence: 0.98 },
       r2: { noul: 0.9, confidence: 0.96 },
@@ -125,13 +118,7 @@ describe('decision grading routes', () => {
   });
 
   it('returns the LLM grade in shadow mode and records the disagreement', async () => {
-    setDecisionRoutes({
-      'exam-grading': {
-        provider: 'laya',
-        endpoint: 'http://decision.test',
-        mode: 'shadow',
-      },
-    });
+    optIn('shadow');
     vi.stubGlobal(
       'fetch',
       decisionFetch({
@@ -162,35 +149,8 @@ describe('decision grading routes', () => {
     expect(readDecisionTelemetry()[0]?.key).toBe('exam-grading|laya|shadow|shadow-disagree');
   });
 
-  it('returns 502 rather than inventing a grade when fallback is disabled', async () => {
-    setDecisionRoutes({
-      'exam-grading': {
-        provider: 'laya',
-        endpoint: 'http://decision.test',
-        mode: 'replace',
-        fallback: 'none',
-      },
-    });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('down', { status: 500 })),
-    );
-
-    const { POST } = await import('@/app/api/exam/grade-fr/route');
-    const response = await POST(post('http://localhost/api/exam/grade-fr', examBody) as never);
-
-    expect(response.status).toBe(502);
-    expect(mocks.callLLM).not.toHaveBeenCalled();
-  });
-
   it('grades a short answer with the decision model in replace mode', async () => {
-    setDecisionRoutes({
-      'quiz-grade': {
-        provider: 'laya',
-        endpoint: 'http://decision.test',
-        mode: 'replace',
-      },
-    });
+    optIn('replace');
     vi.stubGlobal('fetch', decisionFetch({ __score: { score: 7, confidence: 0.94 } }));
 
     const { POST } = await import('@/app/api/quiz-grade/route');
@@ -204,16 +164,7 @@ describe('decision grading routes', () => {
     expect(mocks.resolveModel).not.toHaveBeenCalled();
   });
 
-  it('keeps the LLM grading path when the kill switch is off', async () => {
-    setDecisionRoutes({
-      'quiz-grade': {
-        provider: 'laya',
-        endpoint: 'http://decision.test',
-        mode: 'replace',
-      },
-    });
-    process.env.DECISION_MODELS_ENABLED = 'false';
-    resetDecisionConfigForTests();
+  it('falls back to the LLM grading path when System 1 is not enabled', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     mocks.callLLM.mockResolvedValue({

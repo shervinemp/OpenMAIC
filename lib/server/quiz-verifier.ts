@@ -10,7 +10,6 @@ import type { QuizAnswerVerifier, QuizVerificationQuestion } from '@openmaic/gen
 
 import { callLLM } from '@/lib/ai/llm';
 import { QUIZ_VERIFY_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
-import { getDecisionSiteConfig } from '@/lib/decision/config';
 import { decisionConfigFromRequest } from '@/lib/decision/request-config';
 import { createDecisionQuizVerifier } from '@/lib/decision/sites/quiz-verifier';
 import {
@@ -81,9 +80,8 @@ async function resolveLlmQuizVerifier(options: {
 /**
  * Resolve the verifier for this request.
  *
- * `DECISION_ROUTES['quiz-verify']` takes precedence over the LLM route when
- * configured; the LLM verifier becomes its shadow/triage/replace fallback.
- * With neither configured this returns undefined, exactly as before.
+ * The Settings-driven `x-decision-*` headers supply the one decision choice;
+ * the LLM verifier is its fallback. With no opt-in this returns the LLM verifier.
  */
 export async function resolveQuizAnswerVerifier(options: {
   req: NextRequest;
@@ -91,8 +89,7 @@ export async function resolveQuizAnswerVerifier(options: {
   log: VerifierLogger;
 }): Promise<QuizAnswerVerifier | undefined> {
   const llmVerifier = await resolveLlmQuizVerifier(options);
-  const decisionConfig =
-    decisionConfigFromRequest(options.req, 'quiz-verify') ?? getDecisionSiteConfig('quiz-verify');
+  const decisionConfig = decisionConfigFromRequest(options.req, 'quiz-verify');
   if (!decisionConfig) return llmVerifier;
 
   return createDecisionQuizVerifier({

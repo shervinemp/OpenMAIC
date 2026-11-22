@@ -24,8 +24,6 @@
 
 import { getProvider, warnBareModelIdDeprecation } from '@/lib/ai/providers';
 import { isAgentRuntimeEnabled } from '@/lib/config/feature-flags';
-import { decisionModelsEnabled, loadDecisionConfigs } from '@/lib/decision/config';
-import { loadDecisionTelemetryFromDisk } from '@/lib/decision/telemetry-file';
 import { LLM_STAGES } from '@/lib/server/model-routes';
 import {
   isServerConfiguredProvider,
@@ -169,39 +167,6 @@ function validateAgentRuntime(): void {
 }
 
 /**
- * Decision-layer config is optional and per-site. Validate the chat model
- * strings through the same provider checks as MODEL_ROUTES so a typo is a boot
- * warning instead of a request-time fallback.
- */
-function validateDecisionRoutes(): void {
-  const raw = process.env.DECISION_ROUTES;
-  if (!raw?.trim()) return;
-  if (!decisionModelsEnabled()) {
-    warn(
-      'DECISION_ROUTES is set but DECISION_MODELS_ENABLED is false — the decision layer will make no calls.',
-    );
-    return;
-  }
-  const routes = loadDecisionConfigs();
-  if (routes.size === 0) {
-    warn('DECISION_ROUTES is set but no usable site entry was found; the decision layer is off.');
-    return;
-  }
-  // Merge the previous process's shadow counts before serving traffic, so a
-  // restart does not erase the evidence shadow mode exists to collect.
-  loadDecisionTelemetryFromDisk();
-  for (const config of routes.values()) {
-    if (config.provider !== 'chat' || !config.model) continue;
-    checkModelString(config.model, `DECISION_ROUTES.${config.site}.model`, true);
-    if (config.mode === 'triage') {
-      warn(
-        `DECISION_ROUTES.${config.site} uses a chat model in triage mode. Chat confidence is not calibrated, so triage will always fall back to the LLM. Use "replace" or "shadow" instead.`,
-      );
-    }
-  }
-}
-
-/**
  * Validate server model-routing config at boot. Warn-only, cheap, and
  * non-throwing: a broken config never prevents the server from starting.
  */
@@ -210,7 +175,6 @@ export function validateServerConfig(): void {
     validateModelRoutes();
     validateDefaultModel();
     validateModelsEnvPins();
-    validateDecisionRoutes();
     validateAgentRuntime();
   } catch (err) {
     // Boot-time validation must never take the server down.

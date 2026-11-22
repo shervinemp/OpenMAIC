@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 import type { QuizVerificationQuestion } from '@openmaic/generation';
 
-import { resetDecisionConfigForTests } from '@/lib/decision/config';
 import { resetDecisionTelemetryForTests } from '@/lib/decision/telemetry';
 import { resolveQuizAnswerVerifier } from '@/lib/server/quiz-verifier';
 
@@ -21,16 +20,25 @@ const questions: QuizVerificationQuestion[] = [
   },
 ];
 
-function request(): NextRequest {
+function request(withDecision = false): NextRequest {
   return new Request('http://localhost/api/generate/scene-content', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(withDecision
+        ? {
+            'x-decision-enabled': '1',
+            'x-decision-provider': 'laya',
+            'x-decision-endpoint': 'http://decision.test',
+            'x-decision-mode': 'replace',
+          }
+        : {}),
+    },
   }) as unknown as NextRequest;
 }
 
 beforeEach(() => {
   delete process.env.MODEL_ROUTES;
-  resetDecisionConfigForTests();
   resetDecisionTelemetryForTests();
 });
 
@@ -39,20 +47,11 @@ afterEach(() => {
   else process.env.DECISION_ROUTES = originalRoutes;
   if (originalModelRoutes === undefined) delete process.env.MODEL_ROUTES;
   else process.env.MODEL_ROUTES = originalModelRoutes;
-  resetDecisionConfigForTests();
   vi.unstubAllGlobals();
 });
 
 describe('decision quiz verifier resolution', () => {
-  it('returns a verifier from DECISION_ROUTES even without an LLM route', async () => {
-    process.env.DECISION_ROUTES = JSON.stringify({
-      'quiz-verify': {
-        provider: 'laya',
-        endpoint: 'http://decision.test',
-        mode: 'replace',
-      },
-    });
-    resetDecisionConfigForTests();
+  it('returns a verifier from the Settings choice even without an LLM route', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn<typeof fetch>(async () =>
@@ -61,7 +60,7 @@ describe('decision quiz verifier resolution', () => {
     );
 
     const verifier = await resolveQuizAnswerVerifier({
-      req: request(),
+      req: request(true),
       log: { warn: vi.fn() },
     });
     expect(verifier).toBeTypeOf('function');

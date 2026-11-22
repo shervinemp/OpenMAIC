@@ -406,14 +406,6 @@ export function CourseModelConfigPanel({}) {
   const llmStageRoutes = useSettingsStore((s) => s.llmStageRoutes);
   const setStageRoute = useSettingsStore((s) => s.setStageRoute);
 
-  // Optional System 1 decision model — one explicit choice, off by default.
-  const decisionEnabled = useSettingsStore((s) => s.decisionEnabled);
-  const decisionModel = useSettingsStore((s) => s.decisionModel);
-  const decisionMode = useSettingsStore((s) => s.decisionMode);
-  const setDecisionEnabled = useSettingsStore((s) => s.setDecisionEnabled);
-  const setDecisionModel = useSettingsStore((s) => s.setDecisionModel);
-  const setDecisionMode = useSettingsStore((s) => s.setDecisionMode);
-
   // ── 媒体模态 ──
   const webSearchEnabled = useSettingsStore((s) => s.webSearchEnabled);
   const setWebSearchEnabled = useSettingsStore((s) => s.setWebSearchEnabled);
@@ -460,17 +452,6 @@ export function CourseModelConfigPanel({}) {
 
   // ── 可用 LLM 选项与模型组（过滤/套餐置顶/推荐序的口径与首页工具栏共享） ──
   const { groups: llmPickerGroups, providers: llmProviders } = useLLMPickerGroups();
-
-  const decisionModelOptions = useMemo(
-    () =>
-      llmPickerGroups.flatMap((group) =>
-        group.models.map((model) => ({
-          value: `${group.id}:${model.id}`,
-          label: `${group.name} · ${model.name}`,
-        })),
-      ),
-    [llmPickerGroups],
-  );
 
   const mainThinkingConfig = thinkingConfigs[getThinkingConfigKey(providerId, modelId)];
 
@@ -738,48 +719,6 @@ export function CourseModelConfigPanel({}) {
               })}
             </div>
           </div>
-        </div>
-
-        <div className="mt-4 rounded-xl border border-border/60 bg-muted/20 p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-[13px] font-medium">System 1 decision model</p>
-              <p className="mt-0.5 max-w-xl text-[11px] text-muted-foreground">
-                Optional. Off means grading/quiz checks keep using the normal LLM. Pick exactly
-                one model — it overrides the server config for this browser and falls back to the
-                LLM if unavailable.
-              </p>
-            </div>
-            <Switch checked={decisionEnabled} onCheckedChange={setDecisionEnabled} />
-          </div>
-          {decisionEnabled && (
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <Select value={decisionModel} onValueChange={setDecisionModel}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Choose one model" />
-                </SelectTrigger>
-                <SelectContent>
-                  {decisionModelOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={decisionMode}
-                onValueChange={(value) => setDecisionMode(value as 'shadow' | 'replace')}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="shadow">Shadow — compare, keep LLM answer</SelectItem>
-                  <SelectItem value="replace">Replace — use the decision answer</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
         </div>
 
         {selectedDef && (

@@ -6,13 +6,7 @@
  */
 
 export * from './types';
-export {
-  decisionModelsEnabled,
-  getDecisionSiteConfig,
-  loadDecisionConfigs,
-  parseDecisionRoutes,
-  resetDecisionConfigForTests,
-} from './config';
+export { decisionConfigFromRequest, DECISION_HEADERS } from './request-config';
 export {
   runDecisionSite,
   type DecisionRunDeps,

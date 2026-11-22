@@ -44,6 +44,27 @@ describe('per-request decision model selection', () => {
     expect(config?.mode).toBe('replace');
   });
 
+  it('supports typed decision servers (Laya/Jev) through the same headers', () => {
+    for (const provider of ['laya', 'jev']) {
+      const config = decisionConfigFromRequest(
+        req({
+          'x-decision-enabled': '1',
+          'x-decision-provider': provider,
+          'x-decision-endpoint': 'http://127.0.0.1:8090',
+          'x-decision-mode': 'replace',
+        }),
+        'claim-check',
+      );
+      expect(config).toMatchObject({
+        site: 'claim-check',
+        provider,
+        endpoint: 'http://127.0.0.1:8090',
+        mode: 'replace',
+        fallback: 'llm',
+      });
+    }
+  });
+
   it('rejects a bare model id or an empty selection', () => {
     expect(
       decisionConfigFromRequest(

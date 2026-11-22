@@ -14,7 +14,8 @@ export type SettingsSection =
   | 'skills'
   // 设置页新 IA：课程管线配置 + 收拢后的模型服务（旧模态值作为其内部 tab）
   | 'course-models'
-  | 'model-services';
+  | 'model-services'
+  | 'decision';
 
 /**
  * Unified provider configuration stored in JSON format

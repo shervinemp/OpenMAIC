@@ -12,7 +12,6 @@
  * decision request will.
  */
 
-import { loadDecisionConfigs } from './config';
 import { createTypedHttpProvider } from './providers/laya';
 import type {
   DecisionMode,
@@ -91,7 +90,7 @@ async function probeTypedSite(
 export async function probeDecisionSites(
   options: ProbeDecisionSitesOptions = {},
 ): Promise<DecisionSiteProbe[]> {
-  const configs = options.configs ?? loadDecisionConfigs();
+  const configs = options.configs ?? new Map();
   return Promise.all(
     [...configs.values()].map((config) =>
       config.provider === 'chat'
