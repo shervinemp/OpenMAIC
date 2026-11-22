@@ -4,7 +4,16 @@ import { useEffect, useState, Suspense, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
-import { CheckCircle2, Sparkles, AlertCircle, AlertTriangle, ArrowLeft, Bot } from 'lucide-react';
+import {
+  CheckCircle2,
+  Sparkles,
+  AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
+  Bot,
+  Square,
+  Info,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -151,6 +160,7 @@ function GenerationPreviewContent() {
     [],
   );
   const [showAgentReveal, setShowAgentReveal] = useState(false);
+  const [showRunDetails, setShowRunDetails] = useState(false);
   const [isConfirmingOutlines, setIsConfirmingOutlines] = useState(false);
   const [generatedAgents, setGeneratedAgents] = useState<
     Array<{
@@ -1714,6 +1724,17 @@ function GenerationPreviewContent() {
         </Button>
       </motion.div>
 
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="absolute top-4 right-4 z-20"
+      >
+        <Button variant="ghost" size="sm" onClick={() => setShowRunDetails((v) => !v)}>
+          <Info className="size-4 mr-2" />
+          {showRunDetails ? 'Hide run details' : 'Run details'}
+        </Button>
+      </motion.div>
+
       <div className="z-10 w-full max-w-lg space-y-8 flex flex-col items-center">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -1872,6 +1893,42 @@ function GenerationPreviewContent() {
           </Card>
         </motion.div>
 
+        {showRunDetails && (
+          <div className="w-full rounded-lg border border-border/60 bg-muted/30 p-4 text-sm space-y-2">
+            <p className="font-medium">Run details</p>
+            <div>
+              <p className="text-xs text-muted-foreground">Initial prompt</p>
+              <p className="whitespace-pre-wrap break-words text-sm">
+                {session.requirements.requirement}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+              <span className="text-muted-foreground">Model</span>
+              <span className="break-all">{getCurrentModelConfig().modelString}</span>
+              <span className="text-muted-foreground">Size preset</span>
+              <span>{session.sizePreset ?? 'default'}</span>
+              <span className="text-muted-foreground">Web research</span>
+              <span>{session.requirements.webSearch ? 'on' : 'off'}</span>
+              <span className="text-muted-foreground">Interactive mode</span>
+              <span>{session.requirements.interactiveMode ? 'on' : 'off'}</span>
+              <span className="text-muted-foreground">Task engine</span>
+              <span>{session.requirements.taskEngineMode ? 'on' : 'off'}</span>
+              {session.pdfFileName && (
+                <>
+                  <span className="text-muted-foreground">Document</span>
+                  <span className="break-all">{session.pdfFileName}</span>
+                </>
+              )}
+              {session.languageDirective && (
+                <>
+                  <span className="text-muted-foreground">Language</span>
+                  <span className="break-all">{session.languageDirective}</span>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Footer Action */}
         <div className="h-16 flex items-center justify-center w-full">
           <AnimatePresence>
@@ -1893,6 +1950,16 @@ function GenerationPreviewContent() {
               >
                 <Sparkles className="size-3 animate-pulse" />
                 {t('generation.aiWorking')}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="normal-case tracking-normal text-destructive border-destructive/40 hover:bg-destructive/10"
+                  onClick={goBackToHome}
+                  disabled={leavingRef.current}
+                >
+                  <Square className="size-3 mr-1.5 fill-current" />
+                  Cancel generation
+                </Button>
                 {generatedAgents.length > 0 && !showAgentReveal && (
                   <button
                     onClick={() => setShowAgentReveal(true)}
