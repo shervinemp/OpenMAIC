@@ -38,6 +38,7 @@ import {
 import { commitToPool } from '@/lib/media/commit-to-pool';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { registerStageGeneration } from '@/lib/classroom/generation-abort';
+import { claimGenerationLease } from '@/lib/classroom/generation-lease';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { computeActionsSourceHash } from '@/lib/utils/content-hash';
 import { outlineFingerprint } from '@/lib/utils/outline-fingerprint';
@@ -81,31 +82,6 @@ const log = createLogger('SceneGenerator');
  * Degrades to a no-op release (so single-tab browsers behave exactly as
  * before) when Web Locks are unavailable.
  */
-async function claimGenerationLease(stageId: string): Promise<(() => void) | null> {
-  if (typeof navigator === 'undefined' || !navigator.locks) {
-    return () => {};
-  }
-  let release!: () => void;
-  const parked = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  return new Promise<(() => void) | null>((resolveOuter) => {
-    void navigator.locks
-      .request(`openmaic-generate:${stageId}`, { ifAvailable: true }, (lock: unknown) => {
-        if (!lock) {
-          resolveOuter(null);
-          return undefined;
-        }
-        resolveOuter(() => release());
-        return parked as unknown as Promise<void>;
-      })
-      .catch((error) => {
-        log.error('Generation lease request failed:', error);
-        resolveOuter(() => release());
-      });
-  });
-}
-
 interface SceneContentResult {
   success: boolean;
   content?: unknown;
@@ -1632,7 +1608,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       store.getState().setGenerationStatus('generating');
 
       // Cross-tab lease: exactly one tab per stage resumes generation.
-      const generationLease = await claimGenerationLease(stage.id);
+      const generationLease = await claimGenerationLease(`openmaic-generate:${stage.id}`);
       if (generationLease === null) {
         log.info(
           `Another browser tab is already driving generation for ${stage.id}; skipping duplicate resume`,

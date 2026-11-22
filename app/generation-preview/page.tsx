@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
+import { claimGenerationLease } from '@/lib/classroom/generation-lease';
 import {
   CheckCircle2,
   Sparkles,
@@ -140,6 +141,9 @@ function GenerationPreviewContent() {
   const hasStartedRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const sessionIdRef = useRef<string | undefined>(undefined);
+  /** Per-run cancel identity: isolates one tab's cancel from another tab's run. */
+  const runSessionIdRef = useRef<string | null>(null);
+  const ownsLeaseRef = useRef(false);
   const leavingRef = useRef(false);
   const skipIndexRef = useRef<AbortController | null>(null);
   const outlineReviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -313,7 +317,7 @@ function GenerationPreviewContent() {
    * Retry briefly, then report failure instead of swallowing it.
    */
   const cancelServerGeneration = async (): Promise<boolean> => {
-    const sessionId = sessionIdRef.current;
+    const sessionId = runSessionIdRef.current ?? sessionIdRef.current;
     if (!sessionId) return true;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
@@ -377,7 +381,7 @@ function GenerationPreviewContent() {
       'x-image-generation-enabled': String(settings.imageGenerationEnabled ?? false),
       'x-video-generation-enabled': String(settings.videoGenerationEnabled ?? false),
       // Lets a cancel request abort every in-flight server call for this run.
-      'x-generation-session': session?.sessionId ?? '',
+      'x-generation-session': runSessionIdRef.current ?? session?.sessionId ?? '',
     };
   };
 
@@ -409,12 +413,15 @@ function GenerationPreviewContent() {
   }, [session]);
 
   // Main generation flow
-  const startGeneration = async (sessionOverride?: GenerationSessionState) => {
+  const runGeneration = async (sessionOverride?: GenerationSessionState) => {
     const generationSession = sessionOverride ?? session;
     if (!generationSession) return;
     // Any call to start a run (resume, review confirm, auto-start) clears a
     // previous pause before new work begins.
     setPaused(false);
+    // Every run gets its own cancel identity under the shared session id, so a
+    // different tab leaving this course cannot abort this tab's server calls.
+    runSessionIdRef.current = `${generationSession.sessionId}:${nanoid(8)}`;
 
     // The course was already persisted (user backed out mid-content
     // generation). Don't re-run the outline/first-scene flow — hand off to
@@ -1511,6 +1518,28 @@ function GenerationPreviewContent() {
     clearOutlineReviewTimer();
   };
 
+  /**
+   * One owner per session across tabs: two previews loading the same envelope
+   * would otherwise both run the pipeline (duplicate provider spend) and
+   * overwrite each other's stage/session records.
+   */
+  const startGeneration = async (sessionOverride?: GenerationSessionState) => {
+    const target = sessionOverride ?? session;
+    if (!target) return;
+    const release = await claimGenerationLease(`openmaic-preview:${target.sessionId}`);
+    if (!release) {
+      toast.warning('This course is already generating in another tab.');
+      return;
+    }
+    ownsLeaseRef.current = true;
+    try {
+      await runGeneration(sessionOverride);
+    } finally {
+      ownsLeaseRef.current = false;
+      release();
+    }
+  };
+
   const resumeGeneration = async () => {
     if (!paused || !session || leavingRef.current) return;
     setPaused(false);
@@ -1540,7 +1569,9 @@ function GenerationPreviewContent() {
     // "resume" prompt. Otherwise (outline phase) keep it so generation can
     // be resumed from the home page.
     const envelope = readGenerationSessionEnvelope();
-    if (envelope?.stageId) {
+    // A tab that lost the lease must not delete the session the owning tab is
+    // still writing.
+    if (envelope?.stageId && ownsLeaseRef.current) {
       void clearGenerationSession();
     }
     router.push('/');
