@@ -11,6 +11,7 @@ import { NextRequest } from 'next/server';
 
 import { decisionTelemetryFile } from '@/lib/decision/telemetry-file';
 import { snapshotDecisionTelemetry } from '@/lib/decision/telemetry';
+import { DECISION_SITES } from '@/lib/decision/types';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { isMaintenanceUnauthorized } from '@/lib/server/maintenance-auth';
 
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   return apiSuccess({
     source: 'settings',
-    sites: [],
+    sites: [...DECISION_SITES],
     telemetry: snapshotDecisionTelemetry(),
     telemetryFile: decisionTelemetryFile(),
   });

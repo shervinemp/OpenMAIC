@@ -40,7 +40,7 @@ describe('/api/decision/status', () => {
       telemetry: { counters: unknown[]; shadow: unknown[] };
     };
     expect(body.source).toBe('settings');
-    expect(body.sites).toEqual([]);
+    expect(body.sites).toEqual(['quiz-verify', 'exam-grading', 'quiz-grade', 'claim-check']);
     expect(body.telemetry).toEqual({ counters: [], shadow: [] });
   });
 });

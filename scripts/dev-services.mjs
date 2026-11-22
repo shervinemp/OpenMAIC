@@ -34,8 +34,15 @@
  */
 
 import { spawn } from 'node:child_process';
-import { mkdirSync, openSync, closeSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,7 +52,6 @@ const CHECK_ONLY = process.argv.includes('--check');
 const SEP = process.argv.indexOf('--');
 const FORWARD_ARGS = SEP >= 0 ? process.argv.slice(SEP + 1) : [];
 
-const require = createRequire(import.meta.url);
 const IS_WIN = process.platform === 'win32';
 
 function log(message) {
@@ -90,12 +96,49 @@ function readConfig() {
     }
   }
   if (!raw) return null;
-  const parsed = JSON.parse(raw);
-  return Array.isArray(parsed) ? { services: parsed } : parsed;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? { services: parsed } : parsed;
+  } catch (error) {
+    log(`invalid service config; continuing with no services: ${error.message}`);
+    return null;
+  }
 }
 
+/** Prevent a scheduled-task supervisor and a `pnpm dev` wrapper from both spawning services. */
+function acquireLock() {
+  const path = join(tmpdir(), 'openmaic-dev-services', 'supervisor.lock');
+  mkdirSync(dirname(path), { recursive: true });
+  if (existsSync(path)) {
+    const pid = Number(readFileSync(path, 'utf8').trim());
+    if (Number.isInteger(pid) && pid > 0) {
+      try {
+        process.kill(pid, 0);
+        log(`another supervisor is running (pid ${pid}); exiting`);
+        return false;
+      } catch {
+        // stale lock
+      }
+    }
+  }
+  writeFileSync(path, String(process.pid));
+  return true;
+}
+
+function releaseLock() {
+  try {
+    unlinkSync(join(tmpdir(), 'openmaic-dev-services', 'supervisor.lock'));
+  } catch {
+    // already gone
+  }
+}
+
+if (!CHECK_ONLY && !acquireLock()) process.exit(0);
+
 const config = readConfig();
-const services = Array.isArray(config?.services) ? config.services : [];
+const services = Array.isArray(config?.services)
+  ? config.services.filter((service) => service && typeof service === 'object')
+  : [];
 const intervalMs = Math.max(1000, Number(config?.intervalMs) || 15000);
 const startGraceMs = Math.max(1000, Number(config?.startGraceMs) || 30000);
 const timeoutMs = Math.max(500, Number(config?.healthTimeoutMs) || 2500);
@@ -177,8 +220,6 @@ async function reconcile() {
       }
       const spawnedAt = lastSpawn.get(name) || 0;
       if (Date.now() - spawnedAt < startGraceMs) return;
-      const failures = Number(service.failures) || 0; // reserved for future backoff tuning
-      void failures;
       spawnService(service);
       backoffUntil.set(name, Date.now() + startGraceMs);
     }),
@@ -202,12 +243,19 @@ function killTree(child) {
   }
 }
 
+let reconcileTimer = null;
+let keepAliveTimer = null;
+
 function shutdown(code = 0) {
   if (stopping) return;
   stopping = true;
+  if (reconcileTimer) clearInterval(reconcileTimer);
+  if (keepAliveTimer) clearInterval(keepAliveTimer);
   for (const child of children.values()) killTree(child);
   if (FORWARD_ARGS.length) killTree(appChild);
-  setTimeout(() => process.exit(code), 300).unref();
+  releaseLock();
+  // Forced process.exit() can trip a libuv assertion on Windows; let handles drain.
+  process.exitCode = code;
 }
 
 process.on('SIGINT', () => shutdown(130));
@@ -238,10 +286,10 @@ if (!services.length) {
 
 // Reconcile once immediately, then on an interval.
 await reconcile();
-const timer = setInterval(() => {
+reconcileTimer = setInterval(() => {
   if (!stopping) void reconcile();
 }, intervalMs);
-timer.unref();
+reconcileTimer.unref();
 
 if (FORWARD_ARGS.length) {
   const [command, ...args] = FORWARD_ARGS;
@@ -253,6 +301,6 @@ if (FORWARD_ARGS.length) {
   });
 } else {
   // Standalone mode: keep the supervisor alive until signalled.
-  setInterval(() => undefined, 60_000);
+  keepAliveTimer = setInterval(() => undefined, 60_000);
 }
 }
