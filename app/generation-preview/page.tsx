@@ -13,6 +13,8 @@ import {
   Bot,
   Square,
   Info,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -164,6 +166,7 @@ function GenerationPreviewContent() {
   const [showRunDetails, setShowRunDetails] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [indexRunning, setIndexRunning] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [isConfirmingOutlines, setIsConfirmingOutlines] = useState(false);
   const [generatedAgents, setGeneratedAgents] = useState<
     Array<{
@@ -1487,6 +1490,23 @@ function GenerationPreviewContent() {
     return trimmed.substring(0, 500).trim() + '...';
   };
 
+  // Pause keeps the session and stays on this page; the in-flight fetches are
+  // aborted and the flow exits quietly (AbortError is handled by the runner).
+  const pauseGeneration = async () => {
+    if (paused || leavingRef.current) return;
+    setPaused(true);
+    void cancelServerGeneration();
+    abortControllerRef.current?.abort();
+    clearOutlineReviewTimer();
+  };
+
+  const resumeGeneration = () => {
+    if (!paused || !session) return;
+    setPaused(false);
+    setError(null);
+    startGeneration(session);
+  };
+
   const goBackToHome = async () => {
     if (leavingRef.current) return;
     leavingRef.current = true;
@@ -2008,6 +2028,21 @@ function GenerationPreviewContent() {
                   {t('generation.goBackAndRetry')}
                 </Button>
               </motion.div>
+            ) : paused ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex items-center gap-3 text-sm font-medium"
+              >
+                <span className="text-muted-foreground">Generation paused</span>
+                <Button size="sm" onClick={resumeGeneration}>
+                  <Play className="size-3 mr-1.5 fill-current" />
+                  Resume generation
+                </Button>
+                <Button variant="ghost" size="sm" onClick={goBackToHome}>
+                  Cancel &amp; exit
+                </Button>
+              </motion.div>
             ) : isOutlineReady ? null : !isComplete ? (
               <motion.div
                 initial={{ opacity: 0 }}
@@ -2016,6 +2051,15 @@ function GenerationPreviewContent() {
               >
                 <Sparkles className="size-3 animate-pulse" />
                 {t('generation.aiWorking')}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="normal-case tracking-normal"
+                  onClick={pauseGeneration}
+                >
+                  <Pause className="size-3 mr-1.5 fill-current" />
+                  Pause
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
