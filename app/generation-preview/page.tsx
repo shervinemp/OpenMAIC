@@ -1500,11 +1500,14 @@ function GenerationPreviewContent() {
     clearOutlineReviewTimer();
   };
 
-  const resumeGeneration = () => {
+  const resumeGeneration = async () => {
     if (!paused || !session) return;
     setPaused(false);
     setError(null);
-    startGeneration(session);
+    // Use the latest persisted session: steps completed before the pause
+    // (research context, outlines, index handle) were written there.
+    const latest = (await loadGenerationSession()) ?? session;
+    startGeneration(latest);
   };
 
   const goBackToHome = async () => {
