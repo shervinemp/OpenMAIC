@@ -161,6 +161,7 @@ function GenerationPreviewContent() {
   );
   const [showAgentReveal, setShowAgentReveal] = useState(false);
   const [showRunDetails, setShowRunDetails] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
   const [isConfirmingOutlines, setIsConfirmingOutlines] = useState(false);
   const [generatedAgents, setGeneratedAgents] = useState<
     Array<{
@@ -1894,13 +1895,29 @@ function GenerationPreviewContent() {
         </motion.div>
 
         {showRunDetails && (
-          <div className="w-full rounded-lg border border-border/60 bg-muted/30 p-4 text-sm space-y-2">
+          <div className="w-full max-h-[55vh] overflow-y-auto rounded-lg border border-border/60 bg-muted/30 p-4 text-sm space-y-2">
             <p className="font-medium">Run details</p>
             <div>
-              <p className="text-xs text-muted-foreground">Initial prompt</p>
-              <p className="whitespace-pre-wrap break-words text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">Initial prompt</p>
+                {session.requirements.requirement.length > 160 && (
+                  <button
+                    type="button"
+                    className="shrink-0 text-xs text-primary hover:underline"
+                    onClick={() => setPromptExpanded((v) => !v)}
+                  >
+                    {promptExpanded ? 'Show less' : 'Show full prompt'}
+                  </button>
+                )}
+              </div>
+              <div
+                className={cn(
+                  'mt-1 overflow-y-auto pr-1 whitespace-pre-wrap break-words text-sm',
+                  promptExpanded ? 'max-h-60' : 'max-h-20',
+                )}
+              >
                 {session.requirements.requirement}
-              </p>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
               <span className="text-muted-foreground">Model</span>
@@ -1922,7 +1939,9 @@ function GenerationPreviewContent() {
               {session.languageDirective && (
                 <>
                   <span className="text-muted-foreground">Language</span>
-                  <span className="break-all">{session.languageDirective}</span>
+                  <span className="line-clamp-2 break-all" title={session.languageDirective}>
+                    {session.languageDirective}
+                  </span>
                 </>
               )}
             </div>
