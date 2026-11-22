@@ -16,7 +16,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { callLLM } from '@/lib/ai/llm';
+import { callLLM, withAgenticOutputDiscipline } from '@/lib/ai/llm';
 import { DOCUMENT_INDEX_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import { buildVisionUserContent } from '@/lib/generation/generation-pipeline';
 import {
@@ -29,7 +29,7 @@ import { captionDocumentImages, type ImageCaption } from '@/lib/generation/image
 import { chunkSourceText, type PdfChunk } from '@openmaic/generation';
 import { createLogger } from '@/lib/logger';
 import { apiError } from '@/lib/server/api-response';
-import { withGenerationCancel } from '@/lib/server/generation-cancel';
+import { generationCallFor } from '@/lib/server/generation-cancel';
 import { resolveModel, resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { getStageModel, parseUserStageRoutes } from '@/lib/server/model-routes';
 import {
@@ -61,7 +61,8 @@ interface IndexRequestBody {
 const MAX_INDEX_TEXT_CHARS = 5_000_000;
 const MAX_INDEX_IMAGES = 500;
 
-async function handlePost(req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const generationCall = generationCallFor(req, '/api/documents/index');
   try {
     const body = (await req.json()) as Partial<IndexRequestBody>;
 
@@ -187,10 +188,11 @@ async function handlePost(req: NextRequest) {
           }
 
           const aiCall = async (
-            system: string,
+            systemInput: string,
             user: string,
             visionImages?: Array<{ id: string; src: string }>,
           ): Promise<string> => {
+            const system = withAgenticOutputDiscipline(systemInput);
             if (visionImages?.length && hasVision) {
               const result = await callLLM(
                 {
@@ -201,6 +203,7 @@ async function handlePost(req: NextRequest) {
                   ],
                   maxOutputTokens: indexOutputBudget,
                   maxRetries: 1,
+                  abortSignal: generationCall?.signal,
                 },
                 'documents-index',
                 undefined,
@@ -216,6 +219,7 @@ async function handlePost(req: NextRequest) {
                 prompt: user,
                 maxOutputTokens: indexOutputBudget,
                 maxRetries: 1,
+                abortSignal: generationCall?.signal,
               },
               'documents-index',
               undefined,
@@ -231,11 +235,12 @@ async function handlePost(req: NextRequest) {
            * instead of reusing the generic text/vision branch above.
            */
           const captionAiCall = async (
-            system: string,
+            systemInput: string,
             user: string,
             visionImages?: Array<{ id: string; src: string }>,
           ): Promise<string> => {
-            if (!usesCaptionModel || !captionModel) return aiCall(system, user, visionImages);
+            const system = withAgenticOutputDiscipline(systemInput);
+            if (!usesCaptionModel || !captionModel) return aiCall(systemInput, user, visionImages);
             const result = await callLLM(
               {
                 model: captionModel.model,
@@ -248,6 +253,7 @@ async function handlePost(req: NextRequest) {
                 ],
                 maxOutputTokens: captionOutputBudget,
                 maxRetries: 1,
+                abortSignal: generationCall?.signal,
               },
               'documents-captions',
               undefined,
@@ -375,7 +381,8 @@ async function handlePost(req: NextRequest) {
       500,
       error instanceof Error ? error.message : 'Unknown error',
     );
+  } finally {
+    generationCall?.dispose();
   }
 }
 
-export const POST = withGenerationCancel(handlePost);

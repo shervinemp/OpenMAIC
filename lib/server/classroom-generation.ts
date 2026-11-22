@@ -1,4 +1,4 @@
-import { callLLM } from '@/lib/ai/llm';
+import { callLLM, withAgenticOutputDiscipline } from '@/lib/ai/llm';
 import {
   AGENT_PROFILES_OUTPUT_CAP,
   OUTLINE_OUTPUT_CAP,
@@ -328,7 +328,7 @@ export async function generateClassroom(
         // Keep the system prompt in its own field so provider-side prompt
         // caching can tag it; a system message inside `messages` is invisible
         // to the Anthropic cache adapter.
-        system: systemPrompt,
+        system: withAgenticOutputDiscipline(systemPrompt),
         prompt: userPrompt,
         maxOutputTokens: clampOutputBudget(
           OUTLINE_OUTPUT_CAP,
@@ -434,7 +434,7 @@ export async function generateClassroom(
       const result = await callLLM(
         {
           model,
-          system: systemPrompt,
+          system: withAgenticOutputDiscipline(systemPrompt),
           prompt: userPrompt,
           maxOutputTokens: clampOutputBudget(SCENE_CONTENT_OUTPUT_CAP, outputWindow, thinking),
           maxRetries: 0,
@@ -461,7 +461,7 @@ export async function generateClassroom(
       const result = await callLLM(
         {
           model,
-          system: systemPrompt,
+          system: withAgenticOutputDiscipline(systemPrompt),
           prompt: userPrompt,
           maxOutputTokens: clampOutputBudget(AGENT_PROFILES_OUTPUT_CAP, outputWindow, thinking),
           maxRetries: 0,
@@ -487,7 +487,7 @@ export async function generateClassroom(
       const result = await callLLM(
         {
           model,
-          system: systemPrompt,
+          system: withAgenticOutputDiscipline(systemPrompt),
           prompt: userPrompt,
           maxOutputTokens: clampOutputBudget(SCENE_ACTIONS_OUTPUT_CAP, outputWindow, thinking),
           maxRetries: 0,
@@ -507,7 +507,7 @@ export async function generateClassroom(
     const result = await callLLM(
       {
         model: searchQueryModel,
-        system: systemPrompt,
+        system: withAgenticOutputDiscipline(systemPrompt),
         prompt: userPrompt,
         maxOutputTokens: 256,
         maxRetries: 0,

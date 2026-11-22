@@ -14,7 +14,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { streamLLM, callLLM } from '@/lib/ai/llm';
+import { streamLLM, callLLM, withAgenticOutputDiscipline } from '@/lib/ai/llm';
 import { isLlmOutputTruncatedError } from '@/lib/ai/llm-truncation';
 import {
   OUTLINE_OUTPUT_CAP,
@@ -49,7 +49,7 @@ import type {
   ImageMapping,
 } from '@/lib/types/generation';
 import { apiError } from '@/lib/server/api-response';
-import { withGenerationCancel } from '@/lib/server/generation-cancel';
+import { anyAbortSignal, generationCallFor } from '@/lib/server/generation-cancel';
 import { createLogger } from '@/lib/logger';
 import { resolveModel, resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
@@ -1074,9 +1074,11 @@ async function generateMultiUnitOutlines(
   };
 }
 
-async function handlePost(req: NextRequest) {
+export async function POST(req: NextRequest) {
   let requirementSnippet: string | undefined;
   let resolvedModelString: string | undefined;
+  const generationCall = generationCallFor(req, '/api/generate/scene-outlines-stream');
+  const abortSignal = anyAbortSignal(req.signal, generationCall?.signal);
   try {
     const body = await req.json();
 
@@ -1344,7 +1346,7 @@ async function handlePost(req: NextRequest) {
         let streamParams = visionImages?.length
           ? {
               model: languageModel,
-              system: prompts.system,
+              system: withAgenticOutputDiscipline(prompts.system),
               messages: [
                 {
                   role: 'user' as const,
@@ -1355,15 +1357,15 @@ async function handlePost(req: NextRequest) {
               maxRetries: 0,
               // Tear down the upstream LLM request when the client disconnects,
               // instead of letting it run to completion for a dead connection.
-              abortSignal: req.signal,
+              abortSignal,
             }
           : {
               model: languageModel,
-              system: prompts.system,
+              system: withAgenticOutputDiscipline(prompts.system),
               prompt: prompts.user,
               maxOutputTokens: outlineOutputBudget,
               maxRetries: 0,
-              abortSignal: req.signal,
+              abortSignal,
             };
         let fellBack = false;
         // Shared decision (shared retryable-error + empty-output check) and the
@@ -1424,7 +1426,7 @@ async function handlePost(req: NextRequest) {
                 const result = await callLLM(
                   {
                     model: languageModel,
-                    system,
+                    system: withAgenticOutputDiscipline(system),
                     prompt: user,
                     maxOutputTokens: clampOutputBudget(
                       OUTLINE_OUTPUT_CAP,
@@ -1432,7 +1434,7 @@ async function handlePost(req: NextRequest) {
                       thinkingConfig,
                     ),
                     maxRetries: 0,
-                    abortSignal: req.signal,
+                    abortSignal,
                   },
                   'scene-outlines-stream-multi-unit',
                   undefined,
@@ -1486,7 +1488,7 @@ async function handlePost(req: NextRequest) {
                       // one SDK retry is cheap insurance against a transient
                       // 429 silently accepting the deck.
                       maxRetries: 1,
-                      abortSignal: req.signal,
+                      abortSignal,
                     },
                     'scene-outlines-stream-review',
                     undefined,
@@ -1562,7 +1564,7 @@ async function handlePost(req: NextRequest) {
                 const attemptParams = visionImages?.length
                   ? {
                       ...streamParams,
-                      system: prompts.system,
+                      system: withAgenticOutputDiscipline(prompts.system),
                       messages: [
                         {
                           role: 'user' as const,
@@ -1572,7 +1574,7 @@ async function handlePost(req: NextRequest) {
                     }
                   : {
                       ...streamParams,
-                      system: prompts.system,
+                      system: withAgenticOutputDiscipline(prompts.system),
                       prompt: userPrompt,
                     };
 
@@ -1972,7 +1974,8 @@ async function handlePost(req: NextRequest) {
       error,
     );
     return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
+  } finally {
+    generationCall?.dispose();
   }
 }
 
-export const POST = withGenerationCancel(handlePost);

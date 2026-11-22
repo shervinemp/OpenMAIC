@@ -10,7 +10,7 @@ import type {
 const config: DecisionSiteConfig = {
   site: 'quiz-grade',
   provider: 'chat',
-  model: 'openrouter:opencode-go/hy4-flash-free',
+  model: 'deepseek:deepseek-flash',
   mode: 'replace',
   fallback: 'llm',
   timeoutMs: 15_000,
@@ -105,7 +105,7 @@ describe('decision router LLM fallback', () => {
       JSON.stringify({
         'quiz-grade': {
           provider: 'chat',
-          model: 'openrouter:opencode-go/hy4-flash-free',
+          model: 'deepseek:deepseek-flash',
           mode: 'replace',
           fallback: 'llm',
         },
@@ -114,7 +114,7 @@ describe('decision router LLM fallback', () => {
 
     expect(parsed.get('quiz-grade')).toMatchObject({
       provider: 'chat',
-      model: 'openrouter:opencode-go/hy4-flash-free',
+      model: 'deepseek:deepseek-flash',
       mode: 'replace',
       fallback: 'llm',
     });

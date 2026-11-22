@@ -10,7 +10,6 @@ import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
 import { isEmptyLlmOutput, shouldFallbackFor, logFallbackFired } from '@/lib/server/llm-fallback';
-import { getGenerationAbortSignal } from '@/lib/server/generation-cancel';
 import { LlmOutputTruncatedError, isLlmOutputTruncatedError } from '@/lib/ai/llm-truncation';
 import type { LlmStage } from '@/lib/server/model-routes';
 import { getModelMetadataKey } from './model-metadata';
@@ -260,35 +259,42 @@ const AGENTIC_OUTPUT_DIRECTIVE = [
   'Do not call tools. Do not create or edit files. Do not add commentary before or after the artifact.',
 ].join(' ');
 
-export function withAgenticOutputDiscipline<T extends GenerateTextParams | StreamTextParams>(
+function agenticGatewayEnabled(): boolean {
+  const flag = process.env.OPENMAIC_AGENTIC_GATEWAY?.trim().toLowerCase();
+  return flag === '1' || flag === 'true' || flag === 'yes';
+}
+
+/** Explicit helper for generation call sites that talk to an agent-backed gateway. */
+export function withAgenticOutputDiscipline(system?: string): string | undefined {
+  if (!agenticGatewayEnabled()) return system;
+  const base = system?.trim() ?? '';
+  return base ? `${base}\n\n${AGENTIC_OUTPUT_DIRECTIVE}` : AGENTIC_OUTPUT_DIRECTIVE;
+}
+
+export function withAgenticCallDiscipline<T extends GenerateTextParams | StreamTextParams>(
   params: T,
 ): T {
-  const flag = process.env.OPENMAIC_AGENTIC_GATEWAY?.trim().toLowerCase();
-  if (flag !== '1' && flag !== 'true' && flag !== 'yes') return params;
-  const system = (params as { system?: unknown }).system;
-  const base = typeof system === 'string' ? system.trim() : '';
-  return {
-    ...params,
-    system: base ? `${base}\n\n${AGENTIC_OUTPUT_DIRECTIVE}` : AGENTIC_OUTPUT_DIRECTIVE,
-  };
+  const system = withAgenticOutputDiscipline((params as { system?: string }).system);
+  return system === (params as { system?: string }).system
+    ? params
+    : ({ ...params, system } as T);
 }
 
 function injectProviderOptions<T extends GenerateTextParams | StreamTextParams>(
   params: T,
   thinking?: ThinkingConfig,
 ): T {
-  const disciplined = withAgenticOutputDiscipline(params);
-  if ((disciplined as Record<string, unknown>).providerOptions) return disciplined; // caller explicitly set providerOptions
+  if ((params as Record<string, unknown>).providerOptions) return params; // caller explicitly set providerOptions
 
-  const modelId = getModelId(disciplined);
-  const providerId = getModelProviderId(disciplined);
+  const modelId = getModelId(params);
+  const providerId = getModelProviderId(params);
 
   if (thinking) {
     const opts = buildThinkingProviderOptions(providerId, modelId, thinking);
-    if (opts) return { ...disciplined, providerOptions: opts };
+    if (opts) return { ...params, providerOptions: opts };
   }
 
-  return disciplined;
+  return params;
 }
 
 /**
@@ -398,10 +404,7 @@ export async function callLLM<T extends GenerateTextParams>(
 ): Promise<GenerateTextResult<any, any>> {
   const maxAttempts = (retryOptions?.retries ?? 0) + 1;
   const validate = retryOptions?.validate ?? (maxAttempts > 1 ? DEFAULT_VALIDATE : undefined);
-  // An explicit caller signal wins; otherwise inherit the generation request's
-  // cancel slot (see generation-cancel) so cancelling a session stops billing.
-  const effectiveSignal =
-    (params as { abortSignal?: AbortSignal }).abortSignal ?? getGenerationAbortSignal();
+  const effectiveSignal = (params as { abortSignal?: AbortSignal }).abortSignal;
   // The fallback only protects primaries the SERVER resolved (a routed stage
   // or a server-configured provider). resolveModel stamps `serverManaged` on
   // its result and every production caller passes it through here; a

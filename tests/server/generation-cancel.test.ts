@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  activeGenerationLabels,
-  cancelAllGenerations,
+  activeGenerationCallCount,
+  anyAbortSignal,
   cancelGeneration,
-  getGenerationAbortSignal,
-  runWithGenerationCancel,
+  generationSessionIdFrom,
+  registerGenerationCall,
 } from '@/lib/server/generation-cancel';
 
 function waitForAbort(signal: AbortSignal): Promise<void> {
@@ -15,44 +15,41 @@ function waitForAbort(signal: AbortSignal): Promise<void> {
 
 describe('browser generation cancellation', () => {
   it('aborts every in-flight call for the named session only', async () => {
-    const signals: AbortSignal[] = [];
-    let bothReady!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      bothReady = resolve;
-    });
+    const callA1 = registerGenerationCall('session-a', '/api/documents/index');
+    const callA2 = registerGenerationCall('session-a', '/api/web-search');
+    const callB = registerGenerationCall('session-b', '/api/documents/index');
 
-    const work = (count: number) =>
-      Array.from({ length: count }, () =>
-        runWithGenerationCancel('session-a', '/api/documents/index', async () => {
-          const signal = getGenerationAbortSignal()!;
-          signals.push(signal);
-          if (signals.length === 3) bothReady();
-          await waitForAbort(signal);
-        }),
-      );
-
-    const pending = [...work(2), ...runSessionB()];
-    await ready;
-
-    expect(activeGenerationLabels()).toHaveLength(3);
+    expect(activeGenerationCallCount()).toBe(3);
     expect(cancelGeneration('session-a')).toBe(2);
-    expect(signals.slice(0, 2).every((s) => s.aborted)).toBe(true);
-    expect(signals[2]?.aborted).toBe(false);
+    await Promise.all([waitForAbort(callA1.signal), waitForAbort(callA2.signal)]);
+    expect(callB.signal.aborted).toBe(false);
 
     expect(cancelGeneration('session-a')).toBe(0);
-    expect(cancelAllGenerations()).toBe(1);
-    await Promise.all(pending);
-    expect(activeGenerationLabels()).toEqual([]);
+    expect(cancelGeneration('session-b')).toBe(1);
+    expect(callB.signal.aborted).toBe(true);
 
-    function runSessionB() {
-      return [
-        runWithGenerationCancel('session-b', '/api/web-search', async () => {
-          const signal = getGenerationAbortSignal()!;
-          signals.push(signal);
-          if (signals.length === 3) bothReady();
-          await waitForAbort(signal);
-        }),
-      ];
-    }
+    callA1.dispose();
+    callA2.dispose();
+    callB.dispose();
+    expect(activeGenerationCallCount()).toBe(0);
+  });
+
+  it('combines the client disconnect signal with the session cancel signal', async () => {
+    const client = new AbortController();
+    const session = registerGenerationCall('session-c', '/api/generate/scene-outlines-stream');
+    const combined = anyAbortSignal(client.signal, session.signal);
+
+    client.abort();
+    expect(combined.aborted).toBe(true);
+    session.dispose();
+  });
+
+  it('reads the session id only from the request header', () => {
+    expect(generationSessionIdFrom(new Request('http://localhost/x'))).toBeUndefined();
+    expect(
+      generationSessionIdFrom(
+        new Request('http://localhost/x', { headers: { 'x-generation-session': 'sid-1' } }),
+      ),
+    ).toBe('sid-1');
   });
 });

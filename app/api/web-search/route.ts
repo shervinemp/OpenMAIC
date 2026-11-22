@@ -6,7 +6,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { callLLM } from '@/lib/ai/llm';
+import { callLLM, withAgenticOutputDiscipline } from '@/lib/ai/llm';
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
 import {
   isServerConfiguredProvider,
@@ -17,7 +17,7 @@ import {
 } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { withGenerationCancel } from '@/lib/server/generation-cancel';
+import { generationCallFor } from '@/lib/server/generation-cancel';
 import {
   buildSearchQuery,
   SEARCH_QUERY_REWRITE_EXCERPT_LENGTH,
@@ -30,8 +30,9 @@ import { resolveWebSearchRouteBaseUrl } from '@/lib/server/web-search-config';
 
 const log = createLogger('WebSearch');
 
-async function handlePost(req: NextRequest) {
+export async function POST(req: NextRequest) {
   let query: string | undefined;
+  const generationCall = generationCallFor(req, '/api/web-search');
   try {
     const body = await req.json();
     const {
@@ -131,14 +132,16 @@ async function handlePost(req: NextRequest) {
         serverManaged,
       } = await resolveModelFromRequest(req, body, 'web-search-query-rewrite');
       aiCall = async (systemPrompt, userPrompt) => {
+        const disciplinedSystem = withAgenticOutputDiscipline(systemPrompt);
         const result = await callLLM(
           {
             model: languageModel,
             messages: [
-              { role: 'system', content: systemPrompt },
+              { role: 'system', content: disciplinedSystem ?? systemPrompt },
               { role: 'user', content: userPrompt },
             ],
             maxOutputTokens: 256,
+            abortSignal: generationCall?.signal,
           },
           'web-search-query-rewrite',
           undefined,
@@ -185,6 +188,8 @@ async function handlePost(req: NextRequest) {
     log.error(`Web search failed [query="${query?.substring(0, 60) ?? 'unknown'}"]:`, err);
     const message = err instanceof Error ? err.message : 'Web search failed';
     return apiError('INTERNAL_ERROR', 500, message);
+  } finally {
+    generationCall?.dispose();
   }
 }
 
@@ -219,4 +224,3 @@ function getWebSearchEnvKey(providerId: WebSearchProviderId): string {
   }
 }
 
-export const POST = withGenerationCancel(handlePost);

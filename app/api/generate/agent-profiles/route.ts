@@ -7,11 +7,11 @@
 
 import { NextRequest } from 'next/server';
 import { nanoid } from 'nanoid';
-import { callLLM } from '@/lib/ai/llm';
+import { callLLM, withAgenticOutputDiscipline } from '@/lib/ai/llm';
 import { AGENT_PROFILES_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { withGenerationCancel } from '@/lib/server/generation-cancel';
+import { anyAbortSignal, generationCallFor } from '@/lib/server/generation-cancel';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { AGENT_COLOR_PALETTE } from '@/lib/constants/agent-defaults';
 import { normalizeVoiceDesign } from '@/lib/audio/voice-design';
@@ -129,9 +129,10 @@ function stripCodeFences(text: string): string {
   return cleaned.trim();
 }
 
-async function handlePost(req: NextRequest) {
+export async function POST(req: NextRequest) {
   let stageName: string | undefined;
   let modelString: string | undefined;
+  const generationCall = generationCallFor(req, '/api/generate/agent-profiles');
   try {
     const body = (await req.json()) as RequestBody;
     const {
@@ -265,7 +266,7 @@ Return a JSON object with this exact structure:
       await callLLM(
         {
           model: languageModel,
-          system: systemPrompt,
+          system: withAgenticOutputDiscipline(systemPrompt),
           prompt: userPrompt,
           // 3-5 short profiles fit comfortably; the cap is the same tripwire the
           // server classroom path applies, so a runaway cannot bill the window.
@@ -277,7 +278,7 @@ Return a JSON object with this exact structure:
           // No outer retry loop here; one SDK retry covers a transient 429
           // without making a failure multiply into three generations.
           maxRetries: 1,
-          abortSignal: req.signal,
+          abortSignal: anyAbortSignal(req.signal, generationCall?.signal),
         },
         'agent-profiles',
         undefined,
@@ -380,7 +381,8 @@ Return a JSON object with this exact structure:
       error,
     );
     return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
+  } finally {
+    generationCall?.dispose();
   }
 }
 
-export const POST = withGenerationCancel(handlePost);
