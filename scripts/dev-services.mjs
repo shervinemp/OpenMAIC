@@ -37,12 +37,11 @@
 import { spawn } from 'node:child_process';
 import {
   closeSync,
-  existsSync,
   mkdirSync,
   openSync,
   readFileSync,
   unlinkSync,
-  writeFileSync,
+  writeSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -107,31 +106,59 @@ function readConfig() {
 }
 
 /** Prevent a scheduled-task supervisor and a `pnpm dev` wrapper from both spawning services. */
+const LOCK_PATH = join(tmpdir(), 'openmaic-dev-services', 'supervisor.lock');
+const LOCK_MAX_AGE_MS = 10 * 60_000;
+let lockToken = null;
+
 function acquireLock() {
-  const path = join(tmpdir(), 'openmaic-dev-services', 'supervisor.lock');
-  mkdirSync(dirname(path), { recursive: true });
-  if (existsSync(path)) {
-    const pid = Number(readFileSync(path, 'utf8').trim());
-    if (Number.isInteger(pid) && pid > 0) {
-      try {
-        process.kill(pid, 0);
-        log(`another supervisor is running (pid ${pid}); exiting`);
-        return false;
-      } catch {
-        // stale lock
-      }
+  mkdirSync(dirname(LOCK_PATH), { recursive: true });
+  const token = `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  try {
+    // Atomic create: two concurrent starters cannot both win.
+    const fd = openSync(LOCK_PATH, 'wx');
+    try {
+      writeSync(fd, JSON.stringify({ pid: process.pid, startedAt: Date.now(), token }));
+    } finally {
+      closeSync(fd);
     }
+    lockToken = token;
+    return true;
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
   }
-  writeFileSync(path, String(process.pid));
-  return true;
+
+  let owner = {};
+  try {
+    owner = JSON.parse(readFileSync(LOCK_PATH, 'utf8'));
+  } catch {
+    // Unreadable lock: treat as stale rather than deadlocking forever.
+  }
+  const fresh =
+    Number.isInteger(owner.pid) &&
+    owner.pid > 0 &&
+    Date.now() - Number(owner.startedAt || 0) < LOCK_MAX_AGE_MS;
+  if (fresh) {
+    log(`another supervisor is running (pid ${owner.pid}); exiting`);
+    return false;
+  }
+  try {
+    unlinkSync(LOCK_PATH);
+  } catch {
+    return false;
+  }
+  return acquireLock();
 }
 
 function releaseLock() {
+  if (!lockToken) return;
   try {
-    unlinkSync(join(tmpdir(), 'openmaic-dev-services', 'supervisor.lock'));
+    const current = JSON.parse(readFileSync(LOCK_PATH, 'utf8'));
+    // Never delete a newer owner's lock.
+    if (current.token === lockToken) unlinkSync(LOCK_PATH);
   } catch {
     // already gone
   }
+  lockToken = null;
 }
 
 if (!CHECK_ONLY && !acquireLock()) process.exit(0);

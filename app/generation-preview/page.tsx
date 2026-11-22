@@ -1546,7 +1546,7 @@ function GenerationPreviewContent() {
     setError(null);
     // Use the latest persisted session: steps completed before the pause
     // (research context, outlines, index handle) were written there.
-    const latest = (await loadGenerationSession()) ?? session;
+    const latest = (await loadGenerationSession(session.sessionId)) ?? session;
     startGeneration(latest);
   };
 
@@ -1572,7 +1572,7 @@ function GenerationPreviewContent() {
     // A tab that lost the lease must not delete the session the owning tab is
     // still writing.
     if (envelope?.stageId && ownsLeaseRef.current) {
-      void clearGenerationSession();
+      void clearGenerationSession(session?.sessionId);
     }
     router.push('/');
   };

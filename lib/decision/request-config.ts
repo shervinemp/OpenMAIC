@@ -17,7 +17,7 @@ export const DECISION_HEADERS = {
 } as const;
 
 function modeFromRequest(req: Request): DecisionMode {
-  const raw = req.headers.get(DECISION_HEADERS.mode)?.trim().toLowerCase();
+  const raw = readHeader(req, DECISION_HEADERS.mode)?.trim().toLowerCase();
   return raw === 'replace' ? 'replace' : 'shadow';
 }
 
@@ -27,13 +27,18 @@ function modeFromRequest(req: Request): DecisionMode {
  * The typed endpoint is client-supplied, so it goes through the same SSRF
  * policy as other client-influenced base URLs before the server fetches it.
  */
+/** Partial mock requests in tests may not carry headers. */
+function readHeader(req: Request, name: string): string | undefined {
+  return req.headers?.get?.(name) ?? undefined;
+}
+
 export async function decisionConfigFromRequest(
   req: Request,
   site: DecisionSiteId,
 ): Promise<DecisionSiteConfig | undefined> {
-  if (req.headers.get(DECISION_HEADERS.enabled) !== '1') return undefined;
+  if (readHeader(req, DECISION_HEADERS.enabled) !== '1') return undefined;
 
-  const provider = req.headers.get(DECISION_HEADERS.provider)?.trim().toLowerCase() || 'chat';
+  const provider = readHeader(req,DECISION_HEADERS.provider)?.trim().toLowerCase() || 'chat';
   const common = {
     site,
     mode: modeFromRequest(req),
@@ -44,13 +49,13 @@ export async function decisionConfigFromRequest(
   };
 
   if (provider === 'laya' || provider === 'jev') {
-    const endpoint = req.headers.get(DECISION_HEADERS.endpoint)?.trim();
+    const endpoint = readHeader(req,DECISION_HEADERS.endpoint)?.trim();
     if (!endpoint) return undefined;
     if (await validateClientBaseUrl(endpoint)) return undefined;
     return { ...common, provider, endpoint };
   }
 
-  const model = req.headers.get(DECISION_HEADERS.model)?.trim();
+  const model = readHeader(req,DECISION_HEADERS.model)?.trim();
   if (!model) return undefined;
   // Require an explicit provider:model pair; a bare id would silently default
   // to OpenAI and pick a different model than the user chose in Settings.

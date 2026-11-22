@@ -1337,13 +1337,22 @@ export async function POST(req: NextRequest) {
         disposeStreamGeneration();
       },
       async start(controller) {
+        const safeEnqueue = (chunk: Uint8Array) => {
+          try {
+            controller.enqueue(chunk);
+          } catch {
+            // Client disconnected mid-stream — swallow the write; the pump
+            // stops at its next abort check instead of throwing on enqueue.
+          }
+        };
+
         // Heartbeat: periodically send SSE comments to keep the connection alive.
         let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
         const startHeartbeat = () => {
           stopHeartbeat();
           heartbeatTimer = setInterval(() => {
             try {
-              controller.enqueue(encoder.encode(`:heartbeat\n\n`));
+              safeEnqueue(encoder.encode(`:heartbeat\n\n`));
             } catch {
               stopHeartbeat();
             }
@@ -1430,7 +1439,7 @@ export async function POST(req: NextRequest) {
             maxAttempts: MAX_STREAM_RETRIES + 1,
             fallback: fallback.modelString,
           });
-          controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+          safeEnqueue(encoder.encode(`data: ${retryEvent}\n\n`));
           return true;
         };
 
@@ -1656,7 +1665,7 @@ export async function POST(req: NextRequest) {
                         type: 'languageDirective',
                         data: languageDirective,
                       });
-                      controller.enqueue(encoder.encode(`data: ${ldEvent}\n\n`));
+                      safeEnqueue(encoder.encode(`data: ${ldEvent}\n\n`));
                     }
                   }
 
@@ -1668,7 +1677,7 @@ export async function POST(req: NextRequest) {
                         type: 'courseTitle',
                         data: courseTitle,
                       });
-                      controller.enqueue(encoder.encode(`data: ${ctEvent}\n\n`));
+                      safeEnqueue(encoder.encode(`data: ${ctEvent}\n\n`));
                     }
                   }
 
@@ -1696,7 +1705,7 @@ export async function POST(req: NextRequest) {
                       data: enriched,
                       index: parsedOutlines.length - 1,
                     });
-                    controller.enqueue(encoder.encode(`data: ${event}\n\n`));
+                    safeEnqueue(encoder.encode(`data: ${event}\n\n`));
                   }
                 }
 
@@ -1756,7 +1765,7 @@ export async function POST(req: NextRequest) {
                         maxAttempts: MAX_BLUEPRINT_ATTEMPTS,
                         reason: 'courseContract',
                       });
-                      controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+                      safeEnqueue(encoder.encode(`data: ${retryEvent}\n\n`));
                       continue;
                     }
                     // Exhausted: fall through to the error path (never accept
@@ -1785,7 +1794,7 @@ export async function POST(req: NextRequest) {
                       attempt,
                       maxAttempts: MAX_STREAM_RETRIES + 1,
                     });
-                    controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+                    safeEnqueue(encoder.encode(`data: ${retryEvent}\n\n`));
                     continue;
                   }
 
@@ -1833,7 +1842,7 @@ export async function POST(req: NextRequest) {
                       attempt,
                       maxAttempts: MAX_STREAM_RETRIES + 1,
                     });
-                    controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+                    safeEnqueue(encoder.encode(`data: ${retryEvent}\n\n`));
                   } else if (await maybeFallback(undefined, fullText)) {
                     // Same-model retries exhausted and the response was empty:
                     // retry once on the fallback model (loop is re-entered via
@@ -1864,7 +1873,7 @@ export async function POST(req: NextRequest) {
                     attempt,
                     maxAttempts: MAX_STREAM_RETRIES + 1,
                   });
-                  controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+                  safeEnqueue(encoder.encode(`data: ${retryEvent}\n\n`));
                   continue;
                 }
 
@@ -1923,7 +1932,7 @@ export async function POST(req: NextRequest) {
                 })),
               },
             });
-            controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));
+            safeEnqueue(encoder.encode(`data: ${doneEvent}\n\n`));
 
             // Coverage audit (§16): sections of the source document that no
             // lesson cites are reported, not silently dropped. The client
@@ -1941,7 +1950,7 @@ export async function POST(req: NextRequest) {
                   trimmedTopics: trimmedDigestTopics,
                 },
               });
-              controller.enqueue(encoder.encode(`data: ${coverageEvent}\n\n`));
+              safeEnqueue(encoder.encode(`data: ${coverageEvent}\n\n`));
             }
           } else if (parsedOutlines.length > 0 && !contractFailed) {
             // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
@@ -1954,7 +1963,7 @@ export async function POST(req: NextRequest) {
               courseTitle: courseTitle || undefined,
               taskEngineMode,
             });
-            controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));
+            safeEnqueue(encoder.encode(`data: ${doneEvent}\n\n`));
           } else {
             // All retries exhausted (no outlines, or the contract was never
             // satisfied — never accept a broken deck).
@@ -1969,14 +1978,14 @@ export async function POST(req: NextRequest) {
                   ? 'Generated deck did not meet the course contract'
                   : 'Failed to generate outlines'),
             });
-            controller.enqueue(encoder.encode(`data: ${errorEvent}\n\n`));
+            safeEnqueue(encoder.encode(`data: ${errorEvent}\n\n`));
           }
         } catch (error) {
           const errorEvent = JSON.stringify({
             type: 'error',
             error: error instanceof Error ? error.message : String(error),
           });
-          controller.enqueue(encoder.encode(`data: ${errorEvent}\n\n`));
+          safeEnqueue(encoder.encode(`data: ${errorEvent}\n\n`));
         } finally {
           stopHeartbeat();
           disposeStreamGeneration();

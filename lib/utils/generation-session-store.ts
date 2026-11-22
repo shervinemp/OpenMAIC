@@ -25,6 +25,8 @@ const log = createLogger('GenerationSessionStore');
 
 /** sessionStorage key for the pointer envelope (and, historically, the full payload). */
 const ENVELOPE_KEY = 'generationSession';
+/** Per-session pointer, so concurrent courses cannot overwrite each other's envelope. */
+const sessionEnvelopeKey = (sessionId: string) => `${ENVELOPE_KEY}:${sessionId}`;
 /**
  * Legacy sessionStorage key holding the params handed to the classroom page,
  * written by generation-preview before the session moved into IndexedDB. Read
@@ -46,10 +48,12 @@ export function readGenerationSessionEnvelope(): GenerationSessionEnvelope | nul
   return readEnvelope();
 }
 
-function readEnvelope(): GenerationSessionEnvelope | null {
+function readEnvelope(sessionId?: string): GenerationSessionEnvelope | null {
   if (typeof sessionStorage === 'undefined') return null;
   try {
-    const raw = sessionStorage.getItem(ENVELOPE_KEY);
+    const raw = sessionStorage.getItem(
+      sessionId ? sessionEnvelopeKey(sessionId) : ENVELOPE_KEY,
+    );
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<GenerationSessionEnvelope> | null;
     if (!parsed || typeof parsed.sessionId !== 'string' || !parsed.sessionId) return null;
@@ -76,8 +80,10 @@ export function hasGenerationSessionEnvelope(): boolean {
  * legacy full payload from sessionStorage. Returns null when no session is
  * parked (or it is unreadable, which the caller treats as "no session").
  */
-export async function loadGenerationSession(): Promise<GenerationSessionState | null> {
-  const envelope = readEnvelope();
+export async function loadGenerationSession(
+  sessionId?: string,
+): Promise<GenerationSessionState | null> {
+  const envelope = readEnvelope(sessionId);
   if (!envelope) return null;
 
   try {
@@ -136,6 +142,10 @@ export async function saveGenerationSession(session: GenerationSessionState): Pr
     const envelope: GenerationSessionEnvelope = { sessionId: session.sessionId };
     if (session.stageId) envelope.stageId = session.stageId;
     try {
+      sessionStorage.setItem(sessionEnvelopeKey(session.sessionId), JSON.stringify(envelope));
+      // The legacy pointer tracks the most recent session so the home resume
+      // prompt keeps working; it is never treated as authoritative for a
+      // specific session (loadGenerationSession(id) reads the per-session key).
       sessionStorage.setItem(ENVELOPE_KEY, JSON.stringify(envelope));
     } catch (e) {
       // The envelope is ~100 bytes; a failure here means storage is blocked
@@ -151,9 +161,9 @@ export async function saveGenerationSession(session: GenerationSessionState): Pr
  * Best-effort — used at natural session end (course handed off and consumed,
  * or backed out after persist), where a leftover record is only dead weight.
  */
-export async function clearGenerationSession(): Promise<void> {
-  const envelope = readEnvelope();
-  clearGenerationSessionEnvelope();
+export async function clearGenerationSession(sessionId?: string): Promise<void> {
+  const envelope = readEnvelope(sessionId);
+  clearGenerationSessionEnvelope(sessionId);
   if (!envelope) return;
   try {
     await db.generationSessions.delete(envelope.sessionId);
@@ -167,9 +177,16 @@ export async function clearGenerationSession(): Promise<void> {
  * the session's data must survive the navigation that ends it (the classroom
  * page still reads generationParams from the record after the handoff).
  */
-export function clearGenerationSessionEnvelope(): void {
+export function clearGenerationSessionEnvelope(sessionId?: string): void {
   if (typeof sessionStorage === 'undefined') return;
   try {
+    if (sessionId) {
+      sessionStorage.removeItem(sessionEnvelopeKey(sessionId));
+      // Clear the legacy pointer only when it names this session.
+      const current = readEnvelope();
+      if (current?.sessionId === sessionId) sessionStorage.removeItem(ENVELOPE_KEY);
+      return;
+    }
     sessionStorage.removeItem(ENVELOPE_KEY);
   } catch {
     /* ignore */

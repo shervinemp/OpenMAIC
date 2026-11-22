@@ -514,10 +514,10 @@ export function CourseModelConfigPanel({}) {
   // 与 store 的开启守卫同口径（API Key / 服务端配置 + 授权开关，Token Plan
   // 播种亦走 apiKey）：媒体生成节点开启图像/视频前用于提示，避免「点了没反应」。
   const hasUsableImageProvider = Object.values(imageProvidersConfig ?? {}).some(
-    (c) => (c.isServerConfigured || c.apiKey) && c.enabled !== false,
+    (c) => (c.isServerConfigured || c.apiKey || c.baseUrl) && c.enabled !== false,
   );
   const hasUsableVideoProvider = Object.values(videoProvidersConfig ?? {}).some(
-    (c) => (c.isServerConfigured || c.apiKey) && c.enabled !== false,
+    (c) => (c.isServerConfigured || c.apiKey || c.baseUrl) && c.enabled !== false,
   );
 
   const videoModelName = useMemo(() => {
@@ -1243,9 +1243,12 @@ function Inspector(props: {
             // 组列表 = 已授权且持有凭证的 provider（与联网搜索/文档解析口径一致）。
             const groupIds = Object.keys(slot.registry).filter((pid) => {
               const cfg = slot.config[pid] as
-                | { apiKey?: string; isServerConfigured?: boolean; enabled?: boolean }
+                | { apiKey?: string; isServerConfigured?: boolean; enabled?: boolean; baseUrl?: string }
                 | undefined;
-              return cfg?.enabled !== false && !!(cfg?.apiKey || cfg?.isServerConfigured);
+              return (
+                cfg?.enabled !== false &&
+                !!(cfg?.apiKey || cfg?.isServerConfigured || cfg?.baseUrl)
+              );
             });
             // 当前选择失效（provider 被禁用/删除、或从未设置）时传 null，
             // 让触发器显示占位而不是渲染成一个空白胶囊。

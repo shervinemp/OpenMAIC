@@ -140,10 +140,26 @@ function indexPath(handle: string): string | null {
 }
 
 const memoryStore = new Map<string, StoredDocumentIndex>();
+/** A full index can be megabytes; cap the in-memory layer so a long-lived
+ *  process cannot grow without bound. The file store remains authoritative. */
+const MEMORY_INDEX_LIMIT = 12;
+
+function remember(handle: string, index: StoredDocumentIndex): void {
+  memoryStore.delete(handle);
+  memoryStore.set(handle, index);
+  while (memoryStore.size > MEMORY_INDEX_LIMIT) {
+    const oldest = memoryStore.keys().next();
+    if (oldest.done) break;
+    memoryStore.delete(oldest.value);
+  }
+}
 
 export async function loadDocumentIndex(handle: string): Promise<StoredDocumentIndex | null> {
   const memoryHit = memoryStore.get(handle);
-  if (memoryHit) return memoryHit;
+  if (memoryHit) {
+    remember(handle, memoryHit);
+    return memoryHit;
+  }
 
   const path = indexPath(handle);
   if (!path) return null;
@@ -151,7 +167,7 @@ export async function loadDocumentIndex(handle: string): Promise<StoredDocumentI
     const raw = await readFile(path, 'utf8');
     const parsed = JSON.parse(raw) as StoredDocumentIndex;
     if (parsed.version !== 1 || parsed.handle !== handle) return null;
-    memoryStore.set(handle, parsed);
+    remember(handle, parsed);
     return parsed;
   } catch {
     return null;
@@ -159,7 +175,7 @@ export async function loadDocumentIndex(handle: string): Promise<StoredDocumentI
 }
 
 export async function saveDocumentIndex(index: StoredDocumentIndex): Promise<void> {
-  memoryStore.set(index.handle, index);
+  remember(index.handle, index);
   const path = indexPath(index.handle);
   if (!path) return;
 

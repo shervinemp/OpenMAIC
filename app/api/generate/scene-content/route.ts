@@ -27,6 +27,8 @@ import type {
 } from '@/lib/types/generation';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { createLogger } from '@/lib/logger';
+import { decisionConfigFromRequest } from '@/lib/decision/request-config';
+import { createClaimReviewHook } from '@/lib/decision/sites/claim-check';
 import { anyAbortSignal, generationCallFor } from '@/lib/server/generation-cancel';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
@@ -446,6 +448,9 @@ export async function POST(req: NextRequest) {
     const verifyWidgetClaims =
       effectiveOutline.widgetType === 'simulation' ? createAiWidgetVerifier(aiCall) : undefined;
 
+    const claimConfig = await decisionConfigFromRequest(req, 'claim-check');
+    const reviewClaims = claimConfig ? createClaimReviewHook(claimConfig) : undefined;
+
     const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
       imageMapping: visionImageMapping,
@@ -466,6 +471,7 @@ export async function POST(req: NextRequest) {
       allOutlines,
       ...(verifyQuizAnswers ? { verifyQuizAnswers } : {}),
       ...(verifyWidgetClaims ? { verifyWidgetClaims } : {}),
+      ...(reviewClaims ? { reviewClaims } : {}),
       auditScenes: createAiSceneAuditor(aiCall),
       // The multi-step planner runs when the single-call PBL planner fails
       // on a non-provider error (same wiring as the server generation paths).
