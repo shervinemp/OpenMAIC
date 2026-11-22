@@ -1342,6 +1342,21 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     ],
   },
 
+  /**
+   * OpenCode gateway (desktop o2api bridge or opencode.ai). Models are NOT
+   * pinned here — the server discovers them from /v1/models at runtime and
+   * exposes them through /api/server-providers for the Settings picker.
+   */
+  opencode: {
+    id: 'opencode',
+    name: 'OpenCode',
+    type: 'openai',
+    defaultBaseUrl: 'http://127.0.0.1:8787/v1',
+    requiresApiKey: false,
+    supportsModelDiscovery: true,
+    models: [],
+  },
+
   grok: {
     id: 'grok',
     name: 'Grok',
@@ -2458,6 +2473,30 @@ export function isProviderKeyRequired(providerId: string): boolean {
 }
 
 /**
+ * OpenCode Go (and Zen) reject requests that lack a stable session id and
+ * arrive with a generic SDK user agent. The native `opencode` provider always
+ * gets these headers; a gateway URL pointed at by another OpenAI-compatible
+ * provider gets them too. All other providers keep their existing headers.
+ */
+function usesOpenCodeHeaders(providerId: ProviderId, baseUrl: string | undefined): boolean {
+  if (providerId === 'opencode') return true;
+  if (!baseUrl) return false;
+  return /^https?:\/\/(?:opencode\.ai\/(?:inference\/go|zen)|(?:127\.0\.0\.1|localhost):8787)(?:\/|$)/i.test(
+    baseUrl,
+  );
+}
+
+const OPENCODE_SESSION_ID = process.env.OPENCODE_SESSION_ID || `openmaic-${process.pid}`;
+
+function withOpenCodeHeaders(init: RequestInit | undefined): RequestInit | undefined {
+  if (!init) return init;
+  const headers = new Headers(init.headers);
+  if (!headers.has('x-opencode-session')) headers.set('x-opencode-session', OPENCODE_SESSION_ID);
+  if (!headers.has('user-agent')) headers.set('user-agent', 'openmaic/1.1.2');
+  return { ...init, headers };
+}
+
+/**
  * Get a configured language model instance with its info
  * Accepts individual parameters for flexibility and security
  */
@@ -2654,6 +2693,13 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           // Decoder-enforced JSON is opt-in per decision site. Apply it after
           // the thinking/reasoning body edits so the wire body is final.
           init = withJsonObjectResponseFormat(url, init);
+
+          // OpenCode Go requires a stable x-opencode-session and a client user
+          // agent. Inject last so it survives all earlier body/header edits,
+          // and only for opencode.ai gateways.
+          if (usesOpenCodeHeaders(config.providerId, effectiveBaseUrl)) {
+            init = withOpenCodeHeaders(init) ?? init;
+          }
 
           const response = useStreamingChatCompat
             ? await fetchCustomOpenAIChat(url, init, transportFetch)
