@@ -140,7 +140,8 @@ if (!CHECK_ONLY && !acquireLock()) process.exit(0);
  * Local providers can declare their start script directly in env, keyed by
  * provider name: OPENCODE_START_CMD, COMFYUI_START_CMD, LAYA_START_CMD, ...
  * Optional companions: <NAME>_ARGS (JSON array), <NAME>_HEALTH_URL,
- * <NAME>_CWD, <NAME>_LOG, <NAME>_ENV (JSON object), <NAME>_ENABLED (0/1).
+ * <NAME>_CWD, <NAME>_LOG, <NAME>_ENV (JSON object), <NAME>_ENABLED (0/1),
+ * <NAME>_SERVES (comma-separated provider ids one server backs).
  * This keeps a provider's runtime next to its other env configuration.
  */
 function servicesFromProviderEnv() {
@@ -171,6 +172,9 @@ function servicesFromProviderEnv() {
       cwd: get('CWD'),
       log: get('LOG'),
       env: parseJson(get('ENV'), {}, 'ENV'),
+      serves: get('SERVES')
+        ? get('SERVES').split(',').map((id) => id.trim()).filter(Boolean)
+        : [],
       enabled: get('ENABLED') !== '0' && get('ENABLED') !== 'false',
     });
   }
@@ -321,7 +325,10 @@ if (CHECK_ONLY) {
       const name = service.name || service.command;
       const enabled = service.enabled !== false;
       const healthy = service.health ? await isHealthy(service.health) : false;
-      log(`${name}: ${healthy ? 'UP' : 'DOWN'} (enabled=${enabled})`);
+      const serves = Array.isArray(service.serves) && service.serves.length
+        ? ` serves=${service.serves.join(',')}`
+        : '';
+      log(`${name}: ${healthy ? 'UP' : 'DOWN'} (enabled=${enabled}${serves})`);
     }
   }
   // Let in-flight fetch handles drain; a forced process.exit() can trip a libuv
