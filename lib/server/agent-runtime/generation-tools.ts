@@ -472,12 +472,15 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           true,
         );
       }
-      const actions = filterKnownActions(
-        await actionGenerator(outline, content, aiCallFor('scene-actions'), {
-          agents,
-          languageDirective: doc.stage.languageDirective ?? '',
-        }),
+      const generatedActions = await actionGenerator(
+        outline,
+        content,
+        aiCallFor('scene-actions'),
+        { agents, languageDirective: doc.stage.languageDirective ?? '' },
       );
+      // A malformed action-generator result must not crash the tool; an empty
+      // action list is the fail-open outcome, same as elsewhere in this path.
+      const actions = filterKnownActions(Array.isArray(generatedActions) ? generatedActions : []);
       const built = buildCompleteScene(outline, content, actions, params.stageId, {
         sceneId: existing?.id ?? sceneIdFor(doc.scenes, params.order),
       });

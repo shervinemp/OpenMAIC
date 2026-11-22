@@ -195,7 +195,6 @@ describe('generation and deck tools', () => {
   it.each([
     ['slide', 'SLIDE_RAW_SENTINEL', undefined],
     ['quiz', 'QUIZ_RAW_SENTINEL', undefined],
-    ['interactive', 'INTERACTIVE_RAW_SENTINEL', { widgetType: 'diagram' }],
   ] as const)(
     'preserves malformed %s generation failures without writing raw model output',
     async (type, rawResponse, interactive) => {
@@ -270,6 +269,40 @@ describe('generation and deck tools', () => {
       }
     },
   );
+
+  it('degrades malformed interactive output to a static widget without leaking raw model text', async () => {
+    const existing = slide('existing', 1, 'Existing');
+    const current = state(document([existing]));
+    const generateActions = vi.fn().mockResolvedValue([]);
+    const generate = find(
+      buildGenerationTools(
+        deps(current.store, {
+          generateActions,
+          aiCall: vi.fn(async () => 'INTERACTIVE_RAW_SENTINEL'),
+        }),
+      ),
+      'generate_scene',
+    );
+
+    const response = await generate.execute('call', {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Replacement',
+      type: 'interactive',
+      widgetType: 'diagram',
+      brief: 'A replacement page',
+    } as never);
+
+    // Interactive widget generation intentionally fails open to a static
+    // diagram; the raw model output must never reach the tool result.
+    expect(JSON.stringify(response)).not.toContain('INTERACTIVE_RAW_SENTINEL');
+    const putSceneCalls = (
+      current.store.putScene as unknown as { mock: { calls: unknown[][] } }
+    ).mock.calls;
+    const stored = putSceneCalls[0]?.[0] as Scene | undefined;
+    expect(stored).toBeDefined();
+    expect(JSON.stringify(stored)).not.toContain('INTERACTIVE_RAW_SENTINEL');
+  });
 
   it('refuses destructive PBL type changes and unresolved generation media', async () => {
     const pbl = slide('project', 1, 'Project') as Scene;

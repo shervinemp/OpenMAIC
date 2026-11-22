@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { downloadToBuffer, DOWNLOAD_MAX_SIZE } from '@/lib/server/classroom-media-generation';
 import * as providerFetchModule from '@/lib/server/provider-fetch';
+import * as ssrfGuardModule from '@/lib/server/ssrf-guard';
 
 describe('classroom media download transport', () => {
   describe('data: URLs', () => {
@@ -69,6 +70,18 @@ describe('classroom media download transport', () => {
   });
 
   describe('transport policy and streaming bounds', () => {
+    // These tests exercise the byte/redirect handling *after* URL validation;
+    // example.com has no DNS in CI, so stub only that hostname's guard result.
+    let ssrfSpy: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      ssrfSpy = vi
+        .spyOn(ssrfGuardModule, 'validateUrlForSSRFWithPolicy')
+        .mockImplementation(async (url: string) =>
+          url === 'https://example.com/image.png' ? null : 'Unable to verify hostname safety',
+        );
+    });
+    afterEach(() => ssrfSpy.mockRestore());
+
     it('passes strict options (allowLocalNetworks: false, requireHttps: true) to providerFetch', async () => {
       const fetchSpy = vi
         .spyOn(providerFetchModule, 'providerFetch')
