@@ -48,6 +48,14 @@ describe('browser generation cancellation', () => {
     expect(activeGenerationCallCountFor('session-d')).toBe(0);
   });
 
+  it('aborts a request that registers after its session was cancelled', async () => {
+    expect(cancelGeneration('session-late')).toBe(0);
+    const late = registerGenerationCall('session-late', '/api/generate/scene-content');
+    expect(late.signal.aborted).toBe(true);
+    expect(activeGenerationCallCountFor('session-late')).toBe(0);
+    late.dispose();
+  });
+
   it('combines the client disconnect signal with the session cancel signal', async () => {
     const client = new AbortController();
     const session = registerGenerationCall('session-c', '/api/generate/scene-outlines-stream');

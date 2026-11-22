@@ -129,6 +129,7 @@ function GenerationPreviewContent() {
   const hasStartedRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const sessionIdRef = useRef<string | undefined>(undefined);
+  const leavingRef = useRef(false);
   const outlineReviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const outlineReviewResolveRef = useRef<((outlines: SceneOutline[]) => void) | null>(null);
   // Sticky flag: true once the user signals review intent (either by clicking the
@@ -1439,6 +1440,8 @@ function GenerationPreviewContent() {
   };
 
   const goBackToHome = async () => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
     // Fail closed on acknowledgement: don't silently leave while the server may
     // still be billing. Warn loudly, but never trap the user on this page.
     const cancelled = await cancelServerGeneration();

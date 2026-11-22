@@ -18,9 +18,20 @@ export interface RegisteredGenerationCall {
 }
 
 const activeBySession = new Map<string, Set<AbortController>>();
+/** Sessions cancelled recently, so a request that registers late is still stopped. */
+const cancelledSessions = new Map<string, number>();
+const CANCELLED_TTL_MS = 10 * 60_000;
+
+function pruneCancelled(): void {
+  const now = Date.now();
+  for (const [id, at] of cancelledSessions) {
+    if (now - at > CANCELLED_TTL_MS) cancelledSessions.delete(id);
+  }
+}
 
 export function generationSessionIdFrom(req: Request): string | undefined {
-  const value = req.headers.get('x-generation-session')?.trim();
+  // Some tests (and non-HTTP callers) pass a partial request without headers.
+  const value = req.headers?.get?.('x-generation-session')?.trim();
   return value || undefined;
 }
 
@@ -29,7 +40,12 @@ export function registerGenerationCall(
   sessionId: string,
   _label: string,
 ): RegisteredGenerationCall {
+  pruneCancelled();
   const controller = new AbortController();
+  if (cancelledSessions.has(sessionId)) {
+    controller.abort(new DOMException('Generation cancelled by user', 'AbortError'));
+    return { signal: controller.signal, dispose: () => undefined };
+  }
   let calls = activeBySession.get(sessionId);
   if (!calls) {
     calls = new Set();
@@ -70,6 +86,8 @@ export function generationCallFor(req: Request, label: string): RegisteredGenera
 
 /** Abort every in-flight call for one session. Returns how many were stopped. */
 export function cancelGeneration(sessionId: string): number {
+  pruneCancelled();
+  cancelledSessions.set(sessionId, Date.now());
   const calls = activeBySession.get(sessionId);
   if (!calls) return 0;
   let stopped = 0;
