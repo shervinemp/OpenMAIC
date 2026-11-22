@@ -82,7 +82,7 @@ import type {
 } from './outline-types.js';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator.js';
 import { isSlideLikeOutline } from './outline-type.js';
-import { postProcessInteractiveHtml } from './interactive-post-processor.js';
+import { extractHtmlDocument, postProcessInteractiveHtml } from './interactive-post-processor.js';
 import { findInteractiveScriptSyntaxFailure } from './interactive-script-validator.js';
 import { collectLearnerText, detectLanguageDrift } from './language-drift.js';
 import { attachQuizRemediation } from './quiz-remediation.js';
@@ -101,6 +101,7 @@ import {
   type WidgetVerificationIssue,
   type WidgetVerifier,
 } from './widget-verification.js';
+import { buildStaticWidgetFallback } from './widget-fallback.js';
 import {
   projectSceneContent,
   summarizeSceneAuditIssues,
@@ -1281,6 +1282,13 @@ async function generateSlideContent(
     const depthReport = validateSlideDepth(outline, processedElements, {
       retrievalContext,
       depthLevel,
+      ...(typeof (generatedData as unknown as { viewportSize?: unknown }).viewportSize === 'number'
+        ? { viewportSize: (generatedData as unknown as { viewportSize: number }).viewportSize }
+        : {}),
+      ...(typeof (generatedData as unknown as { viewportRatio?: unknown }).viewportRatio ===
+      'number'
+        ? { viewportRatio: (generatedData as unknown as { viewportRatio: number }).viewportRatio }
+        : {}),
     });
     if (depthReport.adequate) {
       if (attempt > 1) {
@@ -2733,32 +2741,10 @@ function extractHtml(
   response: string,
   log: GenerationLogger = noopGenerationLogger,
 ): string | null {
-  // Strategy 1: Find complete HTML document
-  const doctypeStart = response.indexOf('<!DOCTYPE html>');
-  const htmlTagStart = response.indexOf('<html');
-  const start = doctypeStart !== -1 ? doctypeStart : htmlTagStart;
-
-  if (start !== -1) {
-    const htmlEnd = response.lastIndexOf('</html>');
-    if (htmlEnd !== -1) {
-      return response.substring(start, htmlEnd + 7);
-    }
-  }
-
-  // Strategy 2: Extract from code block
-  const codeBlockMatch = response.match(/```(?:html)?\s*([\s\S]*?)```/);
-  if (codeBlockMatch) {
-    const content = codeBlockMatch[1].trim();
-    if (content.includes('<html') || content.includes('<!DOCTYPE')) {
-      return content;
-    }
-  }
-
-  // Strategy 3: If response itself looks like HTML
-  const trimmed = response.trim();
-  if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html')) {
-    return trimmed;
-  }
+  // The extractor trims leading prose and tolerates case/attribute variants,
+  // so a chatty reply ("I'll create a complete…") is not a failed generation.
+  const document = extractHtmlDocument(response);
+  if (document) return document;
 
   log.error('Could not extract HTML from response');
   log.error('Response preview:', response.substring(0, 200));
@@ -2930,6 +2916,15 @@ export async function generateWidgetContent(
     log.error(
       `Widget claim verification findings kept for "${outline.title}" after ${maxAttempts} attempt(s); keeping the cleanest widget: ${findings.join('; ')}`,
     );
+    // A widget that cannot run is not "the cleanest artifact" — degrade to a
+    // static reference card instead of shipping dead controls or a probe error.
+    const broken = new Set(['script-error', 'inert-preset']);
+    if (best.issues.some((issue) => broken.has(issue.code))) {
+      log.warn(
+        `Degrading "${outline.title}" to a static diagram: interactive controls did not survive verification`,
+      );
+      return buildStaticWidgetFallback(outline, best.widgetConfig);
+    }
     return {
       html: postProcessInteractiveHtml(best.html),
       widgetType,
@@ -3029,7 +3024,11 @@ export async function generateWidgetContent(
       // Attempts exhausted: fall through to the best-artifact return.
     }
 
-    if (attempt < maxAttempts) {
+    // Only re-prompt for a PARSE miss. A parsed document whose verification
+    // findings exhausted their budget must fall through to finishWithBest —
+    // otherwise it burns another model call on a format complaint it does not
+    // have.
+    if (!html && attempt < maxAttempts) {
       parseFeedback =
         'Your previous reply could not be parsed as an HTML document. Reply with ONLY the complete HTML document — start with <!DOCTYPE html>, output no markdown fences, no commentary before or after.';
       continue;
@@ -3040,8 +3039,10 @@ export async function generateWidgetContent(
   if (fallback) return fallback;
 
   log.error(`Failed to extract HTML from ${widgetType} response for: ${outline.title}`);
-  options.onFailure?.({ code: 'invalid-model-output' });
-  return null;
+  // Fail open with a static reference rather than dropping the scene. The
+  // outline itself is enough to produce a useful, script-free diagram.
+  log.warn(`Degrading "${outline.title}" to a static diagram: no usable HTML was generated`);
+  return buildStaticWidgetFallback(outline, undefined);
 }
 
 /**

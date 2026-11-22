@@ -27,8 +27,10 @@ describe('claim-check decision site', () => {
     expect(request.state).toContain('Liquid fresh water is under 1%');
     expect(request.state).toContain('Liquid fresh water is 1%.');
     expect(request.questions).toHaveLength(1);
-    expect(request.questions[0].kind).toBe('choice');
-    expect(request.questions[0].options.map((option) => option.value)).toEqual(['yes', 'no']);
+    const question = request.questions[0];
+    expect(question.kind).toBe('choice');
+    if (question.kind !== 'choice') throw new Error('expected a choice question');
+    expect(question.options.map((option) => option.value)).toEqual(['yes', 'no']);
   });
 
   it('does not leak authoring ids or media references into the typed state', () => {

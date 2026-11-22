@@ -248,21 +248,46 @@ export function resolveThinkingProviderOptions(
  *
  * Priority: caller's providerOptions > ThinkingConfig
  */
+/**
+ * Some gateways (e.g. a local bridge to a coding agent) run an agent turn
+ * rather than a plain chat completion: the model can call tools and write
+ * files, and tends to prepend commentary to an artifact. Opt in with
+ * `OPENMAIC_AGENTIC_GATEWAY=1` to state the output contract on every call.
+ */
+const AGENTIC_OUTPUT_DIRECTIVE = [
+  'Output discipline: return ONLY the requested artifact in the exact requested format.',
+  'Do not call tools. Do not create or edit files. Do not add commentary before or after the artifact.',
+].join(' ');
+
+export function withAgenticOutputDiscipline<T extends GenerateTextParams | StreamTextParams>(
+  params: T,
+): T {
+  const flag = process.env.OPENMAIC_AGENTIC_GATEWAY?.trim().toLowerCase();
+  if (flag !== '1' && flag !== 'true' && flag !== 'yes') return params;
+  const system = (params as { system?: unknown }).system;
+  const base = typeof system === 'string' ? system.trim() : '';
+  return {
+    ...params,
+    system: base ? `${base}\n\n${AGENTIC_OUTPUT_DIRECTIVE}` : AGENTIC_OUTPUT_DIRECTIVE,
+  };
+}
+
 function injectProviderOptions<T extends GenerateTextParams | StreamTextParams>(
   params: T,
   thinking?: ThinkingConfig,
 ): T {
-  if ((params as Record<string, unknown>).providerOptions) return params; // caller explicitly set providerOptions
+  const disciplined = withAgenticOutputDiscipline(params);
+  if ((disciplined as Record<string, unknown>).providerOptions) return disciplined; // caller explicitly set providerOptions
 
-  const modelId = getModelId(params);
-  const providerId = getModelProviderId(params);
+  const modelId = getModelId(disciplined);
+  const providerId = getModelProviderId(disciplined);
 
   if (thinking) {
     const opts = buildThinkingProviderOptions(providerId, modelId, thinking);
-    if (opts) return { ...params, providerOptions: opts };
+    if (opts) return { ...disciplined, providerOptions: opts };
   }
 
-  return params;
+  return disciplined;
 }
 
 /**

@@ -42,7 +42,7 @@ export {
   renderTradeoffsToElements,
 } from './specialized-scene-render.js';
 export { parseActionsFromStructuredOutput } from './action-parser.js';
-export { postProcessInteractiveHtml } from './interactive-post-processor.js';
+export { extractHtmlDocument, postProcessInteractiveHtml } from './interactive-post-processor.js';
 export {
   buildSceneAuditPrompt,
   createAiSceneAuditor,

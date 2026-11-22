@@ -138,6 +138,14 @@ to guess at a number or a verdict:
   decides.
 - **Charts describe data, not conclusions.** A chart keyPoint states the series
   and values it will show. It does not assert what those values prove.
+- **Distinct worked examples.** Two scenes may not teach the same example or
+  re-derive the same relation in other words. Give each \`exercise\`, \`derivation\`,
+  or \`dataReading\` outline its own context, dataset, or boundary case. A second
+  scene that covers the same ground must add a genuinely new case, not a new
+  title.
+- **Traceable further reading.** A \`reading\` outline may name a source only if
+  its keyPoint also carries a URL or an exact, checkable locator (book, section,
+  edition). Otherwise label it as suggested reading rather than a reference.
 
 A keyPoint that cannot be checked against the scene it produces is a defect,
 not pedagogical richness.
@@ -728,6 +736,14 @@ to guess at a number or a verdict:
   decides.
 - **Charts describe data, not conclusions.** A chart keyPoint states the series
   and values it will show. It does not assert what those values prove.
+- **Distinct worked examples.** Two scenes may not teach the same example or
+  re-derive the same relation in other words. Give each \`exercise\`, \`derivation\`,
+  or \`dataReading\` outline its own context, dataset, or boundary case. A second
+  scene that covers the same ground must add a genuinely new case, not a new
+  title.
+- **Traceable further reading.** A \`reading\` outline may name a source only if
+  its keyPoint also carries a URL or an exact, checkable locator (book, section,
+  edition). Otherwise label it as suggested reading rather than a reference.
 
 A keyPoint that cannot be checked against the scene it produces is a defect,
 not pedagogical richness.
@@ -1397,6 +1413,14 @@ to guess at a number or a verdict:
   decides.
 - **Charts describe data, not conclusions.** A chart keyPoint states the series
   and values it will show. It does not assert what those values prove.
+- **Distinct worked examples.** Two scenes may not teach the same example or
+  re-derive the same relation in other words. Give each \`exercise\`, \`derivation\`,
+  or \`dataReading\` outline its own context, dataset, or boundary case. A second
+  scene that covers the same ground must add a genuinely new case, not a new
+  title.
+- **Traceable further reading.** A \`reading\` outline may name a source only if
+  its keyPoint also carries a URL or an exact, checkable locator (book, section,
+  edition). Otherwise label it as suggested reading rather than a reference.
 
 A keyPoint that cannot be checked against the scene it produces is a defect,
 not pedagogical richness.
@@ -2028,6 +2052,14 @@ to guess at a number or a verdict:
   decides.
 - **Charts describe data, not conclusions.** A chart keyPoint states the series
   and values it will show. It does not assert what those values prove.
+- **Distinct worked examples.** Two scenes may not teach the same example or
+  re-derive the same relation in other words. Give each \`exercise\`, \`derivation\`,
+  or \`dataReading\` outline its own context, dataset, or boundary case. A second
+  scene that covers the same ground must add a genuinely new case, not a new
+  title.
+- **Traceable further reading.** A \`reading\` outline may name a source only if
+  its keyPoint also carries a URL or an exact, checkable locator (book, section,
+  edition). Otherwise label it as suggested reading rather than a reference.
 
 A keyPoint that cannot be checked against the scene it produces is a defect,
 not pedagogical richness.

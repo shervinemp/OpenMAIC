@@ -25,6 +25,7 @@ import {
   type ParsedOutlineResponse,
 } from './blueprint.js';
 import { parseJsonResponse } from './json-repair.js';
+import { findRedundantOutlinePairs, summarizeRedundantOutlines } from './outline-diversity.js';
 import { noopGenerationLogger, type GenerationLogger } from './logger.js';
 import {
   formatImageDescription,
@@ -304,6 +305,22 @@ export async function generateSceneOutlinesFromRequirements(
       lastReport = report;
 
       if (report.valid) {
+        // Cross-scene duplication is a quality signal, not a contract error.
+        // Spend ONE outline re-prompt to differentiate the scenes (cheap at
+        // this stage) and accept them unchanged on the final attempt.
+        const redundant = findRedundantOutlinePairs(result);
+        if (redundant.length > 0 && attempt < MAX_BLUEPRINT_ATTEMPTS) {
+          feedback = summarizeRedundantOutlines(redundant);
+          logger.warn(
+            `Outline redundancy found (attempt ${attempt}/${MAX_BLUEPRINT_ATTEMPTS}): ${redundant.length} overlapping pair(s); re-prompting to differentiate`,
+          );
+          continue;
+        }
+        if (redundant.length > 0) {
+          logger.warn(
+            `Outline redundancy kept after ${MAX_BLUEPRINT_ATTEMPTS} attempt(s): ${redundant.length} overlapping pair(s)`,
+          );
+        }
         return {
           success: true,
           data: {

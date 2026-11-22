@@ -83,6 +83,9 @@ export interface SlideDepthOptions {
    * the citation minimum; 'intro' keeps today's behavior.
    */
   depthLevel?: CourseDepthLevel;
+  /** Canvas geometry used by the fit check (renderer defaults). */
+  viewportSize?: number;
+  viewportRatio?: number;
 }
 
 /** Citation ground-truth checks shared by slide and quiz validation. */
@@ -456,10 +459,15 @@ function wordCount(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
 }
 
+/** Leading list markers are formatting, not caption text. */
+function stripListMarker(text: string): string {
+  return text.replace(/^\s*(?:\d+[.)、])\s+|^\s*[-–—•*▪◦]\s+/, '').trim();
+}
+
 // Common verb stems (present/past/3rd-person). A phrase containing one of
 // these reads as a claim, not a label.
 const VERB_RE =
-  /\b(is|are|was|were|be|been|being|am|have|has|had|do|does|did|will|would|can|could|should|may|might|must|use|uses|using|used|make|makes|making|create|creates|creating|provide|provides|providing|allow|allows|enable|enables|show|shows|showing|represent|represents|convert|converts|transform|transforms|contain|contains|hold|holds|store|stores|define|defines|describe|describes|explain|explains|declare|declares|become|becomes|produce|produces|run|runs|return|returns|support|supports|include|includes|process|processes|move|moves|change|changes|require|requires|need|needs|take|takes|give|gives|learn|learns|teach|teaches)\b/i;
+  /\b(is|are|was|were|be|been|being|am|have|has|had|do|does|did|will|would|can|could|should|may|might|must|use|uses|using|used|make|makes|making|create|creates|creating|provide|provides|providing|allow|allows|enable|enables|show|shows|showing|represent|represents|convert|converts|transform|transforms|contain|contains|hold|holds|store|stores|define|defines|describe|describes|explain|explains|declare|declares|become|becomes|produce|produces|run|runs|return|returns|support|supports|include|includes|process|processes|move|moves|change|changes|require|requires|need|needs|take|takes|give|gives|learn|learns|teach|teaches|increase|increases|increased|decrease|decreases|raise|raises|lower|lowers|speed|speeds|slow|slows|absorb|absorbs|absorbed|release|releases|released|escape|escapes|escaped|evaporate|evaporates|condense|condenses|cool|cools|warm|warms|melt|melts|freeze|freezes|dissolve|dissolves|form|forms|carry|carries|leave|leaves|add|adds|count|counts|compare|compares|measure|measures|multiply|multiplies|divide|divides|cancel|cancels|scale|scales|dry|dries|heat|heats|heated|turn|turns|turning|stay|stays|remain|remains)\b/i;
 
 const EXAMPLE_RE =
   /\b(example|examples|e\.g\.|for instance|e\.g|案例|举例|例如|例子|示例|比如|比如说|定义| comprised of| defined as| referring to| refers to)\b/i;
@@ -472,7 +480,7 @@ const EXAMPLE_RE =
  * concrete facts.
  */
 const CONCRETE_NUMBER_RE =
-  /\b\d[\d_,.]*\s*(%|MB|GB|TB|KB|kB|ms|sec|seconds|minutes|GB\/s|MB\/s|x[0-9]*|个|条|万|亿)/i;
+  /\b\d[\d_,.]*\s*(?:°\s?[CFK]|℃|℉|%|‰|MB|GB|TB|KB|kB|ms|sec|secs|second|seconds|min|minute|minutes|hour|hours|day|days|kg|g|mg|µg|J|kJ|MJ|W|kW|mW|m²|m³|cm²|mm²|m|cm|mm|µm|km|L|ml|mL|m\/s|km\/h|GB\/s|MB\/s|times|x[0-9]*|fold|倍|个|条|万|亿)/i;
 
 const CODE_ELEMENT_TYPES = new Set(['code', 'latex']);
 
@@ -484,9 +492,10 @@ const INTRO_SUMMARY_RE =
  * not a claim ("Bronze tables", "Raw files").
  */
 export function isCaptionText(text: string): boolean {
-  const words = wordCount(text);
+  const plain = stripListMarker(text);
+  const words = wordCount(plain);
   if (words === 0 || words > 6) return false;
-  return !VERB_RE.test(text);
+  return !VERB_RE.test(plain);
 }
 
 /**
@@ -494,8 +503,9 @@ export function isCaptionText(text: string): boolean {
  * non-whitespace) or a verb-carrying phrase of ≥ 5 words.
  */
 export function isSubstantiveText(text: string): boolean {
-  if (text.replace(/\s+/g, '').length >= 40) return true;
-  return wordCount(text) >= 5 && VERB_RE.test(text);
+  const plain = stripListMarker(text);
+  if (plain.replace(/\s+/g, '').length >= 40) return true;
+  return wordCount(plain) >= 5 && VERB_RE.test(plain);
 }
 
 /**
@@ -542,6 +552,47 @@ export function extractSlideTexts(elements: PPTElement[]): {
   return { texts, codeBodies };
 }
 
+/** Renderer defaults; a slide outside these bounds is clipped in the player. */
+export const SLIDE_VIEWPORT_SIZE = 1000;
+export const SLIDE_VIEWPORT_RATIO = 0.5625;
+
+/**
+ * Deterministic layout fit check. The depth contract used to reward adding
+ * text without ever checking that it fits: a worked-problem scene could end
+ * 2.4x below the canvas and still be called "adequate".
+ */
+export function findCanvasOverflows(
+  elements: readonly PPTElement[],
+  viewportSize = SLIDE_VIEWPORT_SIZE,
+  viewportRatio = SLIDE_VIEWPORT_RATIO,
+): string[] {
+  const width = viewportSize > 0 ? viewportSize : SLIDE_VIEWPORT_SIZE;
+  const height = width * (viewportRatio > 0 ? viewportRatio : SLIDE_VIEWPORT_RATIO);
+  let maxBottom = 0;
+  let maxRight = 0;
+  for (const el of elements) {
+    const e = el as { top?: unknown; left?: unknown; width?: unknown; height?: unknown };
+    const top = typeof e.top === 'number' ? e.top : 0;
+    const left = typeof e.left === 'number' ? e.left : 0;
+    const h = typeof e.height === 'number' ? e.height : 0;
+    const w = typeof e.width === 'number' ? e.width : 0;
+    maxBottom = Math.max(maxBottom, top + h);
+    maxRight = Math.max(maxRight, left + w);
+  }
+  const findings: string[] = [];
+  if (maxBottom > height + 1) {
+    findings.push(
+      `content extends to y=${Math.round(maxBottom)} but the canvas is only ${Math.round(height)}px tall — split this scene into more slides or shorten its text`,
+    );
+  }
+  if (maxRight > width + 1) {
+    findings.push(
+      `content extends to x=${Math.round(maxRight)} beyond the ${Math.round(width)}px canvas width — reduce element widths`,
+    );
+  }
+  return findings;
+}
+
 /** Profile-scaled floor read (OPENMAIC_GENERATION_PROFILE — the overall cost/quality knob). */
 function scaledCourseFloor(depthLevel: CourseDepthLevel): CourseDepthFloor {
   const floor = COURSE_DEPTH_FLOORS[depthLevel];
@@ -582,6 +633,7 @@ export function validateSlideDepth(
   const minSubstantive = options.minSubstantive ?? floor.minSubstantive;
   const requireExample = options.requireExample ?? true;
   const retrievalContext = options.retrievalContext;
+  const layoutFindings = findCanvasOverflows(elements, options.viewportSize, options.viewportRatio);
 
   const { texts, codeBodies } = extractSlideTexts(elements);
   const total = texts.length;
@@ -629,6 +681,11 @@ export function validateSlideDepth(
   if (retrievalContext) {
     findings.push(...citationFindings(texts.join('\n'), retrievalContext, floor.minCitations));
   }
+
+  // Layout is part of the contract: substantive but off-canvas content is
+  // broken content. It is a mechanical finding, so the corrective loop spends
+  // its full budget on it (unlike merely semantic disagreements).
+  findings.push(...layoutFindings);
 
   return {
     adequate: findings.length === 0,

@@ -21,7 +21,6 @@ describe('scene content model-output failures', () => {
   it.each([
     ['slide', slideOutline, JSON.stringify({ background: { type: 'solid', color: '#fff' } })],
     ['quiz', quizOutline, JSON.stringify({ question: 'not an array' })],
-    ['interactive', widgetOutline, 'INTERACTIVE_RAW_SENTINEL'],
   ] as const)(
     'reports invalid-model-output before returning null for malformed %s content',
     async (_type, makeOutline, response) => {
@@ -39,6 +38,20 @@ describe('scene content model-output failures', () => {
       expect(aiCall).toHaveBeenCalledTimes(CONTENT_ATTEMPTS);
     },
   );
+
+  it('degrades an unparseable interactive to a static diagram instead of dropping the scene', async () => {
+    const aiCall: AICallFn = vi.fn(async () => 'INTERACTIVE_RAW_SENTINEL');
+    const failures: SceneContentFailure[] = [];
+
+    const content = await generateSceneContent(widgetOutline(), aiCall, {
+      onFailure: (failure) => failures.push(failure),
+    });
+
+    expect(content).not.toBeNull();
+    expect((content as { widgetType?: string }).widgetType).toBe('diagram');
+    expect((content as { html?: string }).html).toContain('static diagram');
+    expect(failures).toEqual([]);
+  });
 
   it('rejects interactive HTML whose classic inline JavaScript cannot parse', async () => {
     const errors: string[] = [];

@@ -14,6 +14,7 @@ Return a JSON object with an `items` array:
     {
       "title": "A concrete, real reading item (book / paper / standard / lecture notes)",
       "source": "Optional: author or venue",
+      "url": "Optional: a real HTTPS link to the item; omit when you cannot verify one",
       "whyRead": "What the learner gains from this item and how it extends this scene",
       "citation": "Optional [source p.N] marker when the item comes from the provided source material"
     }
@@ -25,5 +26,6 @@ Return a JSON object with an `items` array:
 
 - Every item MUST have a `title` and a `whyRead` annotation (one complete sentence on what it adds).
 - Prefer classic, real, findable works over invented ones. If the retrieved source material is provided, anchor items in it and carry its `[source p.N]` marker in `citation`.
+- **Traceability:** include a `url` whenever you can give a real link. If you cannot verify a link or exact locator, prefix the `title` with `Suggested reading:` and do not present it as a retrieved reference. A named source without a link or locator is not acceptable.
 - `whyRead` must be specific to THIS scene's content — never generic ("good book").
 - Order items from most accessible to most advanced.

@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { postProcessInteractiveHtml } from '../src/interactive-post-processor.js';
+import {
+  extractHtmlDocument,
+  postProcessInteractiveHtml,
+} from '../src/interactive-post-processor.js';
+
+describe('HTML document extraction', () => {
+  it('trims commentary before a lowercase doctype', () => {
+    const response =
+      "I'll create a complete simulation for you.\n<!doctype html><html><body>Hi</body></html>";
+    expect(extractHtmlDocument(response)).toBe('<!doctype html><html><body>Hi</body></html>');
+  });
+
+  it('handles attributes on the html tag and trailing prose', () => {
+    const response = 'Sure!\n<html lang="en"><body>Hello</body></html>\nHope that helps.';
+    expect(extractHtmlDocument(response)).toBe('<html lang="en"><body>Hello</body></html>');
+  });
+
+  it('prefers a fenced block and returns null when there is no document', () => {
+    const response = 'Text\n```html\n<html><body>Fenced</body></html>\n```\nMore text';
+    expect(extractHtmlDocument(response)).toContain('Fenced');
+    expect(extractHtmlDocument('just prose')).toBeNull();
+  });
+});
 
 describe('interactive HTML post-processing', () => {
   it('preserves a truncated script through EOF before KaTeX injection', () => {

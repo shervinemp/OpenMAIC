@@ -10,6 +10,35 @@
  */
 
 /**
+ * Extract a complete HTML document from a model response.
+ *
+ * Models frequently prepend commentary ("I'll create a complete…") even when
+ * asked for the document alone. Trimming to the first doctype/<html tag makes
+ * that recoverable deterministically instead of burning a corrective pass on
+ * an output-format complaint.
+ */
+export function extractHtmlDocument(response: string): string | null {
+  if (typeof response !== 'string' || !response.trim()) return null;
+
+  const fenced = /(?:^|\n)\s*```(?:html)?\s*([\s\S]*?)```/i.exec(response)?.[1];
+  const candidates = [fenced, response].filter((value): value is string => !!value?.trim());
+
+  for (const candidate of candidates) {
+    const start = /(?:<!doctype\b[^>]*>|<html\b)/i.exec(candidate);
+    if (!start) continue;
+    const closingTags = [...candidate.matchAll(/<\/html\s*>/gi)];
+    const lastClosing = closingTags[closingTags.length - 1];
+    if (lastClosing && lastClosing.index > start.index) {
+      return candidate.slice(start.index, lastClosing.index + lastClosing[0].length).trim();
+    }
+    // A truncated document is still more useful than no artifact: let the
+    // downstream validator report the missing close tag.
+    if (candidate.length - start.index > 200) return candidate.slice(start.index).trim();
+  }
+  return null;
+}
+
+/**
  * Main entry point: post-process generated interactive HTML
  * Converts LaTeX delimiters and injects KaTeX rendering resources.
  */
