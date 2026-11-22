@@ -1228,6 +1228,7 @@
     "unsupportedCourseMaterial": "This format isn't supported by the current extractor. Switch the extractor or pick a different file."
   },
   "generation": {
+    "draftingScenes": "Drafting — {{count}} scenes ready",
     "pdfLoadFailed": "Failed to load PDF file, please try again",
     "pdfParseFailed": "PDF parsing failed",
     "analyzingCourseMaterial": "Analyzing documents",

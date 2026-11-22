@@ -353,6 +353,14 @@ function StreamingOutlineVisualizer({
         aria-hidden
       />
 
+      {/* Live count: the first four cards stay put, so this is the visible
+          signal that a long multi-unit outline is still advancing. */}
+      {outlines.length > 0 && (
+        <div className="absolute bottom-1 left-3 z-20 text-[9px] font-semibold tabular-nums text-blue-500/80">
+          {outlines.length}
+        </div>
+      )}
+
       {/* Expand affordance — always visible to telegraph clickability */}
       {isInteractive && (
         <div className="pointer-events-none absolute inset-x-0 bottom-2 z-20 flex items-center justify-center px-2">

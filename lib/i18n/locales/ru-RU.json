@@ -1228,6 +1228,7 @@
     "unsupportedCourseMaterial": "Текущий парсер не поддерживает этот формат. Смените парсер или выберите другой файл."
   },
   "generation": {
+    "draftingScenes": "Drafting — {{count}} scenes ready",
     "pdfLoadFailed": "Не удалось загрузить PDF, попробуйте снова",
     "pdfParseFailed": "Ошибка обработки PDF",
     "analyzingCourseMaterial": "Анализ документов",

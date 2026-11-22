@@ -970,6 +970,9 @@ function GenerationPreviewContent() {
                         } else if (evt.type === 'outline') {
                           collected.push(evt.data);
                           setStreamingOutlines([...collected]);
+                          setStatusMessage(
+                            t('generation.draftingScenes', { count: collected.length }),
+                          );
                         } else if (evt.type === 'unitDone') {
                           // Multi-unit checkpoint: persist this unit's completed
                           // outlines so a mid-run failure can resume here.

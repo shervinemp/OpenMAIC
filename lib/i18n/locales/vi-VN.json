@@ -1228,6 +1228,7 @@
     "unsupportedCourseMaterial": "Bộ bóc tách hiện tại không hỗ trợ định dạng này. Hãy đổi bộ bóc tách hoặc chọn tệp khác."
   },
   "generation": {
+    "draftingScenes": "Drafting — {{count}} scenes ready",
     "pdfLoadFailed": "Không nạp được tệp PDF, vui lòng thử lại",
     "pdfParseFailed": "Đọc PDF không thành công",
     "analyzingCourseMaterial": "Đang phân tích tài liệu",

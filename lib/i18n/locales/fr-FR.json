@@ -1228,6 +1228,7 @@
     "unsupportedCourseMaterial": "Ce format n’est pas pris en charge par l’extracteur actuel. Changez d’extracteur ou choisissez un autre fichier."
   },
   "generation": {
+    "draftingScenes": "Drafting — {{count}} scenes ready",
     "pdfLoadFailed": "Échec du chargement du fichier PDF, veuillez réessayer",
     "pdfParseFailed": "Échec de l’analyse du PDF",
     "analyzingCourseMaterial": "Analyse des documents",

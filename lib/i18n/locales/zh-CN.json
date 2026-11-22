@@ -1228,6 +1228,7 @@
     "unsupportedCourseMaterial": "当前解析器不支持该格式，请切换解析器或选择其他文件"
   },
   "generation": {
+    "draftingScenes": "Drafting — {{count}} scenes ready",
     "pdfLoadFailed": "无法加载 PDF 文件，请重试",
     "pdfParseFailed": "PDF 解析失败",
     "analyzingCourseMaterial": "解析文档",
