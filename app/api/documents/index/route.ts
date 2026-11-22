@@ -131,7 +131,18 @@ export async function POST(req: NextRequest) {
       : indexOutputBudget;
 
     const encoder = new TextEncoder();
+    // Own the cancel registration for the stream's lifetime, not the handler's:
+    // the handler returns the Response before the async indexing work begins.
+    let streamDisposed = false;
+    const disposeStreamGeneration = () => {
+      if (streamDisposed) return;
+      streamDisposed = true;
+      generationCall?.dispose();
+    };
     const stream = new ReadableStream({
+      cancel() {
+        disposeStreamGeneration();
+      },
       async start(controller) {
         const enqueue = (event: Record<string, unknown>) => {
           try {
@@ -183,6 +194,7 @@ export async function POST(req: NextRequest) {
               },
             });
             clearInterval(heartbeat);
+            disposeStreamGeneration();
             closeStream();
             return;
           }
@@ -354,9 +366,11 @@ export async function POST(req: NextRequest) {
             },
           });
           clearInterval(heartbeat);
+          disposeStreamGeneration();
           closeStream();
         } catch (error) {
           clearInterval(heartbeat);
+          disposeStreamGeneration();
           log.error('Document indexing failed:', error);
           enqueue({
             type: 'error',
@@ -381,8 +395,6 @@ export async function POST(req: NextRequest) {
       500,
       error instanceof Error ? error.message : 'Unknown error',
     );
-  } finally {
-    generationCall?.dispose();
   }
 }
 

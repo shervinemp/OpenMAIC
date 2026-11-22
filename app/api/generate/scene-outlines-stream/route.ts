@@ -1322,7 +1322,20 @@ export async function POST(req: NextRequest) {
     // Create SSE stream with heartbeat to prevent connection timeout
     const encoder = new TextEncoder();
     const HEARTBEAT_INTERVAL_MS = 15_000;
+    // The stream, not the route handler, owns the cancel registration: the
+    // handler returns immediately with the Response while the LLM calls happen
+    // later inside start(). Disposing in the handler's finally would unregister
+    // the call before /api/generation/cancel could ever reach it.
+    let streamDisposed = false;
+    const disposeStreamGeneration = () => {
+      if (streamDisposed) return;
+      streamDisposed = true;
+      generationCall?.dispose();
+    };
     const stream = new ReadableStream({
+      cancel() {
+        disposeStreamGeneration();
+      },
       async start(controller) {
         // Heartbeat: periodically send SSE comments to keep the connection alive.
         let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -1966,6 +1979,7 @@ export async function POST(req: NextRequest) {
           controller.enqueue(encoder.encode(`data: ${errorEvent}\n\n`));
         } finally {
           stopHeartbeat();
+          disposeStreamGeneration();
           // The controller may already be closed if the client disconnected.
           try {
             controller.close();
@@ -1989,8 +2003,6 @@ export async function POST(req: NextRequest) {
       error,
     );
     return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
-  } finally {
-    generationCall?.dispose();
   }
 }
 
