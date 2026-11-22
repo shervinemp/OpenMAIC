@@ -5,11 +5,13 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Check,
   ChevronDown,
+  ChevronRight,
   GripVertical,
   Loader2,
   Minimize2,
   Minus,
   Plus,
+  Search,
   Sparkles,
   Trash2,
   X,
@@ -30,6 +32,10 @@ import type { SceneOutline } from '@/lib/types/generation';
 import type { WidgetType } from '@/lib/types/widgets';
 import { changeOutlineType } from '@openmaic/generation/browser';
 import { countBlockingOutlines, validateOutline } from '@/lib/edit/content-validation';
+import {
+  groupOutlinesByLesson,
+  shouldGroupOutlines,
+} from '@/lib/utils/outline-lesson-groups';
 
 type SceneType = SceneOutline['type'];
 
@@ -213,6 +219,55 @@ export function OutlinesEditor({
   const editingDisabled = isLoading || isStreaming;
   const lastOutlineId = outlines.length > 0 ? outlines[outlines.length - 1].id : null;
 
+  // Semester-scale decks (600 scenes) used to mount every SceneRow at once.
+  // Large multi-lesson decks are instead grouped by lesson and collapsed by
+  // default, so only the handful of rows in the expanded lesson are mounted.
+  // Small/single-unit decks keep the original flat list unchanged.
+  const lessonGroups = useMemo(() => groupOutlinesByLesson(outlines), [outlines]);
+  const useLessonGroups = shouldGroupOutlines(outlines, lessonGroups);
+  const [expandedLessons, setExpandedLessons] = useState<Set<string>>(() => new Set());
+  const [lessonQuery, setLessonQuery] = useState('');
+  const groupKeyById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const group of lessonGroups) {
+      for (const outline of group.outlines) map.set(outline.id, group.key);
+    }
+    return map;
+  }, [lessonGroups]);
+
+  const expandLesson = (key: string) =>
+    setExpandedLessons((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+  const toggleLesson = (key: string) =>
+    setExpandedLessons((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  // The lesson receiving the newest streamed scene is expanded without an
+  // effect: deriving it avoids a setState-in-effect cascade while streaming.
+  const isLessonExpanded = (key: string) =>
+    expandedLessons.has(key) ||
+    (isStreaming && !!lastOutlineId && groupKeyById.get(lastOutlineId) === key);
+
+  const visibleGroups = useMemo(() => {
+    const query = lessonQuery.trim().toLowerCase();
+    return lessonGroups.filter((group) => {
+      if (!query) return true;
+      if (group.label.toLowerCase().includes(query)) return true;
+      return group.outlines.some(
+        (o) =>
+          o.title.toLowerCase().includes(query) ||
+          (o.description ?? '').toLowerCase().includes(query),
+      );
+    });
+  }, [lessonGroups, lessonQuery]);
+
   // Generation gate: an outline with a blank title is meaningless to generate,
   // so block "Confirm & generate" until every section has a title. A neutral
   // "N / M ready" counter by the button explains the gate and jumps to the
@@ -222,21 +277,37 @@ export function OutlinesEditor({
   const readyCount = totalCount - blockingCount;
   const firstBlockingId =
     blockingCount > 0 ? outlines.find((o) => validateOutline(o).length > 0)?.id : undefined;
+  const scrollToOutline = (outlineId: string) => {
+    const scroll = () =>
+      document
+        .getElementById(`outline-scene-${outlineId}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // In grouped mode the target row is not mounted until its lesson expands.
+    if (useLessonGroups) {
+      const key = groupKeyById.get(outlineId);
+      if (key) expandLesson(key);
+      requestAnimationFrame(scroll);
+      return;
+    }
+    scroll();
+  };
   const scrollToFirstBlocking = () => {
-    if (!firstBlockingId) return;
-    const node = document.getElementById(`outline-scene-${firstBlockingId}`);
-    node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (firstBlockingId) scrollToOutline(firstBlockingId);
   };
 
-  // Auto-scroll to the latest streamed scene so streaming feels alive.
+  // Auto-scroll to the latest streamed scene so streaming feels alive. In
+  // grouped mode, expand only the lesson the new scene belongs to.
   useEffect(() => {
     if (!isStreaming || !lastOutlineId) return;
     if (lastScrollTargetRef.current === lastOutlineId) return;
     lastScrollTargetRef.current = lastOutlineId;
-    const node = document.getElementById(`outline-scene-${lastOutlineId}`);
-    if (node) {
-      node.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    // The lesson is expanded by isLessonExpanded (derived above); give React a
+    // frame to mount the row before scrolling to it.
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`outline-scene-${lastOutlineId}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
   }, [isStreaming, lastOutlineId]);
 
   const addOutline = () => {
@@ -248,8 +319,13 @@ export function OutlinesEditor({
       description: '',
       keyPoints: [],
       order: outlines.length + 1,
+      ...(useLessonGroups && outlines.length > 0
+        ? { lessonId: outlines[outlines.length - 1].lessonId }
+        : {}),
     };
     onChange(normalizeOrder([...outlines, newOutline]));
+    const key = newOutline.lessonId;
+    if (key) expandLesson(key);
   };
 
   const updateOutline = (index: number, updates: Partial<SceneOutline>) => {
@@ -281,10 +357,15 @@ export function OutlinesEditor({
       description: '',
       keyPoints: [],
       order: atIndex + 1,
+      ...(useLessonGroups
+        ? { lessonId: (outlines[atIndex - 1] ?? outlines[atIndex])?.lessonId }
+        : {}),
     };
     const next = [...outlines];
     next.splice(atIndex, 0, newOutline);
     onChange(normalizeOrder(next));
+    const key = newOutline.lessonId;
+    if (key) expandLesson(key);
   };
 
   const moveOutline = (index: number, direction: 'up' | 'down') => {
@@ -303,6 +384,62 @@ export function OutlinesEditor({
     const [item] = next.splice(fromIndex, 1);
     next.splice(toIndex, 0, item);
     onChange(normalizeOrder(next));
+  };
+
+  // One row renderer shared by the flat and grouped lists so editing, drag and
+  // drop and streaming behaviour stay identical in both modes.
+  const renderSceneRow = (outline: SceneOutline, index: number) => {
+    const isLast = outline.id === lastOutlineId;
+    const isStreamingTip = isStreaming && isLast;
+    const canDragHere = (sourceId: string) =>
+      !useLessonGroups || groupKeyById.get(sourceId) === groupKeyById.get(outline.id);
+
+    return (
+      <Fragment key={outline.id}>
+        <SceneRow
+          index={index}
+          outline={outline}
+          onUpdate={(updates) => updateOutline(index, updates)}
+          onReplace={(next) => replaceOutline(index, next)}
+          onRemove={() => removeOutline(index)}
+          onMoveUp={() => moveOutline(index, 'up')}
+          onMoveDown={() => moveOutline(index, 'down')}
+          canMoveUp={index > 0 && (!useLessonGroups || groupKeyById.get(outlines[index - 1]?.id ?? '') === groupKeyById.get(outline.id))}
+          canMoveDown={index < outlines.length - 1 && (!useLessonGroups || groupKeyById.get(outlines[index + 1]?.id ?? '') === groupKeyById.get(outline.id))}
+          sceneTypeLabel={sceneTypeLabel}
+          disabled={editingDisabled}
+          isStreamingTip={isStreamingTip}
+          isDragging={draggingId === outline.id}
+          isDragTarget={
+            dragOverId === outline.id && draggingId !== outline.id && canDragHere(draggingId ?? '')
+          }
+          onDragStart={() => setDraggingId(outline.id)}
+          onDragEnd={() => {
+            setDraggingId(null);
+            setDragOverId(null);
+          }}
+          onDragEnter={() => {
+            if (draggingId && draggingId !== outline.id && canDragHere(draggingId)) {
+              setDragOverId(outline.id);
+            }
+          }}
+          onDrop={(sourceId) => {
+            if (!canDragHere(sourceId)) return;
+            const fromIndex = outlines.findIndex((item) => item.id === sourceId);
+            if (fromIndex >= 0) reorderOutline(fromIndex, index);
+            setDraggingId(null);
+            setDragOverId(null);
+          }}
+        />
+        {!isStreaming && (
+          <InsertDivider
+            onClick={() => insertOutlineAt(index + 1)}
+            disabled={editingDisabled}
+            position={isLast ? 'edge' : 'between'}
+          />
+        )}
+      </Fragment>
+    );
   };
 
   const headerSubtitle = useMemo(() => {
@@ -373,6 +510,59 @@ export function OutlinesEditor({
         )}
       </div>
 
+      {/* Large-deck toolbar: search + bulk expand. Only mounted for grouped decks. */}
+      {useLessonGroups && (
+        <div className="relative flex flex-wrap items-center gap-2 border-y border-border/40 bg-muted/20 px-6 py-2.5 md:px-10">
+          <div className="relative min-w-[12rem] flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="search"
+              value={lessonQuery}
+              onChange={(event) => {
+                const query = event.target.value.trim().toLowerCase();
+                setLessonQuery(event.target.value);
+                if (query) {
+                  setExpandedLessons(
+                    new Set(
+                      lessonGroups
+                        .filter(
+                          (group) =>
+                            group.label.toLowerCase().includes(query) ||
+                            group.outlines.some(
+                              (o) =>
+                                o.title.toLowerCase().includes(query) ||
+                                (o.description ?? '').toLowerCase().includes(query),
+                            ),
+                        )
+                        .map((group) => group.key),
+                    ),
+                  );
+                }
+              }}
+              placeholder={t('generation.outlineSearchPlaceholder', {
+                count: lessonGroups.length,
+              })}
+              aria-label={t('generation.outlineSearchAria')}
+              className="h-8 w-full rounded-md border border-border/60 bg-background/80 pl-8 pr-2 text-xs outline-none placeholder:text-muted-foreground/70 focus:ring-2 focus:ring-blue-500/30"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setExpandedLessons(new Set(visibleGroups.map((group) => group.key)))}
+            className="rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {t('generation.outlineExpandAll')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setExpandedLessons(new Set())}
+            className="rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {t('generation.outlineCollapseAll')}
+          </button>
+        </div>
+      )}
+
       {/* Scene list */}
       <div className="relative max-h-[64vh] overflow-y-auto px-3 pb-2 md:px-6">
         {outlines.length === 0 ? (
@@ -386,56 +576,58 @@ export function OutlinesEditor({
                 position="edge"
               />
             )}
-            <AnimatePresence initial={false}>
-              {outlines.map((outline, index) => {
-                const isLast = outline.id === lastOutlineId;
-                const isStreamingTip = isStreaming && isLast;
-
-                return (
-                  <Fragment key={outline.id}>
-                    <SceneRow
-                      index={index}
-                      outline={outline}
-                      onUpdate={(updates) => updateOutline(index, updates)}
-                      onReplace={(next) => replaceOutline(index, next)}
-                      onRemove={() => removeOutline(index)}
-                      onMoveUp={() => moveOutline(index, 'up')}
-                      onMoveDown={() => moveOutline(index, 'down')}
-                      canMoveUp={index > 0}
-                      canMoveDown={index < outlines.length - 1}
-                      sceneTypeLabel={sceneTypeLabel}
-                      disabled={editingDisabled}
-                      isStreamingTip={isStreamingTip}
-                      isDragging={draggingId === outline.id}
-                      isDragTarget={dragOverId === outline.id && draggingId !== outline.id}
-                      onDragStart={() => setDraggingId(outline.id)}
-                      onDragEnd={() => {
-                        setDraggingId(null);
-                        setDragOverId(null);
-                      }}
-                      onDragEnter={() => {
-                        if (draggingId && draggingId !== outline.id) {
-                          setDragOverId(outline.id);
-                        }
-                      }}
-                      onDrop={(sourceId) => {
-                        const fromIndex = outlines.findIndex((item) => item.id === sourceId);
-                        if (fromIndex >= 0) reorderOutline(fromIndex, index);
-                        setDraggingId(null);
-                        setDragOverId(null);
-                      }}
-                    />
-                    {!isStreaming && (
-                      <InsertDivider
-                        onClick={() => insertOutlineAt(index + 1)}
-                        disabled={editingDisabled}
-                        position={isLast ? 'edge' : 'between'}
-                      />
-                    )}
-                  </Fragment>
-                );
-              })}
-            </AnimatePresence>
+            {useLessonGroups ? (
+              visibleGroups.length === 0 ? (
+                <li className="px-3 py-10 text-center text-sm text-muted-foreground">
+                  {t('generation.outlineNoSearchMatch', { query: lessonQuery })}
+                </li>
+              ) : (
+                visibleGroups.map((group) => {
+                  const expanded = isLessonExpanded(group.key);
+                  return (
+                    <Fragment key={group.key}>
+                      <li>
+                        <button
+                          type="button"
+                          onClick={() => toggleLesson(group.key)}
+                          aria-expanded={expanded}
+                          className={cn(
+                            'sticky top-0 z-10 flex w-full items-center gap-2 rounded-xl border border-border/40 bg-background/95 px-3 py-2.5 text-left backdrop-blur transition-colors',
+                            'hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30',
+                          )}
+                        >
+                          {expanded ? (
+                            <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                          )}
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                            {group.label}
+                            <span className="ml-2 truncate text-xs font-normal text-muted-foreground">
+                              {group.outlines[0]?.title}
+                            </span>
+                          </span>
+                          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground">
+                            {group.outlines.length}
+                          </span>
+                        </button>
+                      </li>
+                      {expanded && (
+                        <AnimatePresence initial={false}>
+                          {group.outlines.map((outline, i) =>
+                            renderSceneRow(outline, group.indices[i]),
+                          )}
+                        </AnimatePresence>
+                      )}
+                    </Fragment>
+                  );
+                })
+              )
+            ) : (
+              <AnimatePresence initial={false}>
+                {outlines.map((outline, index) => renderSceneRow(outline, index))}
+              </AnimatePresence>
+            )}
             {isStreaming && <StreamingPlaceholder nextIndex={outlines.length + 1} />}
           </ol>
         )}
