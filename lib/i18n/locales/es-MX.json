@@ -2214,8 +2214,10 @@
       "mediaEnableNeedsSetup": "Configura primero una clave de API en Servicios de modelos o activa un Token Plan."
     },
     "modelServices": {
+      "decisionModel": "Decision Model",
       "nav": "Servicios de modelos",
       "desc": {
+        "decision": "Pick the System 1 model used for grading and verification",
         "providers": "Configura credenciales, endpoints y catálogos de modelos de los servicios de modelos de lenguaje",
         "image": "Configura servicios de generación de imágenes (claves de API, flujos de trabajo y catálogos de modelos)",
         "video": "Configura credenciales y catálogos de modelos de los servicios de generación de video",

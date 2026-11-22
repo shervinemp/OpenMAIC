@@ -2191,8 +2191,10 @@
       "mediaEnableNeedsSetup": "請先在「模型服務」設定 API Key，或啟用 Token Plan 後再開啟"
     },
     "modelServices": {
+      "decisionModel": "Decision Model",
       "nav": "模型服務",
       "desc": {
+        "decision": "Pick the System 1 model used for grading and verification",
         "providers": "設定語言模型服務的憑證、API 位址與模型目錄",
         "image": "設定圖像生成服務（API Key、工作流與模型目錄）",
         "video": "設定影片生成服務的憑證與模型目錄",

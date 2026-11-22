@@ -2212,8 +2212,10 @@
       "mediaEnableNeedsSetup": "Hãy cấu hình API key trong «Dịch vụ mô hình» hoặc bật Token Plan trước."
     },
     "modelServices": {
+      "decisionModel": "Decision Model",
       "nav": "Dịch vụ mô hình",
       "desc": {
+        "decision": "Pick the System 1 model used for grading and verification",
         "providers": "Cấu hình thông tin xác thực, điểm cuối và danh mục mô hình của dịch vụ mô hình ngôn ngữ",
         "image": "Cấu hình dịch vụ tạo ảnh (khóa API, quy trình làm việc và danh mục mô hình)",
         "video": "Cấu hình thông tin xác thực và danh mục mô hình của dịch vụ tạo video",

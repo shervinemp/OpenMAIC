@@ -2214,8 +2214,10 @@
       "mediaEnableNeedsSetup": "'모델 서비스'에서 API 키를 구성하거나 Token Plan을 활성화한 뒤 켜세요."
     },
     "modelServices": {
+      "decisionModel": "Decision Model",
       "nav": "모델 서비스",
       "desc": {
+        "decision": "Pick the System 1 model used for grading and verification",
         "providers": "언어 모델 서비스의 자격 증명, API 주소, 모델 카탈로그를 설정합니다",
         "image": "이미지 생성 서비스(API 키, 워크플로, 모델 카탈로그)를 설정합니다",
         "video": "영상 생성 서비스의 자격 증명과 모델 카탈로그를 설정합니다",

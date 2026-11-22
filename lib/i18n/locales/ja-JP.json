@@ -2214,8 +2214,10 @@
       "mediaEnableNeedsSetup": "先に「モデルサービス」で API キーを設定するか、Token Plan を有効にしてからオンにしてください。"
     },
     "modelServices": {
+      "decisionModel": "Decision Model",
       "nav": "モデルサービス",
       "desc": {
+        "decision": "Pick the System 1 model used for grading and verification",
         "providers": "言語モデルサービスの認証情報・API アドレス・モデルカタログを設定します",
         "image": "画像生成サービス（API キー・ワークフロー・モデルカタログ）を設定します",
         "video": "動画生成サービスの認証情報とモデルカタログを設定します",

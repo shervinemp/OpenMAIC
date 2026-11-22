@@ -2214,8 +2214,10 @@
       "mediaEnableNeedsSetup": "هيّئ مفتاح API في «خدمات النماذج» أو فعّل Token Plan أولاً."
     },
     "modelServices": {
+      "decisionModel": "Decision Model",
       "nav": "خدمات النماذج",
       "desc": {
+        "decision": "Pick the System 1 model used for grading and verification",
         "providers": "هيّئ بيانات الاعتماد والعناوين وكتالوجات النماذج لخدمات النماذج اللغوية",
         "image": "هيّئ خدمات توليد الصور (مفاتيح API وسير العمل وكتالوجات النماذج)",
         "video": "هيّئ بيانات الاعتماد وكتالوجات النماذج لخدمات توليد الفيديو",

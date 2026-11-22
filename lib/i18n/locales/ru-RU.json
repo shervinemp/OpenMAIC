@@ -2214,8 +2214,10 @@
       "mediaEnableNeedsSetup": "Сначала настройте API-ключ в «Службах моделей» или включите Token Plan."
     },
     "modelServices": {
+      "decisionModel": "Decision Model",
       "nav": "Сервисы моделей",
       "desc": {
+        "decision": "Pick the System 1 model used for grading and verification",
         "providers": "Настройте доступы, адреса API и каталоги моделей для служб языковых моделей",
         "image": "Настройте службы генерации изображений (API-ключи, сценарии работы и каталоги моделей)",
         "video": "Настройте доступы и каталоги моделей служб генерации видео",

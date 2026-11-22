@@ -2214,8 +2214,10 @@
       "mediaEnableNeedsSetup": "Konfiguriere zuerst einen API-Key in „Modell-Dienste“ oder aktiviere einen Token-Plan."
     },
     "modelServices": {
+      "decisionModel": "Decision Model",
       "nav": "Modelldienste",
       "desc": {
+        "decision": "Pick the System 1 model used for grading and verification",
         "providers": "Zugangsdaten, Endpunkte und Modellkataloge für Sprachmodell-Dienste konfigurieren",
         "image": "Bildgenerierungs-Dienste konfigurieren (API-Keys, Workflows und Modellkataloge)",
         "video": "Zugangsdaten und Modellkataloge für Videogenerierungs-Dienste konfigurieren",
