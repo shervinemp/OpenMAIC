@@ -11,7 +11,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ProviderId } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
-import { PROVIDERS } from '@/lib/ai/providers';
+import { parseModelString, PROVIDERS } from '@/lib/ai/providers';
 import { findModelById, getCanonicalModelId } from '@/lib/ai/model-aliases';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { getThinkingConfigKey, supportsConfigurableThinking } from '@/lib/ai/thinking-config';
@@ -186,6 +186,8 @@ export interface SettingsState {
   // Model selection
   providerId: ProviderId;
   modelId: string;
+  /** False until the user explicitly picks a model; lets local DEFAULT_MODEL seed a fresh browser. */
+  llmSelectionUserSet: boolean;
   thinkingConfigs: Record<string, ThinkingConfig>;
 
   /**
@@ -1111,6 +1113,7 @@ export const useSettingsStore = create<SettingsState>()(
         // the KVStore on rehydration; an upgrading user reconfigures once.
         providerId: 'openai' as ProviderId,
         modelId: '',
+        llmSelectionUserSet: false,
         thinkingConfigs: {},
         llmStageRoutes: {},
         webSearchEnabled: false,
@@ -1177,7 +1180,8 @@ export const useSettingsStore = create<SettingsState>()(
         ...defaultWebSearchConfig,
 
         // Actions
-        setModel: (providerId, modelId) => set({ providerId, modelId }),
+        setModel: (providerId, modelId) =>
+          set({ providerId, modelId, llmSelectionUserSet: true }),
         setStageRoute: (stage, route) =>
           set((state) => {
             const next = { ...state.llmStageRoutes };
@@ -1843,6 +1847,7 @@ export const useSettingsStore = create<SettingsState>()(
             // capability section carries an optional `disabled` flag for
             // admin/server-level force-off (#665).
             const data = (await res.json()) as {
+              defaultModel?: string;
               providers: Record<string, { models?: string[] }>;
               tts: Record<string, { disabled?: boolean }>;
               asr: Record<string, { disabled?: boolean }>;
@@ -2277,7 +2282,25 @@ export const useSettingsStore = create<SettingsState>()(
               // and model atomically at the source, covering server-configured
               // AND client-API-key providers — see #580.)
 
+              // A fresh browser (no explicit user pick) follows local env's
+              // DEFAULT_MODEL instead of the first configured provider.
+              let envSelection: { providerId: ProviderId; modelId: string } | undefined;
+              if (!state.llmSelectionUserSet && data.defaultModel) {
+                try {
+                  const { providerId, modelId } = parseModelString(data.defaultModel);
+                  if (
+                    providerId in newProvidersConfig &&
+                    newProvidersConfig[providerId].models.some((model) => model.id === modelId)
+                  ) {
+                    envSelection = { providerId, modelId };
+                  }
+                } catch {
+                  // A malformed env default is ignored; keep the resolved selection.
+                }
+              }
+
               return {
+                ...(envSelection ?? {}),
                 providersConfig: newProvidersConfig,
                 ttsProvidersConfig: newTTSConfig,
                 asrProvidersConfig: newASRConfig,

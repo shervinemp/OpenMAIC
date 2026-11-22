@@ -29,6 +29,9 @@ export async function GET() {
     }
 
     return apiSuccess({
+      // Lets a fresh browser seed its LLM selection from local env instead of
+      // auto-picking the first configured provider.
+      defaultModel: process.env.DEFAULT_MODEL?.trim() || undefined,
       providers,
       tts: getServerTTSProviders(),
       asr: getServerASRProviders(),
