@@ -1228,6 +1228,7 @@
     "unsupportedCourseMaterial": "O extrator atual não suporta este formato. Troque o extrator ou escolha outro arquivo."
   },
   "generation": {
+    "researchingUnit": "Researching unit {{current}} of {{total}}…",
     "pausedGenerationTitle": "Course generation paused",
     "draftingScenes": "Drafting — {{count}} scenes ready",
     "pdfLoadFailed": "Falha ao carregar o PDF, tente novamente",

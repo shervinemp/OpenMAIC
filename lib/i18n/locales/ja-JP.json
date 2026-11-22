@@ -1228,6 +1228,7 @@
     "unsupportedCourseMaterial": "現在の解析器はこの形式に対応していません。解析器を切り替えるか、別のファイルを選択してください。"
   },
   "generation": {
+    "researchingUnit": "Researching unit {{current}} of {{total}}…",
     "pausedGenerationTitle": "Course generation paused",
     "draftingScenes": "Drafting — {{count}} scenes ready",
     "pdfLoadFailed": "PDFファイルの読み込みに失敗しました。もう一度お試しください",

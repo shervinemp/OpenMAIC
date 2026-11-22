@@ -1205,6 +1205,7 @@
     "unsupportedCourseMaterial": "目前的解析器不支援此格式，請切換解析器或選擇其他檔案"
   },
   "generation": {
+    "researchingUnit": "Researching unit {{current}} of {{total}}…",
     "pausedGenerationTitle": "Course generation paused",
     "draftingScenes": "Drafting — {{count}} scenes ready",
     "pdfLoadFailed": "無法載入 PDF 檔案，請重試",

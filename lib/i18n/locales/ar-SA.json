@@ -1228,6 +1228,7 @@
     "unsupportedCourseMaterial": "المستخرج الحالي لا يدعم هذه الصيغة. غيّر المستخرج أو اختر ملفًا آخر."
   },
   "generation": {
+    "researchingUnit": "Researching unit {{current}} of {{total}}…",
     "pausedGenerationTitle": "Course generation paused",
     "draftingScenes": "Drafting — {{count}} scenes ready",
     "pdfLoadFailed": "فشل تحميل ملف PDF، يرجى المحاولة مرة أخرى",

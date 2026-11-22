@@ -973,6 +973,13 @@ function GenerationPreviewContent() {
                           setStatusMessage(
                             t('generation.draftingScenes', { count: collected.length }),
                           );
+                        } else if (evt.type === 'unitResearch') {
+                          setStatusMessage(
+                            t('generation.researchingUnit', {
+                              current: evt.index,
+                              total: evt.total,
+                            }),
+                          );
                         } else if (evt.type === 'unitDone') {
                           // Multi-unit checkpoint: persist this unit's completed
                           // outlines so a mid-run failure can resume here.

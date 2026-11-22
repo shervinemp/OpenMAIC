@@ -1228,6 +1228,7 @@
     "unsupportedCourseMaterial": "Текущий парсер не поддерживает этот формат. Смените парсер или выберите другой файл."
   },
   "generation": {
+    "researchingUnit": "Researching unit {{current}} of {{total}}…",
     "pausedGenerationTitle": "Course generation paused",
     "draftingScenes": "Drafting — {{count}} scenes ready",
     "pdfLoadFailed": "Не удалось загрузить PDF, попробуйте снова",

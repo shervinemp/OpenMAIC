@@ -748,16 +748,32 @@ async function generateMultiUnitOutlines(
         return { context: run.researchContext || 'None', chunks: [] };
       }
       const unit = (syllabus!.units ?? [])[unitIndex];
+      enqueue({
+        type: 'unitResearch',
+        index: unitIndex + 1,
+        total: syllabus?.units?.length ?? 0,
+      });
       const query = (`${unit?.title ?? ''} ${(unit?.objectives ?? []).join(' ')}`.trim() ||
         `Unit ${unitIndex + 1}`) as string;
       try {
-        const result = await searchWeb({
-          providerId: wsConfig.providerId as WebSearchProviderId,
-          query,
-          apiKey: wsConfig.apiKey,
-          baseUrl: wsConfig.baseUrl,
-          maxResults: 6,
-          baiduSubSources: wsConfig.baiduSubSources,
+        // Research is an enrichment, never a gate: a slow or rate-limited
+        // provider must not hold the outline stream with no scenes emitted.
+        // Move on with the global context if it does not answer quickly.
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const result = await Promise.race([
+          searchWeb({
+            providerId: wsConfig.providerId as WebSearchProviderId,
+            query,
+            apiKey: wsConfig.apiKey,
+            baseUrl: wsConfig.baseUrl,
+            maxResults: 6,
+            baiduSubSources: wsConfig.baiduSubSources,
+          }),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('Per-unit research timed out')), 8_000);
+          }),
+        ]).finally(() => {
+          if (timer) clearTimeout(timer);
         });
         const chunks = webSourcesToChunks(result);
         const context = [
