@@ -260,6 +260,7 @@ function HomePage() {
   // True when a parked generation session exists (user backed out during the
   // outline phase) — renders the "resume generation" prompt in the list.
   const [pendingGeneration, setPendingGeneration] = useState(false);
+  const [backgroundGeneration, setBackgroundGeneration] = useState(false);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -382,6 +383,13 @@ function HomePage() {
     // is visible.
     if (hasGenerationSessionEnvelope()) {
       setPendingGeneration(true);
+      let background = false;
+      try {
+        background = sessionStorage.getItem('openmaic:background-generation') === '1';
+      } catch {
+        /* ignore */
+      }
+      setBackgroundGeneration(background);
       persistRecentOpen(true);
     }
 
@@ -1384,11 +1392,18 @@ function HomePage() {
                     animate={{ opacity: 1, y: 0 }}
                     className="mt-6 w-full flex items-center gap-3 rounded-xl border border-violet-200/60 bg-violet-50/60 px-4 py-3 text-left dark:border-violet-800/60 dark:bg-violet-950/20"
                   >
-                    {/* A parked session is paused, not actively generating. */}
-                    <Pause className="size-4 shrink-0 text-violet-600 dark:text-violet-400" />
+                    {backgroundGeneration ? (
+                      <Loader2 className="size-4 shrink-0 animate-spin text-violet-600 dark:text-violet-400" />
+                    ) : (
+                      <Pause className="size-4 shrink-0 text-violet-600 dark:text-violet-400" />
+                    )}
                     <span className="min-w-0 flex-1">
                       <span className="block text-[13px] font-medium">
-                        {t('generation.pausedGenerationTitle')}
+                        {t(
+                          backgroundGeneration
+                            ? 'generation.pendingGenerationTitle'
+                            : 'generation.pausedGenerationTitle',
+                        )}
                       </span>
                       <span className="mt-0.5 block text-[11px] text-muted-foreground">
                         {t('generation.pendingGenerationDesc')}

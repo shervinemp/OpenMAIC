@@ -161,6 +161,7 @@ function GenerationPreviewContent() {
   const [isComplete] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [streamingOutlines, setStreamingOutlines] = useState<SceneOutline[] | null>(null);
+  const liveOutlinesRef = useRef<SceneOutline[]>([]);
   const [isOutlineStreaming, setIsOutlineStreaming] = useState(false);
   const [truncationWarnings, setTruncationWarnings] = useState<string[]>([]);
   const [webSearchSources, setWebSearchSources] = useState<Array<{ title: string; url: string }>>(
@@ -276,6 +277,13 @@ function GenerationPreviewContent() {
     // Sessions abandoned before their natural end (tab closed mid-run) would
     // otherwise linger in IndexedDB forever.
     cleanupOldGenerationSessions(24).catch((e) => log.error(e));
+    // Returning to the preview means the background indicator is no longer
+    // needed; the run is either resumed here or already finished.
+    try {
+      sessionStorage.removeItem('openmaic:background-generation');
+    } catch {
+      /* ignore */
+    }
 
     let cancelled = false;
     loadGenerationSession()
@@ -347,9 +355,14 @@ function GenerationPreviewContent() {
 
   useEffect(() => {
     return () => {
-      void cancelServerGeneration();
-      abortControllerRef.current?.abort();
+      // Navigation away is NOT a cancel: only Pause / Cancel stop the run.
+      // The in-flight fetches survive an SPA navigation, so let the run finish
+      // and keep writing checkpoints. Clear only timers owned by this render.
       clearOutlineReviewTimer();
+      if (outlineReviewResolveRef.current) {
+        outlineReviewResolveRef.current([...liveOutlinesRef.current]);
+      }
+      if (agentRevealResolveRef.current) agentRevealResolveRef.current();
     };
   }, []);
 
@@ -969,7 +982,8 @@ function GenerationPreviewContent() {
                           checkpointSyllabus = evt;
                         } else if (evt.type === 'outline') {
                           collected.push(evt.data);
-                          setStreamingOutlines([...collected]);
+                          liveOutlinesRef.current = [...collected];
+                          setStreamingOutlines(liveOutlinesRef.current);
                           setStatusMessage(
                             t('generation.draftingScenes', { count: collected.length }),
                           );
@@ -1567,7 +1581,24 @@ function GenerationPreviewContent() {
     startGeneration(latest);
   };
 
-  const goBackToHome = async () => {
+  /** Navigation only — an active run keeps going in the background. */
+  const goBackToHome = () => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    if (ownsLeaseRef.current) {
+      try {
+        sessionStorage.setItem('openmaic:background-generation', '1');
+      } catch {
+        /* ignore */
+      }
+    }
+    clearOutlineReviewTimer();
+    outlineReviewIntentRef.current = false;
+    router.push('/');
+  };
+
+  /** Explicit cancel-and-exit: stops the run before leaving. */
+  const cancelAndExit = async () => {
     if (leavingRef.current) return;
     leavingRef.current = true;
     // Fail closed on acknowledgement: don't silently leave while the server may
@@ -1581,13 +1612,12 @@ function GenerationPreviewContent() {
     abortControllerRef.current?.abort();
     clearOutlineReviewTimer();
     outlineReviewIntentRef.current = false;
-    // A persisted course (stageId in the session) lives in the classroom
-    // list — drop the session so the home page doesn't offer a redundant
-    // "resume" prompt. Otherwise (outline phase) keep it so generation can
-    // be resumed from the home page.
+    try {
+      sessionStorage.removeItem('openmaic:background-generation');
+    } catch {
+      /* ignore */
+    }
     const envelope = readGenerationSessionEnvelope();
-    // A tab that lost the lease must not delete the session the owning tab is
-    // still writing.
     if (envelope?.stageId && ownsLeaseRef.current) {
       void clearGenerationSession(session?.sessionId);
     }
@@ -2111,7 +2141,7 @@ function GenerationPreviewContent() {
                   <Play className="size-3 mr-1.5 fill-current" />
                   Resume generation
                 </Button>
-                <Button variant="ghost" size="sm" onClick={goBackToHome}>
+                <Button variant="ghost" size="sm" onClick={cancelAndExit}>
                   Cancel &amp; exit
                 </Button>
               </motion.div>
@@ -2136,7 +2166,7 @@ function GenerationPreviewContent() {
                   variant="outline"
                   size="sm"
                   className="normal-case tracking-normal text-destructive border-destructive/40 hover:bg-destructive/10"
-                  onClick={goBackToHome}
+                  onClick={cancelAndExit}
                   disabled={leavingRef.current}
                 >
                   <Square className="size-3 mr-1.5 fill-current" />

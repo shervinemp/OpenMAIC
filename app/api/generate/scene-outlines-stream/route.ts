@@ -53,6 +53,7 @@ import { anyAbortSignal, generationCallFor } from '@/lib/server/generation-cance
 import { createLogger } from '@/lib/logger';
 import { resolveModel, resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveWebSearchRouteBaseUrl } from '@/lib/server/web-search-config';
+import { resolveServerWebSearchProviderId } from '@/lib/server/provider-config';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVisionImagesForPrompt } from '@/lib/persistence/resolve-vision-images';
 import {
@@ -1124,7 +1125,7 @@ export async function POST(req: NextRequest) {
       agents,
       durationMinutes,
       sizePreset,
-      webSearchConfig,
+      webSearchConfig: requestWebSearchConfig,
       pdfHandle,
       pdfDigest,
       resumeSyllabus,
@@ -1152,7 +1153,32 @@ export async function POST(req: NextRequest) {
       resumeFromUnitIndex?: number;
     };
     requirementSnippet = requirements?.requirement?.substring(0, 60);
+    let webSearchConfig = requestWebSearchConfig;
 
+    // Use the server-configured search provider (SearXNG here), not a stale
+    // client pick like Brave — the /api/web-search route does the same.
+    if (webSearchConfig) {
+      const serverProviderId = resolveServerWebSearchProviderId();
+      if (serverProviderId) {
+        webSearchConfig = {
+          ...webSearchConfig,
+          providerId: serverProviderId,
+          apiKey: undefined,
+          baseUrl: undefined,
+        };
+      }
+    }
+    if (webSearchConfig) {
+      try {
+        const resolved = resolveWebSearchRouteBaseUrl(
+          webSearchConfig.providerId as Parameters<typeof resolveWebSearchRouteBaseUrl>[0],
+          undefined,
+        );
+        if (resolved) webSearchConfig.baseUrl = resolved;
+      } catch {
+        // A provider that needs no base URL (or is unconfigured) keeps going.
+      }
+    }
     // Client-supplied search endpoints must pass the same allowlist as the
     // web-search API; otherwise per-unit research becomes an SSRF vector.
     if (webSearchConfig?.baseUrl) {
