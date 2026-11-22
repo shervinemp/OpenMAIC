@@ -722,44 +722,61 @@ function GenerationPreviewContent() {
           const wsSettings = useSettingsStore.getState();
           const wsProviderId = wsSettings.webSearchProviderId;
           const wsConfig = wsSettings.webSearchProvidersConfig?.[wsProviderId];
-          const res = await fetch('/api/web-search', {
-            method: 'POST',
-            headers: getApiHeaders(),
-            body: JSON.stringify(
-              withThinkingConfig({
-                query: currentSession.requirements.requirement,
-                pdfText: currentSession.pdfText || undefined,
-                providerId: wsProviderId,
-                apiKey: wsConfig?.apiKey || undefined,
-                baseUrl: wsProviderId === 'searxng' ? undefined : wsConfig?.baseUrl || undefined,
-                baiduSubSources: wsProviderId === 'baidu' ? wsSettings.baiduSubSources : undefined,
-                claudeModelId:
-                  wsProviderId === 'claude' ? wsConfig?.modelId || undefined : undefined,
-              }),
-            ),
-            signal,
-          });
+          try {
+            const res = await fetch('/api/web-search', {
+              method: 'POST',
+              headers: getApiHeaders(),
+              body: JSON.stringify(
+                withThinkingConfig({
+                  query: currentSession.requirements.requirement,
+                  pdfText: currentSession.pdfText || undefined,
+                  providerId: wsProviderId,
+                  apiKey: wsConfig?.apiKey || undefined,
+                  baseUrl: wsProviderId === 'searxng' ? undefined : wsConfig?.baseUrl || undefined,
+                  baiduSubSources:
+                    wsProviderId === 'baidu' ? wsSettings.baiduSubSources : undefined,
+                  claudeModelId:
+                    wsProviderId === 'claude' ? wsConfig?.modelId || undefined : undefined,
+                }),
+              ),
+              signal,
+            });
 
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({ error: 'Web search failed' }));
-            throw new Error(data.error || t('generation.webSearchFailed'));
+            if (!res.ok) {
+              const data = await res.json().catch(() => ({ error: 'Web search failed' }));
+              throw new Error(data.error || t('generation.webSearchFailed'));
+            }
+
+            const searchData = await res.json();
+            const sources = (searchData.sources || []).map((s: { title: string; url: string }) => ({
+              title: s.title,
+              url: s.url,
+            }));
+            setWebSearchSources(sources);
+
+            const updatedSessionWithSearch: GenerationSessionState = {
+              ...currentSession,
+              researchContext: searchData.context || '',
+              researchSources: sources,
+            };
+            persistSession(updatedSessionWithSearch);
+            currentSession = updatedSessionWithSearch;
+            activeSteps = getActiveSteps(currentSession);
+          } catch (searchError) {
+            // A cancelled run must still stop here; only provider failures are
+            // optional. Web research enriches the outline, it is not a
+            // prerequisite for the course — keep going without its context,
+            // exactly as document indexing does when it fails.
+            if (signal?.aborted || isAbortError(searchError)) throw searchError;
+            log.warn(
+              '[Generation] Web search unavailable; continuing without research context:',
+              searchError,
+            );
+            toast.warning('Web search unavailable — continuing without web research.', {
+              description:
+                searchError instanceof Error ? searchError.message : 'Search provider failed.',
+            });
           }
-
-          const searchData = await res.json();
-          const sources = (searchData.sources || []).map((s: { title: string; url: string }) => ({
-            title: s.title,
-            url: s.url,
-          }));
-          setWebSearchSources(sources);
-
-          const updatedSessionWithSearch: GenerationSessionState = {
-            ...currentSession,
-            researchContext: searchData.context || '',
-            researchSources: sources,
-          };
-          persistSession(updatedSessionWithSearch);
-          currentSession = updatedSessionWithSearch;
-          activeSteps = getActiveSteps(currentSession);
         }
       }
 
