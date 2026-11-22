@@ -402,6 +402,12 @@ export interface SettingsState {
   // 0 = off (serial generation); populated by fetchServerProviders.
   parallelSceneConcurrency: number;
 
+  // Server-configured opt-in parallel actions concurrency. When >1 the
+  // actions phase (the only serial link in the dependency graph) runs in a
+  // bounded pool using outline-derived transition hints instead of waiting
+  // for each prior scene's generated speech. 0 = off.
+  parallelActionsConcurrency: number;
+
   // Auto-config lifecycle flag (persisted)
   autoConfigApplied: boolean;
 
@@ -1178,6 +1184,7 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Off until the server reports a concurrency via fetchServerProviders.
         parallelSceneConcurrency: 0,
+        parallelActionsConcurrency: 0,
 
         autoConfigApplied: false,
 
@@ -1860,7 +1867,7 @@ export const useSettingsStore = create<SettingsState>()(
               image: Record<string, { models?: string[]; disabled?: boolean }>;
               video: Record<string, { models?: string[]; disabled?: boolean }>;
               webSearch: Record<string, { disabled?: boolean }>;
-              generation?: { parallelSceneConcurrency?: number };
+              generation?: { parallelSceneConcurrency?: number; parallelActionsConcurrency?: number };
             };
 
             set((state) => {
@@ -2345,6 +2352,10 @@ export const useSettingsStore = create<SettingsState>()(
                 parallelSceneConcurrency: Math.max(
                   0,
                   Math.floor(data.generation?.parallelSceneConcurrency ?? 0),
+                ),
+                parallelActionsConcurrency: Math.max(
+                  0,
+                  Math.floor(data.generation?.parallelActionsConcurrency ?? 0),
                 ),
                 autoConfigApplied: true,
                 // Validated selections

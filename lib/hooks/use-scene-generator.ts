@@ -181,6 +181,46 @@ function errorMeta(error: unknown): Pick<SceneContentResult, 'errorCode' | 'stat
   };
 }
 
+/**
+ * Derive a soft continuity hint for parallel actions from a scene outline.
+ *
+ * In the serial pipeline, actions for scene N receive the last generated
+ * speech of scene N-1 as a "continue naturally, don't re-greet" transition
+ * hint. That is the single real dependency chain in the graph: it forces every
+ * scene's actions to wait for the previous scene's speech. When actions are
+ * parallelized we cannot wait for that speech, so the previous outline's
+ * purpose description (known up front for every scene) becomes the topical
+ * cue instead. The prompt renderer takes the final array element and its last
+ * 150 chars, so the hint is trimmed to exactly that shape.
+ */
+export function deriveTransitionHint(outline: SceneOutline): string[] {
+  const raw = (outline.description ?? '').replace(/\s+/g, ' ').trim();
+  if (!raw) return [];
+  return [raw.slice(-150)];
+}
+
+/**
+ * Build the per-outline transition hints for a parallel actions batch.
+ *
+ * The first pending scene keeps the *real* previous speech (from the last
+ * completed scene), so continuity across batches is preserved. Every later
+ * scene uses the preceding outline's derived hint, which breaks the serial
+ * chain and lets all actions run in a bounded pool.
+ */
+export function buildParallelTransitionHints(
+  pending: readonly SceneOutline[],
+  initialPreviousSpeeches: readonly string[],
+): Map<string, string[]> {
+  const hints = new Map<string, string[]>();
+  pending.forEach((outline, i) => {
+    hints.set(
+      outline.id,
+      i === 0 ? [...initialPreviousSpeeches] : deriveTransitionHint(pending[i - 1]),
+    );
+  });
+  return hints;
+}
+
 /** Call POST /api/generate/scene-content (step 1) */
 export async function fetchSceneContent(
   params: {
@@ -333,6 +373,46 @@ function attachActionsSourceHash(
       languageDirective: params.languageDirective,
     }),
   } as Scene;
+}
+
+/**
+ * The single place that turns a scene's content + continuity hint into an
+ * actions result. Shared by the serial pipeline descriptor and the parallel
+ * pre-warm pool so both behave identically (reuse guard, hashing inputs, and
+ * all). The pre-warm supplies the derived hint; the serial path supplies the
+ * real previous speech.
+ */
+async function resolveSceneActions(args: {
+  outline: SceneOutline;
+  allOutlines: SceneOutline[];
+  content: unknown;
+  params: { agents?: AgentInfo[]; userProfile?: string; languageDirective?: string };
+  signal?: AbortSignal;
+  previousSpeeches: string[];
+}): Promise<SceneActionsResult> {
+  const stageId = useStageStore.getState().stage?.id;
+  if (!stageId) return { success: false, error: 'no stage' };
+  const reusable = findReusableActionsScene(args.outline.id, args.content, args.params);
+  if (reusable) {
+    return {
+      success: true,
+      scene: attachActionsSourceHash(reusable, args.content, args.params),
+      reused: true,
+    } as SceneActionsResult;
+  }
+  return fetchSceneActions(
+    {
+      outline: args.outline,
+      allOutlines: args.allOutlines,
+      content: args.content,
+      stageId,
+      agents: args.params.agents,
+      previousSpeeches: args.previousSpeeches,
+      userProfile: args.params.userProfile,
+      languageDirective: args.params.languageDirective,
+    },
+    args.signal,
+  );
 }
 
 interface TTSApiResponse {
@@ -1281,32 +1361,19 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
     run: async (state, input) => {
       const { effectiveOutline, allOutlines, params, signal } = input;
       const contentResult = state.contentResult!;
-      const stageId = useStageStore.getState().stage?.id;
-      if (!stageId) return { status: 'failed', error: 'no stage' };
-      const reusableActionsScene = findReusableActionsScene(
-        (contentResult.effectiveOutline || effectiveOutline || input.outline).id,
-        contentResult.content,
-        params,
-      );
-      const actionsResult: SceneActionsResult = reusableActionsScene
-        ? ({
-            success: true,
-            scene: attachActionsSourceHash(reusableActionsScene, contentResult.content, params),
-            reused: true,
-          } as SceneActionsResult)
-        : await fetchSceneActions(
-            {
-              outline: contentResult.effectiveOutline || effectiveOutline || input.outline,
-              allOutlines,
-              content: contentResult.content,
-              stageId,
-              agents: params.agents,
-              previousSpeeches: state.previousSpeeches,
-              userProfile: params.userProfile,
-              languageDirective: params.languageDirective,
-            },
-            signal,
-          );
+      // Parallel path: the actions LLM call already ran in the bounded pool
+      // with an outline-derived continuity hint. Otherwise resolve it here
+      // with the real previous speech (the original serial behaviour).
+      const actionsResult: SceneActionsResult =
+        input.preComputedActions ??
+        (await resolveSceneActions({
+          outline: contentResult.effectiveOutline || effectiveOutline || input.outline,
+          allOutlines,
+          content: contentResult.content,
+          params,
+          signal,
+          previousSpeeches: state.previousSpeeches,
+        }));
       if (!actionsResult.success || !actionsResult.scene) {
         return {
           status: 'failed',
@@ -1468,6 +1535,14 @@ export interface OutlineJobInput {
    * fetches (generate) or reuses the persisted hash (repair).
    */
   preComputedContent?: SceneContentResult;
+  /**
+   * Parallel-actions path: the actions LLM result (with an outline-derived
+   * continuity hint) computed ahead of time in a bounded pool. When present,
+   * the actions phase consumes it instead of issuing its own fetch, so the
+   * paid content+actions calls of independent scenes overlap. The rest of the
+   * pipeline (semantics/TTS/media) still runs in the ordered loop.
+   */
+  preComputedActions?: SceneActionsResult;
   /**
    * Fires as soon as the content phase has a payload, before actions/TTS run.
    * The batch uses it to launch media for the refs the slide actually carries,
@@ -1704,27 +1779,32 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           .map((a) => a.text);
       }
 
-      // #572: opt-in parallel content fetch. Concurrency is server-configured
-      // (PARALLEL_SCENE_CONCURRENCY), default 0 = off, so out-of-box behaviour is
-      // unchanged.
-      const parallelConcurrency = Math.max(
+      // Opt-in parallel content fetch (#572, PARALLEL_SCENE_CONCURRENCY) and
+      // parallel actions (PARALLEL_ACTIONS_CONCURRENCY). Both default to 0 = off,
+      // so out-of-box behaviour is unchanged. Belt-and-suspenders re-clamp here
+      // so a stale/garbage store value can never spawn an unbounded fan-out.
+      const settings = useSettingsStore.getState();
+      const parallelConcurrency = Math.max(0, Math.floor(settings.parallelSceneConcurrency ?? 0));
+      const parallelActionsConcurrency = Math.max(
         0,
-        // Belt-and-suspenders: the value is already clamped server-side and again
-        // in the settings store; re-clamp here so a stale/garbage store value can
-        // never spawn an unbounded fetch fan-out.
-        Math.floor(useSettingsStore.getState().parallelSceneConcurrency ?? 0),
+        Math.floor(settings.parallelActionsConcurrency ?? 0),
       );
-      const useParallelContent = parallelConcurrency > 1 && pending.length > 1;
+      // The two knobs share one content pre-warm pool: the actions pool needs
+      // each scene's content before it can run, so enabling actions implies
+      // content pre-warm at least as wide as the actions pool.
+      const contentConcurrency = Math.max(parallelConcurrency, parallelActionsConcurrency);
+      const useParallelContent = contentConcurrency > 1 && pending.length > 1;
+      const useParallelActions = parallelActionsConcurrency > 1 && pending.length > 1;
 
-      // Pipelined generation loop (#572). When parallelism is on, scene *content*
-      // fetches are kicked off up front with bounded concurrency (lazyBoundedMap)
-      // but CONSUMED IN ORDER inside the serial loop below — there is no barrier.
-      // So the first scene paints after content(1)+actions(1)+TTS(1) (same as
-      // serial) while later content fetches run hidden behind earlier scenes'
-      // actions/TTS. Content has no cross-scene dependency, so running it ahead is
-      // safe; actions + TTS stay strictly serial to preserve previousSpeeches
-      // threading and the pause-on-failure UX. With parallelism off this is exactly
-      // the original one-at-a-time loop.
+      // Pipelined generation loop. Independent, paid LLM calls are kicked off up
+      // front with bounded concurrency (lazyBoundedMap) but CONSUMED IN ORDER
+      // below — there is no barrier. Content has no cross-scene dependency, so it
+      // is always safe to pre-warm. Actions depend on content plus a soft
+      // continuity hint; with PARALLEL_ACTIONS_CONCURRENCY that hint is derived
+      // from the previous outline up front, so actions pre-warm too and the two
+      // phases overlap instead of running one scene at a time. TTS/media/semantics
+      // stay in the ordered loop (their concurrency is untouched). With both
+      // knobs off this is exactly the original one-at-a-time loop.
       try {
         const fetchContent = (outline: SceneOutline) =>
           fetchSceneContent(
@@ -1742,7 +1822,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             signal,
           );
 
-        // Pre-warm content fetches (<= parallelConcurrency in flight), keyed by
+        // Pre-warm content fetches (<= contentConcurrency in flight), keyed by
         // outline id. Each promise resolves to a result and never rejects, so an
         // unexpected throw routes through the same mark-failed path as the serial
         // loop instead of taking sibling fetches down with it.
@@ -1750,7 +1830,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           ? new Map(
               lazyBoundedMap(
                 pending,
-                parallelConcurrency,
+                contentConcurrency,
                 async (outline): Promise<SceneContentResult> => {
                   options.onPhaseChange?.('content', outline);
                   store.getState().recordScenePhase(outline.id, 'content', { status: 'running' });
@@ -1762,6 +1842,59 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
                       error: err instanceof Error ? err.message : 'Content generation failed',
                     };
                   }
+                },
+                {
+                  shouldContinue: () =>
+                    !abortRef.current && store.getState().generationEpoch === startEpoch,
+                },
+              ).map((promise, i) => [pending[i].id, promise] as const),
+            )
+          : null;
+
+        // Parallel actions pool — the dependency-graph optimization. Each job
+        // waits only for its OWN content (no cross-scene barrier) and uses an
+        // outline-derived continuity hint, so independent scenes' actions run
+        // concurrently with each other and with remaining content fetches.
+        // Results are paired with content for the ordered consumer below.
+        const transitionHints = useParallelActions
+          ? buildParallelTransitionHints(pending, previousSpeeches)
+          : null;
+        const actionsPromises = useParallelActions
+          ? new Map(
+              lazyBoundedMap(
+                pending,
+                parallelActionsConcurrency,
+                async (outline): Promise<{ contentResult: SceneContentResult; actionsResult: SceneActionsResult }> => {
+                  const contentResult = (await contentPromises!.get(outline.id)) ?? {
+                    success: false,
+                    error: 'Content generation failed',
+                  };
+                  if (!contentResult.success || contentResult.content == null) {
+                    return {
+                      contentResult,
+                      actionsResult: {
+                        success: false,
+                        error: contentResult.error || 'Content generation failed',
+                      },
+                    };
+                  }
+                  let actionsResult: SceneActionsResult;
+                  try {
+                    actionsResult = await resolveSceneActions({
+                      outline: contentResult.effectiveOutline || outline,
+                      allOutlines: outlines,
+                      content: contentResult.content,
+                      params,
+                      signal,
+                      previousSpeeches: transitionHints!.get(outline.id) ?? [],
+                    });
+                  } catch (err) {
+                    actionsResult = {
+                      success: false,
+                      error: err instanceof Error ? err.message : 'Actions generation failed',
+                    };
+                  }
+                  return { contentResult, actionsResult };
                 },
                 {
                   shouldContinue: () =>
@@ -1787,7 +1920,15 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           // they now live in runOutlineJob so regeneration and recovery are
           // the same phases with the same skip predicates).
           let contentResult: SceneContentResult;
-          if (contentPromises) {
+          let preComputedActions: SceneActionsResult | undefined;
+          if (actionsPromises) {
+            const batch = (await actionsPromises.get(outline.id)) ?? {
+              contentResult: { success: false, error: 'Content generation failed' },
+              actionsResult: { success: false, error: 'Actions generation failed' },
+            };
+            contentResult = batch.contentResult;
+            preComputedActions = batch.actionsResult;
+          } else if (contentPromises) {
             contentResult = (await contentPromises.get(outline.id)) ?? {
               success: false,
               error: 'Content generation failed',
@@ -1842,6 +1983,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             mode: 'generate',
             previousSpeeches,
             preComputedContent: contentResult,
+            ...(preComputedActions ? { preComputedActions } : {}),
             onContentReady: launchMediaForContentOutline,
           });
           if (!jobResult.success) {

@@ -395,6 +395,90 @@ describe('useSceneGenerator', () => {
     expect(signals[1].aborted).toBe(false);
   });
 
+  it('parallelizes actions across scenes with outline-derived continuity hints', async () => {
+    const prior = {
+      ...scene(0),
+      outlineId: 'prior-outline',
+      actions: [{ id: 'prior-speech', type: 'speech', text: 'Real prior line.' }],
+    } as unknown as Scene;
+    landStage({
+      scenes: [prior],
+      outlines: [
+        { ...outline(1), description: 'First scene purpose.' },
+        { ...outline(2), description: 'Second scene purpose.' },
+        { ...outline(3), description: 'Third scene purpose.' },
+      ],
+    });
+    mocks.settingsState.mockReturnValue({
+      ...mocks.settingsState(),
+      parallelSceneConcurrency: 2,
+      parallelActionsConcurrency: 2,
+    });
+
+    const actionBodies: Array<{ order: number; previousSpeeches: string[] }> = [];
+    let inFlightActions = 0;
+    let maxInFlightActions = 0;
+    let releaseActions!: () => void;
+    const actionsReleased = new Promise<void>((resolve) => {
+      releaseActions = resolve;
+    });
+    const respond = (body: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => body,
+    });
+
+    mockFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        outline?: SceneOutline;
+        previousSpeeches?: string[];
+      };
+      const order = body.outline?.order ?? 0;
+      if (String(url).includes('/scene-content')) {
+        return respond({ success: true, content: { elements: [] } });
+      }
+      if (String(url).includes('/scene-actions')) {
+        actionBodies.push({ order, previousSpeeches: body.previousSpeeches ?? [] });
+        inFlightActions += 1;
+        maxInFlightActions = Math.max(maxInFlightActions, inFlightActions);
+        // Hold every actions call until the test releases them, so a bounded
+        // pool shows up as more than one call in flight at the same time.
+        await actionsReleased;
+        inFlightActions -= 1;
+        const assembled = scene(order);
+        assembled.actions = [
+          { id: `speech-${order}`, type: 'speech', text: `Speech ${order}` },
+        ] as never;
+        return respond({ success: true, scene: assembled });
+      }
+      return respond({ success: true });
+    });
+
+    const api = await mountGenerator();
+    let generation!: Promise<void>;
+    await act(async () => {
+      generation = api.generateRemaining({ stageInfo: { name: 'Course' } });
+      for (let tick = 0; tick < 200 && inFlightActions < 2; tick += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    });
+
+    expect(maxInFlightActions).toBeGreaterThan(1);
+
+    await act(async () => {
+      releaseActions();
+      await generation;
+    });
+
+    expect(actionBodies.map((b) => b.order)).toEqual([1, 2, 3]);
+    // The first scene keeps the real previous speech; later scenes use the
+    // preceding outline's description instead of waiting for generated speech.
+    expect(actionBodies[0].previousSpeeches).toEqual(['Real prior line.']);
+    expect(actionBodies[1].previousSpeeches).toEqual(['First scene purpose.']);
+    expect(actionBodies[2].previousSpeeches).toEqual(['Second scene purpose.']);
+  });
+
   it('stop() aborts a retry that is in flight', async () => {
     landStage({ outlines: [outline(1)], failedOutlines: [outline(1)] });
     let retrySignal: AbortSignal | undefined;

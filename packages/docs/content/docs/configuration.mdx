@@ -253,6 +253,11 @@ The following server options can also be configured with environment variables:
 # Parallel scene-content generation; 0 or unset means sequential
 PARALLEL_SCENE_CONCURRENCY=3
 
+# Parallel actions generation; 0 or unset keeps the serial chain with real
+# speech continuity. A value >1 overlaps actions calls using the preceding
+# outline's description as the transition hint (capped at 10).
+PARALLEL_ACTIONS_CONCURRENCY=3
+
 # Allow localhost and private-network addresses; self-hosted/private deployments only
 ALLOW_LOCAL_NETWORKS=true
 

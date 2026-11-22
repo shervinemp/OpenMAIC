@@ -1057,3 +1057,23 @@ export function getParallelSceneConcurrency(): number {
   if (!Number.isFinite(raw) || raw <= 0) return 0;
   return Math.min(raw, 10);
 }
+
+/**
+ * Opt-in concurrency for the *actions* phase — the one genuinely serial link
+ * in the generation dependency graph.
+ *
+ * Actions only depend on (a) that scene's content and (b) a soft continuity
+ * hint from the previous scene. Content is already generated in a bounded pool;
+ * this knob relaxes (b) by deriving the hint from the *previous outline* (known
+ * up front) so actions can run in a bounded pool too. The paid LLM calls for
+ * content and actions then overlap instead of running one scene at a time.
+ *
+ * Returns `PARALLEL_ACTIONS_CONCURRENCY`, clamped to [0, 10]. `0` (default)
+ * keeps the original strictly-serial actions chain, including real speech
+ * continuity, so existing deployments and output quality are unchanged.
+ */
+export function getParallelActionsConcurrency(): number {
+  const raw = Number.parseInt(process.env.PARALLEL_ACTIONS_CONCURRENCY ?? '', 10);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return Math.min(raw, 10);
+}

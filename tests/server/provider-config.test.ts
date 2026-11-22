@@ -188,6 +188,38 @@ describe('provider-config', () => {
     });
   });
 
+  describe('getParallelActionsConcurrency', () => {
+    beforeEach(() => {
+      delete process.env.PARALLEL_ACTIONS_CONCURRENCY;
+    });
+
+    it('defaults to 0 (serial actions chain) when unset', async () => {
+      const { getParallelActionsConcurrency } = await import('@/lib/server/provider-config');
+      expect(getParallelActionsConcurrency()).toBe(0);
+    });
+
+    it('reads a positive integer from the env var', async () => {
+      vi.stubEnv('PARALLEL_ACTIONS_CONCURRENCY', '4');
+      const { getParallelActionsConcurrency } = await import('@/lib/server/provider-config');
+      expect(getParallelActionsConcurrency()).toBe(4);
+    });
+
+    it('clamps to a maximum of 10', async () => {
+      vi.stubEnv('PARALLEL_ACTIONS_CONCURRENCY', '50');
+      const { getParallelActionsConcurrency } = await import('@/lib/server/provider-config');
+      expect(getParallelActionsConcurrency()).toBe(10);
+    });
+
+    it('treats zero, negative, and non-numeric values as off', async () => {
+      for (const value of ['0', '-2', 'abc']) {
+        vi.resetModules();
+        vi.stubEnv('PARALLEL_ACTIONS_CONCURRENCY', value);
+        const { getParallelActionsConcurrency } = await import('@/lib/server/provider-config');
+        expect(getParallelActionsConcurrency(), `value=${value}`).toBe(0);
+      }
+    });
+  });
+
   describe('resolveBaseUrl', () => {
     it('returns client URL for an unmanaged provider', async () => {
       const { resolveBaseUrl } = await import('@/lib/server/provider-config');
