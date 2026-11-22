@@ -15,6 +15,7 @@ import {
   ImagePlus,
   Pause,
   Pencil,
+  Square,
   Trash2,
   Search,
   Settings,
@@ -52,10 +53,11 @@ import { nanoid } from 'nanoid';
 import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
 import {
   saveGenerationSession,
-  hasGenerationSessionEnvelope,
   readGenerationSessionEnvelope,
+  listGenerationSessions,
   clearGenerationSession,
   clearGenerationSessionEnvelope,
+  type ParkedGenerationSession,
 } from '@/lib/utils/generation-session-store';
 import { abortStageGeneration } from '@/lib/classroom/generation-abort';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
@@ -259,8 +261,7 @@ function HomePage() {
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
   // True when a parked generation session exists (user backed out during the
   // outline phase) — renders the "resume generation" prompt in the list.
-  const [pendingGeneration, setPendingGeneration] = useState(false);
-  const [backgroundGeneration, setBackgroundGeneration] = useState(false);
+  const [parkedSessions, setParkedSessions] = useState<ParkedGenerationSession[]>([]);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -377,21 +378,13 @@ function HomePage() {
     useMediaGenerationStore.getState().revokeObjectUrls();
     useMediaGenerationStore.setState({ tasks: {} });
 
-    // A parked generation session (pointer envelope in sessionStorage) means
-    // the user backed out mid-outline (before the course was persisted).
-    // Surface a resume prompt and make sure the recent list is expanded so it
-    // is visible.
-    if (hasGenerationSessionEnvelope()) {
-      setPendingGeneration(true);
-      let background = false;
-      try {
-        background = sessionStorage.getItem('openmaic:background-generation') === '1';
-      } catch {
-        /* ignore */
-      }
-      setBackgroundGeneration(background);
+    // One resume entry per parked course. The single legacy envelope only
+    // tracked the newest session, which hid other in-flight courses.
+    void listGenerationSessions().then((sessions) => {
+      if (sessions.length === 0) return;
+      setParkedSessions(sessions);
       persistRecentOpen(true);
-    }
+    });
 
     // Read sessionStorage on the client only (avoids SSR hydration mismatch).
     // Both reads resolve before flipping `hydrated`, so the hero layout does
@@ -430,6 +423,32 @@ function HomePage() {
     } catch (err) {
       log.error('Failed to delete classroom:', err);
       toast.error('Failed to delete classroom');
+    }
+  };
+
+  const stopParkedGeneration = async (parked: ParkedGenerationSession) => {
+    let runId: string | null = null;
+    try {
+      runId = sessionStorage.getItem(`openmaic:run-id:${parked.sessionId}`);
+    } catch {
+      /* ignore */
+    }
+    if (runId) {
+      try {
+        await fetch('/api/generation/cancel', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sessionId: runId }),
+        });
+      } catch {
+        /* best effort */
+      }
+    }
+    try {
+      sessionStorage.removeItem(`openmaic:run-id:${parked.sessionId}`);
+      sessionStorage.removeItem(`openmaic:background-generation:${parked.sessionId}`);
+    } catch {
+      /* ignore */
     }
   };
 
@@ -1386,54 +1405,83 @@ function HomePage() {
               >
                 {/* Paused-outline generation prompt: the session was kept when
                     the user backed out before the course was persisted. */}
-                {pendingGeneration && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mt-6 w-full flex items-center gap-3 rounded-xl border border-violet-200/60 bg-violet-50/60 px-4 py-3 text-left dark:border-violet-800/60 dark:bg-violet-950/20"
-                  >
-                    {backgroundGeneration ? (
-                      <Loader2 className="size-4 shrink-0 animate-spin text-violet-600 dark:text-violet-400" />
-                    ) : (
-                      <Pause className="size-4 shrink-0 text-violet-600 dark:text-violet-400" />
-                    )}
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[13px] font-medium">
-                        {t(
-                          backgroundGeneration
-                            ? 'generation.pendingGenerationTitle'
-                            : 'generation.pausedGenerationTitle',
-                        )}
-                      </span>
-                      <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                        {t('generation.pendingGenerationDesc')}
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      aria-label="Discard paused generation"
-                      title="Discard paused generation"
-                      className="rounded-md p-1 text-muted-foreground hover:bg-violet-100 hover:text-foreground dark:hover:bg-violet-900/40"
-                      onClick={() => {
-                        setPendingGeneration(false);
-                        void clearGenerationSession();
-                      }}
+                {parkedSessions.map((parked) => {
+                  let background = false;
+                  try {
+                    background =
+                      sessionStorage.getItem(`openmaic:background-generation:${parked.sessionId}`) ===
+                      '1';
+                  } catch {
+                    /* ignore */
+                  }
+                  return (
+                    <motion.div
+                      key={parked.sessionId}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mt-3 w-full flex items-center gap-3 rounded-xl border border-violet-200/60 bg-violet-50/60 px-4 py-3 text-left first:mt-6 dark:border-violet-800/60 dark:bg-violet-950/20"
                     >
-                      <X className="size-4" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Resume generation"
-                      className="rounded-md p-1 text-muted-foreground hover:bg-violet-100 hover:text-foreground dark:hover:bg-violet-900/40"
-                      onClick={() => {
-                        setPendingGeneration(false);
-                        router.push('/generation-preview');
-                      }}
-                    >
-                      <ChevronRight className="size-4" />
-                    </button>
-                  </motion.div>
-                )}
+                      {background ? (
+                        <Loader2 className="size-4 shrink-0 animate-spin text-violet-600 dark:text-violet-400" />
+                      ) : (
+                        <Pause className="size-4 shrink-0 text-violet-600 dark:text-violet-400" />
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[13px] font-medium">
+                          {t(
+                            background
+                              ? 'generation.pendingGenerationTitle'
+                              : 'generation.pausedGenerationTitle',
+                          )}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                          {parked.requirement}
+                        </span>
+                      </span>
+                      {background && (
+                        <button
+                          type="button"
+                          aria-label="Stop generation"
+                          title="Stop generation"
+                          className="rounded-md p-1 text-muted-foreground hover:bg-violet-100 hover:text-foreground dark:hover:bg-violet-900/40"
+                          onClick={() => {
+                            void stopParkedGeneration(parked);
+                            setParkedSessions((prev) =>
+                              prev.filter((s) => s.sessionId !== parked.sessionId),
+                            );
+                          }}
+                        >
+                          <Square className="size-4" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        aria-label="Discard generation"
+                        title="Discard generation"
+                        className="rounded-md p-1 text-muted-foreground hover:bg-violet-100 hover:text-foreground dark:hover:bg-violet-900/40"
+                        onClick={() => {
+                          void stopParkedGeneration(parked);
+                          void clearGenerationSession(parked.sessionId);
+                          setParkedSessions((prev) =>
+                            prev.filter((s) => s.sessionId !== parked.sessionId),
+                          );
+                        }}
+                      >
+                        <X className="size-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Resume generation"
+                        className="rounded-md p-1 text-muted-foreground hover:bg-violet-100 hover:text-foreground dark:hover:bg-violet-900/40"
+                        onClick={() =>
+                          router.push(`/generation-preview?sessionId=${parked.sessionId}`)
+                        }
+                      >
+                        <ChevronRight className="size-4" />
+                      </button>
+                    </motion.div>
+                  );
+                })}
                 {folders.length === 0 && classrooms.length === 0 ? (
                   <div className="pt-8 pb-2 text-center text-[13px] text-muted-foreground/60">
                     {t('classroom.emptyLibraryHint')}

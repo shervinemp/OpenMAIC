@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, Suspense, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { claimGenerationLease } from '@/lib/classroom/generation-lease';
@@ -137,6 +137,7 @@ type SceneGenerationFailure = {
 
 function GenerationPreviewContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { t, locale } = useI18n();
   const hasStartedRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -277,16 +278,16 @@ function GenerationPreviewContent() {
     // Sessions abandoned before their natural end (tab closed mid-run) would
     // otherwise linger in IndexedDB forever.
     cleanupOldGenerationSessions(24).catch((e) => log.error(e));
-    // Returning to the preview means the background indicator is no longer
-    // needed; the run is either resumed here or already finished.
-    try {
-      sessionStorage.removeItem('openmaic:background-generation');
-    } catch {
-      /* ignore */
-    }
-
     let cancelled = false;
-    loadGenerationSession()
+    const requestedSessionId = searchParams.get('sessionId') ?? undefined;
+    if (requestedSessionId) {
+      try {
+        sessionStorage.removeItem(`openmaic:background-generation:${requestedSessionId}`);
+      } catch {
+        /* ignore */
+      }
+    }
+    loadGenerationSession(requestedSessionId)
       .then((saved) => {
         if (cancelled) return;
         if (saved) {
@@ -315,6 +316,9 @@ function GenerationPreviewContent() {
     return () => {
       cancelled = true;
     };
+    // Mount-only: the session id is captured once; changing the query string
+    // mid-run must not restart the pipeline.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Abort all in-flight requests on unmount
@@ -435,6 +439,11 @@ function GenerationPreviewContent() {
     // Every run gets its own cancel identity under the shared session id, so a
     // different tab leaving this course cannot abort this tab's server calls.
     runSessionIdRef.current = `${generationSession.sessionId}:${nanoid(8)}`;
+    try {
+      sessionStorage.setItem(`openmaic:run-id:${generationSession.sessionId}`, runSessionIdRef.current);
+    } catch {
+      /* ignore */
+    }
 
     // The course was already persisted (user backed out mid-content
     // generation). Don't re-run the outline/first-scene flow — hand off to
@@ -1587,7 +1596,10 @@ function GenerationPreviewContent() {
     leavingRef.current = true;
     if (ownsLeaseRef.current) {
       try {
-        sessionStorage.setItem('openmaic:background-generation', '1');
+        sessionStorage.setItem(
+          `openmaic:background-generation:${session?.sessionId ?? ''}`,
+          '1',
+        );
       } catch {
         /* ignore */
       }
@@ -1613,7 +1625,9 @@ function GenerationPreviewContent() {
     clearOutlineReviewTimer();
     outlineReviewIntentRef.current = false;
     try {
-      sessionStorage.removeItem('openmaic:background-generation');
+      sessionStorage.removeItem(
+        `openmaic:background-generation:${session?.sessionId ?? ''}`,
+      );
     } catch {
       /* ignore */
     }

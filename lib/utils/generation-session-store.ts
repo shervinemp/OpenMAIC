@@ -193,6 +193,41 @@ export function clearGenerationSessionEnvelope(sessionId?: string): void {
   }
 }
 
+/** A parked session as shown in the home resume list. */
+export interface ParkedGenerationSession {
+  sessionId: string;
+  requirement: string;
+  sizePreset?: string;
+  stageId?: string;
+  updatedAt: number;
+}
+
+/**
+ * All sessions this browser has parked, newest first. The single legacy
+ * envelope only tracks the latest one; courses need one resume entry each.
+ */
+export async function listGenerationSessions(
+  limit = 8,
+): Promise<ParkedGenerationSession[]> {
+  try {
+    const records = await db.generationSessions.toArray();
+    return records
+      .filter((r) => !!r.session?.requirements?.requirement)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, limit)
+      .map((r) => ({
+        sessionId: r.sessionId,
+        requirement: r.session.requirements.requirement,
+        sizePreset: r.session.sizePreset,
+        stageId: r.session.stageId,
+        updatedAt: r.updatedAt,
+      }));
+  } catch (e) {
+    log.warn('Failed to list generation sessions:', e);
+    return [];
+  }
+}
+
 /**
  * Load the params the generation-preview flow handed to the classroom resume
  * path (agents, media context, language directive).
