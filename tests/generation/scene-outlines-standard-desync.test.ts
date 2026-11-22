@@ -7,7 +7,7 @@ const callLLMMock = vi.hoisted(() => vi.fn());
 const resolveModelFromRequestMock = vi.hoisted(() => vi.fn());
 const resolveVisionImagesMock = vi.hoisted(() => vi.fn());
 
-vi.mock('@/lib/ai/llm', () => ({
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value, 
   streamLLM: streamLLMMock,
   callLLM: callLLMMock,
 }));

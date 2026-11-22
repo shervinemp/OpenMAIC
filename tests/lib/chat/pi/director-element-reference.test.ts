@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   callAgentExecutions: 0,
 }));
 
-vi.mock('@/lib/ai/llm', () => ({ streamLLM: mocks.streamLLM }));
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value,  streamLLM: mocks.streamLLM }));
 vi.mock('@/lib/chat/pi/tools/call-agent', () => ({
   buildCallAgentTool: (options: { elementReferenceEvidence?: unknown }) => ({
     name: 'call_agent',

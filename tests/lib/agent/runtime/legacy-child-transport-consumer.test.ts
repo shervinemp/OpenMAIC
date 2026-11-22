@@ -5,7 +5,7 @@ import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
 
 const mocks = vi.hoisted(() => ({ streamLLM: vi.fn() }));
 
-vi.mock('@/lib/ai/llm', () => ({ streamLLM: mocks.streamLLM }));
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value,  streamLLM: mocks.streamLLM }));
 
 import { buildCallAgentTool } from '@/lib/chat/pi/tools/call-agent';
 

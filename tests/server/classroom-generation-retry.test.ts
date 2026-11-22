@@ -43,7 +43,7 @@ vi.mock('@/lib/ai/providers', async (importOriginal) => ({
   isProviderKeyRequired: mocks.isProviderKeyRequired,
 }));
 
-vi.mock('@/lib/ai/llm', () => ({
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value, 
   callLLM: mocks.callLLM,
 }));
 

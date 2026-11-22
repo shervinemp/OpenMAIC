@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   resolveVocationalActive: vi.fn(),
 }));
 
-vi.mock('@/lib/ai/llm', () => ({
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value, 
   callLLM: mocks.callLLM,
 }));
 

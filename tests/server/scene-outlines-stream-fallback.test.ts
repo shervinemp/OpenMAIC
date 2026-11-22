@@ -4,7 +4,7 @@ import { APICallError } from 'ai';
 
 const streamLLMMock = vi.fn();
 
-vi.mock('@/lib/ai/llm', () => ({
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value, 
   streamLLM: (...args: unknown[]) => streamLLMMock(...args),
   // The fork's multi-unit path exists on the same route; these tests exercise
   // the streaming path, so the symbol only needs to exist.

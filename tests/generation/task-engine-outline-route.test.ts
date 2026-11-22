@@ -6,7 +6,7 @@ const resolveModelFromRequestMock = vi.hoisted(() => vi.fn());
 const VOCATIONAL_FLAG = 'OPENMAIC_ENABLE_VOCATIONAL';
 let originalVocationalFlag: string | undefined;
 
-vi.mock('@/lib/ai/llm', () => ({
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value, 
   streamLLM: streamLLMMock,
   callLLM: callLLMMock,
 }));

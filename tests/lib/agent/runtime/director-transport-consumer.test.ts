@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   logError: vi.fn(),
 }));
 
-vi.mock('@/lib/ai/llm', () => ({ streamLLM: mocks.streamLLM }));
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value,  streamLLM: mocks.streamLLM }));
 vi.mock('@/lib/server/resolve-model', () => ({ resolveModel: mocks.resolveModel }));
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: mocks.logError }),

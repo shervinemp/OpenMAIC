@@ -11,7 +11,7 @@ vi.mock('@/lib/server/resolve-model', () => ({
   resolveModel: mocks.resolveModel,
 }));
 
-vi.mock('@/lib/ai/llm', () => ({
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value, 
   callLLM: mocks.callLLM,
 }));
 

@@ -19,7 +19,7 @@ const { mockGenerateText, mockProvider, mockTool, mockCreateAnthropic } = vi.hoi
   return { mockGenerateText, mockProvider, mockTool, mockCreateAnthropic };
 });
 
-vi.mock('@/lib/ai/llm', () => ({ callLLM: mockGenerateText }));
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value,  callLLM: mockGenerateText }));
 vi.mock('@ai-sdk/anthropic', () => ({ createAnthropic: mockCreateAnthropic }));
 vi.mock('@/lib/server/proxy-fetch', () => ({ proxyFetch: vi.fn() }));
 vi.mock('@/lib/logger', () => ({

@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   callLLM: vi.fn(),
 }));
 
-vi.mock('@/lib/ai/llm', () => ({
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value, 
   callLLM: mocks.callLLM,
 }));
 

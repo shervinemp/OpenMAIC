@@ -4,7 +4,7 @@ import { QWEN_TTS_VOICE_CLONE_MODEL } from '@/lib/audio/constants';
 
 const callLLM = vi.fn();
 
-vi.mock('@/lib/ai/llm', () => ({
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value, 
   callLLM: (...args: unknown[]) => callLLM(...args),
 }));
 

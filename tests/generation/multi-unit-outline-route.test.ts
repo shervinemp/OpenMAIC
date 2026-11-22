@@ -6,7 +6,7 @@ const resolveModelFromRequestMock = vi.hoisted(() => vi.fn());
 const resolveModelMock = vi.hoisted(() => vi.fn());
 const searchWebMock = vi.hoisted(() => vi.fn());
 
-vi.mock('@/lib/ai/llm', () => ({
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value, 
   streamLLM: streamLLMMock,
   callLLM: callLLMMock,
 }));

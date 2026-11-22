@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   resolveModel: vi.fn(),
 }));
 
-vi.mock('@/lib/ai/llm', () => ({ callLLM: mocks.callLLM }));
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value,  callLLM: mocks.callLLM }));
 vi.mock('@/lib/server/resolve-model', () => ({
   resolveModelFromRequest: mocks.resolveModelFromRequest,
   resolveModel: mocks.resolveModel,

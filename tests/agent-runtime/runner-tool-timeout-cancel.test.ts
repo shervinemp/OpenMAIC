@@ -65,7 +65,7 @@ vi.mock('@/lib/server/agent-runtime/agent-driver-model', () => ({
   resolveAgentDriverModel: mocks.resolveAgentDriverModel,
 }));
 
-vi.mock('@/lib/ai/llm', () => ({
+vi.mock('@/lib/ai/llm', () => ({withAgenticOutputDiscipline: (value: string) => value, 
   streamLLM: mocks.streamLLM,
   callLLM: vi.fn(),
 }));
