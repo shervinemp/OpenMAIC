@@ -29,7 +29,7 @@ import { captionDocumentImages, type ImageCaption } from '@/lib/generation/image
 import { chunkSourceText, type PdfChunk } from '@openmaic/generation';
 import { createLogger } from '@/lib/logger';
 import { apiError } from '@/lib/server/api-response';
-import { generationCallFor } from '@/lib/server/generation-cancel';
+import { anyAbortSignal, generationCallFor } from '@/lib/server/generation-cancel';
 import { resolveModel, resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { getStageModel, parseUserStageRoutes } from '@/lib/server/model-routes';
 import {
@@ -203,7 +203,7 @@ export async function POST(req: NextRequest) {
                   ],
                   maxOutputTokens: indexOutputBudget,
                   maxRetries: 1,
-                  abortSignal: generationCall?.signal,
+                  abortSignal: anyAbortSignal(req.signal, generationCall?.signal),
                 },
                 'documents-index',
                 undefined,
@@ -219,7 +219,7 @@ export async function POST(req: NextRequest) {
                 prompt: user,
                 maxOutputTokens: indexOutputBudget,
                 maxRetries: 1,
-                abortSignal: generationCall?.signal,
+                abortSignal: anyAbortSignal(req.signal, generationCall?.signal),
               },
               'documents-index',
               undefined,
@@ -253,7 +253,7 @@ export async function POST(req: NextRequest) {
                 ],
                 maxOutputTokens: captionOutputBudget,
                 maxRetries: 1,
-                abortSignal: generationCall?.signal,
+                abortSignal: anyAbortSignal(req.signal, generationCall?.signal),
               },
               'documents-captions',
               undefined,

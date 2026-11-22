@@ -139,6 +139,7 @@ function GenerationPreviewContent() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const sessionIdRef = useRef<string | undefined>(undefined);
   const leavingRef = useRef(false);
+  const skipIndexRef = useRef<AbortController | null>(null);
   const outlineReviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const outlineReviewResolveRef = useRef<((outlines: SceneOutline[]) => void) | null>(null);
   // Sticky flag: true once the user signals review intent (either by clicking the
@@ -162,6 +163,7 @@ function GenerationPreviewContent() {
   const [showAgentReveal, setShowAgentReveal] = useState(false);
   const [showRunDetails, setShowRunDetails] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
+  const [indexRunning, setIndexRunning] = useState(false);
   const [isConfirmingOutlines, setIsConfirmingOutlines] = useState(false);
   const [generatedAgents, setGeneratedAgents] = useState<
     Array<{
@@ -429,6 +431,10 @@ function GenerationPreviewContent() {
     setCurrentStepIndex(0);
 
     try {
+      // Degradation notices from optional steps (indexing, web search) share
+      // one warnings flow in the preview UI.
+      const notices: string[] = [];
+
       // Compute active steps for this session (recomputed after session mutations)
       let activeSteps = getActiveSteps(currentSession);
 
@@ -554,11 +560,15 @@ function GenerationPreviewContent() {
         // (sha256-handled, cached): coverage digest for the outline stage,
         // batched vision captions for ALL images, full-text retrieval chunks.
         // Failure degrades gracefully to the legacy truncated-prefix path.
-        const notices: string[] = [];
         let pdfHandle: string | undefined;
         let pdfDigest: DocumentDigest | undefined;
         let documentIndex: GenerationSessionState['documentIndex'] | undefined;
         if (bundle.text.length > 0) {
+          const indexController = new AbortController();
+          skipIndexRef.current = indexController;
+          const abortIndexWithGeneration = () => indexController.abort();
+          signal?.addEventListener('abort', abortIndexWithGeneration, { once: true });
+          setIndexRunning(true);
           try {
             setStatusMessage(t('generation.indexingDocument'));
             const indexData = await new Promise<{
@@ -588,7 +598,7 @@ function GenerationPreviewContent() {
                     description: img.description,
                   })),
                 }),
-                signal,
+                signal: indexController.signal,
               })
                 .then((res) => {
                   if (!res.ok) {
@@ -678,8 +688,18 @@ function GenerationPreviewContent() {
             );
           } catch (indexError) {
             if (signal?.aborted) throw indexError;
-            log.warn('Document indexing failed; continuing without coverage index:', indexError);
-            notices.push(t('generation.documentIndexFailed'));
+            if (indexController.signal.aborted) {
+              // The user chose to skip a long index — not a failure.
+              log.info('Document indexing skipped by user; continuing without coverage index');
+              notices.push('Document indexing skipped');
+            } else {
+              log.warn('Document indexing failed; continuing without coverage index:', indexError);
+              notices.push(t('generation.documentIndexFailed'));
+            }
+          } finally {
+            signal?.removeEventListener('abort', abortIndexWithGeneration);
+            if (skipIndexRef.current === indexController) skipIndexRef.current = null;
+            setIndexRunning(false);
           }
         }
 
@@ -772,10 +792,10 @@ function GenerationPreviewContent() {
               '[Generation] Web search unavailable; continuing without research context:',
               searchError,
             );
-            toast.warning('Web search unavailable — continuing without web research.', {
-              description:
-                searchError instanceof Error ? searchError.message : 'Search provider failed.',
-            });
+            // Go through the same degradation flow as document indexing: the
+            // warning badge in the preview, not a separate toast surface.
+            notices.push('Web search unavailable — continued without web research.');
+            setTruncationWarnings([...notices]);
           }
         }
       }
@@ -1847,6 +1867,16 @@ function GenerationPreviewContent() {
                           ? t('generation.classroomReady')
                           : statusMessage || t(activeStepText.description)}
                     </p>
+                    {indexRunning && !error && !isComplete && (
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="text-muted-foreground"
+                        onClick={() => skipIndexRef.current?.abort()}
+                      >
+                        Skip indexing — continue without the coverage map
+                      </Button>
+                    )}
                   </motion.div>
                 </AnimatePresence>
 
