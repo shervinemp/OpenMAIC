@@ -666,15 +666,7 @@ export function getServerProviders(): Record<string, { models?: string[] }> {
 
 /** Resolve API key. Managed provider ⇒ server key; otherwise client key. */
 export function resolveApiKey(providerId: string, clientKey?: string): string {
-  const key = resolveSectionApiKey('providers', providerId, clientKey);
-  // The native `opencode` provider uses its own optional gateway key. Keeping
-  // it separate means a real OpenRouter key is never shadowed and the OpenCode
-  // key never leaks into requests to other providers. The local bridge is
-  // keyless, so an empty value is fine.
-  if (providerId === 'opencode') {
-    return process.env.OPENCODE_API_KEY?.trim() || key;
-  }
-  return key;
+  return resolveSectionApiKey('providers', providerId, clientKey);
 }
 
 /** Resolve base URL. Managed provider ⇒ server URL; otherwise client URL. */
