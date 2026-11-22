@@ -404,6 +404,10 @@ async function generateLemonadeTTS(
   );
   const modelId = config.modelId || TTS_PROVIDERS['lemonade-tts'].defaultModelId;
   const voice = config.voice || 'af_heart';
+  // Some OpenAI-compatible backends (e.g. Kokoro) split the input into lines and
+  // require a one-to-one output, dropping blank/short lines. Collapse whitespace
+  // so one narration is sent as one line.
+  const input = text.replace(/\s+/gu, ' ').trim();
 
   const response = await ttsFetch(config, `${baseUrl}/audio/speech`, {
     method: 'POST',
@@ -413,7 +417,7 @@ async function generateLemonadeTTS(
     },
     body: JSON.stringify({
       model: modelId,
-      input: text,
+      input,
       voice,
       speed: config.speed || 1.0,
       response_format: config.format || 'wav',
