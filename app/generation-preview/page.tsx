@@ -127,6 +127,7 @@ function GenerationPreviewContent() {
   const { t, locale } = useI18n();
   const hasStartedRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const sessionIdRef = useRef<string | undefined>(undefined);
   const outlineReviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const outlineReviewResolveRef = useRef<((outlines: SceneOutline[]) => void) | null>(null);
   // Sticky flag: true once the user signals review intent (either by clicking the
@@ -287,8 +288,24 @@ function GenerationPreviewContent() {
   }, []);
 
   // Abort all in-flight requests on unmount
+  // Tell the server to stop its in-flight LLM calls too, not just our fetches.
+  const cancelServerGeneration = () => {
+    const sessionId = sessionIdRef.current;
+    if (!sessionId) return;
+    void fetch('/api/generation/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    }).catch(() => undefined);
+  };
+
+  useEffect(() => {
+    sessionIdRef.current = session?.sessionId;
+  }, [session?.sessionId]);
+
   useEffect(() => {
     return () => {
+      cancelServerGeneration();
       abortControllerRef.current?.abort();
       clearOutlineReviewTimer();
     };
@@ -321,6 +338,8 @@ function GenerationPreviewContent() {
       // Media generation toggles
       'x-image-generation-enabled': String(settings.imageGenerationEnabled ?? false),
       'x-video-generation-enabled': String(settings.videoGenerationEnabled ?? false),
+      // Lets a cancel request abort every in-flight server call for this run.
+      'x-generation-session': session?.sessionId ?? '',
     };
   };
 
@@ -435,6 +454,7 @@ function GenerationPreviewContent() {
             }
             const parseResponse = await fetch('/api/extract-document', {
               method: 'POST',
+              headers: { 'x-generation-session': generationSession?.sessionId ?? '' },
               body: parseFormData,
               signal,
             });
@@ -1398,6 +1418,7 @@ function GenerationPreviewContent() {
   };
 
   const goBackToHome = () => {
+    cancelServerGeneration();
     abortControllerRef.current?.abort();
     clearOutlineReviewTimer();
     outlineReviewIntentRef.current = false;

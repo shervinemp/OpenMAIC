@@ -29,6 +29,7 @@ import { captionDocumentImages, type ImageCaption } from '@/lib/generation/image
 import { chunkSourceText, type PdfChunk } from '@openmaic/generation';
 import { createLogger } from '@/lib/logger';
 import { apiError } from '@/lib/server/api-response';
+import { withGenerationCancel } from '@/lib/server/generation-cancel';
 import { resolveModel, resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { getStageModel, parseUserStageRoutes } from '@/lib/server/model-routes';
 import {
@@ -60,7 +61,7 @@ interface IndexRequestBody {
 const MAX_INDEX_TEXT_CHARS = 5_000_000;
 const MAX_INDEX_IMAGES = 500;
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   try {
     const body = (await req.json()) as Partial<IndexRequestBody>;
 
@@ -376,3 +377,5 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const POST = withGenerationCancel(handlePost);

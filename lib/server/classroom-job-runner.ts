@@ -2,7 +2,9 @@ import { createLogger } from '@/lib/logger';
 import type { GenerateClassroomInput } from '@/lib/server/classroom-generation';
 import {
   deleteClassroomJobInput,
+  isTerminalClassroomJobStatus,
   listClassroomGenerationJobIds,
+  markClassroomGenerationJobCancelled,
   markClassroomGenerationJobFailed,
   markClassroomGenerationJobRunning,
   markClassroomGenerationJobSucceeded,
@@ -14,6 +16,8 @@ import {
 
 const log = createLogger('ClassroomJob');
 const runningJobs = new Map<string, Promise<void>>();
+/** Aborts the in-flight LLM/TTS work when a user cancels this job. */
+const runningJobControllers = new Map<string, AbortController>();
 
 export function runClassroomGenerationJob(
   jobId: string,
@@ -25,6 +29,9 @@ export function runClassroomGenerationJob(
     return existing;
   }
 
+  const controller = new AbortController();
+  runningJobControllers.set(jobId, controller);
+
   const jobPromise = (async () => {
     try {
       await markClassroomGenerationJobRunning(jobId);
@@ -34,7 +41,13 @@ export function runClassroomGenerationJob(
       const { generateClassroom } = await import('@/lib/server/classroom-generation');
       const result = await generateClassroom(input, {
         baseUrl,
+        signal: controller.signal,
         onProgress: async (progress) => {
+          // A cancel lands between phases too; stop before the next write or
+          // the next expensive call instead of finishing the whole course.
+          if (controller.signal.aborted) {
+            throw controller.signal.reason ?? new DOMException('Aborted', 'AbortError');
+          }
           await updateClassroomGenerationJobProgress(jobId, progress);
         },
       });
@@ -50,6 +63,7 @@ export function runClassroomGenerationJob(
       }
     } finally {
       runningJobs.delete(jobId);
+      runningJobControllers.delete(jobId);
     }
     // Settled either way: the job will not run again, so its input goes.
     await deleteClassroomJobInput(jobId);
@@ -57,6 +71,25 @@ export function runClassroomGenerationJob(
 
   runningJobs.set(jobId, jobPromise);
   return jobPromise;
+}
+
+/**
+ * Cancel a queued/running job: stop its in-flight work, keep the explicit
+ * cancelled verdict, and drop the saved input so recovery cannot restart it.
+ * Idempotent for terminal jobs; returns null when the job does not exist.
+ */
+export async function cancelClassroomGenerationJob(jobId: string) {
+  const job = await readClassroomGenerationJobRecord(jobId);
+  if (!job) return null;
+  if (isTerminalClassroomJobStatus(job.status)) return job;
+
+  runningJobControllers
+    .get(jobId)
+    ?.abort(new DOMException('Classroom generation cancelled by user', 'AbortError'));
+
+  const cancelled = await markClassroomGenerationJobCancelled(jobId);
+  await deleteClassroomJobInput(jobId);
+  return cancelled;
 }
 
 /**

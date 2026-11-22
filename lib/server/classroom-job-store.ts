@@ -12,12 +12,22 @@ import {
   writeJsonFileAtomic,
 } from '@/lib/server/classroom-storage';
 
-export type ClassroomGenerationJobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+export type ClassroomGenerationJobStatus =
+  | 'queued'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled';
+
+/** Terminal statuses never run again; late writes must not resurrect them. */
+export function isTerminalClassroomJobStatus(status: ClassroomGenerationJobStatus): boolean {
+  return status === 'succeeded' || status === 'failed' || status === 'cancelled';
+}
 
 export interface ClassroomGenerationJob {
   id: string;
   status: ClassroomGenerationJobStatus;
-  step: ClassroomGenerationStep | 'queued' | 'failed';
+  step: ClassroomGenerationStep | 'queued' | 'failed' | 'cancelled';
   progress: number;
   message: string;
   createdAt: string;
@@ -234,6 +244,35 @@ export async function updateClassroomGenerationJob(
   });
 }
 
+type JobPatch = (job: ClassroomGenerationJob) => Partial<ClassroomGenerationJob> | null;
+
+/**
+ * Read-modify-write under the per-job lock, with the option to refuse a write.
+ * Progress and success writes from a run that was cancelled mid-flight use this
+ * so they cannot flip a terminal job back to running or overwrite the cancel.
+ */
+async function patchClassroomGenerationJob(
+  jobId: string,
+  patch: JobPatch,
+): Promise<ClassroomGenerationJob> {
+  return withJobLock(jobId, async () => {
+    const existing = await readClassroomGenerationJob(jobId);
+    if (!existing) {
+      throw new Error(`Classroom generation job not found: ${jobId}`);
+    }
+    const changes = patch(existing);
+    if (!changes) return existing;
+
+    const updated: ClassroomGenerationJob = {
+      ...existing,
+      ...changes,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeJsonFileAtomic(jobFilePath(jobId), updated);
+    return updated;
+  });
+}
+
 export async function markClassroomGenerationJobRunning(
   jobId: string,
 ): Promise<ClassroomGenerationJob> {
@@ -260,13 +299,16 @@ export async function updateClassroomGenerationJobProgress(
   jobId: string,
   progress: ClassroomGenerationProgress,
 ): Promise<ClassroomGenerationJob> {
-  return updateClassroomGenerationJob(jobId, {
-    status: 'running',
-    step: progress.step,
-    progress: progress.progress,
-    message: progress.message,
-    scenesGenerated: progress.scenesGenerated,
-    totalScenes: progress.totalScenes,
+  return patchClassroomGenerationJob(jobId, (job) => {
+    if (isTerminalClassroomJobStatus(job.status)) return null;
+    return {
+      status: 'running',
+      step: progress.step,
+      progress: progress.progress,
+      message: progress.message,
+      scenesGenerated: progress.scenesGenerated,
+      totalScenes: progress.totalScenes,
+    };
   });
 }
 
@@ -274,20 +316,23 @@ export async function markClassroomGenerationJobSucceeded(
   jobId: string,
   result: GenerateClassroomResult,
 ): Promise<ClassroomGenerationJob> {
-  return updateClassroomGenerationJob(jobId, {
-    status: 'succeeded',
-    step: 'completed',
-    progress: 100,
-    message: result.warning ?? 'Classroom generation completed',
-    completedAt: new Date().toISOString(),
-    scenesGenerated: result.scenesCount,
-    result: {
-      classroomId: result.id,
-      url: result.url,
-      scenesCount: result.scenesCount,
-      ...(result.ttsCoverage ? { ttsCoverage: result.ttsCoverage } : {}),
-      ...(result.warning ? { warning: result.warning } : {}),
-    },
+  return patchClassroomGenerationJob(jobId, (job) => {
+    if (isTerminalClassroomJobStatus(job.status)) return null;
+    return {
+      status: 'succeeded',
+      step: 'completed',
+      progress: 100,
+      message: result.warning ?? 'Classroom generation completed',
+      completedAt: new Date().toISOString(),
+      scenesGenerated: result.scenesCount,
+      result: {
+        classroomId: result.id,
+        url: result.url,
+        scenesCount: result.scenesCount,
+        ...(result.ttsCoverage ? { ttsCoverage: result.ttsCoverage } : {}),
+        ...(result.warning ? { warning: result.warning } : {}),
+      },
+    };
   });
 }
 
@@ -295,11 +340,33 @@ export async function markClassroomGenerationJobFailed(
   jobId: string,
   error: string,
 ): Promise<ClassroomGenerationJob> {
-  return updateClassroomGenerationJob(jobId, {
-    status: 'failed',
-    step: 'failed',
-    message: 'Classroom generation failed',
-    completedAt: new Date().toISOString(),
-    error,
+  return patchClassroomGenerationJob(jobId, (job) => {
+    // The abort that ends a cancelled run surfaces as an error; keep the
+    // explicit cancel verdict instead of replacing it with that error.
+    if (job.status === 'cancelled') return null;
+    return {
+      status: 'failed',
+      step: 'failed',
+      message: 'Classroom generation failed',
+      completedAt: new Date().toISOString(),
+      error,
+    };
+  });
+}
+
+/** Requested by a user: stops the run and is never overwritten by late writes. */
+export async function markClassroomGenerationJobCancelled(
+  jobId: string,
+  reason = 'Cancelled by user',
+): Promise<ClassroomGenerationJob> {
+  return patchClassroomGenerationJob(jobId, (job) => {
+    if (isTerminalClassroomJobStatus(job.status)) return null;
+    return {
+      status: 'cancelled',
+      step: 'cancelled',
+      message: 'Classroom generation cancelled',
+      completedAt: new Date().toISOString(),
+      error: reason,
+    };
   });
 }

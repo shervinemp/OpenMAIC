@@ -390,4 +390,32 @@ describe('callLLM rate-limit pacing', () => {
     await expect(pending).resolves.toMatchObject({ text: 'ok' });
     expect(aiMock.generateText).toHaveBeenCalledTimes(2);
   });
+
+  it('does not spend fallback quota after the caller cancels', async () => {
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    fallbackMock.resolveFallbackModel.mockResolvedValue({
+      model: 'fallback-model' as never,
+      modelString: 'qwen:deepseek-v4-pro',
+    });
+    const controller = new AbortController();
+    aiMock.generateText.mockImplementation(() => {
+      controller.abort(new DOMException('cancelled', 'AbortError'));
+      return Promise.reject(Object.assign(new Error('quota exceeded'), { statusCode: 429 }));
+    });
+
+    await expect(
+      callLLM(
+        {
+          model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+          prompt: 'hi',
+          abortSignal: controller.signal,
+        } as never,
+        'scene-content',
+        undefined,
+        undefined,
+        { serverManaged: true },
+      ),
+    ).rejects.toThrow(/cancelled|aborted/i);
+    expect(aiMock.generateText).toHaveBeenCalledTimes(1);
+  });
 });

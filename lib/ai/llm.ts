@@ -10,6 +10,7 @@ import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
 import { isEmptyLlmOutput, shouldFallbackFor, logFallbackFired } from '@/lib/server/llm-fallback';
+import { getGenerationAbortSignal } from '@/lib/server/generation-cancel';
 import { LlmOutputTruncatedError, isLlmOutputTruncatedError } from '@/lib/ai/llm-truncation';
 import type { LlmStage } from '@/lib/server/model-routes';
 import { getModelMetadataKey } from './model-metadata';
@@ -397,6 +398,10 @@ export async function callLLM<T extends GenerateTextParams>(
 ): Promise<GenerateTextResult<any, any>> {
   const maxAttempts = (retryOptions?.retries ?? 0) + 1;
   const validate = retryOptions?.validate ?? (maxAttempts > 1 ? DEFAULT_VALIDATE : undefined);
+  // An explicit caller signal wins; otherwise inherit the generation request's
+  // cancel slot (see generation-cancel) so cancelling a session stops billing.
+  const effectiveSignal =
+    (params as { abortSignal?: AbortSignal }).abortSignal ?? getGenerationAbortSignal();
   // The fallback only protects primaries the SERVER resolved (a routed stage
   // or a server-configured provider). resolveModel stamps `serverManaged` on
   // its result and every production caller passes it through here; a
@@ -428,7 +433,10 @@ export async function callLLM<T extends GenerateTextParams>(
   > {
     try {
       const effectiveThinking = thinking ?? getGlobalThinkingConfig();
-      const injectedParams = injectProviderOptions(roundParams, effectiveThinking);
+      const injectedParams = injectProviderOptions(
+        effectiveSignal ? ({ ...roundParams, abortSignal: effectiveSignal } as T) : roundParams,
+        effectiveThinking,
+      );
 
       // Wrap in thinkingContext so the custom fetch wrapper in providers.ts
       // can read the config and inject vendor-specific body params for
@@ -516,10 +524,7 @@ export async function callLLM<T extends GenerateTextParams>(
           log.warn(
             `[${source}] Rate limit hit (attempt ${attempt}/${maxAttempts}); pausing ${RATE_LIMIT_PAUSE_MS / 1000}s before retrying`,
           );
-          await sleepUnlessAborted(
-            RATE_LIMIT_PAUSE_MS,
-            (params as { abortSignal?: AbortSignal }).abortSignal,
-          );
+          await sleepUnlessAborted(RATE_LIMIT_PAUSE_MS, effectiveSignal);
         }
         log.warn(
           `[${source}] Call failed (attempt ${attempt}/${maxAttempts}), retrying...`,
@@ -547,6 +552,14 @@ export async function callLLM<T extends GenerateTextParams>(
 
   // Phase 2 — fallback model, exactly one round (no further escalation).
   if (triggerFallback) {
+    // A cancelled caller must not spend fallback quota on a run the user
+    // already stopped; the fallback round deliberately ignores the signal
+    // below, so refuse it here instead.
+    if (effectiveSignal?.aborted) {
+      throw effectiveSignal.reason instanceof Error
+        ? effectiveSignal.reason
+        : new DOMException('Aborted', 'AbortError');
+    }
     if (fallback) {
       const primary = typeof params.model === 'string' ? params.model : getModelId(params);
       logFallbackFired(

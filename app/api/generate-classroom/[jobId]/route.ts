@@ -4,7 +4,10 @@ import {
   isValidClassroomJobId,
   readClassroomGenerationJob,
 } from '@/lib/server/classroom-job-store';
-import { recoverInterruptedClassroomJob } from '@/lib/server/classroom-job-runner';
+import {
+  cancelClassroomGenerationJob,
+  recoverInterruptedClassroomJob,
+} from '@/lib/server/classroom-job-runner';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
 import { createLogger } from '@/lib/logger';
 
@@ -55,6 +58,36 @@ export async function GET(req: NextRequest, context: { params: Promise<{ jobId: 
       'INTERNAL_ERROR',
       500,
       'Failed to retrieve classroom generation job',
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+/** REST-style alias for the cancel endpoint. */
+export async function DELETE(_req: NextRequest, context: { params: Promise<{ jobId: string }> }) {
+  let resolvedJobId: string | undefined;
+  try {
+    const { jobId } = await context.params;
+    resolvedJobId = jobId;
+    if (!isValidClassroomJobId(jobId)) {
+      return apiError('INVALID_REQUEST', 400, 'Invalid classroom generation job id');
+    }
+    const job = await cancelClassroomGenerationJob(jobId);
+    if (!job) {
+      return apiError('INVALID_REQUEST', 404, 'Classroom generation job not found');
+    }
+    return apiSuccess({
+      jobId: job.id,
+      status: job.status,
+      cancelled: job.status === 'cancelled',
+      message: job.message,
+    });
+  } catch (error) {
+    log.error(`Classroom job cancel failed [jobId=${resolvedJobId ?? 'unknown'}]:`, error);
+    return apiError(
+      'INTERNAL_ERROR',
+      500,
+      'Failed to cancel classroom generation job',
       error instanceof Error ? error.message : String(error),
     );
   }

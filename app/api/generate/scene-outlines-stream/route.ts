@@ -49,6 +49,7 @@ import type {
   ImageMapping,
 } from '@/lib/types/generation';
 import { apiError } from '@/lib/server/api-response';
+import { withGenerationCancel } from '@/lib/server/generation-cancel';
 import { createLogger } from '@/lib/logger';
 import { resolveModel, resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
@@ -1073,7 +1074,7 @@ async function generateMultiUnitOutlines(
   };
 }
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   let requirementSnippet: string | undefined;
   let resolvedModelString: string | undefined;
   try {
@@ -1973,3 +1974,5 @@ export async function POST(req: NextRequest) {
     return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
   }
 }
+
+export const POST = withGenerationCancel(handlePost);

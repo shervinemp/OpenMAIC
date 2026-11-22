@@ -11,6 +11,7 @@ import { callLLM } from '@/lib/ai/llm';
 import { AGENT_PROFILES_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { withGenerationCancel } from '@/lib/server/generation-cancel';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { AGENT_COLOR_PALETTE } from '@/lib/constants/agent-defaults';
 import { normalizeVoiceDesign } from '@/lib/audio/voice-design';
@@ -128,7 +129,7 @@ function stripCodeFences(text: string): string {
   return cleaned.trim();
 }
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   let stageName: string | undefined;
   let modelString: string | undefined;
   try {
@@ -381,3 +382,5 @@ Return a JSON object with this exact structure:
     return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
   }
 }
+
+export const POST = withGenerationCancel(handlePost);

@@ -17,6 +17,7 @@ import {
 } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { withGenerationCancel } from '@/lib/server/generation-cancel';
 import {
   buildSearchQuery,
   SEARCH_QUERY_REWRITE_EXCERPT_LENGTH,
@@ -29,7 +30,7 @@ import { resolveWebSearchRouteBaseUrl } from '@/lib/server/web-search-config';
 
 const log = createLogger('WebSearch');
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   let query: string | undefined;
   try {
     const body = await req.json();
@@ -217,3 +218,5 @@ function getWebSearchEnvKey(providerId: WebSearchProviderId): string {
       return 'TAVILY_API_KEY';
   }
 }
+
+export const POST = withGenerationCancel(handlePost);
