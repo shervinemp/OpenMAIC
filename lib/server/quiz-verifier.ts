@@ -11,6 +11,7 @@ import type { QuizAnswerVerifier, QuizVerificationQuestion } from '@openmaic/gen
 import { callLLM } from '@/lib/ai/llm';
 import { QUIZ_VERIFY_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import { getDecisionSiteConfig } from '@/lib/decision/config';
+import { decisionConfigFromRequest } from '@/lib/decision/request-config';
 import { createDecisionQuizVerifier } from '@/lib/decision/sites/quiz-verifier';
 import {
   buildQuizVerifierPrompt,
@@ -90,7 +91,8 @@ export async function resolveQuizAnswerVerifier(options: {
   log: VerifierLogger;
 }): Promise<QuizAnswerVerifier | undefined> {
   const llmVerifier = await resolveLlmQuizVerifier(options);
-  const decisionConfig = getDecisionSiteConfig('quiz-verify');
+  const decisionConfig =
+    decisionConfigFromRequest(options.req, 'quiz-verify') ?? getDecisionSiteConfig('quiz-verify');
   if (!decisionConfig) return llmVerifier;
 
   return createDecisionQuizVerifier({

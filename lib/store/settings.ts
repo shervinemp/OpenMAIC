@@ -200,6 +200,16 @@ export interface SettingsState {
     { providerId: ProviderId; modelId: string; thinking?: ThinkingConfig }
   >;
 
+  /**
+   * Optional System 1 decision model. OFF by default: with no choice the
+   * decision layer falls back to the normal LLM path. Exactly ONE `provider:model`
+   * string is stored, so enabling many providers can never make the selection
+   * ambiguous. Overrides the server's DECISION_ROUTES for this browser only.
+   */
+  decisionEnabled: boolean;
+  decisionModel: string;
+  decisionMode: 'shadow' | 'replace';
+
   /** Course-level web search toggle: whether generation may search the web. */
   webSearchEnabled: boolean;
 
@@ -423,6 +433,9 @@ export interface SettingsState {
     route: { providerId: ProviderId; modelId: string; thinking?: ThinkingConfig } | null,
   ) => void;
   setWebSearchEnabled: (enabled: boolean) => void;
+  setDecisionEnabled: (enabled: boolean) => void;
+  setDecisionModel: (model: string) => void;
+  setDecisionMode: (mode: 'shadow' | 'replace') => void;
   setThinkingConfig: (
     providerId: ProviderId,
     modelId: string,
@@ -1093,6 +1106,9 @@ export const useSettingsStore = create<SettingsState>()(
         thinkingConfigs: {},
         llmStageRoutes: {},
         webSearchEnabled: false,
+        decisionEnabled: false,
+        decisionModel: '',
+        decisionMode: 'shadow',
         /** preset id → seed fingerprint applied last (drives startup reconcile). */
         tokenPlanSeedVersions: {},
         tokenPlanEnrollments: {},
@@ -1159,6 +1175,9 @@ export const useSettingsStore = create<SettingsState>()(
             return { llmStageRoutes: next };
           }),
         setWebSearchEnabled: (enabled) => set({ webSearchEnabled: enabled }),
+        setDecisionEnabled: (enabled) => set({ decisionEnabled: enabled }),
+        setDecisionModel: (model) => set({ decisionModel: model }),
+        setDecisionMode: (mode) => set({ decisionMode: mode }),
 
         setTokenPlanSeedVersion: (presetId, fingerprint) =>
           set((state) => {

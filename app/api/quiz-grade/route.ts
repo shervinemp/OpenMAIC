@@ -9,6 +9,7 @@ import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
 import { QUIZ_GRADE_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import { runDecisionSite } from '@/lib/decision/router';
+import { decisionConfigFromRequest } from '@/lib/decision/request-config';
 import {
   buildQuizDecisionRequest,
   compareQuizGrades,
@@ -208,7 +209,7 @@ ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${
       fromResult: (result, config) => quizGradeFromResult(result, decisionInput, config),
       compare: (decision, baseline) =>
         decision && baseline ? compareQuizGrades(decision, baseline) : undefined,
-    });
+    }, { config: decisionConfigFromRequest(req, 'quiz-grade') });
 
     const grade = outcome.source === 'none' ? null : outcome.value;
 

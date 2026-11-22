@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store';
 import { getCurrentModelConfig, getStageRoutesHeaderValue } from '@/lib/utils/model-config';
+import { getDecisionHeaders } from '@/lib/decision/client-settings';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('QuizView');
@@ -122,6 +123,7 @@ async function gradeShortAnswerQuestion(
     if (modelConfig.providerType) headers['x-provider-type'] = modelConfig.providerType;
     const stageRoutesHeader = getStageRoutesHeaderValue();
     if (stageRoutesHeader) headers['x-model-routes'] = stageRoutesHeader;
+    Object.assign(headers, getDecisionHeaders());
 
     const res = await fetch('/api/quiz-grade', {
       method: 'POST',

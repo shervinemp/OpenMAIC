@@ -30,6 +30,7 @@ import {
 import { useStageStore } from '@/lib/store/stage';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
+import { getDecisionHeaders } from '@/lib/decision/client-settings';
 import { createLogger } from '@/lib/logger';
 import type { ExamAttempt, ExamFrGrade, ExamKind, ExamSpec } from '@/lib/types/exam';
 import {
@@ -77,7 +78,7 @@ function modelHeaders(): Record<string, string> {
   };
   if (config.baseUrl) headers['x-base-url'] = config.baseUrl;
   if (config.providerType) headers['x-provider-type'] = config.providerType;
-  return headers;
+  return { ...headers, ...getDecisionHeaders() };
 }
 
 /** Same split as the generation route: midterm covers the front half of units. */

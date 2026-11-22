@@ -10,6 +10,7 @@ import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
 import { EXAM_GRADING_OUTPUT_CAP, clampOutputBudget } from '@/lib/ai/output-budget';
 import { runDecisionSite } from '@/lib/decision/router';
+import { decisionConfigFromRequest } from '@/lib/decision/request-config';
 import {
   buildExamDecisionRequest,
   compareExamGrades,
@@ -283,7 +284,7 @@ ${userAnswer}`;
         fromResult: (result, config) => examGradeFromResult(result, decisionInput, config),
         compare: (decision, baseline) =>
           decision && baseline ? compareExamGrades(decision, baseline) : undefined,
-      });
+      }, { config: decisionConfigFromRequest(req, 'exam-grading') });
       grade = outcome.source === 'none' ? null : outcome.value;
     } else {
       // Decision grading needs per-criterion output to derive a score safely.
