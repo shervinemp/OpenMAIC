@@ -12,7 +12,7 @@
  * on failure. A failure never blocks or changes the caller's model resolution.
  */
 
-import { fetchModels } from '@/lib/server/model-fetch';
+import { fetchModels, type FetchedModel } from '@/lib/server/model-fetch';
 import { resolveApiKey, resolveBaseUrl } from '@/lib/server/provider-config';
 
 const OPENCODE_PROVIDER_ID = 'opencode';
@@ -44,7 +44,32 @@ export function rankOpenCodeModels(ids: string[]): string[] {
   return [...qualified, ...bare];
 }
 
-type ModelLister = (baseUrl: string, apiKey: string) => Promise<Array<{ id: string }>>;
+/**
+ * The catalog can contain the same id more than once with different owners
+ * (e.g. `hy4-flash-free` under both `opencode` and `opencode-go`). The bare id
+ * routes to the wrong owner, so expand those duplicates into owner-qualified
+ * ids — dynamically, from the catalog metadata, with no id hardcoded here.
+ */
+export function qualifyDuplicateModels(models: FetchedModel[]): string[] {
+  const ownersById = new Map<string, Set<string>>();
+  for (const model of models) {
+    if (!model.id) continue;
+    if (!ownersById.has(model.id)) ownersById.set(model.id, new Set());
+    if (model.ownedBy) ownersById.get(model.id)!.add(model.ownedBy);
+  }
+
+  const ids = new Set<string>();
+  for (const [id, owners] of ownersById) {
+    if (owners.size > 1) {
+      for (const owner of owners) ids.add(`${owner}/${id}`);
+    } else {
+      ids.add(id);
+    }
+  }
+  return [...ids];
+}
+
+type ModelLister = (baseUrl: string, apiKey: string) => Promise<FetchedModel[]>;
 
 interface CacheEntry {
   expiresAt: number;
@@ -95,7 +120,7 @@ export async function discoverOpenCodeModels(
           );
         }),
       ]);
-      const ranked = rankOpenCodeModels(models.map((m) => m.id));
+      const ranked = rankOpenCodeModels(qualifyDuplicateModels(models));
       if (!options.listModels) cache.set(baseUrl, { expiresAt: Date.now() + CACHE_TTL_MS, models: ranked });
       return ranked;
     } catch {

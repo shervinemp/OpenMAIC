@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { getProvider } from '@/lib/ai/providers';
-import { discoverOpenCodeModels, rankOpenCodeModels } from '@/lib/server/opencode-models';
+import {
+  discoverOpenCodeModels,
+  qualifyDuplicateModels,
+  rankOpenCodeModels,
+} from '@/lib/server/opencode-models';
 
 describe('native OpenCode provider', () => {
   it('is registered with no hardcoded models and a local bridge default', () => {
@@ -38,6 +42,26 @@ describe('rankOpenCodeModels', () => {
 
   it('is deterministic and dedupes', () => {
     expect(rankOpenCodeModels(['p/b', 'p/a', 'p/a', 'other'])).toEqual(['p/a', 'p/b', 'other']);
+  });
+});
+
+describe('qualifyDuplicateModels', () => {
+  it('exposes owner-qualified variants for ids that collide across owners', () => {
+    const ids = qualifyDuplicateModels([
+      { id: 'hy4-flash-free', ownedBy: 'opencode' },
+      { id: 'hy4-flash-free', ownedBy: 'opencode-go' },
+      { id: 'tencent/hy4-flash', ownedBy: 'openrouter' },
+    ]);
+    expect(ids).toContain('opencode-go/hy4-flash-free');
+    expect(ids).toContain('opencode/hy4-flash-free');
+    expect(ids).not.toContain('hy4-flash-free');
+    expect(rankOpenCodeModels(ids)[0]).toBe('opencode-go/hy4-flash-free');
+  });
+
+  it('leaves unambiguous ids alone', () => {
+    expect(qualifyDuplicateModels([{ id: 'openai/gpt-5', ownedBy: 'openai' }])).toEqual([
+      'openai/gpt-5',
+    ]);
   });
 });
 
