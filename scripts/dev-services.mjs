@@ -2,9 +2,10 @@
 /**
  * Dev dependency supervisor.
  *
- * Reads DEV_SERVICES_JSON (a JSON object or array) from the environment or
- * .env.local, polls each enabled service's health URL, and spawns/restarts any
- * that are down. It can wrap the dev server:
+ * Local services are declared under their provider name in the environment or
+ * .env.local (COMFYUI_START_CMD, LAYA_START_CMD, ...), or generically via
+ * DEV_SERVICES_JSON / DEV_SERVICES_FILE. Polls each enabled service's health
+ * URL and spawns/restarts any that are down. It can wrap the dev server:
  *
  *   pnpm dev                       # runs `node scripts/dev-services.mjs -- next dev`
  *   pnpm dev:services -- --check   # one health pass, no spawning (diagnostics)
@@ -135,10 +136,59 @@ function releaseLock() {
 
 if (!CHECK_ONLY && !acquireLock()) process.exit(0);
 
+/**
+ * Local providers can declare their start script directly in env, keyed by
+ * provider name: OPENCODE_START_CMD, COMFYUI_START_CMD, LAYA_START_CMD, ...
+ * Optional companions: <NAME>_ARGS (JSON array), <NAME>_HEALTH_URL,
+ * <NAME>_CWD, <NAME>_LOG, <NAME>_ENV (JSON object), <NAME>_ENABLED (0/1).
+ * This keeps a provider's runtime next to its other env configuration.
+ */
+function servicesFromProviderEnv() {
+  const found = [];
+  const seen = new Set();
+  for (const key of Object.keys(process.env)) {
+    const match = /^([A-Z][A-Z0-9_]*?)_START_CMD$/u.exec(key);
+    if (!match) continue;
+    const prefix = match[1];
+    const name = prefix.toLowerCase();
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const get = (suffix) => process.env[`${prefix}_${suffix}`];
+    const parseJson = (value, fallback, label) => {
+      if (!value) return fallback;
+      try {
+        return JSON.parse(value);
+      } catch {
+        log(`invalid JSON in ${prefix}_${label}; ignoring`);
+        return fallback;
+      }
+    };
+    found.push({
+      name,
+      command: process.env[key],
+      args: parseJson(get('ARGS'), [], 'ARGS'),
+      health: get('HEALTH_URL'),
+      cwd: get('CWD'),
+      log: get('LOG'),
+      env: parseJson(get('ENV'), {}, 'ENV'),
+      enabled: get('ENABLED') !== '0' && get('ENABLED') !== 'false',
+    });
+  }
+  return found;
+}
+
 const config = readConfig();
-const services = Array.isArray(config?.services)
-  ? config.services.filter((service) => service && typeof service === 'object')
-  : [];
+const configured = config?.services;
+const fromConfig = Array.isArray(configured)
+  ? configured.filter((service) => service && typeof service === 'object')
+  : configured && typeof configured === 'object'
+    ? Object.entries(configured)
+        .filter(([, service]) => service && typeof service === 'object')
+        .map(([name, service]) => ({ ...service, name: service.name || name }))
+    : [];
+const envServices = servicesFromProviderEnv();
+const seenNames = new Set(fromConfig.map((service) => service.name));
+const services = [...fromConfig, ...envServices.filter((service) => !seenNames.has(service.name))];
 const intervalMs = Math.max(1000, Number(config?.intervalMs) || 15000);
 const startGraceMs = Math.max(1000, Number(config?.startGraceMs) || 30000);
 const timeoutMs = Math.max(500, Number(config?.healthTimeoutMs) || 2500);
