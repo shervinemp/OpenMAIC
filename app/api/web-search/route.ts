@@ -185,9 +185,22 @@ export async function POST(req: NextRequest) {
       responseTime: result.responseTime,
     });
   } catch (err) {
+    // Web search is an optional enrichment for course generation. A dead or
+    // unreachable provider must not fail the caller: return a truthful, empty
+    // result with `degraded` so every client — including an older cached bundle
+    // — continues without research context. Validation errors are handled
+    // earlier and still return their specific 4xx responses.
     log.error(`Web search failed [query="${query?.substring(0, 60) ?? 'unknown'}"]:`, err);
     const message = err instanceof Error ? err.message : 'Web search failed';
-    return apiError('INTERNAL_ERROR', 500, message);
+    return apiSuccess({
+      answer: '',
+      sources: [],
+      context: '',
+      query: query ?? '',
+      responseTime: 0,
+      degraded: true,
+      reason: message,
+    });
   } finally {
     generationCall?.dispose();
   }

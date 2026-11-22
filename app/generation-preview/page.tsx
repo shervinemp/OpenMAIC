@@ -771,6 +771,11 @@ function GenerationPreviewContent() {
             }
 
             const searchData = await res.json();
+            if (searchData.degraded) {
+              notices.push('Web search unavailable — continued without web research.');
+              setTruncationWarnings([...notices]);
+              log.warn('[Generation] Web search degraded:', searchData.reason);
+            }
             const sources = (searchData.sources || []).map((s: { title: string; url: string }) => ({
               title: s.title,
               url: s.url,
