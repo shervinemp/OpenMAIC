@@ -158,10 +158,17 @@ export function parseDecisionRoutes(
     }
     if (mode === 'off') continue;
 
-    const model = readString(entry.model);
+    // A chat site may omit its model pin and inherit the operator's native
+    // DEFAULT_MODEL — the same default generation uses. This keeps decision
+    // models on the normal provider/env flow instead of forcing a hardcoded
+    // id into every site. An explicit entry.model still wins.
+    const model =
+      readString(entry.model) ?? (provider === 'chat' ? readString(env.DEFAULT_MODEL) : undefined);
     const endpoint = readHttpUrl(readString(entry.endpoint));
     if (provider === 'chat' && !model) {
-      log.warn(`Decision site "${site}" provider "chat" requires a model string; ignored.`);
+      log.warn(
+        `Decision site "${site}" provider "chat" needs a model (entry.model or DEFAULT_MODEL); ignored.`,
+      );
       continue;
     }
     if (provider !== 'chat' && !endpoint) {

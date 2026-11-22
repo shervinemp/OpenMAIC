@@ -173,10 +173,26 @@ describe('decision config', () => {
         'not-a-site': { provider: 'laya', endpoint: 'http://localhost:1' },
         'quiz-verify2': { provider: 'nope', endpoint: 'http://localhost:1' },
       }),
-      env(),
+      env({ DEFAULT_MODEL: undefined }),
     );
 
     expect(routes.size).toBe(0);
+  });
+
+  it('chat sites inherit the native DEFAULT_MODEL when no model is pinned', () => {
+    const routes = parseDecisionRoutes(
+      JSON.stringify({
+        'quiz-grade': { provider: 'chat' },
+      }),
+      env({ DEFAULT_MODEL: 'opencode:opencode-go/hy4-flash-free' }),
+    );
+
+    expect(routes.get('quiz-grade')).toMatchObject({
+      site: 'quiz-grade',
+      provider: 'chat',
+      model: 'opencode:opencode-go/hy4-flash-free',
+      fallback: 'llm',
+    });
   });
 
   it('treats mode off as an absent site without constructing a provider', () => {
