@@ -2118,6 +2118,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       const abortController = new AbortController();
       const signal = abortController.signal;
       retryAbortsRef.current.add(abortController);
+      // A per-outline retry is generation too: register it so deleting the
+      // course can abort it (otherwise its result re-persists the stage).
+      const retryStageId = state.stage?.id;
+      if (retryStageId) registerStageGeneration(retryStageId, abortController);
       // The repair-mode `media` phase runs before the rebuilt scene lands, so
       // it can only see the PREVIOUS scene's references. Re-scan after the new
       // scene is added, gated on the refs the rebuilt scene actually carries:

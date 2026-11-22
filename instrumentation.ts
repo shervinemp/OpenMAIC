@@ -19,6 +19,15 @@ export async function register(): Promise<void> {
     await import('@/lib/server/database-password-warning');
   warnIfDefaultDatabasePasswordIsPublished();
 
+  // Restore the System 1 shadow-agreement history before any request can flush
+  // a fresh in-memory snapshot over it.
+  try {
+    const { loadDecisionTelemetryFromDisk } = await import('@/lib/decision/telemetry-file');
+    await loadDecisionTelemetryFromDisk();
+  } catch (error) {
+    console.error('[instrumentation] Decision telemetry load failed', error);
+  }
+
   // A boot that fails here must stop the process. Next.js logs a throw from
   // `register` as "Failed to prepare server" but keeps listening and answers
   // every request with a 500, so the throw alone leaves a deployment that

@@ -395,6 +395,9 @@ function GenerationPreviewContent() {
       !phase ||
       phase === 'preparing' ||
       phase === 'generating-content' ||
+      // A refresh in the 2.5s auto-continue window after outlines were saved
+      // otherwise strands the run on a spinner with no Confirm button.
+      (phase === 'outline-ready' && !needsOutlines) ||
       // Refresh during early-review: editor is shown but outlines weren't persisted,
       // so kick off SSE again — the editor will receive streaming outlines.
       (phase === 'review' && needsOutlines);
@@ -409,6 +412,9 @@ function GenerationPreviewContent() {
   const startGeneration = async (sessionOverride?: GenerationSessionState) => {
     const generationSession = sessionOverride ?? session;
     if (!generationSession) return;
+    // Any call to start a run (resume, review confirm, auto-start) clears a
+    // previous pause before new work begins.
+    setPaused(false);
 
     // The course was already persisted (user backed out mid-content
     // generation). Don't re-run the outline/first-scene flow — hand off to
@@ -1506,7 +1512,7 @@ function GenerationPreviewContent() {
   };
 
   const resumeGeneration = async () => {
-    if (!paused || !session) return;
+    if (!paused || !session || leavingRef.current) return;
     setPaused(false);
     setError(null);
     // Use the latest persisted session: steps completed before the pause

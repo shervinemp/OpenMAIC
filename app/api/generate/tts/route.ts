@@ -31,6 +31,7 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { findUnsafeNetworkTargetError, validatePublicUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { QwenVoiceCloneError, qwenVoiceCloneErrorMessage } from '@/lib/audio/qwen-voice-clone';
+import { anyAbortSignal, generationCallFor } from '@/lib/server/generation-cancel';
 import { isQwenCloneVoice } from '@/lib/audio/constants';
 
 const log = createLogger('TTS API');
@@ -38,6 +39,7 @@ const log = createLogger('TTS API');
 export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
+  const generationCall = generationCallFor(req, '/api/generate/tts');
   let ttsProviderId: string | undefined;
   let ttsVoice: string | undefined;
   let audioId: string | undefined;
@@ -142,6 +144,7 @@ export async function POST(req: NextRequest) {
       publicOnly,
       // A server-configured provider's endpoint may be on a local network.
       managed,
+      signal: anyAbortSignal(req.signal, generationCall?.signal),
       providerOptions: {
         ...(ttsProviderOptions || {}),
         ...(qwenCloneVoice ? { qwenVoiceClone: true } : {}),
@@ -221,5 +224,7 @@ export async function POST(req: NextRequest) {
       500,
       error instanceof Error ? error.message : String(error),
     );
+  } finally {
+    generationCall?.dispose();
   }
 }

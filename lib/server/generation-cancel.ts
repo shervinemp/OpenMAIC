@@ -41,8 +41,12 @@ export function registerGenerationCall(
   return {
     signal: controller.signal,
     dispose: () => {
-      calls!.delete(controller);
-      if (calls!.size === 0) activeBySession.delete(sessionId);
+      calls.delete(controller);
+      // A cancel detaches this Set; a resumed generation may have since
+      // registered a fresh one under the same session id. Never delete that.
+      if (calls.size === 0 && activeBySession.get(sessionId) === calls) {
+        activeBySession.delete(sessionId);
+      }
     },
   };
 }
@@ -52,6 +56,9 @@ export function anyAbortSignal(...signals: Array<AbortSignal | undefined>): Abor
   const defined = signals.filter((signal): signal is AbortSignal => !!signal);
   if (defined.length === 0) return new AbortController().signal;
   if (defined.length === 1) return defined[0];
+  // Native AbortSignal.any avoids retaining listeners on long-lived session
+  // signals after a request completes.
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(defined);
   const combined = new AbortController();
   for (const signal of defined) {
     if (signal.aborted) {

@@ -134,7 +134,17 @@ function wireQuestionJev(question: DecisionQuestion): Record<string, unknown> {
   if (question.kind === 'score') {
     const min = Math.ceil(question.min ?? 0);
     const max = Math.floor(question.max ?? 1);
-    const count = Math.max(2, Math.min(32, max - min + 1));
+    // Jev enumerates score levels and caps the list. For wide ranges, send a
+    // normalized 0-10 scale and rescale the answer in decide() — otherwise a
+    // 0-100 exam would silently cap at 31.
+    if (max - min + 1 > 32) {
+      return {
+        type: 'score',
+        instructions: question.prompt,
+        criteria: Array.from({ length: 11 }, (_, index) => String(index)),
+      };
+    }
+    const count = Math.max(2, max - min + 1);
     return {
       type: 'score',
       instructions: question.prompt,
@@ -314,15 +324,29 @@ export function createTypedHttpProvider(
 
         try {
           const raw = await attemptOnce(request, signal, remaining);
-          return {
-            ...normalizeDecisionResult({
-              raw,
-              questions: request.questions,
-              provider,
-              latencyMs: Date.now() - startedAt,
-            }),
-            attempts: attempt,
-          };
+          const normalized = normalizeDecisionResult({
+            raw,
+            questions: request.questions,
+            provider,
+            latencyMs: Date.now() - startedAt,
+          });
+          if (jevWire) {
+            // Rescale normalized 0-10 answers back to wide exam score ranges.
+            for (const question of request.questions) {
+              if (
+                question.kind !== 'score' ||
+                Math.floor(question.max ?? 1) - Math.ceil(question.min ?? 0) + 1 <= 32
+              ) {
+                continue;
+              }
+              const answer = normalized.answers.get(question.id);
+              if (!answer || answer.kind !== 'score') continue;
+              const min = Math.ceil(question.min ?? 0);
+              const max = Math.floor(question.max ?? 1);
+              answer.value = min + Math.round((answer.value / 10) * (max - min));
+            }
+          }
+          return { ...normalized, attempts: attempt };
         } catch (error) {
           lastError = error;
           if (!isRetryable(error) || attempt >= MAX_ATTEMPTS || signal?.aborted) throw error;

@@ -17,7 +17,7 @@ import {
 } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { generationCallFor } from '@/lib/server/generation-cancel';
+import { anyAbortSignal, generationCallFor } from '@/lib/server/generation-cancel';
 import {
   buildSearchQuery,
   SEARCH_QUERY_REWRITE_EXCERPT_LENGTH,
@@ -168,6 +168,7 @@ export async function POST(req: NextRequest) {
       query: searchQuery.query,
       apiKey,
       baseUrl,
+      signal: anyAbortSignal(req.signal, generationCall?.signal),
       ...(providerId === 'baidu' && baiduSubSources ? { baiduSubSources } : {}),
       // A server-pinned model (WEB_SEARCH_CLAUDE_MODELS) is authoritative over
       // the client-selected one, matching how managed keys/base URLs behave.

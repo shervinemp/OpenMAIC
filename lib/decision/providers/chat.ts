@@ -104,7 +104,10 @@ export function createChatDecisionProvider(
             `decision:${config.site}`,
             undefined,
             resolved.thinkingConfig,
-            { serverManaged: resolved.serverManaged },
+            // The decision router owns fallback (LLM baseline). A global
+            // MODEL_FALLBACK would silently answer with a different model while
+            // telemetry still credits the one the learner selected.
+            { enabled: false },
           );
         // Opt-in decoder enforcement: the shared transport adds
         // `response_format: json_object` for OpenAI-compatible endpoints. The

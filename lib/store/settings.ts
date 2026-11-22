@@ -2090,8 +2090,30 @@ export const useSettingsStore = create<SettingsState>()(
               });
               const webSearchFallback = buildWebSearchFallbackOrder(newWebSearchConfig);
 
+              // A fresh browser (no explicit user pick) follows local env's
+              // DEFAULT_MODEL instead of the first configured provider. Resolve
+              // it BEFORE validation so the recovery path below cannot overwrite
+              // it with the provider's first model.
+              let envSelection: { providerId: ProviderId; modelId: string } | undefined;
+              if (!state.llmSelectionUserSet && data.defaultModel) {
+                try {
+                  const { providerId, modelId } = parseModelString(data.defaultModel);
+                  if (
+                    Object.hasOwn(newProvidersConfig, providerId) &&
+                    newProvidersConfig[providerId].models.some((model) => model.id === modelId)
+                  ) {
+                    envSelection = { providerId, modelId };
+                  }
+                } catch {
+                  // A malformed env default is ignored; keep the resolved selection.
+                }
+              }
+
+              const desiredProviderId = envSelection?.providerId ?? state.providerId;
+              const desiredModelId = envSelection?.modelId ?? state.modelId;
+
               let validLLMProvider = validateProvider(
-                state.providerId,
+                desiredProviderId,
                 newProvidersConfig,
                 llmFallback,
               );
@@ -2151,7 +2173,11 @@ export const useSettingsStore = create<SettingsState>()(
                 ? (newProvidersConfig[validLLMProvider as ProviderId]?.models ?? [])
                 : [];
               const validLLMModel = validLLMProvider
-                ? resolveSelectedLLMModel(validLLMProvider as ProviderId, state.modelId, llmModels)
+                ? resolveSelectedLLMModel(
+                    validLLMProvider as ProviderId,
+                    desiredModelId,
+                    llmModels,
+                  )
                 : '';
               const imageModels = validImageProvider
                 ? resolveMediaModels(
@@ -2282,26 +2308,17 @@ export const useSettingsStore = create<SettingsState>()(
               // and model atomically at the source, covering server-configured
               // AND client-API-key providers — see #580.)
 
-              // A fresh browser (no explicit user pick) follows local env's
-              // DEFAULT_MODEL instead of the first configured provider.
-              let envSelection: { providerId: ProviderId; modelId: string } | undefined;
-              if (!state.llmSelectionUserSet && data.defaultModel) {
-                try {
-                  const { providerId, modelId } = parseModelString(data.defaultModel);
-                  if (
-                    providerId in newProvidersConfig &&
-                    newProvidersConfig[providerId].models.some((model) => model.id === modelId)
-                  ) {
-                    envSelection = { providerId, modelId };
-                  }
-                } catch {
-                  // A malformed env default is ignored; keep the resolved selection.
-                }
-              }
+              // A provider that just lost its key/server config must not leave
+              // per-stage routes pointing at it — those override the mainline
+              // model server-side and would fail generation with no credentials.
+              const prunedServerSyncRoutes = pruneUnusableStageRoutes(
+                state.llmStageRoutes,
+                newProvidersConfig,
+              );
 
               return {
-                ...(envSelection ?? {}),
                 providersConfig: newProvidersConfig,
+                ...(prunedServerSyncRoutes && { llmStageRoutes: prunedServerSyncRoutes }),
                 ttsProvidersConfig: newTTSConfig,
                 asrProvidersConfig: newASRConfig,
                 pdfProvidersConfig: newPDFConfig,
@@ -2623,6 +2640,10 @@ export const useSettingsStore = create<SettingsState>()(
       // Custom merge: always sync built-in providers on every rehydrate,
       // so newly added providers/models appear without clearing cache.
       merge: (persistedState, currentState) => {
+        const persistedStateObj =
+          persistedState && typeof persistedState === 'object'
+            ? (persistedState as Partial<SettingsState>)
+            : ({} as Partial<SettingsState>);
         // One-time import of the pre-refactor web-search toggle: the homepage
         // used to persist it in localStorage['webSearchEnabled']; without
         // this, users who had 联网调研 enabled would silently lose it.
@@ -2631,11 +2652,8 @@ export const useSettingsStore = create<SettingsState>()(
             const legacyWebSearch = window.localStorage.getItem('webSearchEnabled');
             if (legacyWebSearch !== null) {
               window.localStorage.removeItem('webSearchEnabled');
-              if (
-                legacyWebSearch === 'true' &&
-                !(persistedState as Partial<SettingsState> | null)?.webSearchEnabled
-              ) {
-                (persistedState as Partial<SettingsState>).webSearchEnabled = true;
+              if (legacyWebSearch === 'true' && !persistedStateObj.webSearchEnabled) {
+                persistedStateObj.webSearchEnabled = true;
               }
             }
           } catch {
@@ -2645,7 +2663,7 @@ export const useSettingsStore = create<SettingsState>()(
         // The insert toolbar is draggable and no longer collapses. Sanitize
         // this retired property on every rehydrate instead of bumping the
         // storage version and replaying unrelated legacy migrations.
-        const persisted = { ...(persistedState as object) } as Record<string, unknown>;
+        const persisted = { ...persistedStateObj } as Record<string, unknown>;
         delete persisted.editInsertToolbarCollapsed;
         const merged = { ...currentState, ...persisted };
         ensureBuiltInProviders(merged as Partial<SettingsState>);

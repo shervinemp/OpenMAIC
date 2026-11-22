@@ -175,7 +175,7 @@ function servicesFromProviderEnv() {
       serves: get('SERVES')
         ? get('SERVES').split(',').map((id) => id.trim()).filter(Boolean)
         : [],
-      enabled: get('ENABLED') !== '0' && get('ENABLED') !== 'false',
+      enabled: !['0', 'false', 'no', 'off'].includes((get('ENABLED') || '').toLowerCase()),
     });
   }
   return found;
@@ -243,17 +243,26 @@ function spawnService(service) {
     });
     children.set(name, child);
     lastSpawn.set(name, Date.now());
+    let fdClosed = false;
+    const closeLogFd = () => {
+      if (!fdClosed && typeof logFd === 'number') {
+        fdClosed = true;
+        closeSync(logFd);
+      }
+    };
     child.once('error', (error) => {
       log(`${name} failed to start: ${error.message}`);
       children.delete(name);
+      closeLogFd();
     });
     child.once('exit', (code, signal) => {
       log(`${name} exited (code=${code ?? 'null'} signal=${signal ?? 'null'})`);
       children.delete(name);
-      if (typeof logFd === 'number') closeSync(logFd);
+      closeLogFd();
     });
   } catch (error) {
     log(`could not spawn ${name}: ${error.message}`);
+    if (typeof logFd === 'number') closeSync(logFd);
     backoffUntil.set(name, Date.now() + startGraceMs);
   }
 }
@@ -262,7 +271,7 @@ async function reconcile() {
   await Promise.all(
     services.map(async (service) => {
       const name = service.name || service.command;
-      if (service.enabled === false) return;
+      if (service.enabled === false || service.enabled === 'false') return;
       if (!service.health || !service.command) {
         log(`${name}: missing health or command; skipping`);
         return;

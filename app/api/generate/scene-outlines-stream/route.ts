@@ -52,6 +52,7 @@ import { apiError } from '@/lib/server/api-response';
 import { anyAbortSignal, generationCallFor } from '@/lib/server/generation-cancel';
 import { createLogger } from '@/lib/logger';
 import { resolveModel, resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { resolveWebSearchRouteBaseUrl } from '@/lib/server/web-search-config';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVisionImagesForPrompt } from '@/lib/persistence/resolve-vision-images';
 import {
@@ -1136,6 +1137,20 @@ export async function POST(req: NextRequest) {
     };
     requirementSnippet = requirements?.requirement?.substring(0, 60);
 
+    // Client-supplied search endpoints must pass the same allowlist as the
+    // web-search API; otherwise per-unit research becomes an SSRF vector.
+    if (webSearchConfig?.baseUrl) {
+      try {
+        webSearchConfig.baseUrl = resolveWebSearchRouteBaseUrl(
+          webSearchConfig.providerId as Parameters<typeof resolveWebSearchRouteBaseUrl>[0],
+          webSearchConfig.baseUrl,
+        );
+      } catch {
+        log.warn('Rejected client-supplied web search base URL for outline research');
+        delete webSearchConfig.baseUrl;
+      }
+    }
+
     // ── Full-document coverage (Phase 2 §16) ──
     // With a handle, the outline prompt gets the coverage DIGEST (the whole
     // document as an enumerative map) and per-scene retrieval runs over the
@@ -1512,7 +1527,7 @@ export async function POST(req: NextRequest) {
                 callModel,
                 reviewCallModel,
                 reviewJudgeIsDistinct,
-                signal: req.signal,
+                signal: abortSignal,
                 controller,
                 encoder,
                 resumeSyllabus,
@@ -1526,7 +1541,7 @@ export async function POST(req: NextRequest) {
               courseTitle = multiResult.courseTitle;
             } catch (error) {
               // Client disconnected: stop immediately.
-              if (req.signal?.aborted) {
+              if (abortSignal.aborted) {
                 stopHeartbeat();
                 return;
               }
@@ -1595,7 +1610,7 @@ export async function POST(req: NextRequest) {
                 for await (const part of fullStream) {
                   // Stop doing work the moment the client goes away - otherwise
                   // generation keeps running and buffering for a dead connection.
-                  if (req.signal?.aborted) {
+                  if (abortSignal.aborted) {
                     stopHeartbeat();
                     return;
                   }
@@ -1817,7 +1832,7 @@ export async function POST(req: NextRequest) {
               } catch (error) {
                 // Client disconnected (AbortError from the now-propagated signal):
                 // stop immediately, don't burn retries re-running generation.
-                if (req.signal?.aborted) {
+                if (abortSignal.aborted) {
                   stopHeartbeat();
                   return;
                 }

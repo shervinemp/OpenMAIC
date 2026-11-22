@@ -83,10 +83,16 @@ function shadowKey(site: string, provider: string): string {
 }
 
 function recordShadowOutcome(event: DecisionTelemetryEvent): void {
+  // In shadow mode a provider error or an abstain is a comparable failure the
+  // provider could not answer — count it as skipped, not as invisible.
+  const outcome =
+    event.mode === 'shadow' && (event.outcome === 'error' || event.outcome === 'abstain')
+      ? 'shadow-skip'
+      : event.outcome;
   if (
-    event.outcome !== 'shadow-agree' &&
-    event.outcome !== 'shadow-disagree' &&
-    event.outcome !== 'shadow-skip'
+    outcome !== 'shadow-agree' &&
+    outcome !== 'shadow-disagree' &&
+    outcome !== 'shadow-skip'
   ) {
     return;
   }
@@ -97,8 +103,8 @@ function recordShadowOutcome(event: DecisionTelemetryEvent): void {
     row = { site: event.site, provider, agree: 0, disagree: 0, skipped: 0 };
     shadowCounters.set(key, row);
   }
-  if (event.outcome === 'shadow-agree') row.agree += 1;
-  else if (event.outcome === 'shadow-disagree') row.disagree += 1;
+  if (outcome === 'shadow-agree') row.agree += 1;
+  else if (outcome === 'shadow-disagree') row.disagree += 1;
   else row.skipped += 1;
 }
 

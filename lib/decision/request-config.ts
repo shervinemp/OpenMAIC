@@ -58,7 +58,7 @@ export async function decisionConfigFromRequest(
   if (colon <= 0 || colon === model.length - 1) return undefined;
   try {
     const { providerId, modelId } = parseModelString(model);
-    if (!providerId || !modelId || !(providerId in PROVIDERS)) return undefined;
+    if (!providerId || !modelId || !Object.hasOwn(PROVIDERS, providerId)) return undefined;
   } catch {
     return undefined;
   }

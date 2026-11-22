@@ -603,9 +603,22 @@ export function renderDocumentDigest(
 ): DigestRenderResult {
   const maxChars = options.maxChars ?? DIGEST_TARGET_CHARS;
 
+  // Work on a clone: the trim loop below pops topics from the largest card, and
+  // the caller passes a cached digest by reference. Mutating it would corrupt
+  // every future course reusing the same document-index handle.
+  const workingDigest: DocumentDigest = {
+    ...digest,
+    chapters: digest.chapters?.map((chapter) => ({ ...chapter, teaches: [...chapter.teaches] })),
+    sections: digest.sections.map((section) => ({ ...section, teaches: [...section.teaches] })),
+  };
+
   const buildText = (): { text: string; topicCount: number } => {
-    if (digest.level === 'two-level' && digest.chapters && digest.chapters.length > 0) {
-      const sections = digest.chapters.map((chapter) => ({
+    if (
+      workingDigest.level === 'two-level' &&
+      workingDigest.chapters &&
+      workingDigest.chapters.length > 0
+    ) {
+      const sections = workingDigest.chapters.map((chapter) => ({
         heading: `${chapter.heading} (sections: ${chapter.sectionHeadings.join('; ')})`,
         pageStart: chapter.pageStart,
         pageEnd: chapter.pageEnd,
@@ -615,14 +628,14 @@ export function renderDocumentDigest(
       return renderSections(sections, 'two-level');
     }
     return renderSections(
-      digest.sections.map((section) => ({
+      workingDigest.sections.map((section) => ({
         heading: section.heading,
         pageStart: section.pageStart,
         pageEnd: section.pageEnd,
         teaches: section.teaches,
         keyTerms: section.keyTerms,
       })),
-      digest.level,
+      workingDigest.level,
     );
   };
 
@@ -634,9 +647,9 @@ export function renderDocumentDigest(
   // Proportional trim: repeatedly drop one topic from the currently largest
   // card until the budget fits. Deterministic; reported, not silent.
   const cards =
-    digest.level === 'two-level' && digest.chapters
-      ? digest.chapters.map((c) => ({ teaches: c.teaches }))
-      : digest.sections.map((s) => ({ teaches: s.teaches }));
+    workingDigest.level === 'two-level' && workingDigest.chapters
+      ? workingDigest.chapters.map((c) => ({ teaches: c.teaches }))
+      : workingDigest.sections.map((s) => ({ teaches: s.teaches }));
   let trimmed = 0;
   let current = rendered.text;
   while (current.length > maxChars) {
