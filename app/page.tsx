@@ -13,6 +13,7 @@ import {
   Folder,
   FolderPlus,
   ImagePlus,
+  Pause,
   Pencil,
   Trash2,
   Search,
@@ -53,6 +54,7 @@ import {
   saveGenerationSession,
   hasGenerationSessionEnvelope,
   readGenerationSessionEnvelope,
+  clearGenerationSession,
   clearGenerationSessionEnvelope,
 } from '@/lib/utils/generation-session-store';
 import { abortStageGeneration } from '@/lib/classroom/generation-abort';
@@ -1377,27 +1379,45 @@ function HomePage() {
                 {/* Paused-outline generation prompt: the session was kept when
                     the user backed out before the course was persisted. */}
                 {pendingGeneration && (
-                  <motion.button
-                    type="button"
+                  <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    onClick={() => {
-                      setPendingGeneration(false);
-                      router.push('/generation-preview');
-                    }}
-                    className="mt-6 w-full flex items-center gap-3 rounded-xl border border-violet-200/60 bg-violet-50/60 px-4 py-3 text-left transition-colors hover:bg-violet-50 dark:border-violet-800/60 dark:bg-violet-950/20 dark:hover:bg-violet-950/30 cursor-pointer"
+                    className="mt-6 w-full flex items-center gap-3 rounded-xl border border-violet-200/60 bg-violet-50/60 px-4 py-3 text-left dark:border-violet-800/60 dark:bg-violet-950/20"
                   >
-                    <Loader2 className="size-4 shrink-0 animate-spin text-violet-600 dark:text-violet-400" />
+                    {/* A parked session is paused, not actively generating. */}
+                    <Pause className="size-4 shrink-0 text-violet-600 dark:text-violet-400" />
                     <span className="min-w-0 flex-1">
                       <span className="block text-[13px] font-medium">
-                        {t('generation.pendingGenerationTitle')}
+                        {t('generation.pausedGenerationTitle')}
                       </span>
                       <span className="mt-0.5 block text-[11px] text-muted-foreground">
                         {t('generation.pendingGenerationDesc')}
                       </span>
                     </span>
-                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                  </motion.button>
+                    <button
+                      type="button"
+                      aria-label="Discard paused generation"
+                      title="Discard paused generation"
+                      className="rounded-md p-1 text-muted-foreground hover:bg-violet-100 hover:text-foreground dark:hover:bg-violet-900/40"
+                      onClick={() => {
+                        setPendingGeneration(false);
+                        void clearGenerationSession();
+                      }}
+                    >
+                      <X className="size-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Resume generation"
+                      className="rounded-md p-1 text-muted-foreground hover:bg-violet-100 hover:text-foreground dark:hover:bg-violet-900/40"
+                      onClick={() => {
+                        setPendingGeneration(false);
+                        router.push('/generation-preview');
+                      }}
+                    >
+                      <ChevronRight className="size-4" />
+                    </button>
+                  </motion.div>
                 )}
                 {folders.length === 0 && classrooms.length === 0 ? (
                   <div className="pt-8 pb-2 text-center text-[13px] text-muted-foreground/60">

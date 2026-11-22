@@ -1228,6 +1228,7 @@
     "unsupportedCourseMaterial": "El extractor actual no admite este formato. Cambia de extractor o elige otro archivo."
   },
   "generation": {
+    "pausedGenerationTitle": "Course generation paused",
     "draftingScenes": "Drafting — {{count}} scenes ready",
     "pdfLoadFailed": "Error al cargar el archivo PDF, inténtalo de nuevo",
     "pdfParseFailed": "Error al procesar el PDF",
