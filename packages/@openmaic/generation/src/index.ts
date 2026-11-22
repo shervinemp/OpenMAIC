@@ -193,6 +193,7 @@ export {
   isIntroSummaryOutline,
   isSubstantiveText,
   recordSceneDepthReport,
+  repairCitationSupport,
   summarizeDepthFindings,
   takeSceneDepthReport,
   recordSceneDepthSummary,

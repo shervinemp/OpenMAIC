@@ -47,6 +47,7 @@ import {
 import {
   recordSceneDepthReport,
   recordSceneDepthSummary,
+  repairCitationSupport,
   summarizeDepthFindings,
   validateActivityDepth,
   validateSqlActivityDepth,
@@ -1137,7 +1138,7 @@ async function generateSlideContent(
   // is byte-for-byte the default course-generation prompt.
   let userPrompt = prompts.user;
   if (retrievalContext) {
-    userPrompt = `${prompts.user}\n\n## Source Material (ground your content here)\n\n${retrievalContext}\n\nCitation requirements: cite the exact [source p.N] markers shown above for at least ${depthFloor.minCitations} of your claims. Never cite a marker that is not listed above.`;
+    userPrompt = `${prompts.user}\n\n## Source Material (ground your content here)\n\n${retrievalContext}\n\n${citationInstruction(depthFloor.minCitations, 'of your claims')}`;
   }
   if (editDirective || baselineContent) {
     // The baseline handed here for whole-slide regeneration already carries small
@@ -1897,7 +1898,7 @@ async function generateQuizContent(
 
   let baseUserPrompt = prompts.user;
   if (retrievalContext) {
-    baseUserPrompt = `${prompts.user}\n\n## Source Material (ground your questions here)\n\n${retrievalContext}\n\nCitation requirements: cite the exact [source p.N] markers shown above in at least ${depthFloor.minCitations} questions/analyses. Never cite a marker that is not listed above.`;
+    baseUserPrompt = `${prompts.user}\n\n## Source Material (ground your questions here)\n\n${retrievalContext}\n\n${citationInstruction(depthFloor.minCitations, 'questions/analyses')}`;
   }
 
   log.debug(`Generating quiz content for: ${outline.title}`);
@@ -2056,6 +2057,23 @@ async function generateQuizContent(
     }
 
     recordSceneDepthReport(outline.id, depthReport);
+
+    // Grounding repair with the same contract re-checked; still-invalid
+    // quizzes are rejected below.
+    if (retrievalContext) {
+      const grounded = groundPayloadCitations(questions, retrievalContext);
+      const groundedReport = validateQuizDepth(outline, grounded, retrievalContext);
+      if (groundedReport.adequate) {
+        recordSceneDepthSummary(outline.id, {
+          reworked: true,
+          attempts: attempt,
+          findings: ['citation markers re-attributed to supporting sources'],
+        });
+        log.info(`Citation grounding repaired for quiz "${outline.title}" after ${maxAttempts} attempts`);
+        return finalizeQuestions(grounded);
+      }
+    }
+
     log.error(
       `Quiz depth contract not met for "${outline.title}" after ${maxAttempts} attempts: ${depthReport.findings.join('; ')}`,
     );
@@ -2201,6 +2219,16 @@ export function findQuizOptionsContractFailure(questions: readonly QuizQuestion[
 // scene is a standard slide; the depth contract is what distinguishes the
 // kinds.
 
+/**
+ * Precision-first citation instruction. The old wording pushed for a quota of
+ * markers, which led the model to guess a source when none actually stated the
+ * claim — the main cause of depth-contract citation rejections. Accuracy now
+ * outranks the quota: an uncited claim is preferable to a misattributed one.
+ */
+function citationInstruction(minCitations: number, target: string): string {
+  return `Citation requirements: cite at least ${minCitations} ${target}, but ONLY with a marker whose listed source text actually contains that claim's specific facts or key terms. A source being topically related is not enough — if no listed source states the claim, leave it uncited rather than guessing a marker. Never cite a marker that is not listed above.`;
+}
+
 interface StructuredSceneOptions {
   languageDirective?: string;
   retrievalContext?: string;
@@ -2213,6 +2241,28 @@ interface StructuredSceneOptions {
  * loop against the structured validator, and return the accepted payload
  * (or null with the report recorded on exhaustion).
  */
+/**
+ * Ground every string field of a structured payload: re-attribute markers the
+ * model misattributed to the source that actually supports each claim. The
+ * contract is then re-validated unchanged — a payload that still fails is
+ * rejected, not shipped.
+ */
+function groundPayloadCitations<T>(payload: T, retrievalContext: string): T {
+  const walk = (value: unknown): unknown => {
+    if (typeof value === 'string') {
+      return repairCitationSupport(value, retrievalContext).text;
+    }
+    if (Array.isArray(value)) return value.map(walk);
+    if (value && typeof value === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [key, nested] of Object.entries(value)) out[key] = walk(nested);
+      return out;
+    }
+    return value;
+  };
+  return walk(payload) as T;
+}
+
 async function generateValidatedStructured<T>(
   outline: SceneOutline,
   promptId: PromptId,
@@ -2234,7 +2284,7 @@ async function generateValidatedStructured<T>(
 
   let baseUserPrompt = prompts.user;
   if (options.retrievalContext) {
-    baseUserPrompt = `${prompts.user}\n\n## Source Material (ground your content here)\n\n${options.retrievalContext}\n\nCitation requirements: cite the exact [source p.N] markers shown above for at least ${COURSE_DEPTH_FLOORS[depthLevel].minCitations} of your claims. Never cite a marker that is not listed above.`;
+    baseUserPrompt = `${prompts.user}\n\n## Source Material (ground your content here)\n\n${options.retrievalContext}\n\n${citationInstruction(COURSE_DEPTH_FLOORS[depthLevel].minCitations, 'of your claims')}`;
   }
 
   const maxAttempts = readGenerationProfile().contentAttempts + 1;
@@ -2278,6 +2328,24 @@ async function generateValidatedStructured<T>(
     }
 
     recordSceneDepthReport(outline.id, depthReport);
+
+    // Grounding repair: re-attribute misattributed markers to the source that
+    // actually supports each claim, then re-validate with the SAME contract.
+    // It is not a bypass — a payload that still fails is rejected below.
+    if (options.retrievalContext) {
+      const grounded = groundPayloadCitations(payload, options.retrievalContext);
+      const groundedReport = validate(grounded);
+      if (groundedReport.adequate) {
+        recordSceneDepthSummary(outline.id, {
+          reworked: true,
+          attempts: attempt,
+          findings: ['citation markers re-attributed to supporting sources'],
+        });
+        log.info(`Citation grounding repaired for "${outline.title}" after ${maxAttempts} attempts`);
+        return grounded;
+      }
+    }
+
     log.error(
       `Specialized depth contract not met for "${outline.title}" after ${maxAttempts} attempts: ${depthReport.findings.join('; ')}`,
     );

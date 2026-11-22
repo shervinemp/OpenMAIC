@@ -743,9 +743,12 @@ describe('Quiz/PBL cover cards in a real browser', () => {
     }
   }, 60_000);
 
+  // Browser launch gets 60s above; teardown needs the same budget under load
+  // (parallel forks + a running dev server can push chromium.close() past the
+  // 10s default, which previously failed after all 53 assertions passed).
   afterAll(async () => {
     await browser?.close();
-  });
+  }, 60_000);
 
   const check = (name: string, run: (page: Page) => Promise<void>) =>
     it(name, async (ctx) => {

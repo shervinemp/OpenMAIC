@@ -382,11 +382,10 @@ function sharesKey(left: Set<string>, right: Set<string>): boolean {
   return false;
 }
 
-function citationSupportFindings(combinedText: string, retrievalContext: string): string[] {
-  const chunks = parseRetrievalChunks(retrievalContext);
-  if (chunks.length === 0) return [];
+/** Vocabulary of each citation marker, unioned across that source's chunks. */
+function citationTermsByMarker(retrievalContext: string): Map<string, Set<string>> {
   const termsByCitation = new Map<string, Set<string>>();
-  for (const chunk of chunks) {
+  for (const chunk of parseRetrievalChunks(retrievalContext)) {
     // A web source can span several chunks that share one citation index, so
     // the marker's vocabulary is the union of its chunks.
     const keys = supportKeys(chunk.text);
@@ -397,6 +396,12 @@ function citationSupportFindings(combinedText: string, retrievalContext: string)
       termsByCitation.set(chunk.citation, keys);
     }
   }
+  return termsByCitation;
+}
+
+function citationSupportFindings(combinedText: string, retrievalContext: string): string[] {
+  const termsByCitation = citationTermsByMarker(retrievalContext);
+  if (termsByCitation.size === 0) return [];
 
   const findings: string[] = [];
   let checked = 0;
@@ -440,6 +445,66 @@ function citationSupportFindings(combinedText: string, retrievalContext: string)
     findings.push(`${unreported} more cited claim(s) share no key terms with the source they cite`);
   }
   return findings;
+}
+
+// A claim sentence immediately followed by its marker. Capturing the sentence
+// lets the repair replace only THAT occurrence of the marker, so a marker
+// reused by a correctly-grounded claim elsewhere is left alone.
+const CITED_SENTENCE_RE = /([^\[\]]{1,400}?)\[source\s+(p\.\d+|ch\.\d+|\d+)\]/gi;
+
+export interface CitationRepair {
+  from: string;
+  /** The source actually supporting the claim, or null when none does. */
+  to: string | null;
+}
+
+/**
+ * Deterministic grounding repair for a citation the model misattributed.
+ *
+ * Uses the very evidence the validator uses to reject a claim: when the cited
+ * source does not share key terms but another retrieved source does, the
+ * marker is re-attributed to that supporting source. When no source supports
+ * the claim, the marker is removed and the claim text is left untouched — the
+ * system never guesses a source and never invents a citation.
+ *
+ * This fixes the attribution instead of ignoring a failed check, so the
+ * repaired text is re-validated with the unchanged contract.
+ */
+export function repairCitationSupport(
+  text: string,
+  retrievalContext: string,
+): { text: string; repairs: CitationRepair[] } {
+  const termsByCitation = citationTermsByMarker(retrievalContext);
+  if (termsByCitation.size === 0) return { text, repairs: [] };
+  const repairs: CitationRepair[] = [];
+
+  const repaired = text.replace(CITED_SENTENCE_RE, (whole, sentence: string, citedRaw: string) => {
+    if (META_CLAIM_RE.test(sentence)) return whole;
+    const cited = citedRaw.toLowerCase();
+    const sourceTerms = termsByCitation.get(cited);
+    if (!sourceTerms) return whole; // unknown marker — handled by validateCitations
+
+    const claimKeys = supportKeys(sentence);
+    if (claimKeys.size < MIN_SUPPORT_CLAIM_TERMS) return whole;
+    if (sharesKey(claimKeys, sourceTerms)) return whole; // already grounded
+
+    // Pick the source with the strongest lexical support for this claim — the
+    // same key-term metric the validator uses to say "cite the source that
+    // actually states it".
+    let best: { citation: string; score: number } | undefined;
+    for (const [citation, keys] of termsByCitation) {
+      let score = 0;
+      for (const key of claimKeys) if (keys.has(key)) score += 1;
+      if (score > 0 && (!best || score > best.score)) best = { citation, score };
+    }
+
+    const from = `[source ${citedRaw}]`;
+    const to = best ? `[source ${best.citation}]` : null;
+    repairs.push({ from, to });
+    return sentence + (to ?? '');
+  });
+
+  return { text: repaired.replace(/[ \t]{2,}/g, ' '), repairs };
 }
 
 // ==================== Text heuristics ====================
@@ -1454,9 +1519,17 @@ export function validateFreeResponseDepth(
 
 // ==================== Corrective feedback ====================
 export function summarizeDepthFindings(report: DepthReport): string {
+  const citationIssue = report.findings.some((finding) =>
+    finding.includes('shares no key terms'),
+  );
   return [
     'The generated content did NOT meet the depth contract:',
     ...report.findings.map((finding) => `- ${finding}`),
+    ...(citationIssue
+      ? [
+          'Citation fixes: the claim text itself is fine — either replace the [source N] marker with a source whose retrieved text actually contains the claim\'s key terms, or remove that marker entirely. Never guess a different source number, and do not drop the substantive claim.',
+        ]
+      : []),
     'Revise the content to fix every finding above and return the corrected JSON. Do not shorten existing substantive content.',
   ].join('\n');
 }
