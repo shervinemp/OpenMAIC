@@ -4,7 +4,8 @@
  * no decision call — the site keeps its normal LLM baseline.
  */
 
-import { parseModelString } from '@/lib/ai/providers';
+import { parseModelString, PROVIDERS } from '@/lib/ai/providers';
+import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 import type { DecisionMode, DecisionSiteConfig, DecisionSiteId } from './types';
 
 export const DECISION_HEADERS = {
@@ -20,11 +21,16 @@ function modeFromRequest(req: Request): DecisionMode {
   return raw === 'replace' ? 'replace' : 'shadow';
 }
 
-/** Build the one decision config from request headers. Never throws. */
-export function decisionConfigFromRequest(
+/**
+ * Build the one decision config from request headers. Never throws.
+ *
+ * The typed endpoint is client-supplied, so it goes through the same SSRF
+ * policy as other client-influenced base URLs before the server fetches it.
+ */
+export async function decisionConfigFromRequest(
   req: Request,
   site: DecisionSiteId,
-): DecisionSiteConfig | undefined {
+): Promise<DecisionSiteConfig | undefined> {
   if (req.headers.get(DECISION_HEADERS.enabled) !== '1') return undefined;
 
   const provider = req.headers.get(DECISION_HEADERS.provider)?.trim().toLowerCase() || 'chat';
@@ -40,6 +46,7 @@ export function decisionConfigFromRequest(
   if (provider === 'laya' || provider === 'jev') {
     const endpoint = req.headers.get(DECISION_HEADERS.endpoint)?.trim();
     if (!endpoint) return undefined;
+    if (await validateClientBaseUrl(endpoint)) return undefined;
     return { ...common, provider, endpoint };
   }
 
@@ -51,7 +58,7 @@ export function decisionConfigFromRequest(
   if (colon <= 0 || colon === model.length - 1) return undefined;
   try {
     const { providerId, modelId } = parseModelString(model);
-    if (!providerId || !modelId) return undefined;
+    if (!providerId || !modelId || !(providerId in PROVIDERS)) return undefined;
   } catch {
     return undefined;
   }

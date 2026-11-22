@@ -1,9 +1,10 @@
 /**
  * Per-request binding for the blind quiz-answer verifier.
  *
- * The `quiz-verify` stage is opt-in and operator-only. Both the scene-content
- * route (scene quizzes) and the exam route (MC keys) resolve it through this
- * one helper, so the stage, transport and fail-open behavior cannot drift.
+ * The `quiz-verify` stage is opt-in via the single System 1 choice in Settings.
+ * Both the scene-content route (scene quizzes) and the exam route (MC keys)
+ * resolve it through this one helper, so the stage, transport and fail-open
+ * behavior cannot drift.
  */
 import type { NextRequest } from 'next/server';
 import type { QuizAnswerVerifier, QuizVerificationQuestion } from '@openmaic/generation';
@@ -89,7 +90,7 @@ export async function resolveQuizAnswerVerifier(options: {
   log: VerifierLogger;
 }): Promise<QuizAnswerVerifier | undefined> {
   const llmVerifier = await resolveLlmQuizVerifier(options);
-  const decisionConfig = decisionConfigFromRequest(options.req, 'quiz-verify');
+  const decisionConfig = await decisionConfigFromRequest(options.req, 'quiz-verify');
   if (!decisionConfig) return llmVerifier;
 
   return createDecisionQuizVerifier({

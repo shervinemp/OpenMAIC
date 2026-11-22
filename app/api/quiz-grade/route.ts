@@ -209,7 +209,7 @@ ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${
       fromResult: (result, config) => quizGradeFromResult(result, decisionInput, config),
       compare: (decision, baseline) =>
         decision && baseline ? compareQuizGrades(decision, baseline) : undefined,
-    }, { config: decisionConfigFromRequest(req, 'quiz-grade') });
+    }, { config: await decisionConfigFromRequest(req, 'quiz-grade') });
 
     const grade = outcome.source === 'none' ? null : outcome.value;
 

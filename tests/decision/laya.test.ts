@@ -75,6 +75,43 @@ describe('typed decision HTTP provider', () => {
     expect((init?.headers as Record<string, string>).authorization).toBe('Bearer secret');
   });
 
+  it('uses the Jev object wire format for Laya /v1/systemone', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => Response.json({ answers: {} }));
+    const provider = createTypedHttpProvider(
+      config({ endpoint: 'http://127.0.0.1:8000/v1/systemone/' }),
+      { fetchImpl },
+    );
+
+    await provider.decide({
+      state: 'The sky is blue.',
+      questions: [
+        {
+          id: 'q1',
+          kind: 'noul',
+          prompt: 'Is the sky blue?',
+        },
+        {
+          id: 'c1',
+          kind: 'choice',
+          prompt: 'Pick one',
+          options: [{ value: 'A', label: 'Yes' }],
+        },
+        { id: 's1', kind: 'score', prompt: 'Score', min: 0, max: 2 },
+      ],
+    });
+
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe('http://127.0.0.1:8000/v1/systemone');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      state: 'The sky is blue.',
+      questions: {
+        q1: { type: 'noul', instructions: 'Is the sky blue?' },
+        c1: { type: 'choice', instructions: 'Pick one', criteria: { A: 'Yes' } },
+        s1: { type: 'score', instructions: 'Score', criteria: ['0', '1', '2'] },
+      },
+    });
+  });
+
   it('surfaces an HTTP failure without echoing the body', async () => {
     const fetchImpl = vi.fn<typeof fetch>(
       async () => new Response('learner answer leaked', { status: 500 }),

@@ -22,7 +22,7 @@ function optIn(mode: 'replace' | 'shadow'): void {
   decisionHeaders = {
     'x-decision-enabled': '1',
     'x-decision-provider': 'laya',
-    'x-decision-endpoint': 'http://decision.test',
+    'x-decision-endpoint': 'http://127.0.0.1:8090',
     'x-decision-mode': mode,
   };
 }
@@ -34,6 +34,8 @@ function post(url: string, body: unknown): NextRequest {
     headers: { 'content-type': 'application/json', ...decisionHeaders },
   }) as unknown as NextRequest;
 }
+
+const originalAllowLocal = process.env.ALLOW_LOCAL_NETWORKS;
 
 const rubric = [
   {
@@ -67,6 +69,7 @@ const quizBody = {
 };
 
 beforeEach(() => {
+  process.env.ALLOW_LOCAL_NETWORKS = 'true';
   resetDecisionTelemetryForTests();
   decisionHeaders = {};
   mocks.resolveModel.mockReset();
@@ -81,6 +84,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  if (originalAllowLocal === undefined) delete process.env.ALLOW_LOCAL_NETWORKS;
+  else process.env.ALLOW_LOCAL_NETWORKS = originalAllowLocal;
   decisionHeaders = {};
   vi.unstubAllGlobals();
 });

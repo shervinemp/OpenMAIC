@@ -6,6 +6,7 @@ import { resetDecisionTelemetryForTests } from '@/lib/decision/telemetry';
 import { resolveQuizAnswerVerifier } from '@/lib/server/quiz-verifier';
 
 const originalModelRoutes = process.env.MODEL_ROUTES;
+const originalAllowLocal = process.env.ALLOW_LOCAL_NETWORKS;
 
 const questions: QuizVerificationQuestion[] = [
   {
@@ -28,7 +29,7 @@ function request(withDecision = false): NextRequest {
         ? {
             'x-decision-enabled': '1',
             'x-decision-provider': 'laya',
-            'x-decision-endpoint': 'http://decision.test',
+            'x-decision-endpoint': 'http://127.0.0.1:8090',
             'x-decision-mode': 'replace',
           }
         : {}),
@@ -37,11 +38,14 @@ function request(withDecision = false): NextRequest {
 }
 
 beforeEach(() => {
+  process.env.ALLOW_LOCAL_NETWORKS = 'true';
   delete process.env.MODEL_ROUTES;
   resetDecisionTelemetryForTests();
 });
 
 afterEach(() => {
+  if (originalAllowLocal === undefined) delete process.env.ALLOW_LOCAL_NETWORKS;
+  else process.env.ALLOW_LOCAL_NETWORKS = originalAllowLocal;
   if (originalModelRoutes === undefined) delete process.env.MODEL_ROUTES;
   else process.env.MODEL_ROUTES = originalModelRoutes;
   vi.unstubAllGlobals();

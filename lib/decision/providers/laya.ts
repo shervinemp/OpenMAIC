@@ -49,6 +49,12 @@ export interface TypedHttpProviderOptions {
   retryDelayMs?: number;
   /** Test seam for the response size guard. */
   maxResponseBytes?: number;
+  /**
+   * Wire protocol. Inferred from the endpoint path when omitted: a
+   * `/v1/systemone` route (Laya/Jev) uses the object-shaped Jev contract,
+   * every other typed endpoint keeps the legacy `/predict` array contract.
+   */
+  wire?: 'predict' | 'systemone';
 }
 
 /**
@@ -67,8 +73,22 @@ export class TypedDecisionResponseError extends Error {
   }
 }
 
+/**
+ * Bare origins keep the historical `/predict` convention. An endpoint that
+ * already carries a path (for example Laya's `/v1/systemone`) is used as-is so
+ * a typed server with a non-root route can be configured directly.
+ */
 function predictUrl(endpoint: string): string {
-  return endpoint.endsWith('/predict') ? endpoint : `${endpoint}/predict`;
+  const trimmed = endpoint.replace(/\/+$/, '');
+  if (trimmed.endsWith('/predict')) return trimmed;
+  try {
+    const path = new URL(trimmed).pathname;
+    if (path !== '/' && path !== '') return trimmed;
+  } catch {
+    // Malformed endpoints keep the old behaviour; the request will fail and
+    // the router falls back to the LLM baseline.
+  }
+  return `${trimmed}/predict`;
 }
 
 function wireQuestion(question: DecisionQuestion): Record<string, unknown> {
@@ -97,6 +117,42 @@ function wireQuestion(question: DecisionQuestion): Record<string, unknown> {
     type: 'noul',
     prompt: question.prompt,
     question: question.prompt,
+  };
+}
+
+/** Jev/Laya wire shape: questions keyed by id, with `instructions` + `criteria`. */
+function wireQuestionJev(question: DecisionQuestion): Record<string, unknown> {
+  if (question.kind === 'choice') {
+    return {
+      type: 'choice',
+      instructions: question.prompt,
+      criteria: Object.fromEntries(
+        question.options.map((option) => [String(option.value), String(option.label ?? option.value)]),
+      ),
+    };
+  }
+  if (question.kind === 'score') {
+    const min = Math.ceil(question.min ?? 0);
+    const max = Math.floor(question.max ?? 1);
+    const count = Math.max(2, Math.min(32, max - min + 1));
+    return {
+      type: 'score',
+      instructions: question.prompt,
+      criteria: Array.from({ length: count }, (_, index) => String(min + index)),
+    };
+  }
+  return { type: 'noul', instructions: question.prompt };
+}
+
+function requestBody(request: DecisionRequest, jevWire: boolean): unknown {
+  if (!jevWire) {
+    return { state: request.state, questions: request.questions.map(wireQuestion) };
+  }
+  return {
+    state: request.state,
+    questions: Object.fromEntries(
+      request.questions.map((question) => [question.id, wireQuestionJev(question)]),
+    ),
   };
 }
 
@@ -210,6 +266,8 @@ export function createTypedHttpProvider(
   const retryDelayMs = Math.max(0, options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS);
   const maxResponseBytes = Math.max(1024, options.maxResponseBytes ?? MAX_DECISION_RESPONSE_BYTES);
   const url = predictUrl(endpoint);
+  const jevWire =
+    (options.wire ?? (url.includes('/v1/systemone') ? 'systemone' : 'predict')) === 'systemone';
 
   const attemptOnce = async (
     request: DecisionRequest,
@@ -225,10 +283,7 @@ export function createTypedHttpProvider(
           accept: 'application/json',
           ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
         },
-        body: JSON.stringify({
-          state: request.state,
-          questions: request.questions.map(wireQuestion),
-        }),
+        body: JSON.stringify(requestBody(request, jevWire)),
         signal: deadline.signal,
       });
       if (!response.ok) {

@@ -242,7 +242,7 @@ ${userAnswer}`;
       // Resolve lazily: a deployment that routes this site to a decision model
       // must not also need a chat model, and a decision-only failure should not
       // fail the request before the fallback is actually needed.
-      const { model: languageModel, thinkingConfig } = await resolveModelFromRequest(
+      const { model: languageModel, thinkingConfig, serverManaged } = await resolveModelFromRequest(
         req,
         body,
         'exam-grading',
@@ -258,6 +258,7 @@ ${userAnswer}`;
         'exam-grading',
         undefined,
         thinkingConfig,
+        { serverManaged },
       );
       return parseExamGrade(result.text.trim());
     };
@@ -284,7 +285,7 @@ ${userAnswer}`;
         fromResult: (result, config) => examGradeFromResult(result, decisionInput, config),
         compare: (decision, baseline) =>
           decision && baseline ? compareExamGrades(decision, baseline) : undefined,
-      }, { config: decisionConfigFromRequest(req, 'exam-grading') });
+      }, { config: await decisionConfigFromRequest(req, 'exam-grading') });
       grade = outcome.source === 'none' ? null : outcome.value;
     } else {
       // Decision grading needs per-criterion output to derive a score safely.

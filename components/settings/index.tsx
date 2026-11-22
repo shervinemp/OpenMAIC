@@ -1053,13 +1053,12 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                         />
                       )}
                       {serviceTab === 'decision' && (
-                        <ProviderListColumn
-                          providers={[{ id: 'decision' as const, name: 'Decision Model' }]}
-                          configs={{ decision: { requiresApiKey: false } }}
-                          selectedId={'decision' as const}
-                          onSelect={() => {}}
-                          t={t}
-                        />
+                        <div className="flex items-center gap-2.5 rounded-lg bg-background px-2 py-1.5 shadow-sm ring-1 ring-border/70">
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                            <Brain className="size-3.5" />
+                          </span>
+                          <span className="truncate text-xs font-medium">{t('settings.modelServices.decisionModel')}</span>
+                        </div>
                       )}
                       {serviceTab === 'pdf' && (
                         <ProviderListColumn

@@ -89,7 +89,7 @@ export function createClaimReviewHook(config: DecisionSiteConfig): ClaimReviewHo
         };
       },
       compare: (decision, baseline) => decision.length > 0 === baseline.length > 0,
-    });
+    }, { config });
 
     if (outcome.source === 'none') return null;
     return outcome.value;

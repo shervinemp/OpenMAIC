@@ -4,6 +4,7 @@ import { useCallback, useRef } from 'react';
 import { completionBlockingFailures, useStageStore } from '@/lib/store/stage';
 import { isSceneEditLocked } from '@/lib/edit/regen-lock';
 import { getCurrentModelConfig, getStageRoutesHeaderValue } from '@/lib/utils/model-config';
+import { getDecisionHeaders } from '@/lib/decision/client-settings';
 import { useSettingsStore } from '@/lib/store/settings';
 import { db } from '@/lib/device-storage/database';
 import type {
@@ -155,6 +156,8 @@ function getApiHeaders(): HeadersInit {
     // Media generation toggles
     'x-image-generation-enabled': String(settings.imageGenerationEnabled ?? false),
     'x-video-generation-enabled': String(settings.videoGenerationEnabled ?? false),
+    // System 1 decision choice (quiz-verify / claim-check on generated scenes).
+    ...getDecisionHeaders(),
   };
 }
 

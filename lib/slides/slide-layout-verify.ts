@@ -4,7 +4,6 @@ import {
   type PlacementFinding,
   type SlideContent,
 } from '@openmaic/dsl';
-import { getDecisionHeaders } from '@/lib/decision/client-settings';
 
 const DEFAULT_REPAIR_CALL_LIMIT = 256;
 
@@ -95,7 +94,7 @@ export async function verifyAndRepairSlideLayout(content: unknown): Promise<Slid
     try {
       const response = await fetch('/api/generate/scene-verify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getDecisionHeaders() },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scene: { type: 'slide', content },
           intent: 'layout-repair',
