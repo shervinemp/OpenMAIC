@@ -27,6 +27,7 @@ import type {
 } from '@/lib/types/generation';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { createLogger } from '@/lib/logger';
+import { anyAbortSignal, generationCallFor } from '@/lib/server/generation-cancel';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
@@ -70,6 +71,7 @@ const VISION_RESOLUTION_BUDGET_MS = 15_000;
 const MAX_CONSECUTIVE_UNRESOLVABLE_VISION_IMAGES = 3;
 
 export async function POST(req: NextRequest) {
+  const generationCall = generationCallFor(req, '/api/generate/scene-content');
   let outlineTitle: string | undefined;
   let resolvedModelString: string | undefined;
   try {
@@ -253,7 +255,7 @@ export async function POST(req: NextRequest) {
             ],
             maxOutputTokens: maxTokens ?? sceneOutputBudget,
             maxRetries: 0,
-            abortSignal: req.signal,
+            abortSignal: anyAbortSignal(req.signal, generationCall?.signal),
           }) as Parameters<typeof callLLM>[0];
         result = await callPrimaryOrSalvage(callParams(sceneOutputBudget), () =>
           callWithoutThinking((maxTokens) => callParams(maxTokens as number)),
@@ -266,7 +268,7 @@ export async function POST(req: NextRequest) {
             prompt: userPrompt,
             maxOutputTokens: maxTokens ?? sceneOutputBudget,
             maxRetries: 0,
-            abortSignal: req.signal,
+            abortSignal: anyAbortSignal(req.signal, generationCall?.signal),
           }) as Parameters<typeof callLLM>[0];
         result = await callPrimaryOrSalvage(callParams(sceneOutputBudget), () =>
           callWithoutThinking(callParams),
@@ -533,5 +535,7 @@ export async function POST(req: NextRequest) {
       error,
     );
     return llmApiError(error);
+  } finally {
+    generationCall?.dispose();
   }
 }

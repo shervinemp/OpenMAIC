@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
+import { toast } from 'sonner';
 import { CheckCircle2, Sparkles, AlertCircle, AlertTriangle, ArrowLeft, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -289,14 +290,34 @@ function GenerationPreviewContent() {
 
   // Abort all in-flight requests on unmount
   // Tell the server to stop its in-flight LLM calls too, not just our fetches.
-  const cancelServerGeneration = () => {
+  /**
+   * Cancellation is the one action that must fail closed: if we cannot confirm
+   * the server stopped, the user must be told (spend may still be happening).
+   * Retry briefly, then report failure instead of swallowing it.
+   */
+  const cancelServerGeneration = async (): Promise<boolean> => {
     const sessionId = sessionIdRef.current;
-    if (!sessionId) return;
-    void fetch('/api/generation/cancel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId }),
-    }).catch(() => undefined);
+    if (!sessionId) return true;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const response = await fetch('/api/generation/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId }),
+          signal: AbortSignal.timeout(3000),
+        });
+        if (!response.ok) continue;
+        const data = (await response.json()) as {
+          success?: boolean;
+          stopped?: number;
+          remaining?: number;
+        };
+        if (data.success && (data.remaining === 0 || (data.stopped ?? 0) > 0)) return true;
+      } catch {
+        // retry
+      }
+    }
+    return false;
   };
 
   useEffect(() => {
@@ -305,7 +326,7 @@ function GenerationPreviewContent() {
 
   useEffect(() => {
     return () => {
-      cancelServerGeneration();
+      void cancelServerGeneration();
       abortControllerRef.current?.abort();
       clearOutlineReviewTimer();
     };
@@ -1417,8 +1438,15 @@ function GenerationPreviewContent() {
     return trimmed.substring(0, 500).trim() + '...';
   };
 
-  const goBackToHome = () => {
-    cancelServerGeneration();
+  const goBackToHome = async () => {
+    // Fail closed on acknowledgement: don't silently leave while the server may
+    // still be billing. Warn loudly, but never trap the user on this page.
+    const cancelled = await cancelServerGeneration();
+    if (!cancelled) {
+      toast.warning('Could not confirm cancellation — server calls may still be running.', {
+        description: 'Check your provider usage; you can retry from the home page.',
+      });
+    }
     abortControllerRef.current?.abort();
     clearOutlineReviewTimer();
     outlineReviewIntentRef.current = false;

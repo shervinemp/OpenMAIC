@@ -78,7 +78,15 @@ export function cancelGeneration(sessionId: string): number {
     controller.abort(new DOMException('Generation cancelled by user', 'AbortError'));
     stopped += 1;
   }
+  // Detach aborted calls so the remaining count confirms cancellation took
+  // effect. Late dispose() calls on these controllers are harmless.
+  activeBySession.delete(sessionId);
   return stopped;
+}
+
+/** Remaining registered calls for one session, after a cancel. */
+export function activeGenerationCallCountFor(sessionId: string): number {
+  return activeBySession.get(sessionId)?.size ?? 0;
 }
 
 /** Snapshot for diagnostics and tests; never exposes controllers. */

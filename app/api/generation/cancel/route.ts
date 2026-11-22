@@ -1,7 +1,10 @@
 import { type NextRequest } from 'next/server';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { cancelGeneration } from '@/lib/server/generation-cancel';
+import {
+  activeGenerationCallCountFor,
+  cancelGeneration,
+} from '@/lib/server/generation-cancel';
 
 const log = createLogger('GenerationCancel API');
 
@@ -18,7 +21,9 @@ export async function POST(req: NextRequest) {
 
     const stopped = cancelGeneration(sessionId);
     // Idempotent: an already-finished session simply has nothing to abort.
-    return apiSuccess({ cancelled: true, stopped, sessionId });
+    // `remaining` lets the caller confirm the abort actually took effect.
+    const remaining = activeGenerationCallCountFor(sessionId);
+    return apiSuccess({ cancelled: true, stopped, remaining, sessionId });
   } catch (error) {
     log.error('Generation cancel failed:', error);
     return apiError(

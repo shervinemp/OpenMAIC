@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   activeGenerationCallCount,
+  activeGenerationCallCountFor,
   anyAbortSignal,
   cancelGeneration,
   generationSessionIdFrom,
@@ -32,6 +33,19 @@ describe('browser generation cancellation', () => {
     callA2.dispose();
     callB.dispose();
     expect(activeGenerationCallCount()).toBe(0);
+  });
+
+  it('reports remaining calls per session so cancellation can be confirmed', () => {
+    const first = registerGenerationCall('session-d', '/api/generate/scene-content');
+    const second = registerGenerationCall('session-d', '/api/generate/scene-actions');
+    expect(activeGenerationCallCountFor('session-d')).toBe(2);
+    expect(activeGenerationCallCountFor('missing')).toBe(0);
+
+    expect(cancelGeneration('session-d')).toBe(2);
+    expect(activeGenerationCallCountFor('session-d')).toBe(0);
+    first.dispose();
+    second.dispose();
+    expect(activeGenerationCallCountFor('session-d')).toBe(0);
   });
 
   it('combines the client disconnect signal with the session cancel signal', async () => {

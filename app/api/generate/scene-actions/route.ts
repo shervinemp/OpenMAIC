@@ -27,6 +27,7 @@ import type {
 import type { SpeechAction } from '@/lib/types/action';
 import type { PBLContent } from '@/lib/types/stage';
 import { createLogger } from '@/lib/logger';
+import { anyAbortSignal, generationCallFor } from '@/lib/server/generation-cancel';
 import { normalizeLegacyPBLContent } from '@/lib/pbl/legacy/read';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
@@ -37,6 +38,7 @@ const log = createLogger('Scene Actions API');
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  const generationCall = generationCallFor(req, '/api/generate/scene-actions');
   let outlineTitle: string | undefined;
   let resolvedModelString: string | undefined;
   try {
@@ -127,7 +129,7 @@ export async function POST(req: NextRequest) {
             ],
             maxOutputTokens: actionsOutputBudget,
             maxRetries: 0,
-            abortSignal: req.signal,
+            abortSignal: anyAbortSignal(req.signal, generationCall?.signal),
           },
           'scene-actions',
           undefined,
@@ -143,7 +145,7 @@ export async function POST(req: NextRequest) {
           prompt: userPrompt,
           maxOutputTokens: actionsOutputBudget,
           maxRetries: 0,
-          abortSignal: req.signal,
+          abortSignal: anyAbortSignal(req.signal, generationCall?.signal),
         },
         'scene-actions',
         undefined,
@@ -209,5 +211,7 @@ export async function POST(req: NextRequest) {
       error,
     );
     return llmApiError(error);
+  } finally {
+    generationCall?.dispose();
   }
 }
