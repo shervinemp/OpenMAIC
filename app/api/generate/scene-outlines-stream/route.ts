@@ -1155,8 +1155,22 @@ export async function POST(req: NextRequest) {
     requirementSnippet = requirements?.requirement?.substring(0, 60);
     let webSearchConfig = requestWebSearchConfig;
 
-    // Use the server-configured search provider (SearXNG here), not a stale
-    // client pick like Brave — the /api/web-search route does the same.
+    // Validate the CLIENT-supplied endpoint first as an allowlisted official
+    // URL — never validate the later server-resolved env URL as if it were
+    // client input (that would reject SearXNG's local base URL).
+    if (webSearchConfig?.baseUrl) {
+      try {
+        webSearchConfig.baseUrl = resolveWebSearchRouteBaseUrl(
+          webSearchConfig.providerId as Parameters<typeof resolveWebSearchRouteBaseUrl>[0],
+          webSearchConfig.baseUrl,
+        );
+      } catch {
+        log.warn('Rejected client-supplied web search base URL for outline research');
+        delete webSearchConfig.baseUrl;
+      }
+    }
+    // Then prefer the server-configured provider (SearXNG here) over a stale
+    // client pick like Brave, mirroring the /api/web-search route.
     if (webSearchConfig) {
       const serverProviderId = resolveServerWebSearchProviderId();
       if (serverProviderId) {
@@ -1167,8 +1181,6 @@ export async function POST(req: NextRequest) {
           baseUrl: undefined,
         };
       }
-    }
-    if (webSearchConfig) {
       try {
         const resolved = resolveWebSearchRouteBaseUrl(
           webSearchConfig.providerId as Parameters<typeof resolveWebSearchRouteBaseUrl>[0],
@@ -1177,19 +1189,6 @@ export async function POST(req: NextRequest) {
         if (resolved) webSearchConfig.baseUrl = resolved;
       } catch {
         // A provider that needs no base URL (or is unconfigured) keeps going.
-      }
-    }
-    // Client-supplied search endpoints must pass the same allowlist as the
-    // web-search API; otherwise per-unit research becomes an SSRF vector.
-    if (webSearchConfig?.baseUrl) {
-      try {
-        webSearchConfig.baseUrl = resolveWebSearchRouteBaseUrl(
-          webSearchConfig.providerId as Parameters<typeof resolveWebSearchRouteBaseUrl>[0],
-          webSearchConfig.baseUrl,
-        );
-      } catch {
-        log.warn('Rejected client-supplied web search base URL for outline research');
-        delete webSearchConfig.baseUrl;
       }
     }
 
