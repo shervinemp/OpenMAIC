@@ -25,20 +25,36 @@ export function outlineCheckpointStore(): BrowserKVStore {
   return new BrowserKVStore();
 }
 
-export async function readOutlineCheckpoint(): Promise<OutlineCheckpoint | null> {
+const checkpointKey = (sessionId: string) => `${OUTLINE_CHECKPOINT_KEY}:${sessionId}`;
+
+export async function readOutlineCheckpoint(
+  sessionId?: string,
+): Promise<OutlineCheckpoint | null> {
   try {
-    return await outlineCheckpointStore().get<OutlineCheckpoint>(OUTLINE_CHECKPOINT_KEY, 'device');
+    const store = outlineCheckpointStore();
+    if (sessionId) return await store.get<OutlineCheckpoint>(checkpointKey(sessionId), 'device');
+    return await store.get<OutlineCheckpoint>(OUTLINE_CHECKPOINT_KEY, 'device');
   } catch {
     return null;
   }
 }
 
 export async function writeOutlineCheckpoint(checkpoint: OutlineCheckpoint): Promise<void> {
-  await outlineCheckpointStore().set(OUTLINE_CHECKPOINT_KEY, checkpoint, 'device');
+  const store = outlineCheckpointStore();
+  await store.set(checkpointKey(checkpoint.sessionId), checkpoint, 'device');
+  // Legacy pointer for the requirement-adoption path, which has no session id.
+  await store.set(OUTLINE_CHECKPOINT_KEY, checkpoint, 'device');
 }
 
-export async function clearOutlineCheckpoint(): Promise<void> {
-  await outlineCheckpointStore().remove(OUTLINE_CHECKPOINT_KEY, 'device');
+export async function clearOutlineCheckpoint(sessionId?: string): Promise<void> {
+  const store = outlineCheckpointStore();
+  if (sessionId) {
+    await store.remove(checkpointKey(sessionId), 'device');
+    const legacy = await readOutlineCheckpoint();
+    if (legacy?.sessionId === sessionId) await store.remove(OUTLINE_CHECKPOINT_KEY, 'device');
+    return;
+  }
+  await store.remove(OUTLINE_CHECKPOINT_KEY, 'device');
 }
 
 /**

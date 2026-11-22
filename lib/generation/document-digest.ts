@@ -274,21 +274,6 @@ function estimateSingleLevelChars(groups: DigestSectionGroup[]): number {
   return groups.reduce((sum, group) => sum + estimateSectionCardChars(group), 0);
 }
 
-function estimateTwoLevelChars(groups: DigestSectionGroup[]): number {
-  const chapters = new Map<string, DigestSectionGroup[]>();
-  for (const group of groups) {
-    const key = group.chapter ?? 'none';
-    const list = chapters.get(key) ?? [];
-    list.push(group);
-    chapters.set(key, list);
-  }
-  let total = 0;
-  for (const list of chapters.values()) {
-    total += 70 + list.reduce((sum, group) => sum + group.heading.length + 55, 0);
-  }
-  return total;
-}
-
 /** Whether the outline stage reads raw text (small docs) or a digest. */
 export function resolveDigestTier(totalChars: number): 'raw' | 'digest' {
   return totalChars <= DIGEST_RAW_THRESHOLD_CHARS ? 'raw' : 'digest';
@@ -303,7 +288,9 @@ export function planDigestLevel(
   budgetChars: number = DIGEST_TARGET_CHARS,
 ): 'single' | 'two-level' {
   if (estimateSingleLevelChars(groups) <= budgetChars) return 'single';
-  return estimateTwoLevelChars(groups) <= budgetChars ? 'two-level' : 'two-level';
+  // Even a two-level digest may exceed the budget; renderDocumentDigest then
+  // trims proportionally and reports how many topics it dropped.
+  return 'two-level';
 }
 
 /**

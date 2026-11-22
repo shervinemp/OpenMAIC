@@ -13,7 +13,7 @@ import {
   resolveTTSBaseUrl,
   resolveVideoBaseUrl,
 } from '@/lib/server/provider-config';
-import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { validatePublicUrlForSSRF } from '@/lib/server/ssrf-guard';
 
 /**
  * Generation readiness pre-flight.
@@ -63,7 +63,8 @@ async function probe(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { headers, signal: controller.signal });
+    // Refollow redirects would bypass the public-URL check; fail closed.
+    const res = await fetch(url, { headers, signal: controller.signal, redirect: 'error' });
     if (res.status === 401 || res.status === 403) return 'auth_error';
     return 'reachable';
   } catch {
@@ -79,7 +80,7 @@ async function guardClientUrl(
   clientBaseUrl: string | undefined,
 ): Promise<ReadinessCheck | null> {
   if (!clientBaseUrl || process.env.NODE_ENV !== 'production') return null;
-  const ssrfError = await validateUrlForSSRF(clientBaseUrl);
+  const ssrfError = await validatePublicUrlForSSRF(clientBaseUrl);
   if (ssrfError) {
     return blocking({
       key,

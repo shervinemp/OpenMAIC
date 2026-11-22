@@ -25,9 +25,12 @@ interface VerifierLogger {
 }
 
 /**
- * Resolve the LLM verifier for this request. Undefined when no `quiz-verify`
- * route is configured (no extra call) or when the route cannot be resolved
- * (fail-open, with a warning).
+ * Resolve the LLM baseline verifier for this request. Undefined when no
+ * `quiz-verify` route is configured and no System 1 choice was sent — in that
+ * case there is no verifier, not an implicit LLM one. Also undefined (with a
+ * warning) when a configured route cannot be resolved. The per-request System
+ * 1 choice from Settings is the other opt-in path and is layered on by the
+ * caller.
  */
 async function resolveLlmQuizVerifier(options: {
   req: NextRequest;
@@ -82,7 +85,8 @@ async function resolveLlmQuizVerifier(options: {
  * Resolve the verifier for this request.
  *
  * The Settings-driven `x-decision-*` headers supply the one decision choice;
- * the LLM verifier is its fallback. With no opt-in this returns the LLM verifier.
+ * the LLM verifier is its fallback. With no opt-in at all this returns no
+ * verifier; the caller layers on the Settings-driven System 1 choice.
  */
 export async function resolveQuizAnswerVerifier(options: {
   req: NextRequest;

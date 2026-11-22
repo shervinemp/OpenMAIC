@@ -145,7 +145,12 @@ function pruneThinkingConfigs(
     // Partial writes (e.g. token-plan apply writes credentials before models)
     // can leave a provider entry without a models array yet.
     for (const model of providerConfig.models ?? []) {
-      if (supportsConfigurableThinking(model.capabilities?.thinking)) {
+      // Consult the shipped catalog too: a model that gained thinking in a newer
+      // build still has stale persisted capabilities here, and the backfill
+      // that would fix them runs after this prune.
+      const thinking =
+        model.capabilities?.thinking ?? getCatalogThinkingCapability(providerId, model.id);
+      if (supportsConfigurableThinking(thinking)) {
         validKeys.add(getThinkingConfigKey(providerId, model.id));
       }
     }
@@ -1993,6 +1998,12 @@ export const useSettingsStore = create<SettingsState>()(
                     requiresApiKey: IMAGE_PROVIDERS[key]?.requiresApiKey ?? true,
                     isServerConfigured: false,
                     serverDisabled: false,
+                    // Drop the previous server pin so a removed `models` list
+                    // cannot linger forever. User-added models (no replacement
+                    // flag) are left intact.
+                    ...(newImageConfig[key].replaceBuiltInModels
+                      ? { customModels: [], replaceBuiltInModels: false }
+                      : {}),
                   };
                 }
               }
@@ -2025,6 +2036,9 @@ export const useSettingsStore = create<SettingsState>()(
                     requiresApiKey: VIDEO_PROVIDERS[key]?.requiresApiKey ?? true,
                     isServerConfigured: false,
                     serverDisabled: false,
+                    ...(newVideoConfig[key].replaceBuiltInModels
+                      ? { customModels: [], replaceBuiltInModels: false }
+                      : {}),
                   };
                 }
               }

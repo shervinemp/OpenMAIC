@@ -349,9 +349,18 @@ export const PRESET_CATEGORY_ORDER: PresetCategory[] = [
 export function tokenPlanSeedFingerprint(preset: TokenPlanPreset): string {
   const m = preset.modalities;
   return JSON.stringify({
-    llm: [m.llm?.defaultModelId, m.llm?.defaultModels, m.llm?.stageRoutes],
-    image: m.image?.defaultModels,
-    video: m.video?.defaultModels,
-    tts: [m.tts?.defaultModelId, m.tts?.defaultModels],
+    llm: [
+      m.llm?.defaultModelId,
+      m.llm?.defaultModels,
+      m.llm?.stageRoutes,
+      // Endpoint/format changes must re-apply a plan too, otherwise enrolled
+      // users keep pointing at a retired gateway forever.
+      m.llm?.baseUrl,
+      m.llm?.apiFormat,
+      m.llm?.modelsUrl,
+    ],
+    image: [m.image?.defaultModels, m.image?.baseUrl],
+    video: [m.video?.defaultModels, m.video?.baseUrl],
+    tts: [m.tts?.defaultModelId, m.tts?.defaultModels, m.tts?.baseUrl],
   });
 }

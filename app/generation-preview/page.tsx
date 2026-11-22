@@ -868,7 +868,7 @@ function GenerationPreviewContent() {
         let resumeOutlines: SceneOutline[] | undefined;
         let resumeFromUnitIndex: number | undefined;
         try {
-          const checkpoint = await readOutlineCheckpoint();
+          const checkpoint = await readOutlineCheckpoint(generationSession.sessionId);
           if (
             checkpoint &&
             checkpoint.sessionId === currentSession.sessionId &&
@@ -999,7 +999,7 @@ function GenerationPreviewContent() {
                           directive = evt.languageDirective || directive;
                           // The full deck completed — the checkpoint is obsolete.
                           try {
-                            void clearOutlineCheckpoint();
+                            void clearOutlineCheckpoint(generationSession.sessionId);
                           } catch {
                             /* ignore */
                           }
@@ -1290,7 +1290,14 @@ function GenerationPreviewContent() {
           setGeneratedAgents(agentData.agents);
           setShowAgentReveal(true);
           await new Promise<void>((resolve) => {
-            agentRevealResolveRef.current = resolve;
+            const finish = () => {
+              signal.removeEventListener('abort', onAbort);
+              if (agentRevealResolveRef.current === finish) agentRevealResolveRef.current = null;
+              resolve();
+            };
+            const onAbort = () => finish();
+            signal.addEventListener('abort', onAbort, { once: true });
+            agentRevealResolveRef.current = finish;
           });
 
           agents = savedIds
@@ -1657,9 +1664,18 @@ function GenerationPreviewContent() {
     });
   };
 
+  const confirmingRef = useRef(false);
+
   const handleConfirmOutlines = () => {
+    // Synchronous guard: React state applies on the next render, so a rapid
+    // second click would otherwise fall through to the double-start branch.
+    if (confirmingRef.current) return;
+    confirmingRef.current = true;
     const finalOutlines = session?.sceneOutlines ?? streamingOutlines;
-    if (!finalOutlines || finalOutlines.length === 0) return;
+    if (!finalOutlines || finalOutlines.length === 0) {
+      confirmingRef.current = false;
+      return;
+    }
     setIsConfirmingOutlines(true);
     clearOutlineReviewTimer();
     outlineReviewIntentRef.current = false;
@@ -1677,6 +1693,7 @@ function GenerationPreviewContent() {
     // Reset the flag so the state doesn't linger if `startGeneration` later
     // re-renders the editor for any reason.
     setIsConfirmingOutlines(false);
+    confirmingRef.current = false;
     const confirmedSession: GenerationSessionState = {
       ...(session as GenerationSessionState),
       sceneOutlines: finalOutlines,
@@ -2134,7 +2151,11 @@ function GenerationPreviewContent() {
       <AgentRevealModal
         agents={generatedAgents}
         open={showAgentReveal}
-        onClose={() => setShowAgentReveal(false)}
+        onClose={() => {
+          setShowAgentReveal(false);
+          // Closing early must not strand the generation run waiting forever.
+          agentRevealResolveRef.current?.();
+        }}
         onAllRevealed={() => {
           agentRevealResolveRef.current?.();
           agentRevealResolveRef.current = null;

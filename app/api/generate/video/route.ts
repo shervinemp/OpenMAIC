@@ -32,7 +32,10 @@ import {
 import type { VideoProviderId, VideoGenerationOptions } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { validateClientBaseUrl, validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import {
+  validateClientBaseUrl,
+  validatePublicUrlForSSRF,
+} from '@/lib/server/ssrf-guard';
 import { withVideoProviderFetch } from '@/lib/server/media-provider-fetch';
 
 const log = createLogger('VideoGeneration API');
@@ -77,7 +80,7 @@ export async function POST(request: NextRequest) {
     // Unconditional: self-hosted deployments allow local targets through
     // ALLOW_LOCAL_NETWORKS on the guard itself, never by skipping it.
     if (body.inputImage && /^https?:\/\//i.test(body.inputImage)) {
-      const ssrfError = await validateUrlForSSRF(body.inputImage);
+      const ssrfError = await validatePublicUrlForSSRF(body.inputImage);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }
