@@ -14,11 +14,9 @@
  * (an `answers` map nested under `result` is accepted too). `prompt` is also
  * sent as `question` for servers that use the older spelling.
  *
- * The endpoint comes from operator configuration, never from request input,
- * so it is trusted like a server-managed provider base URL and does not go
- * through the user-URL SSRF policy. A localhost/LAN decision server is
- * expected to work without `ALLOW_LOCAL_NETWORKS`; `DECISION_ROUTES` should be
- * protected with the same care as any other provider credential/config.
+ * The endpoint is chosen in Settings and arrives in a request header, so it is
+ * user-supplied (not operator-only). Keep the response guards below strict and
+ * treat the endpoint with the same care as any other client-provided base URL.
  *
  * Reliability is bounded on purpose. One transient failure gets one retry,
  * and both attempts share the configured timeout: a server that already

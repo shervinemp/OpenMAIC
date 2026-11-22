@@ -204,11 +204,13 @@ export interface SettingsState {
    * Optional System 1 decision model. OFF by default: with no choice the
    * decision layer falls back to the normal LLM path. Exactly ONE `provider:model`
    * string is stored, so enabling many providers can never make the selection
-   * ambiguous. Overrides the server's DECISION_ROUTES for this browser only.
+   * ambiguous. `decisionModels` is the dedicated System 1 catalog — deliberately
+   * separate from the main LLM's `providersConfig` and picker.
    */
   decisionEnabled: boolean;
   decisionProvider: 'chat' | 'laya' | 'jev';
   decisionModel: string;
+  decisionModels: string[];
   decisionEndpoint: string;
   decisionMode: 'shadow' | 'replace';
 
@@ -438,6 +440,8 @@ export interface SettingsState {
   setDecisionEnabled: (enabled: boolean) => void;
   setDecisionProvider: (provider: 'chat' | 'laya' | 'jev') => void;
   setDecisionModel: (model: string) => void;
+  addDecisionModel: (model: string) => void;
+  removeDecisionModel: (model: string) => void;
   setDecisionEndpoint: (endpoint: string) => void;
   setDecisionMode: (mode: 'shadow' | 'replace') => void;
   setThinkingConfig: (
@@ -1113,6 +1117,7 @@ export const useSettingsStore = create<SettingsState>()(
         decisionEnabled: false,
         decisionProvider: 'chat',
         decisionModel: '',
+        decisionModels: [],
         decisionEndpoint: '',
         decisionMode: 'shadow',
         /** preset id → seed fingerprint applied last (drives startup reconcile). */
@@ -1184,6 +1189,23 @@ export const useSettingsStore = create<SettingsState>()(
         setDecisionEnabled: (enabled) => set({ decisionEnabled: enabled }),
         setDecisionProvider: (provider) => set({ decisionProvider: provider }),
         setDecisionModel: (model) => set({ decisionModel: model }),
+        addDecisionModel: (model) =>
+          set((state) => {
+            const clean = model.trim();
+            const colon = clean.indexOf(':');
+            if (colon <= 0 || colon === clean.length - 1) return state;
+            const normalized = clean.slice(0, colon).toLowerCase() + clean.slice(colon);
+            if (state.decisionModels.includes(normalized)) return state;
+            return {
+              decisionModels: [...state.decisionModels, normalized],
+              decisionModel: state.decisionModel || normalized,
+            };
+          }),
+        removeDecisionModel: (model) =>
+          set((state) => ({
+            decisionModels: state.decisionModels.filter((entry) => entry !== model),
+            decisionModel: state.decisionModel === model ? '' : state.decisionModel,
+          })),
         setDecisionEndpoint: (endpoint) => set({ decisionEndpoint: endpoint }),
         setDecisionMode: (mode) => set({ decisionMode: mode }),
 

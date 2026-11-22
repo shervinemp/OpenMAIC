@@ -2215,8 +2215,10 @@
     },
     "modelServices": {
       "nav": "Model Services",
+      "decisionModel": "Decision Model",
       "desc": {
         "providers": "Configure credentials, endpoints and model catalogs for language model services",
+        "decision": "Pick the System 1 model used for grading and verification",
         "image": "Configure image generation services (API keys, workflows and model catalogs)",
         "video": "Configure credentials and model catalogs for video generation services",
         "tts": "Configure speech synthesis services, voices and models",

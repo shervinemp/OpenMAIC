@@ -5,7 +5,6 @@ import type { QuizVerificationQuestion } from '@openmaic/generation';
 import { resetDecisionTelemetryForTests } from '@/lib/decision/telemetry';
 import { resolveQuizAnswerVerifier } from '@/lib/server/quiz-verifier';
 
-const originalRoutes = process.env.DECISION_ROUTES;
 const originalModelRoutes = process.env.MODEL_ROUTES;
 
 const questions: QuizVerificationQuestion[] = [
@@ -43,8 +42,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (originalRoutes === undefined) delete process.env.DECISION_ROUTES;
-  else process.env.DECISION_ROUTES = originalRoutes;
   if (originalModelRoutes === undefined) delete process.env.MODEL_ROUTES;
   else process.env.MODEL_ROUTES = originalModelRoutes;
   vi.unstubAllGlobals();

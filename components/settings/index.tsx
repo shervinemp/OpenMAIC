@@ -236,11 +236,12 @@ const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
 /** 「模型服务」分区内的服务 tab：沿用旧一级分区的值与面板组件。 */
 export type ServiceTab = Extract<
   SettingsSection,
-  'providers' | 'image' | 'video' | 'tts' | 'asr' | 'pdf' | 'web-search'
+  'providers' | 'decision' | 'image' | 'video' | 'tts' | 'asr' | 'pdf' | 'web-search'
 >;
 
 const SERVICE_TABS = [
   'providers',
+  'decision',
   'image',
   'video',
   'tts',
@@ -251,6 +252,7 @@ const SERVICE_TABS = [
 
 export const SERVICE_TAB_LABELS: Record<ServiceTab, string> = {
   providers: 'settings.providers',
+  decision: 'settings.modelServices.decisionModel',
   image: 'settings.imageSettings',
   video: 'settings.videoSettings',
   tts: 'settings.ttsSettings',
@@ -261,6 +263,7 @@ export const SERVICE_TAB_LABELS: Record<ServiceTab, string> = {
 
 const SERVICE_TAB_ICONS: Record<ServiceTab, typeof Boxes> = {
   providers: Box,
+  decision: Brain,
   image: ImageIcon,
   video: Film,
   tts: Volume2,
@@ -271,6 +274,7 @@ const SERVICE_TAB_ICONS: Record<ServiceTab, typeof Boxes> = {
 
 const SERVICE_TAB_DESCRIPTIONS: Record<ServiceTab, string> = {
   providers: 'settings.modelServices.desc.providers',
+  decision: 'settings.modelServices.desc.decision',
   image: 'settings.modelServices.desc.image',
   video: 'settings.modelServices.desc.video',
   tts: 'settings.modelServices.desc.tts',
@@ -961,19 +965,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             </button>
 
             <button
-              onClick={() => setActiveSection('decision')}
-              className={cn(
-                'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
-                activeSection === 'decision'
-                  ? 'bg-primary/10 text-primary font-medium'
-                  : 'hover:bg-muted',
-              )}
-            >
-              <Brain className="h-4 w-4 shrink-0" />
-              <span className="truncate">System 1 Decision</span>
-            </button>
-
-            <button
               onClick={() => setActiveSection('general')}
               className={cn(
                 'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
@@ -1024,8 +1015,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
 
               {activeSection === 'course-models' && <CourseModelConfigPanel />}
 
-              {activeSection === 'decision' && <DecisionConfigPanel />}
-
               {activeSection === 'model-services' && (
                 <div className="flex h-full min-h-0 flex-col">
                   {/* 七个服务的胶囊 tab（收拢后的一级列） */}
@@ -1061,6 +1050,15 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                           selectedProviderId={selectedProviderId}
                           onSelect={handleProviderSelect}
                           onAddProvider={() => setShowAddProviderDialog(true)}
+                        />
+                      )}
+                      {serviceTab === 'decision' && (
+                        <ProviderListColumn
+                          providers={[{ id: 'decision' as const, name: 'Decision Model' }]}
+                          configs={{ decision: { requiresApiKey: false } }}
+                          selectedId={'decision' as const}
+                          onSelect={() => {}}
+                          t={t}
                         />
                       )}
                       {serviceTab === 'pdf' && (
@@ -1196,6 +1194,11 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                         </div>
                       )}
 
+                      {serviceSection === 'decision' && (
+                        <div className="mt-4">
+                          <DecisionConfigPanel />
+                        </div>
+                      )}
                       {serviceSection === 'pdf' && (
                         <div className="mt-4">
                           <PDFSettings selectedProviderId={selectedPdfProviderId} />
