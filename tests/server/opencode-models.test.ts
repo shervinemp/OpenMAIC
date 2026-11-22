@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { getProvider } from '@/lib/ai/providers';
-import {
-  discoverOpenCodeModels,
-  rankOpenCodeModels,
-  resolveOpenCodeDefaultModel,
-} from '@/lib/server/opencode-models';
+import { discoverOpenCodeModels, rankOpenCodeModels } from '@/lib/server/opencode-models';
 
 describe('native OpenCode provider', () => {
   it('is registered with no hardcoded models and a local bridge default', () => {
@@ -60,24 +56,27 @@ describe('discoverOpenCodeModels', () => {
     expect(models).toEqual(['tencent/hy4-flash', 'tencent/hy4-flash-free']);
   });
 
-  it('returns a native opencode: default model string', async () => {
-    expect(
-      await resolveOpenCodeDefaultModel({
-        baseUrl,
-        listModels: async () => [{ id: 'tencent/hy4-flash' }],
-      }),
-    ).toBe('opencode:tencent/hy4-flash');
+  it('uses the supplied base URL for discovery', async () => {
+    const seen: string[] = [];
+    await discoverOpenCodeModels({
+      baseUrl: 'https://opencode.ai/go/v1',
+      listModels: async (url) => {
+        seen.push(url);
+        return [{ id: 'some/model' }];
+      },
+    });
+    expect(seen).toEqual(['https://opencode.ai/go/v1']);
   });
 
   it('fails open when the catalog is unavailable', async () => {
-    const failing = {
-      baseUrl,
-      listModels: async () => {
-        throw new Error('bridge down');
-      },
-    };
-    expect(await discoverOpenCodeModels(failing)).toEqual([]);
-    expect(await resolveOpenCodeDefaultModel(failing)).toBeUndefined();
+    expect(
+      await discoverOpenCodeModels({
+        baseUrl,
+        listModels: async () => {
+          throw new Error('bridge down');
+        },
+      }),
+    ).toEqual([]);
   });
 
   it('does nothing without a base URL', async () => {

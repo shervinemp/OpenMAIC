@@ -8,19 +8,21 @@
  * id that is merely a qualified id's suffix is dropped so it can never be
  * picked as the ambiguous twin.
  *
- * Discovery is best-effort and cached. Any failure leaves the caller's existing
- * model resolution untouched — never fail a request because a catalog was
- * temporarily unavailable.
+ * Discovery is best-effort, bounded, cached per base URL, and negatively cached
+ * on failure. A failure never blocks or changes the caller's model resolution.
  */
 
 import { getProvider } from '@/lib/ai/providers';
 import { fetchModels } from '@/lib/server/model-fetch';
-import { resolveBaseUrl } from '@/lib/server/provider-config';
+import { resolveApiKey, resolveBaseUrl } from '@/lib/server/provider-config';
 
 const OPENCODE_PROVIDER_ID = 'opencode';
 
 const NON_CHAT_PATTERN = /(tts|asr|whisper|embedding|rerank|mineru|image|video|voxcpm|moderation)/i;
 const CACHE_TTL_MS = 60_000;
+/** Failures are cached briefly so a down gateway cannot be retried on every load. */
+const NEGATIVE_CACHE_TTL_MS = 5_000;
+const DISCOVERY_TIMEOUT_MS = 10_000;
 
 /**
  * Rank discovered ids so the first entry is the safest default.
@@ -50,8 +52,8 @@ interface CacheEntry {
   models: string[];
 }
 
-let cache: CacheEntry | undefined;
-let inFlight: Promise<string[]> | undefined;
+const cache = new Map<string, CacheEntry>();
+const inFlight = new Map<string, Promise<string[]>>();
 
 /** The configured base URL for the OpenCode provider (registry default if unset). */
 function openCodeBaseUrl(): string | undefined {
@@ -60,7 +62,7 @@ function openCodeBaseUrl(): string | undefined {
 
 /**
  * Fetch and rank the provider's current chat models. Returns an empty array on
- * failure or when there is no base URL. Results are cached for CACHE_TTL_MS.
+ * failure or when there is no base URL. Results are cached per base URL.
  */
 export async function discoverOpenCodeModels(
   options: { baseUrl?: string; listModels?: ModelLister } = {},
@@ -69,37 +71,47 @@ export async function discoverOpenCodeModels(
   if (!baseUrl) return [];
 
   const listModels = options.listModels ?? fetchModels;
+  // A keyed gateway needs its key for /v1/models too; the local bridge ignores it.
+  const apiKey = options.listModels ? '' : resolveApiKey(OPENCODE_PROVIDER_ID);
+
   if (!options.listModels) {
-    if (cache && cache.expiresAt > Date.now()) return cache.models;
-    if (inFlight) return inFlight;
+    const hit = cache.get(baseUrl);
+    if (hit && hit.expiresAt > Date.now()) return hit.models;
+    const pending = inFlight.get(baseUrl);
+    if (pending) return pending;
   }
 
   const load = async (): Promise<string[]> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const models = await listModels(baseUrl, '');
+      const models = await Promise.race([
+        listModels(baseUrl, apiKey),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('OpenCode model discovery timed out')),
+            DISCOVERY_TIMEOUT_MS,
+          );
+        }),
+      ]);
       const ranked = rankOpenCodeModels(models.map((m) => m.id));
-      if (!options.listModels) cache = { expiresAt: Date.now() + CACHE_TTL_MS, models: ranked };
+      if (!options.listModels) cache.set(baseUrl, { expiresAt: Date.now() + CACHE_TTL_MS, models: ranked });
       return ranked;
     } catch {
-      // Fail-open: keep whatever model the caller would otherwise have used.
+      if (!options.listModels) {
+        cache.set(baseUrl, { expiresAt: Date.now() + NEGATIVE_CACHE_TTL_MS, models: [] });
+      }
       return [];
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   };
 
   if (!options.listModels) {
-    inFlight = load().finally(() => {
-      inFlight = undefined;
+    const pending = load().finally(() => {
+      inFlight.delete(baseUrl);
     });
-    return inFlight;
+    inFlight.set(baseUrl, pending);
+    return pending;
   }
   return load();
-}
-
-/** The model string to use when no client model and no operator default exist. */
-export async function resolveOpenCodeDefaultModel(
-  options: { baseUrl?: string; listModels?: ModelLister } = {},
-): Promise<string | undefined> {
-  const models = await discoverOpenCodeModels(options);
-  const first = models[0];
-  return first ? `${OPENCODE_PROVIDER_ID}:${first}` : undefined;
 }

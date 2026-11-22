@@ -74,6 +74,7 @@ export const LLM_ENV_MAP: Record<string, string> = {
   SILICONFLOW: 'siliconflow',
   DOUBAO: 'doubao',
   OPENROUTER: 'openrouter',
+  OPENCODE: 'opencode',
   GROK: 'grok',
   TENCENT: 'tencent-hunyuan',
   TENCENT_HUNYUAN: 'tencent-hunyuan',
@@ -514,7 +515,7 @@ function buildConfig(yamlData: YamlData): ServerConfig {
   );
   const providers = applyBedrockProviderConfig(
     loadEnvSection(LLM_ENV_MAP, yamlData.providers, {
-      keylessProviders: new Set(['ollama', 'lemonade', BEDROCK_PROVIDER_ID]),
+      keylessProviders: new Set(['ollama', 'lemonade', 'opencode', BEDROCK_PROVIDER_ID]),
     }),
     yamlData.providers,
   );

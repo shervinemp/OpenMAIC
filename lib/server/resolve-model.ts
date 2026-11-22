@@ -17,7 +17,6 @@ import {
 import { validateClientBaseUrl, validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
 import { clientBaseUrlLlmFetch } from '@/lib/server/llm-provider-fetch';
-import { resolveOpenCodeDefaultModel } from '@/lib/server/opencode-models';
 import {
   getStageRoute,
   getUserStageRoute,
@@ -95,11 +94,7 @@ export async function resolveModel(params: {
   const userRoute = envRoute ? undefined : getUserStageRoute(params.userRoutes ?? {}, params.stage);
   const stageRoute: UserStageRoute | undefined = envRoute ?? userRoute;
   const stageModel = stageRoute?.model;
-  // Last resort: an OpenCode gateway can supply its current model list, so no
-  // specific model id has to be pinned in env. An explicit client choice and an
-  // operator DEFAULT_MODEL still win over discovery.
-  const modelString =
-    stageModel || params.modelString || process.env.DEFAULT_MODEL || (await resolveOpenCodeDefaultModel());
+  const modelString = stageModel || params.modelString || process.env.DEFAULT_MODEL;
   if (!modelString) {
     throw new Error(
       'No model could be resolved. Configure DEFAULT_MODEL (and/or a MODEL_ROUTES entry for this stage), or send a model via x-model.',
