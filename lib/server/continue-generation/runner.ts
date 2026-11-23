@@ -76,6 +76,11 @@ interface ApiResult {
   [key: string]: unknown;
 }
 
+/**
+ * Internal generate calls can take longer than undici's default 5-minute
+ * headers timeout with a slow free model. node:http has no such default, so
+ * use it directly and only abort on our own job signal.
+ */
 async function postInternal(
   baseUrl: string,
   pathname: string,
@@ -83,15 +88,48 @@ async function postInternal(
   body: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<ApiResult> {
-  const response = await fetch(`${baseUrl}${pathname}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', ...headers },
-    body: JSON.stringify(body),
-    signal,
+  const { request } = await import('node:http');
+  const { request: httpsRequest } = await import('node:https');
+  const url = new URL(pathname, baseUrl);
+  const payload = JSON.stringify(body);
+  const transport = url.protocol === 'https:' ? httpsRequest : request;
+
+  const result = await new Promise<{ status: number; text: string }>((resolve, reject) => {
+    const req = transport(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'content-length': Buffer.byteLength(payload),
+          ...headers,
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 500, text: Buffer.concat(chunks).toString('utf8') }),
+        );
+        res.on('error', reject);
+      },
+    );
+    const abort = () => req.destroy(new Error('aborted'));
+    if (signal.aborted) abort();
+    else signal.addEventListener('abort', abort, { once: true });
+    req.on('close', () => signal.removeEventListener('abort', abort));
+    req.on('error', reject);
+    req.end(payload);
   });
-  const data = (await response.json().catch(() => ({}))) as ApiResult;
-  if (!response.ok) {
-    throw new Error(data.error || `Internal generation call failed (${response.status})`);
+
+  let data: ApiResult = {};
+  try {
+    data = JSON.parse(result.text) as ApiResult;
+  } catch {
+    /* non-JSON error body */
+  }
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(data.error || `Internal generation call failed (${result.status})`);
   }
   return data;
 }
