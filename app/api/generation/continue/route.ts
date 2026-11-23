@@ -1,4 +1,4 @@
-import { after, type NextRequest } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { nanoid } from 'nanoid';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
@@ -55,7 +55,10 @@ async function start(req: NextRequest, ownerId: string): Promise<Response> {
     const job = await createContinueJob(jobId, input);
     const headers = forwardedHeaders(req);
 
-    after(() => runContinueGenerationJob(jobId, input, headers));
+    // A detached timer, not after(): the runner calls this same server's
+    // /api/generate routes, and after() keeps the originating request open in
+    // dev, which deadlocks the self-fetch. The response must settle first.
+    setTimeout(() => void runContinueGenerationJob(jobId, input, headers), 100);
 
     return apiSuccess(
       {
