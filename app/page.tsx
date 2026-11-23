@@ -62,6 +62,7 @@ import {
 import { abortStageGeneration } from '@/lib/classroom/generation-abort';
 import { markAutoResume } from '@/lib/classroom/auto-resume-marker';
 import { markGenerationStopped } from '@/lib/generation/run-intent';
+import { useActiveGenerationStageIds } from '@/lib/hooks/use-active-generations';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import {
   courseMaterialFingerprint,
@@ -155,6 +156,7 @@ const initialFormState: FormState = {
 };
 
 function HomePage() {
+  const activeGenerationStages = useActiveGenerationStageIds();
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
@@ -448,8 +450,10 @@ function HomePage() {
   };
 
   const stopParkedGeneration = async (parked: ParkedGenerationSession) => {
-    // An explicit Stop is authoritative: it clears the durable intent so a
-    // later open of the course cannot auto-resume the run.
+    // An explicit Stop is authoritative: clear the durable intent so a later
+    // open cannot auto-resume, and abort the browser loop itself (navigation
+    // no longer stops it on unmount).
+    if (parked.stageId) abortStageGeneration(parked.stageId);
     markGenerationStopped(parked.stageId ?? '');
     let runId: string | null = null;
     try {
@@ -1602,12 +1606,18 @@ function HomePage() {
                             classroom.generationComplete === false &&
                             (classroom.outlineCount ?? 0) > classroom.sceneCount;
                           const parked = parkedSessions.find((p) => p.stageId === classroom.id);
+                          const activelyGenerating = activeGenerationStages.has(classroom.id);
                           return (
                           <motion.div
                             key={classroom.id}
                             initial={{ opacity: 0, y: 16 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: i * 0.04, duration: 0.35, ease: 'easeOut' }}
+                            className={cn(
+                              'relative rounded-xl transition-shadow duration-500',
+                              activelyGenerating &&
+                                'ring-1 ring-violet-400/40 shadow-[0_0_18px_-6px_rgba(139,92,246,0.55)]',
+                            )}
                           >
                             <ClassroomCard
                               classroom={classroom}
@@ -1634,9 +1644,23 @@ function HomePage() {
                                       className="absolute bottom-2 right-2 z-20 flex items-center gap-1"
                                       onClick={(e) => e.stopPropagation()}
                                     >
-                                      <span className="inline-flex items-center gap-1 rounded-md bg-violet-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
-                                        {parked ? (
-                                          <Loader2 className="size-2.5 animate-spin" />
+                                      <span
+                                        aria-label={
+                                          activelyGenerating
+                                            ? t('generation.pendingGenerationTitle')
+                                            : t('generation.pausedGenerationTitle')
+                                        }
+                                        className={cn(
+                                          'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm',
+                                          activelyGenerating
+                                            ? 'bg-violet-600/90 animate-pulse'
+                                            : 'bg-slate-600/80',
+                                        )}
+                                      >
+                                        {activelyGenerating ? (
+                                          <span className="size-2 rounded-full bg-emerald-300 shadow-[0_0_6px_rgba(110,231,183,0.9)]" />
+                                        ) : parked ? (
+                                          <Loader2 className="size-2.5" />
                                         ) : (
                                           <Pause className="size-2.5" />
                                         )}

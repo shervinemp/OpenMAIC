@@ -109,20 +109,22 @@ export function ClassroomSurface({
    */
   const [notFound, setNotFound] = useState(false);
   const generationStartedRef = useRef(false);
+  // Re-evaluate the one-shot resume when the store settles. Reading counts (not
+  // the arrays) keeps the dependency list stable while still catching the
+  // hydration window where scenes exist before outlines do.
+  const resumeOutlinesCount = useStageStore((s) => s.outlines.length);
+  const resumeScenesCount = useStageStore((s) => s.scenes.length);
+  const resumeGenerationComplete = useStageStore((s) => s.generationComplete);
   const activeClassroomIdRef = useRef<string | null>(null);
   const loadEpochRef = useRef(0);
 
-  const { generateRemaining, retrySingleOutline, stop } = useSceneGenerator({
+  const { generateRemaining, retrySingleOutline } = useSceneGenerator({
     onComplete: () => {
       log.info('[Classroom] All scenes generated');
     },
   });
 
-  const { mayGenerate, refreshOwnership } = useClassroomSession({
-    classroomId,
-    variant,
-    stopGeneration: stop,
-  });
+  const { mayGenerate, refreshOwnership } = useClassroomSession({ classroomId, variant });
 
   const loadClassroom = useCallback(
     async (isEffectCurrent: () => boolean): Promise<ClassroomLoadOutcome> => {
@@ -613,28 +615,63 @@ export function ClassroomSurface({
     // is on; otherwise they stay parked behind retry cards so the user decides
     // whether a provider-side failure is worth re-burning tokens.
     const materialized = indexScenesByOutline(scenes);
-    const autoRetryFailed = ['1', 'true'].includes(
-      (process.env.NEXT_PUBLIC_AUTO_RETRY_FAILED_GENERATION ?? '0').trim().toLowerCase(),
-    );
-    // Consume the hand-off before computing the queue: an explicit Resume from
-    // the library must also re-run outlines that a prior provider failure
-    // parked. A plain course open has no marker and stays behind its button.
-    const handoff = consumeAutoResumeOptions(stage?.id ?? '');
-    // A hand-off is an explicit Start/Resume and already refreshed the durable
-    // intent (see markAutoResume). Otherwise, an unfinished course with live
-    // intent is one that an unmount, reload or abort interrupted — restart it
-    // within the bounded budget instead of idling until someone clicks.
-    const autoResume = !handoff.resume && shouldAutoResume(stage?.id ?? '');
-    const retryFailed = autoRetryFailed || handoff.includeFailed;
-    const failedIds = new Set(state.failedOutlines.map((o) => o.id));
     const skipIds = new Set(state.skippedOutlineIds);
-    const outlineIsPending = (outline: { id: string; order: number }): boolean =>
-      !materialized.has(outline) &&
-      !skipIds.has(outline.id) &&
-      !(failedIds.has(outline.id) && !retryFailed);
-    const hasPending = !generationComplete && outlines.some(outlineIsPending);
+    // Work-availability check INDEPENDENT of the hand-off marker. Failed
+    // outlines are included here: an explicit Resume from the library may
+    // re-run them, so the deck is not "settled" while any are parked. Crucially,
+    // the marker is consumed only once we know there is work to do (below) —
+    // a transient load with no outlines must not eat an explicit hand-off.
+    const hasOutstandingOutlines = outlines.some((o) => !materialized.has(o) && !skipIds.has(o.id));
+    // A stale `generationComplete: true` with outlines still missing scenes is
+    // self-contradictory — it used to freeze the run permanently. Heal it so a
+    // subsequent resume can proceed.
+    if (generationComplete && hasOutstandingOutlines) {
+      log.warn(`[Classroom] ${stage?.id ?? ''} marked complete with unfinished outlines; healing`);
+      useStageStore.getState().setGenerationComplete(false);
+    }
+    const hasAnyWork = hasOutstandingOutlines;
 
-    if (hasPending && stage) {
+    if (!hasAnyWork) {
+      // A fully materialized deck whose completion flag was never written (a
+      // single-slide course, or a run that finished in generation-preview)
+      // still needs to be marked complete. No-op unless every outline really
+      // has a scene.
+      useStageStore.getState().markGenerationCompleteIfDone();
+      const settled = useStageStore.getState().generationComplete;
+      if (settled && outlines.length > 0 && stage) {
+        // Deck genuinely complete. The only case where it is safe to clear
+        // intent and freeze the one-shot guard.
+        generationStartedRef.current = true;
+        void clearGenerationSessionForStage(classroomId);
+        clearGenerationIntent(classroomId);
+        runSettledCourseMaintenance(stage.id);
+      }
+      // Otherwise the store has not settled yet (scenes before outlines, or a
+      // stale generationComplete). Leave the hand-off marker and the durable
+      // intent intact and let the effect re-run when the data arrives.
+      return;
+    }
+
+    if (stage) {
+      const autoRetryFailed = ['1', 'true'].includes(
+        (process.env.NEXT_PUBLIC_AUTO_RETRY_FAILED_GENERATION ?? '0').trim().toLowerCase(),
+      );
+      // Consume the hand-off before computing the queue: an explicit Resume
+      // from the library must also re-run outlines a prior provider failure
+      // parked. A plain course open has no marker and stays behind its button.
+      const handoff = consumeAutoResumeOptions(stage.id ?? '');
+      // A hand-off is an explicit Start/Resume and already refreshed the durable
+      // intent (see markAutoResume). Otherwise, an unfinished course with live
+      // intent is one that an unmount, reload or abort interrupted — restart it
+      // within the bounded budget instead of idling until someone clicks.
+      const autoResume = !handoff.resume && shouldAutoResume(stage.id ?? '');
+      const retryFailed = autoRetryFailed || handoff.includeFailed;
+      const failedIds = new Set(state.failedOutlines.map((o) => o.id));
+      const outlineIsPending = (outline: { id: string; order: number }): boolean =>
+        !materialized.has(outline) &&
+        !skipIds.has(outline.id) &&
+        !(failedIds.has(outline.id) && !retryFailed);
+
       generationStartedRef.current = true;
 
       // Resuming spends the owner's provider budget, so a course that is only
@@ -687,28 +724,23 @@ export function ClassroomSurface({
         // the same media mapping. The TTL sweep reclaims stale records once
         // the stage settles; clearing here would break the second resume.
       })();
-    } else if (outlines.length > 0 && stage) {
-      generationStartedRef.current = true;
-      // The deck reached the classroom already fully materialized (e.g. a
-      // single-slide course, or a deck whose last slide finished in
-      // generation-preview), so generateRemaining's completion path never
-      // ran. Record completion now so a later edit/delete is not treated as
-      // an interrupted generation. No-op if already complete or not all
-      // outlines have scenes.
-      useStageStore.getState().markGenerationCompleteIfDone();
-      // Nothing needs the generation session anymore — drop any record a
-      // handoff left behind (single-slide course, refresh-after-completion).
-      void clearGenerationSessionForStage(classroomId);
-      clearGenerationIntent(classroomId);
-      // Media and layout recovery: a fully materialized deck whose narration
-      // or image/video/poster bytes decayed, or whose layout carries debt,
-      // gets its maintenance run per mount.
-      runSettledCourseMaintenance(stage.id);
     }
     // classroomId: the params lookup and session cleanup are keyed by it. A
     // change re-runs this effect, but `generationStartedRef` still guards the
-    // one-shot resume.
-  }, [loading, error, mayGenerate, generateRemaining, classroomId, runSettledCourseMaintenance]);
+    // one-shot resume. The outline/scene/completion counts are dependencies so
+    // a transient "nothing pending" read (data still hydrating) re-evaluates
+    // once the real deck is in the store instead of freezing a live run.
+  }, [
+    loading,
+    error,
+    mayGenerate,
+    generateRemaining,
+    classroomId,
+    runSettledCourseMaintenance,
+    resumeOutlinesCount,
+    resumeScenesCount,
+    resumeGenerationComplete,
+  ]);
 
   // In-page resume after a provider-failure pause (quota exhaustion, flaky
   // free tier): re-kick the batch with the same handoff params the first

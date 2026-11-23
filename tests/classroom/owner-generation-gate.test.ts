@@ -170,11 +170,12 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     expect(session).toContain('useMayGenerateForStage(classroomId)');
     // Reset on course switch, so a previous course's answer never carries over.
     expect(session).toContain("noteStageGenerationOwnership(classroomId, 'unresolved')");
-    // The resume effect re-runs when the answer lands. (The fork also keys it
-    // on classroomId, which its params lookup is keyed by, and on the repair
-    // routine its settled-deck branch runs.)
+    // The resume effect re-runs when the answer lands. It also keys on
+    // classroomId (params lookup) and on the settled-deck repair routine and
+    // the store counts, so a transient hydration state is re-evaluated once
+    // the real outlines/scenes arrive instead of freezing a live run.
     expect(surface).toMatch(
-      /\}, \[loading, error, mayGenerate, generateRemaining(, classroomId)?(, runSettledCourseMaintenance)?\]\);/,
+      /\}, \[\s*loading,\s*error,\s*mayGenerate,\s*generateRemaining,\s*classroomId,\s*runSettledCourseMaintenance,\s*resumeOutlinesCount,\s*resumeScenesCount,\s*resumeGenerationComplete,?\s*\]\);/,
     );
     // An unresolved answer is asked again rather than accepted for the load.
     expect(session).toContain('retryWhileOwnershipUnresolved');
@@ -269,14 +270,16 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     expect(cleanup).toContain('loadEpochRef.current += 1');
   });
 
-  it('clears parked media allocations when a course is (re)opened', () => {
+  it('clears parked media allocations when a course is (re)opened, without stopping generation on navigation', () => {
     const source = readFileSync(
       join(process.cwd(), 'lib/classroom/use-classroom-session.ts'),
       'utf8',
     );
     expect(source).toContain('clearPendingMediaAllocations(classroomId)');
     expect(source).toContain('clearNarrationAllocations(classroomId)');
-    expect(source).toContain('return () => stopGeneration()');
+    // Back to Home is navigation, not a stop signal: the unmount cleanup must
+    // not abort a live generation.
+    expect(source).not.toContain('stopGeneration()');
   });
 
   // Listening back to narration and seeing whether a line has any spend nothing,

@@ -25,7 +25,6 @@ type ClassroomSurfaceVariant = 'page' | 'pane';
 interface ClassroomSessionOptions {
   readonly classroomId: string;
   readonly variant: ClassroomSurfaceVariant;
-  readonly stopGeneration: () => void;
 }
 
 interface ClassroomSession {
@@ -40,7 +39,6 @@ interface ClassroomSession {
 export function useClassroomSession({
   classroomId,
   variant,
-  stopGeneration,
 }: ClassroomSessionOptions): ClassroomSession {
   const mayGenerate = useMayGenerateForStage(classroomId);
 
@@ -94,8 +92,11 @@ export function useClassroomSession({
     useWhiteboardHistoryStore.getState().clearHistory();
     useCanvasStore.getState().resetCanvasState();
 
-    return () => stopGeneration();
-  }, [classroomId, stopGeneration]);
+    // Navigation is NOT a stop. A generation loop is owned by its hook and its
+    // cross-tab lease, both of which survive this surface unmounting; pausing
+    // here made "Back to Home and back" abort a live run. Only an explicit
+    // Pause / Cancel / Stop (or course deletion) may stop generation.
+  }, [classroomId]);
 
   return { mayGenerate, refreshOwnership };
 }
