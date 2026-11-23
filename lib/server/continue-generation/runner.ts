@@ -139,6 +139,7 @@ export async function runContinueGenerationJob(
       message: `Generating ${pending.length} scene(s)`,
     });
 
+    log.info(`Job ${jobId}: entering scene loop, ${pending.length} pending`);
     let generated = 0;
     let failed = 0;
     let previousSpeeches: string[] = [];
@@ -152,6 +153,7 @@ export async function runContinueGenerationJob(
 
     for (const outline of pending) {
       if (signal.aborted) throw new Error('aborted');
+      log.info(`Job ${jobId}: content for "${outline.title}"`);
 
       let contentResult: ApiResult;
       try {
@@ -188,6 +190,7 @@ export async function runContinueGenerationJob(
         continue;
       }
 
+      log.info(`Job ${jobId}: actions for "${outline.title}"`);
       let actionsResult: ApiResult;
       try {
         actionsResult = await postInternal(
