@@ -1,4 +1,3 @@
-import { JsonFileDocumentStore } from '@openmaic/storage/server/file-document-store';
 import type { DocumentStore } from '@openmaic/storage';
 import { createLogger } from '@/lib/logger';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
@@ -6,7 +5,6 @@ import type { AppStage } from '@/lib/document-store/persistence-types';
 import type { Scene as AppScene } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import type { SceneOutline } from '@/lib/types/generation';
-import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { putSceneBringingCurrent } from '@/lib/server/agent-runtime/document-writes';
 import { synthesizeSceneNarration } from '@/lib/server/agent-runtime/scene-tts';
 import {
@@ -56,12 +54,18 @@ async function setProducer(store: Store, stageId: string, jobId: string | null):
 async function openDocumentStore(input: ContinueJobInput): Promise<Store> {
   const fileDir = process.env.PERSISTENCE_DIR;
   if (fileDir) {
+    // Dynamic import: this subpath is ESM-only and the detached worker runs
+    // through tsx's CJS loader, which cannot resolve import-only exports.
+    const { JsonFileDocumentStore } = await import('@openmaic/storage/server/file-document-store');
     return new JsonFileDocumentStore({
       dir: fileDir,
       validateScene: validateAppScene,
       validateStage: validateAppStage,
     }) as unknown as Store;
   }
+  const { getOwnerScopedDocumentStore } = await import(
+    '@/lib/server/agent-runtime/owner-scoped-documents'
+  );
   return getOwnerScopedDocumentStore(input.ownerId) as unknown as Store;
 }
 
