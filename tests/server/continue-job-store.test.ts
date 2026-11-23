@@ -64,4 +64,29 @@ describe('continue generation job store', () => {
     expect(await store.readContinueJobInput('job-5')).toBeNull();
     expect(await store.readContinueJob('job-5')).not.toBeNull();
   });
+
+  it('exclusively claims a job and renews its lease', async () => {
+    await store.createContinueJob('job-6', input('stage-6'));
+    expect(await store.claimContinueJob('job-6', 'worker-a')).toBe(true);
+    expect(await store.claimContinueJob('job-6', 'worker-b')).toBe(false);
+    const claimed = await store.readContinueJob('job-6');
+    expect(claimed?.status).toBe('running');
+    expect(claimed?.workerId).toBe('worker-a');
+
+    expect(await store.renewContinueJobLease('job-6', 'worker-b')).toBe(false);
+    expect(await store.renewContinueJobLease('job-6', 'worker-a')).toBe(true);
+
+    await store.releaseContinueJob('job-6', 'worker-a');
+    // A released job does not get re-claimed while its lease is still fresh.
+    const claimableIds = (await store.findClaimableContinueJobs()).map((job) => job.id);
+    expect(claimableIds).not.toContain('job-6');
+  });
+
+  it('reclaims a running job whose lease expired', async () => {
+    await store.createContinueJob('job-7', input('stage-7'));
+    await store.claimContinueJob('job-7', 'worker-a', 1_000);
+    const now = 1_000 + store.CONTINUE_LEASE_MS + 1;
+    expect((await store.findClaimableContinueJobs(now)).map((job) => job.id)).toContain('job-7');
+    expect(await store.claimContinueJob('job-7', 'worker-b', now)).toBe(true);
+  });
 });

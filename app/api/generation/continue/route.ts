@@ -5,19 +5,25 @@ import { buildRequestOrigin } from '@/lib/server/classroom-storage';
 import { createLogger } from '@/lib/logger';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
 import { createContinueJob, type ContinueJobInput } from '@/lib/server/continue-generation/store';
-import { runContinueGenerationJob } from '@/lib/server/continue-generation/runner';
+import { ensureContinueWorker } from '@/lib/server/continue-generation/worker-starter';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 const log = createLogger('ContinueGeneration API');
 
+const SECRET_HEADERS = new Set([
+  'x-api-key',
+  'x-image-api-key',
+  'x-video-api-key',
+  'x-tts-api-key',
+]);
+
+/** Model/provider selection only — no credential is ever written to disk. */
 function forwardedHeaders(req: NextRequest): Record<string, string> {
   const headers: Record<string, string> = {};
   for (const [name, value] of req.headers.entries()) {
-    // Model/provider/route selection. Credentials stay in memory for the job
-    // only: they are never written to the job record or to logs.
-    if (name.startsWith('x-')) headers[name] = value;
+    if (name.startsWith('x-') && !SECRET_HEADERS.has(name)) headers[name] = value;
   }
   return headers;
 }
@@ -52,13 +58,12 @@ async function start(req: NextRequest, ownerId: string): Promise<Response> {
       ...(typeof body.taskEngineMode === 'boolean' ? { taskEngineMode: body.taskEngineMode } : {}),
       ...(typeof body.enableTTS === 'boolean' ? { enableTTS: body.enableTTS } : {}),
     };
-    const job = await createContinueJob(jobId, input);
-    const headers = forwardedHeaders(req);
-
-    // A detached timer, not after(): the runner calls this same server's
-    // /api/generate routes, and after() keeps the originating request open in
-    // dev, which deadlocks the self-fetch. The response must settle first.
-    setTimeout(() => void runContinueGenerationJob(jobId, input, headers), 100);
+    const job = await createContinueJob(jobId, {
+      ...input,
+      headers: forwardedHeaders(req),
+    });
+    // A separate process owns the run, so Next.js reloads cannot interrupt it.
+    await ensureContinueWorker();
 
     return apiSuccess(
       {
