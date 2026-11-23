@@ -2386,10 +2386,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           // playable scene: land it, so the retry card repairs the missing
           // row instead of re-paying content + actions on the next attempt.
           if (sceneKept && jobResult.scene && store.getState().generationEpoch === retryEpoch) {
+            if (retryStageId) void deleteSceneDraft(retryStageId, outline.id);
             removeGeneratingOutline();
             useStageStore.getState().addScene(jobResult.scene);
             launchMediaRepair(jobResult.scene);
           }
+          // A hard failure means the cached raw payloads were not usable;
+          // drop them so the next retry cannot replay the same inputs.
+          if (!sceneKept && retryStageId) void deleteSceneDraft(retryStageId, outline.id);
           store.getState().addFailedOutline(outline);
           store.getState().setGenerationStatus('paused');
           store.getState().setGenerationPhase('idle');
@@ -2407,6 +2411,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           return;
         }
 
+        if (retryStageId) void deleteSceneDraft(retryStageId, outline.id);
         removeGeneratingOutline();
         useStageStore.getState().addScene(jobResult.scene!);
         launchMediaRepair(jobResult.scene);
