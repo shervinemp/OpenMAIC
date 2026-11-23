@@ -185,11 +185,10 @@ export async function claimContinueJob(
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       let stale = true;
       try {
-        const owner = JSON.parse(await fs.readFile(file, 'utf-8')) as {
-          workerId?: string;
-          claimedAt?: number;
-        };
-        stale = !owner.workerId || now - (owner.claimedAt ?? 0) > CONTINUE_LEASE_MS;
+        // The detached worker renews by touching the lock file, so mtime — not
+        // a JSON timestamp — is the authoritative liveness signal.
+        const stat = await fs.stat(file);
+        stale = now - stat.mtimeMs > CONTINUE_LEASE_MS;
       } catch {
         stale = true;
       }
@@ -219,6 +218,7 @@ export async function renewContinueJobLease(
 ): Promise<boolean> {
   const job = await readContinueJob(jobId);
   if (!job || job.workerId !== workerId) return false;
+  await fs.utimes(lockPath(jobId), new Date(now), new Date(now)).catch(() => undefined);
   await updateContinueJob(jobId, {
     heartbeatAt: now,
     leaseExpiresAt: now + CONTINUE_LEASE_MS,
@@ -230,13 +230,25 @@ export async function renewContinueJobLease(
 export async function findClaimableContinueJobs(now = Date.now()): Promise<ContinueJob[]> {
   const ids = await listContinueJobIds();
   const jobs = await Promise.all(ids.map((id) => readContinueJob(id)));
-  return jobs.filter((job): job is ContinueJob => {
-    if (!job) return false;
-    if (job.status === 'queued') return true;
-    if (job.status !== 'running') return false;
-    const lease = job.leaseExpiresAt ?? job.heartbeatAt ?? 0;
-    return now > lease;
-  });
+  const results = await Promise.all(
+    jobs.map(async (job) => {
+      if (!job) return false;
+      if (job.status === 'queued') return true;
+      if (job.status !== 'running') return false;
+      try {
+        const stat = await fs.stat(lockPath(job.id));
+        return now - stat.mtimeMs > CONTINUE_LEASE_MS;
+      } catch {
+        // A running job with no lock has no owner — reclaim it.
+        return true;
+      }
+    }),
+  );
+  const claimable: ContinueJob[] = [];
+  for (let i = 0; i < jobs.length; i += 1) {
+    if (results[i] && jobs[i]) claimable.push(jobs[i]!);
+  }
+  return claimable;
 }
 
 /** Jobs a previous in-process runner left running (used by legacy recovery). */

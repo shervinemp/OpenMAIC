@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -77,16 +77,19 @@ describe('continue generation job store', () => {
     expect(await store.renewContinueJobLease('job-6', 'worker-a')).toBe(true);
 
     await store.releaseContinueJob('job-6', 'worker-a');
-    // A released job does not get re-claimed while its lease is still fresh.
+    // Releasing drops the lock, so the running job is claimable again (that is
+    // exactly how a crashed worker's job is recovered).
     const claimableIds = (await store.findClaimableContinueJobs()).map((job) => job.id);
-    expect(claimableIds).not.toContain('job-6');
+    expect(claimableIds).toContain('job-6');
   });
 
-  it('reclaims a running job whose lease expired', async () => {
+  it('reclaims a running job whose lock is stale', async () => {
     await store.createContinueJob('job-7', input('stage-7'));
-    await store.claimContinueJob('job-7', 'worker-a', 1_000);
-    const now = 1_000 + store.CONTINUE_LEASE_MS + 1;
-    expect((await store.findClaimableContinueJobs(now)).map((job) => job.id)).toContain('job-7');
-    expect(await store.claimContinueJob('job-7', 'worker-b', now)).toBe(true);
+    expect(await store.claimContinueJob('job-7', 'worker-a')).toBe(true);
+    const lock = path.join(dir, 'job-7.lock');
+    const stale = new Date(Date.now() - store.CONTINUE_LEASE_MS - 1_000);
+    await utimes(lock, stale, stale);
+    expect((await store.findClaimableContinueJobs()).map((job) => job.id)).toContain('job-7');
+    expect(await store.claimContinueJob('job-7', 'worker-b')).toBe(true);
   });
 });

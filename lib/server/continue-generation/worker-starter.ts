@@ -7,7 +7,7 @@ const log = createLogger('ContinueGenerationStarter');
 
 const PID_FILE = path.join(process.cwd(), 'data', 'continue-jobs', 'worker.pid');
 const LOG_FILE = path.join(process.cwd(), 'data', 'continue-jobs', 'worker.log');
-const WORKER_SCRIPT = path.join(process.cwd(), 'scripts', 'continue-generation-worker.ts');
+const WORKER_SCRIPT = path.join(process.cwd(), 'scripts', 'continue-generation-worker.mjs');
 
 function processAlive(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -20,10 +20,10 @@ function processAlive(pid: number): boolean {
 }
 
 /**
- * Idempotently start the detached generation worker. The worker is a separate
- * OS process, so a Next.js restart (or a dev reload) never interrupts a run.
+ * Idempotently start the detached generation worker. It is a plain Node
+ * process (no tsx/Next module graph), so a Next.js restart cannot stop it.
  */
-export async function ensureContinueWorker(): Promise<number | null> {
+export async function ensureContinueWorker(baseUrl?: string): Promise<number | null> {
   try {
     let existing: number | null = null;
     try {
@@ -35,9 +35,10 @@ export async function ensureContinueWorker(): Promise<number | null> {
 
     await fs.mkdir(path.dirname(PID_FILE), { recursive: true });
     const logHandle = await fs.open(LOG_FILE, 'a');
+    const origin = baseUrl ?? `http://127.0.0.1:${process.env.PORT ?? 3000}`;
     const child = spawn(
       process.execPath,
-      ['--import', 'tsx', WORKER_SCRIPT],
+      [WORKER_SCRIPT, '--base-url', origin],
       {
         cwd: process.cwd(),
         detached: true,

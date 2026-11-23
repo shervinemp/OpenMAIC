@@ -63,7 +63,7 @@ async function start(req: NextRequest, ownerId: string): Promise<Response> {
       headers: forwardedHeaders(req),
     });
     // A separate process owns the run, so Next.js reloads cannot interrupt it.
-    await ensureContinueWorker();
+    await ensureContinueWorker(baseUrl);
 
     return apiSuccess(
       {
