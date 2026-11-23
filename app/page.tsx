@@ -323,13 +323,27 @@ function HomePage() {
     try {
       const list = await listStages();
       setClassrooms(list);
-      // Load first slide thumbnails
+      // One document read per course fills both the first-slide thumbnail and
+      // the generation status badge on that course's card.
+      const generationById: Record<string, Partial<StageListItem>> = {};
       if (list.length > 0) {
-        const slides = await getFirstSlideByStages(list.map((c) => c.id));
+        const slides = await getFirstSlideByStages(
+          list.map((c) => c.id),
+          (stageId, outline) => {
+            if (!outline) return;
+            generationById[stageId] = {
+              outlineCount: outline.outlines?.length,
+              generationComplete: outline.generationComplete,
+            };
+          },
+        );
         replaceThumbnails(slides);
       } else {
         replaceThumbnails({});
       }
+      setClassrooms(
+        list.map((course) => ({ ...course, ...(generationById[course.id] ?? {}) })),
+      );
     } catch (err) {
       log.error('Failed to load classrooms:', err);
       toast.error('Persistence is unavailable. Saved classrooms could not be loaded.');
@@ -1454,8 +1468,8 @@ function HomePage() {
                       {background && (
                         <button
                           type="button"
-                          aria-label="Stop generation"
-                          title="Stop generation"
+                          aria-label={t('generation.stopGeneration')}
+                          title={t('generation.stopGeneration')}
                           className="rounded-md p-1 text-muted-foreground hover:bg-violet-100 hover:text-foreground dark:hover:bg-violet-900/40"
                           onClick={() => {
                             void stopParkedGeneration(parked);
@@ -1641,8 +1655,8 @@ function HomePage() {
                                       {parked && (
                                         <button
                                           type="button"
-                                          aria-label="Stop generation"
-                                          title="Stop generation"
+                                          aria-label={t('generation.stopGeneration')}
+                                          title={t('generation.stopGeneration')}
                                           className="rounded-md bg-white/80 p-1 text-slate-700 transition-colors hover:bg-white"
                                           onClick={(e) => {
                                             e.stopPropagation();

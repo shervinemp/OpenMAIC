@@ -26,6 +26,8 @@ export const AUTO_RESUME_MARKER_MAX_AGE_MS = 5 * 60_000;
  */
 const RECENT_HANDOFF_MS = 30_000;
 const taken = new Map<string, number>();
+/** Stages whose current hand-off explicitly asked to retry failed outlines. */
+const failedRetakes = new Set<string>();
 
 export function markAutoResume(
   stageId: string,
@@ -73,8 +75,6 @@ export function consumeAutoResumeOptions(
     return { resume: false, includeFailed: false };
   }
 }
-
-const failedRetakes = new Set<string>();
 
 /** True for a hand-off; the marker is removed as it is read. */
 export function consumeAutoResume(stageId: string, now: number = Date.now()): boolean {

@@ -835,10 +835,9 @@ async function performStageDeletion(stageId: string): Promise<void> {
  * same seam that serves reads by id, so it is the truthful source here.
  */
 async function listStagesFromDocumentStore(): Promise<StageListItem[]> {
-  const store = getDocumentStore();
-  const summaries = await store.listDocuments();
-  const items = await Promise.all(
-    summaries.map(async (item) => {
+  const summaries = await getDocumentStore().listDocuments();
+  return summaries
+    .map((item) => {
       const base: StageListItem = {
         id: item.id,
         name: item.name,
@@ -849,26 +848,9 @@ async function listStagesFromDocumentStore(): Promise<StageListItem[]> {
         ...(item.interactiveMode !== undefined ? { interactiveMode: item.interactiveMode } : {}),
         ...(item.taskEngineMode !== undefined ? { taskEngineMode: item.taskEngineMode } : {}),
       };
-      // Generation status is a property of the course document, not of the
-      // ephemeral session pointer: a handoff can clear the pointer while the
-      // deck is still unfinished. Reading it here lets every course card show
-      // its own resume affordance instead of one global banner.
-      try {
-        const doc = await store.loadDocument(item.id);
-        const outline = doc?.outline as { outlines?: unknown[]; generationComplete?: boolean } | undefined;
-        if (outline) {
-          if (Array.isArray(outline.outlines)) base.outlineCount = outline.outlines.length;
-          if (typeof outline.generationComplete === 'boolean') {
-            base.generationComplete = outline.generationComplete;
-          }
-        }
-      } catch (e) {
-        log.warn(`Failed to read generation status for ${item.id}:`, e);
-      }
       return item.folderId ? { ...base, folderId: item.folderId } : base;
-    }),
-  );
-  return items.sort((a, b) => b.updatedAt - a.updatedAt);
+    })
+    .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function listStages(): Promise<StageListItem[]> {
@@ -1000,12 +982,16 @@ export function revokeThumbnailSlideMediaUrls(slides: Record<string, ThumbnailSl
  */
 export async function getFirstSlideByStages(
   stageIds: string[],
+  onDocument?: (stageId: string, outline: AppDocumentOutline | undefined) => void,
 ): Promise<Record<string, ThumbnailSlide>> {
   const result: Record<string, ThumbnailSlide> = {};
   try {
     await Promise.all(
       stageIds.map(async (stageId) => {
         const document = (await accessDocument(stageId)).document;
+        // One document read serves both the thumbnail and the per-course
+        // generation status; callers that need the latter pass a callback.
+        onDocument?.(stageId, document?.outline as AppDocumentOutline | undefined);
         const firstSlide = document?.scenes.find((s) => s.content?.type === 'slide');
         if (firstSlide && firstSlide.content.type === 'slide') {
           const slide = structuredClone(firstSlide.content.canvas);

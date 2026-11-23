@@ -112,6 +112,22 @@ describe('stage thumbnail allocated assets', () => {
     });
   });
 
+  it('hands the outline to the callback from the same single document read', async () => {
+    const outline = { outlines: [{ id: 'o1' }], generationComplete: false };
+    mocks.accessDocument.mockResolvedValueOnce({
+      document: {
+        scenes: [],
+        outline,
+      },
+    });
+    const seen: Array<[string, unknown]> = [];
+
+    await getFirstSlideByStages(['stage-1'], (stageId, got) => seen.push([stageId, got]));
+
+    expect(seen).toEqual([['stage-1', outline]]);
+    expect(mocks.accessDocument).toHaveBeenCalledOnce();
+  });
+
   it('hydrates and revokes an allocated image background', async () => {
     mocks.accessDocument.mockResolvedValueOnce({
       document: {
