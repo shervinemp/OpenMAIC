@@ -99,5 +99,7 @@ async function scan() {
 
 console.log(`[continue-worker] ${WORKER_ID} ready (${baseUrl})`);
 void scan();
-setInterval(() => void scan(), SCAN_MS).unref?.();
+// Keep this interval REFERENCED: an unref'd timer lets Node exit as soon as a
+// dispatched job settles, which would kill the coordinator between scans.
+setInterval(() => void scan(), SCAN_MS);
 process.on('SIGTERM', () => process.exit(0));
