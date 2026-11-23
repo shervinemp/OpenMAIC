@@ -118,9 +118,11 @@ export function clearGenerationIntent(stageId: string): void {
 }
 
 /**
- * Whether an unfinished course with live `active` intent should restart after
- * an unintentional abort. Call once per classroom mount, only when there is
- * actually pending work. A second call for the same navigation is a no-op.
+ * Whether an unfinished course with live `active` intent may restart after an
+ * unintentional abort. Read-only on purpose: several tabs can mount the same
+ * course, but only the one that wins the generation lease gets to spend an
+ * attempt (see recordAutoResumeAttempt). A second call for the same navigation
+ * is a no-op.
  */
 export function shouldAutoResume(stageId: string, now: number = Date.now()): boolean {
   if (!stageId) return false;
@@ -128,27 +130,39 @@ export function shouldAutoResume(stageId: string, now: number = Date.now()): boo
   if (recent && now - recent.at <= DEDUPE_MS) return recent.resume;
 
   const record = readGenerationIntent(stageId, now);
-  let resume = false;
-  if (record?.intent === 'active') {
-    const freshWindow = now - record.windowStartedAt <= AUTO_RESUME_WINDOW_MS;
-    const used = freshWindow ? record.autoResumes : 0;
-    if (used >= MAX_AUTO_RESUMES) {
-      // Repeated aborts mean something is structurally wrong with this run.
-      // Park it instead of trying again on every mount.
-      markGenerationStopped(stageId, now);
-    } else {
-      write(
-        {
-          intent: 'active',
-          at: now,
-          autoResumes: used + 1,
-          windowStartedAt: freshWindow ? record.windowStartedAt : now,
-        },
-        stageId,
-      );
-      resume = true;
-    }
-  }
+  const freshWindow = record ? now - record.windowStartedAt <= AUTO_RESUME_WINDOW_MS : false;
+  const used = record && freshWindow ? record.autoResumes : 0;
+  const resume = record?.intent === 'active' && used < MAX_AUTO_RESUMES;
   seen.set(stageId, { at: now, resume });
   return resume;
+}
+
+/**
+ * Spend one auto-resume attempt. Called only after the generation lease is
+ * actually claimed, so a tab that lost the race does not drain the budget.
+ */
+export function recordAutoResumeAttempt(stageId: string, now: number = Date.now()): void {
+  if (!stageId) return;
+  const record = readGenerationIntent(stageId, now);
+  if (record?.intent !== 'active') return;
+  const freshWindow = now - record.windowStartedAt <= AUTO_RESUME_WINDOW_MS;
+  const used = freshWindow ? record.autoResumes : 0;
+  if (used + 1 >= MAX_AUTO_RESUMES) {
+    // Repeated aborts mean something is structurally wrong with this run.
+    // Let the current attempt finish, then park instead of retrying forever.
+    write(
+      { intent: 'active', at: now, autoResumes: used + 1, windowStartedAt: now },
+      stageId,
+    );
+  } else {
+    write(
+      {
+        intent: 'active',
+        at: now,
+        autoResumes: used + 1,
+        windowStartedAt: freshWindow ? record.windowStartedAt : now,
+      },
+      stageId,
+    );
+  }
 }

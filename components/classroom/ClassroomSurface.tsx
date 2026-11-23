@@ -678,8 +678,9 @@ export function ClassroomSurface({
             taskEngineMode: stage.taskEngineMode,
           },
           // The same rule `hasPending` used: parked failures stay parked
-          // unless auto-retry is opted into.
-          { includeFailed: retryFailed },
+          // unless auto-retry is opted into. The attempt is spent inside
+          // generateRemaining only after the lease is won.
+          { includeFailed: retryFailed, autoResume },
         );
         // The params record is deliberately kept: a resumed batch can still
         // pause again (provider failure, tab close) and a later resume needs

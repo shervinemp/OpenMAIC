@@ -48,7 +48,11 @@ import {
   type SceneDraft,
 } from '@/lib/utils/scene-draft-store';
 import { sceneDraftSourceKey } from '@/lib/utils/scene-draft-key';
-import { clearGenerationIntent, touchGenerationIntent } from '@/lib/generation/run-intent';
+import {
+  clearGenerationIntent,
+  recordAutoResumeAttempt,
+  touchGenerationIntent,
+} from '@/lib/generation/run-intent';
 import { computeActionsSourceHash } from '@/lib/utils/content-hash';
 import { outlineFingerprint } from '@/lib/utils/outline-fingerprint';
 import { hasNarration, precedingSpeeches } from '@/lib/maintenance/silent-narration';
@@ -1152,6 +1156,12 @@ export interface GenerateRemainingOptions {
    * passes false unless auto-retry of failed generation is opted into.
    */
   readonly includeFailed?: boolean;
+  /**
+   * This run was started by the interrupted-run auto-resume rather than an
+   * explicit click. The attempt is spent only once the generation lease is
+   * won, so a losing tab does not drain the bounded budget.
+   */
+  readonly autoResume?: boolean;
 }
 
 /** Speech action ids whose narration bytes do not currently resolve. */
@@ -1729,6 +1739,9 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         generatingRef.current = false;
         return;
       }
+      // Only the tab that actually drives the run spends an auto-resume
+      // attempt. A losing tab never reaches here.
+      if (runOptions.autoResume && stage.id) recordAutoResumeAttempt(stage.id);
 
       // Determine pending outlines (skipped outlines stay closed — Pillar 2 §4.9).
       // Failed outlines ride along only when the caller asks: the automatic
