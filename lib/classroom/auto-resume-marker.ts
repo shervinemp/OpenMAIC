@@ -13,6 +13,8 @@
  * the safe side: the owner presses the button.
  */
 
+import { markGenerationActive } from '@/lib/generation/run-intent';
+
 const MARKER_PREFIX = 'openmaic:auto-resume:';
 
 /** A hand-off is a navigation: seconds. This only guards against a stale key. */
@@ -34,6 +36,9 @@ export function markAutoResume(
   now: number = Date.now(),
   includeFailed = false,
 ): void {
+  // Every caller is an explicit Start / Resume. Record that decision durably
+  // so a later reload or tab close auto-resumes instead of idling the run.
+  markGenerationActive(stageId, now);
   try {
     // Plain timestamp for the generation-preview handoff (backward compatible);
     // JSON only when an explicit resume must also re-run parked failed outlines.

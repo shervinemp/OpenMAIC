@@ -61,6 +61,7 @@ import {
 } from '@/lib/utils/generation-session-store';
 import { abortStageGeneration } from '@/lib/classroom/generation-abort';
 import { markAutoResume } from '@/lib/classroom/auto-resume-marker';
+import { markGenerationStopped } from '@/lib/generation/run-intent';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import {
   courseMaterialFingerprint,
@@ -447,6 +448,9 @@ function HomePage() {
   };
 
   const stopParkedGeneration = async (parked: ParkedGenerationSession) => {
+    // An explicit Stop is authoritative: it clears the durable intent so a
+    // later open of the course cannot auto-resume the run.
+    markGenerationStopped(parked.stageId ?? '');
     let runId: string | null = null;
     try {
       runId = sessionStorage.getItem(`openmaic:run-id:${parked.sessionId}`);

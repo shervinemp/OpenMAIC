@@ -759,6 +759,8 @@ async function performStageDeletion(stageId: string): Promise<void> {
                 '@/lib/utils/scene-draft-store'
               );
               await clearSceneDraftsForStage(stageId);
+              const { clearGenerationIntent } = await import('@/lib/generation/run-intent');
+              clearGenerationIntent(stageId);
             } catch (error) {
               log.warn(`Failed to clear scene drafts for stage ${stageId}:`, error);
             }

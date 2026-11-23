@@ -48,6 +48,7 @@ import {
   type SceneDraft,
 } from '@/lib/utils/scene-draft-store';
 import { sceneDraftSourceKey } from '@/lib/utils/scene-draft-key';
+import { clearGenerationIntent, touchGenerationIntent } from '@/lib/generation/run-intent';
 import { computeActionsSourceHash } from '@/lib/utils/content-hash';
 import { outlineFingerprint } from '@/lib/utils/outline-fingerprint';
 import { hasNarration, precedingSpeeches } from '@/lib/maintenance/silent-narration';
@@ -1763,7 +1764,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         store.getState().setGenerationStatus('completed');
         retractRunQueue();
         store.getState().setGenerationComplete(true);
-        if (runStageId) void clearSceneDraftsForStage(runStageId);
+        if (runStageId) {
+          void clearSceneDraftsForStage(runStageId);
+          clearGenerationIntent(runStageId);
+        }
         options.onComplete?.();
         generationLease();
         generatingRef.current = false;
@@ -1966,6 +1970,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         let pausedByFailureOrAbort = false;
         let hadContentFailure = false;
         for (const outline of pending) {
+          // Keep the durable intent alive: a semester run lasts days, far past
+          // the idle TTL. A stopped/abandoned run has no active record, so this
+          // is a no-op for it.
+          if (runStageId) touchGenerationIntent(runStageId);
           if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
             store.getState().setGenerationStatus('paused');
             pausedByFailureOrAbort = true;
@@ -2158,7 +2166,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             store.getState().setGenerationStatus('completed');
             retractRunQueue();
             store.getState().setGenerationComplete(true);
-            if (runStageId) void clearSceneDraftsForStage(runStageId);
+            if (runStageId) {
+          void clearSceneDraftsForStage(runStageId);
+          clearGenerationIntent(runStageId);
+        }
             options.onComplete?.();
             // Fill-phase drain (Pillar 2 §4.6): scenes whose TTS failed
             // during the loop get one background retry pass. Tied to this

@@ -59,6 +59,11 @@ import {
 } from '@/lib/classroom/progressive-load-policy';
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
 import { consumeAutoResumeOptions } from '@/lib/classroom/auto-resume-marker';
+import {
+  clearGenerationIntent,
+  markGenerationActive,
+  shouldAutoResume,
+} from '@/lib/generation/run-intent';
 import { findSilentSlides } from '@/lib/maintenance/silent-narration';
 
 const log = createLogger('Classroom');
@@ -615,6 +620,11 @@ export function ClassroomSurface({
     // the library must also re-run outlines that a prior provider failure
     // parked. A plain course open has no marker and stays behind its button.
     const handoff = consumeAutoResumeOptions(stage?.id ?? '');
+    // A hand-off is an explicit Start/Resume and already refreshed the durable
+    // intent (see markAutoResume). Otherwise, an unfinished course with live
+    // intent is one that an unmount, reload or abort interrupted — restart it
+    // within the bounded budget instead of idling until someone clicks.
+    const autoResume = !handoff.resume && shouldAutoResume(stage?.id ?? '');
     const retryFailed = autoRetryFailed || handoff.includeFailed;
     const failedIds = new Set(state.failedOutlines.map((o) => o.id));
     const skipIds = new Set(state.skippedOutlineIds);
@@ -629,16 +639,20 @@ export function ClassroomSurface({
 
       // Resuming spends the owner's provider budget, so a course that is only
       // being opened waits behind its Resume button (the load already parked
-      // it as paused with the pending outlines queued). Only the hand-off from
-      // generation-preview, where the owner has just pressed Start or Resume,
-      // carries on by itself. See auto-resume-marker.
-      if (!handoff.resume) {
+      // it as paused with the pending outlines queued). Two things carry on by
+      // themselves: an explicit hand-off (owner pressed Start/Resume) and an
+      // interrupted run whose durable intent is still active. An explicit
+      // Pause/Stop clears that intent, so it is never resurrected.
+      if (!handoff.resume && !autoResume) {
         const live = useStageStore.getState();
         if (live.generationStatus !== 'generating') live.setGenerationStatus('paused');
         log.info(
           `[Classroom] ${outlines.filter(outlineIsPending).length} unfinished outline(s); waiting for Resume`,
         );
         return;
+      }
+      if (autoResume) {
+        log.info(`[Classroom] resuming ${stage.id} after an interrupted run (active intent)`);
       }
 
       // Params persisted by generation-preview on the session record
@@ -684,6 +698,7 @@ export function ClassroomSurface({
       // Nothing needs the generation session anymore — drop any record a
       // handoff left behind (single-slide course, refresh-after-completion).
       void clearGenerationSessionForStage(classroomId);
+      clearGenerationIntent(classroomId);
       // Media and layout recovery: a fully materialized deck whose narration
       // or image/video/poster bytes decayed, or whose layout carries debt,
       // gets its maintenance run per mount.
@@ -700,6 +715,9 @@ export function ClassroomSurface({
   const handleResumeGeneration = useCallback(async () => {
     const stage = useStageStore.getState().stage;
     if (!stage) return;
+    // This is an explicit owner action: refresh the intent and reset the
+    // automatic-resume budget, just like the Home card's Resume button.
+    markGenerationActive(classroomId);
     const params = (await loadGenerationParams(classroomId)) ?? {};
     // Same merge as the mount-time resume: dropping the asset-id half here
     // lost every server-backed vision image on an in-page resume.

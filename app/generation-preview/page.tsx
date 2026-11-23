@@ -83,6 +83,7 @@ import {
   getGenerationStepText,
 } from './types';
 import { markAutoResume } from '@/lib/classroom/auto-resume-marker';
+import { markGenerationStopped } from '@/lib/generation/run-intent';
 import { StepVisualizer } from './components/visualizers';
 import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
 
@@ -1553,6 +1554,7 @@ function GenerationPreviewContent() {
   const pauseGeneration = async () => {
     if (paused || leavingRef.current) return;
     setPaused(true);
+    markGenerationStopped(session?.stageId ?? readGenerationSessionEnvelope()?.stageId ?? '');
     void cancelServerGeneration();
     abortControllerRef.current?.abort();
     clearOutlineReviewTimer();
@@ -1613,6 +1615,7 @@ function GenerationPreviewContent() {
   const cancelAndExit = async () => {
     if (leavingRef.current) return;
     leavingRef.current = true;
+    markGenerationStopped(session?.stageId ?? readGenerationSessionEnvelope()?.stageId ?? '');
     // Fail closed on acknowledgement: don't silently leave while the server may
     // still be billing. Warn loudly, but never trap the user on this page.
     const cancelled = await cancelServerGeneration();
