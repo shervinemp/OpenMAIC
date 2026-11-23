@@ -305,6 +305,24 @@ export interface GenerationSessionRecord {
   updatedAt: number;
 }
 
+/**
+ * A raw content/actions payload that finished before an ordered batch could
+ * commit its scene. Kept only so an aborted run can resume without re-paying
+ * the LLM; the scene itself is still assembled and gated from scratch.
+ */
+export interface SceneDraftRecord {
+  /** `${stageId}::${outlineId}` */
+  id: string;
+  stageId: string;
+  outlineId: string;
+  /** Canonical JSON of every input that affects content/actions. */
+  sourceKey: string;
+  content?: unknown;
+  actions?: unknown;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** Build the compound primary key for mediaFiles: `${stageId}:${elementId}` */
 export function mediaFileKey(stageId: string, elementId: string): string {
   return `${stageId}:${elementId}`;
@@ -337,6 +355,7 @@ class MAICDatabase extends Dexie {
   folders!: EntityTable<FolderRecord, 'id'>;
   stageFolders!: EntityTable<StageFolderMembership, 'stageId'>;
   generationSessions!: EntityTable<GenerationSessionRecord, 'sessionId'>;
+  sceneDrafts!: EntityTable<SceneDraftRecord, 'id'>;
 
   constructor() {
     super(DATABASE_NAME);
@@ -590,6 +609,16 @@ class MAICDatabase extends Dexie {
     // table is declared; Dexie merges table declarations across versions.
     this.version(18).stores({
       generationSessions: 'sessionId, updatedAt, session.stageId',
+    });
+
+    // Version 19: durable raw content/actions drafts. A parallel batch holds
+    // pre-warmed LLM results in memory until the ordered consumer reaches them;
+    // an abort (tab close, dev reload, provider pause) threw that work away and
+    // re-paid it on resume. Drafts are keyed by outline and carry the source
+    // fingerprint they were produced from, so only identical inputs are reused.
+    // Gates, validation, TTS and media still run in full on every resume.
+    this.version(19).stores({
+      sceneDrafts: 'id, stageId, outlineId, updatedAt',
     });
   }
 }

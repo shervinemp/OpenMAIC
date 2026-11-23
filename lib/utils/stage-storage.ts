@@ -752,6 +752,17 @@ async function performStageDeletion(stageId: string): Promise<void> {
               clearAllForScene(sceneId);
             }
 
+            // Raw generation drafts are device-local scratch for this course
+            // only; leaving them behind would bloat IndexedDB forever.
+            try {
+              const { clearSceneDraftsForStage } = await import(
+                '@/lib/utils/scene-draft-store'
+              );
+              await clearSceneDraftsForStage(stageId);
+            } catch (error) {
+              log.warn(`Failed to clear scene drafts for stage ${stageId}:`, error);
+            }
+
             // Learner-runtime data is a separate store, so it is cascaded after
             // the document: a runtime failure must not undo the deletion (the
             // helper warns instead of throwing).

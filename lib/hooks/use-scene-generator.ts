@@ -40,6 +40,14 @@ import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { registerStageGeneration } from '@/lib/classroom/generation-abort';
 import { claimGenerationLease } from '@/lib/classroom/generation-lease';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
+import {
+  clearSceneDraftsForStage,
+  deleteSceneDraft,
+  loadSceneDrafts,
+  saveSceneDraft,
+  type SceneDraft,
+} from '@/lib/utils/scene-draft-store';
+import { sceneDraftSourceKey } from '@/lib/utils/scene-draft-key';
 import { computeActionsSourceHash } from '@/lib/utils/content-hash';
 import { outlineFingerprint } from '@/lib/utils/outline-fingerprint';
 import { hasNarration, precedingSpeeches } from '@/lib/maintenance/silent-narration';
@@ -1374,6 +1382,7 @@ const OUTLINE_MATERIAL_PHASES: MaterialPhaseDescriptor[] = [
           signal,
           previousSpeeches: state.previousSpeeches,
         }));
+      input.onActionsResolved?.(actionsResult);
       if (!actionsResult.success || !actionsResult.scene) {
         return {
           status: 'failed',
@@ -1544,6 +1553,11 @@ export interface OutlineJobInput {
    */
   preComputedActions?: SceneActionsResult;
   /**
+   * Fires with the resolved actions payload (fresh or reused) so the caller can
+   * persist a raw draft for a cancelled run without touching gates or retries.
+   */
+  onActionsResolved?: (result: SceneActionsResult) => void;
+  /**
    * Fires as soon as the content phase has a payload, before actions/TTS run.
    * The batch uses it to launch media for the refs the slide actually carries,
    * overlapping media with the remaining phases without buying every
@@ -1663,6 +1677,27 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       const runStageId = store.getState().stage?.id;
       if (runStageId) registerStageGeneration(runStageId, fetchAbortRef.current);
       const signal = fetchAbortRef.current.signal;
+
+      // Durable raw drafts from a previous interrupted run. Loading also
+      // sweeps stale/oversized entries, so the cache cannot grow without bound.
+      const drafts = runStageId ? await loadSceneDrafts(runStageId) : new Map<string, SceneDraft>();
+      const draftKeyFor = (outline: SceneOutline): string => {
+        const stage = store.getState().stage;
+        return sceneDraftSourceKey({
+          stageId: runStageId ?? '',
+          outline,
+          languageDirective: params.languageDirective,
+          agents: params.agents,
+          userProfile: params.userProfile,
+          model: getCurrentModelConfig().modelString,
+          taskEngineMode: params.taskEngineMode,
+          pdfImagesCount: params.pdfImages?.length,
+          stageName: stage?.name,
+          stageDescription: stage?.description,
+          stageStyle: stage?.style,
+        });
+      };
+
       // One media signal for the whole run. The orchestrator already serializes
       // passes per stage, so per-scene launches queue instead of overlapping.
       // Aborting the previous scene's pass whenever the next scene's content
@@ -1728,6 +1763,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         store.getState().setGenerationStatus('completed');
         retractRunQueue();
         store.getState().setGenerationComplete(true);
+        if (runStageId) void clearSceneDraftsForStage(runStageId);
         options.onComplete?.();
         generationLease();
         generatingRef.current = false;
@@ -1834,8 +1870,22 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
                 async (outline): Promise<SceneContentResult> => {
                   options.onPhaseChange?.('content', outline);
                   store.getState().recordScenePhase(outline.id, 'content', { status: 'running' });
+                  const key = draftKeyFor(outline);
+                  const draft = drafts.get(outline.id);
+                  if (draft?.sourceKey === key && draft.content !== undefined) {
+                    // Same inputs as the interrupted run — reuse the raw LLM
+                    // payload; the scene still runs every gate below.
+                    return draft.content as SceneContentResult;
+                  }
                   try {
-                    return await fetchContent(outline);
+                    const result = await fetchContent(outline);
+                    if (result.success && result.content != null && runStageId) {
+                      // Keep the local map unchanged on purpose: if the key
+                      // changed, a stale `actions` draft must NOT be reused
+                      // against freshly generated content.
+                      void saveSceneDraft(runStageId, outline.id, { sourceKey: key, content: result });
+                    }
+                    return result;
                   } catch (err) {
                     return {
                       success: false,
@@ -1878,21 +1928,30 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
                       },
                     };
                   }
+                  const key = draftKeyFor(outline);
+                  const draft = drafts.get(outline.id);
                   let actionsResult: SceneActionsResult;
-                  try {
-                    actionsResult = await resolveSceneActions({
-                      outline: contentResult.effectiveOutline || outline,
-                      allOutlines: outlines,
-                      content: contentResult.content,
-                      params,
-                      signal,
-                      previousSpeeches: transitionHints!.get(outline.id) ?? [],
-                    });
-                  } catch (err) {
-                    actionsResult = {
-                      success: false,
-                      error: err instanceof Error ? err.message : 'Actions generation failed',
-                    };
+                  if (draft?.sourceKey === key && draft.actions !== undefined) {
+                    actionsResult = draft.actions as SceneActionsResult;
+                  } else {
+                    try {
+                      actionsResult = await resolveSceneActions({
+                        outline: contentResult.effectiveOutline || outline,
+                        allOutlines: outlines,
+                        content: contentResult.content,
+                        params,
+                        signal,
+                        previousSpeeches: transitionHints!.get(outline.id) ?? [],
+                      });
+                    } catch (err) {
+                      actionsResult = {
+                        success: false,
+                        error: err instanceof Error ? err.message : 'Actions generation failed',
+                      };
+                    }
+                    if (actionsResult.success && runStageId) {
+                      void saveSceneDraft(runStageId, outline.id, { sourceKey: key, actions: actionsResult });
+                    }
                   }
                   return { contentResult, actionsResult };
                 },
@@ -1934,9 +1993,28 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               error: 'Content generation failed',
             };
           } else {
-            options.onPhaseChange?.('content', outline);
-            store.getState().setGenerationPhase('content');
-            contentResult = await fetchContent(outline);
+            // Fully serial path: reuse a draft when the inputs are identical.
+            const key = draftKeyFor(outline);
+            const draft = drafts.get(outline.id);
+            if (draft?.sourceKey === key && draft.content !== undefined) {
+              contentResult = draft.content as SceneContentResult;
+              if (draft.actions !== undefined) preComputedActions = draft.actions as SceneActionsResult;
+            } else {
+              options.onPhaseChange?.('content', outline);
+              store.getState().setGenerationPhase('content');
+              contentResult = await fetchContent(outline);
+              if (contentResult.success && contentResult.content != null && runStageId) {
+                void saveSceneDraft(runStageId, outline.id, { sourceKey: key, content: contentResult });
+              }
+            }
+          }
+
+          if (!actionsPromises && preComputedActions === undefined) {
+            const key = draftKeyFor(outline);
+            const draft = drafts.get(outline.id);
+            if (draft?.sourceKey === key && draft.actions !== undefined) {
+              preComputedActions = draft.actions as SceneActionsResult;
+            }
           }
 
           // Depth affordance: record the depth summary (reworked/attempts) so
@@ -1960,6 +2038,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             // marks the outline failed and the loop advances — retry/skip are
             // user actions on the retry cards. Pause only on cancel/abort.
             hadContentFailure = true;
+            if (runStageId) void deleteSceneDraft(runStageId, outline.id);
             removeGeneratingOutline(outline.id);
             continue;
           }
@@ -1984,6 +2063,18 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             previousSpeeches,
             preComputedContent: contentResult,
             ...(preComputedActions ? { preComputedActions } : {}),
+            ...(runStageId
+              ? {
+                  onActionsResolved: (result: SceneActionsResult) => {
+                    if (result.success) {
+                      void saveSceneDraft(runStageId, outline.id, {
+                        sourceKey: draftKeyFor(outline),
+                        actions: result,
+                      });
+                    }
+                  },
+                }
+              : {}),
             onContentReady: launchMediaForContentOutline,
           });
           if (!jobResult.success) {
@@ -2007,6 +2098,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               // (the red card it drives comes from fill decay hydration),
               // but the batch carries on without demoting the outline.
               if (jobResult.scene) {
+                if (runStageId) void deleteSceneDraft(runStageId, outline.id);
                 removeGeneratingOutline(outline.id);
                 useStageStore.getState().addScene(jobResult.scene);
                 options.onSceneGenerated?.(jobResult.scene, outline.order);
@@ -2020,6 +2112,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               outline,
               jobResult.error || (jobResult.failedPhase ?? 'job') + ' generation failed',
             );
+            if (runStageId) void deleteSceneDraft(runStageId, outline.id);
             removeGeneratingOutline(outline.id);
             continue;
           }
@@ -2031,6 +2124,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             break;
           }
 
+          if (runStageId) void deleteSceneDraft(runStageId, outline.id);
           removeGeneratingOutline(outline.id);
           useStageStore.getState().addScene(jobResult.scene!);
           // A resumed outline that had failed before now has its scene: its
@@ -2064,6 +2158,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             store.getState().setGenerationStatus('completed');
             retractRunQueue();
             store.getState().setGenerationComplete(true);
+            if (runStageId) void clearSceneDraftsForStage(runStageId);
             options.onComplete?.();
             // Fill-phase drain (Pillar 2 §4.6): scenes whose TTS failed
             // during the loop get one background retry pass. Tied to this
