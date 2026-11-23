@@ -9,19 +9,21 @@
 
 import { hostname } from 'node:os';
 
-import {
+// Namespace imports: tsx's ESM loader resolves the @/ alias but does not
+// reliably expose named exports from transpiled TS modules.
+import * as storeModule from '@/lib/server/continue-generation/store';
+import * as runnerModule from '@/lib/server/continue-generation/runner';
+import type { ContinueJobInput } from '@/lib/server/continue-generation/store';
+
+const {
   claimContinueJob,
   findClaimableContinueJobs,
   isContinueJobCancelled,
   renewContinueJobLease,
   releaseContinueJob,
-  type ContinueJobInput,
   readContinueJobInput,
-} from '@/lib/server/continue-generation/store';
-import {
-  cancelContinueJob,
-  runContinueGenerationJob,
-} from '@/lib/server/continue-generation/runner';
+} = storeModule;
+const { cancelContinueJob, runContinueGenerationJob } = runnerModule;
 
 const WORKER_ID = `${hostname()}-${process.pid}`;
 const SCAN_MS = 2_000;
