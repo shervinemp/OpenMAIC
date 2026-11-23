@@ -76,6 +76,17 @@ export async function register(): Promise<void> {
     })
     .catch((error) => console.warn('[classroom-jobs] startup recovery failed', error));
 
+  // Continuation jobs for already-existing courses: the same recovery, but for
+  // the long scene-by-scene runs that used to live in a browser tab.
+  void import('@/lib/server/continue-generation/runner')
+    .then(({ recoverInterruptedContinueJobs }) =>
+      recoverInterruptedContinueJobs(`http://127.0.0.1:${process.env.PORT ?? 3000}`),
+    )
+    .then((restarted) => {
+      if (restarted > 0) console.info(`[continue-jobs] restarted ${restarted} interrupted job(s)`);
+    })
+    .catch((error) => console.warn('[continue-jobs] startup recovery failed', error));
+
   let runner: import('@/lib/server/agent-runtime/runner').AgentRunnerHandle | undefined;
   let extractionRunner:
     | import('@/lib/server/material-extraction/runner').MaterialExtractionRunnerHandle

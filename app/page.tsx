@@ -63,6 +63,12 @@ import { abortStageGeneration } from '@/lib/classroom/generation-abort';
 import { markAutoResume } from '@/lib/classroom/auto-resume-marker';
 import { markGenerationStopped } from '@/lib/generation/run-intent';
 import { useActiveGenerationStageIds } from '@/lib/hooks/use-active-generations';
+import {
+  cancelBackendGeneration,
+  pollBackendGeneration,
+  startBackendGeneration,
+  type BackendGenerationJob,
+} from '@/lib/utils/backend-generation-client';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import {
   courseMaterialFingerprint,
@@ -266,6 +272,45 @@ function HomePage() {
   // True when a parked generation session exists (user backed out during the
   // outline phase) — renders the "resume generation" prompt in the list.
   const [parkedSessions, setParkedSessions] = useState<ParkedGenerationSession[]>([]);
+  // Server-driven continuation jobs, keyed by course id. The loop lives on the
+  // server, so these keep running with no browser tab open.
+  const [backendJobs, setBackendJobs] = useState<Record<string, BackendGenerationJob>>({});
+
+  // Poll active server jobs. A job keeps running after this tab closes; on the
+  // next visit we pick its progress back up by id.
+  const activeBackendJobKey = Object.entries(backendJobs)
+    .filter(([, job]) => job.status === 'queued' || job.status === 'running')
+    .map(([stageId, job]) => `${stageId}:${job.id}`)
+    .join('|');
+  useEffect(() => {
+    if (!activeBackendJobKey) return;
+    const pairs = activeBackendJobKey.split('|').map((entry) => {
+      const [stageId, jobId] = entry.split(':');
+      return [stageId, jobId] as const;
+    });
+    let cancelled = false;
+    const refresh = async () => {
+      const results = await Promise.all(
+        pairs.map(
+          async ([stageId, jobId]) => [stageId, await pollBackendGeneration(jobId)] as const,
+        ),
+      );
+      if (cancelled) return;
+      setBackendJobs((current) => {
+        const next = { ...current };
+        for (const [stageId, job] of results) {
+          if (job) next[stageId] = job;
+        }
+        return next;
+      });
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeBackendJobKey]);
   // Courses already in the library carry their own status/controls on their
   // card. The banner is only for sessions whose course was never persisted.
   const barSessions = parkedSessions.filter(
@@ -480,11 +525,35 @@ function HomePage() {
     }
   };
 
-  // Resume a course from its own card. Marking the hand-off is the supported
-  // path: the classroom reads it once and continues the unfinished outlines.
-  const resumeCourse = (stageId: string) => {
-    markAutoResume(stageId, Date.now(), true);
-    router.push(`/classroom/${stageId}`);
+  // Resume a course from its own card. Preferred path is a SERVER job: the
+  // scenes keep generating even after this tab is closed. If the job API is
+  // unavailable, fall back to the classroom's browser-driven resume so the
+  // user is never stranded.
+  const resumeCourse = async (stageId: string) => {
+    try {
+      // Hand ownership to the backend before it starts: stop any browser loop
+      // and make sure a later classroom open cannot contend with the job.
+      abortStageGeneration(stageId);
+      markGenerationStopped(stageId);
+      const { jobId } = await startBackendGeneration(stageId, { includeFailed: true });
+      setBackendJobs((current) => ({
+        ...current,
+        [stageId]: {
+          id: jobId,
+          status: 'queued',
+          stageId,
+          message: 'Starting generation',
+          scenesGenerated: 0,
+          scenesFailed: 0,
+          updatedAt: new Date().toISOString(),
+        },
+      }));
+      toast.success('Generation started in the background');
+    } catch (error) {
+      log.warn('Server generation unavailable, falling back to classroom:', error);
+      markAutoResume(stageId, Date.now(), true);
+      router.push(`/classroom/${stageId}`);
+    }
   };
 
   const handleRename = async (id: string, newName: string) => {
@@ -1606,7 +1675,11 @@ function HomePage() {
                             classroom.generationComplete === false &&
                             (classroom.outlineCount ?? 0) > classroom.sceneCount;
                           const parked = parkedSessions.find((p) => p.stageId === classroom.id);
-                          const activelyGenerating = activeGenerationStages.has(classroom.id);
+                          const backendJob = backendJobs[classroom.id];
+                          const backendActive =
+                            backendJob?.status === 'queued' || backendJob?.status === 'running';
+                          const activelyGenerating =
+                            activeGenerationStages.has(classroom.id) || backendActive;
                           return (
                           <motion.div
                             key={classroom.id}
@@ -1664,9 +1737,11 @@ function HomePage() {
                                         ) : (
                                           <Pause className="size-2.5" />
                                         )}
-                                        {unfinished
-                                          ? `${classroom.sceneCount}/${classroom.outlineCount}`
-                                          : t('generation.pendingGenerationTitle')}
+                                        {backendActive && backendJob?.totalScenes
+                                          ? `${backendJob.scenesGenerated}/${backendJob.totalScenes}`
+                                          : unfinished
+                                            ? `${classroom.sceneCount}/${classroom.outlineCount}`
+                                            : t('generation.pendingGenerationTitle')}
                                       </span>
                                       <button
                                         type="button"
@@ -1675,11 +1750,37 @@ function HomePage() {
                                         className="rounded-md bg-violet-600 p-1 text-white transition-colors hover:bg-violet-500"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          resumeCourse(classroom.id);
+                                          void resumeCourse(classroom.id);
                                         }}
                                       >
                                         <ChevronRight className="size-3" />
                                       </button>
+                                      {backendActive && (
+                                        <button
+                                          type="button"
+                                          aria-label={t('generation.stopGeneration')}
+                                          title={t('generation.stopGeneration')}
+                                          className="rounded-md bg-white/80 p-1 text-slate-700 transition-colors hover:bg-white"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            void (async () => {
+                                              if (backendJob?.id) await cancelBackendGeneration(backendJob.id);
+                                              setBackendJobs((current) => {
+                                                const next = { ...current };
+                                                if (next[classroom.id] && backendJob) {
+                                                  next[classroom.id] = {
+                                                    ...backendJob,
+                                                    status: 'cancelled',
+                                                  };
+                                                }
+                                                return next;
+                                              });
+                                            })();
+                                          }}
+                                        >
+                                          <Square className="size-3" />
+                                        </button>
+                                      )}
                                       {parked && (
                                         <button
                                           type="button"
