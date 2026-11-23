@@ -58,7 +58,7 @@ import {
   shouldResumeClassroomGeneration,
 } from '@/lib/classroom/progressive-load-policy';
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
-import { consumeAutoResume } from '@/lib/classroom/auto-resume-marker';
+import { consumeAutoResumeOptions } from '@/lib/classroom/auto-resume-marker';
 import { findSilentSlides } from '@/lib/maintenance/silent-narration';
 
 const log = createLogger('Classroom');
@@ -611,12 +611,17 @@ export function ClassroomSurface({
     const autoRetryFailed = ['1', 'true'].includes(
       (process.env.NEXT_PUBLIC_AUTO_RETRY_FAILED_GENERATION ?? '0').trim().toLowerCase(),
     );
+    // Consume the hand-off before computing the queue: an explicit Resume from
+    // the library must also re-run outlines that a prior provider failure
+    // parked. A plain course open has no marker and stays behind its button.
+    const handoff = consumeAutoResumeOptions(stage?.id ?? '');
+    const retryFailed = autoRetryFailed || handoff.includeFailed;
     const failedIds = new Set(state.failedOutlines.map((o) => o.id));
     const skipIds = new Set(state.skippedOutlineIds);
     const outlineIsPending = (outline: { id: string; order: number }): boolean =>
       !materialized.has(outline) &&
       !skipIds.has(outline.id) &&
-      !(failedIds.has(outline.id) && !autoRetryFailed);
+      !(failedIds.has(outline.id) && !retryFailed);
     const hasPending = !generationComplete && outlines.some(outlineIsPending);
 
     if (hasPending && stage) {
@@ -627,7 +632,7 @@ export function ClassroomSurface({
       // it as paused with the pending outlines queued). Only the hand-off from
       // generation-preview, where the owner has just pressed Start or Resume,
       // carries on by itself. See auto-resume-marker.
-      if (!consumeAutoResume(stage.id)) {
+      if (!handoff.resume) {
         const live = useStageStore.getState();
         if (live.generationStatus !== 'generating') live.setGenerationStatus('paused');
         log.info(
@@ -660,7 +665,7 @@ export function ClassroomSurface({
           },
           // The same rule `hasPending` used: parked failures stay parked
           // unless auto-retry is opted into.
-          { includeFailed: autoRetryFailed },
+          { includeFailed: retryFailed },
         );
         // The params record is deliberately kept: a resumed batch can still
         // pause again (provider failure, tab close) and a later resume needs

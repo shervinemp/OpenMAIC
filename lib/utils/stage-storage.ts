@@ -119,6 +119,10 @@ export interface StageListItem {
   taskEngineMode?: boolean;
   /** Folder this course belongs to; undefined = unfiled. Device-local only. */
   folderId?: string;
+  /** Outlines planned for this course (from the persisted document). */
+  outlineCount?: number;
+  /** Whether the generator marked this deck complete. Unfinished decks resume. */
+  generationComplete?: boolean;
 }
 
 function stampStage(stageId: string, stage: Stage, now: number): Stage {
@@ -831,9 +835,10 @@ async function performStageDeletion(stageId: string): Promise<void> {
  * same seam that serves reads by id, so it is the truthful source here.
  */
 async function listStagesFromDocumentStore(): Promise<StageListItem[]> {
-  const summaries = await getDocumentStore().listDocuments();
-  return summaries
-    .map((item) => {
+  const store = getDocumentStore();
+  const summaries = await store.listDocuments();
+  const items = await Promise.all(
+    summaries.map(async (item) => {
       const base: StageListItem = {
         id: item.id,
         name: item.name,
@@ -844,9 +849,26 @@ async function listStagesFromDocumentStore(): Promise<StageListItem[]> {
         ...(item.interactiveMode !== undefined ? { interactiveMode: item.interactiveMode } : {}),
         ...(item.taskEngineMode !== undefined ? { taskEngineMode: item.taskEngineMode } : {}),
       };
+      // Generation status is a property of the course document, not of the
+      // ephemeral session pointer: a handoff can clear the pointer while the
+      // deck is still unfinished. Reading it here lets every course card show
+      // its own resume affordance instead of one global banner.
+      try {
+        const doc = await store.loadDocument(item.id);
+        const outline = doc?.outline as { outlines?: unknown[]; generationComplete?: boolean } | undefined;
+        if (outline) {
+          if (Array.isArray(outline.outlines)) base.outlineCount = outline.outlines.length;
+          if (typeof outline.generationComplete === 'boolean') {
+            base.generationComplete = outline.generationComplete;
+          }
+        }
+      } catch (e) {
+        log.warn(`Failed to read generation status for ${item.id}:`, e);
+      }
       return item.folderId ? { ...base, folderId: item.folderId } : base;
-    })
-    .sort((a, b) => b.updatedAt - a.updatedAt);
+    }),
+  );
+  return items.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function listStages(): Promise<StageListItem[]> {

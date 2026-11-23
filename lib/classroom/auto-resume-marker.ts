@@ -27,28 +27,56 @@ export const AUTO_RESUME_MARKER_MAX_AGE_MS = 5 * 60_000;
 const RECENT_HANDOFF_MS = 30_000;
 const taken = new Map<string, number>();
 
-export function markAutoResume(stageId: string, now: number = Date.now()): void {
+export function markAutoResume(
+  stageId: string,
+  now: number = Date.now(),
+  includeFailed = false,
+): void {
   try {
-    window.sessionStorage.setItem(`${MARKER_PREFIX}${stageId}`, String(now));
+    // Plain timestamp for the generation-preview handoff (backward compatible);
+    // JSON only when an explicit resume must also re-run parked failed outlines.
+    const value = includeFailed ? JSON.stringify({ at: now, includeFailed: true }) : String(now);
+    window.sessionStorage.setItem(`${MARKER_PREFIX}${stageId}`, value);
   } catch {
     // No storage: the classroom will wait for the button.
   }
 }
 
-/** True for a hand-off; the marker is removed as it is read. */
-export function consumeAutoResume(stageId: string, now: number = Date.now()): boolean {
+/** Hand-off decision plus whether the owner asked to retry failed outlines. */
+export function consumeAutoResumeOptions(
+  stageId: string,
+  now: number = Date.now(),
+): { resume: boolean; includeFailed: boolean } {
   const takenAt = taken.get(stageId);
-  if (takenAt !== undefined && now - takenAt <= RECENT_HANDOFF_MS) return true;
+  if (takenAt !== undefined && now - takenAt <= RECENT_HANDOFF_MS) {
+    return { resume: true, includeFailed: failedRetakes.has(stageId) };
+  }
   try {
     const key = `${MARKER_PREFIX}${stageId}`;
     const raw = window.sessionStorage.getItem(key);
-    if (raw === null) return false;
+    if (raw === null) return { resume: false, includeFailed: false };
     window.sessionStorage.removeItem(key);
-    const markedAt = Number(raw);
+    let markedAt = Number(raw);
+    let includeFailed = false;
+    if (!Number.isFinite(markedAt)) {
+      const parsed = JSON.parse(raw) as { at?: number; includeFailed?: boolean };
+      markedAt = Number(parsed.at);
+      includeFailed = parsed.includeFailed === true;
+    }
     const fresh = Number.isFinite(markedAt) && now - markedAt <= AUTO_RESUME_MARKER_MAX_AGE_MS;
-    if (fresh) taken.set(stageId, now);
-    return fresh;
+    if (fresh) {
+      taken.set(stageId, now);
+      if (includeFailed) failedRetakes.add(stageId);
+    }
+    return { resume: fresh, includeFailed };
   } catch {
-    return false;
+    return { resume: false, includeFailed: false };
   }
+}
+
+const failedRetakes = new Set<string>();
+
+/** True for a hand-off; the marker is removed as it is read. */
+export function consumeAutoResume(stageId: string, now: number = Date.now()): boolean {
+  return consumeAutoResumeOptions(stageId, now).resume;
 }

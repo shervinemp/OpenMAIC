@@ -60,6 +60,7 @@ import {
   type ParkedGenerationSession,
 } from '@/lib/utils/generation-session-store';
 import { abortStageGeneration } from '@/lib/classroom/generation-abort';
+import { markAutoResume } from '@/lib/classroom/auto-resume-marker';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import {
   courseMaterialFingerprint,
@@ -262,6 +263,11 @@ function HomePage() {
   // True when a parked generation session exists (user backed out during the
   // outline phase) — renders the "resume generation" prompt in the list.
   const [parkedSessions, setParkedSessions] = useState<ParkedGenerationSession[]>([]);
+  // Courses already in the library carry their own status/controls on their
+  // card. The banner is only for sessions whose course was never persisted.
+  const barSessions = parkedSessions.filter(
+    (parked) => !parked.stageId || !classrooms.some((course) => course.id === parked.stageId),
+  );
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -450,6 +456,13 @@ function HomePage() {
     } catch {
       /* ignore */
     }
+  };
+
+  // Resume a course from its own card. Marking the hand-off is the supported
+  // path: the classroom reads it once and continues the unfinished outlines.
+  const resumeCourse = (stageId: string) => {
+    markAutoResume(stageId, Date.now(), true);
+    router.push(`/classroom/${stageId}`);
   };
 
   const handleRename = async (id: string, newName: string) => {
@@ -1405,7 +1418,7 @@ function HomePage() {
               >
                 {/* Paused-outline generation prompt: the session was kept when
                     the user backed out before the course was persisted. */}
-                {parkedSessions.map((parked) => {
+                {barSessions.map((parked) => {
                   let background = false;
                   try {
                     background =
@@ -1566,7 +1579,12 @@ function HomePage() {
                           ))}
 
                         {/* Course tiles for the active view. */}
-                        {visibleClassrooms.map((classroom, i) => (
+                        {visibleClassrooms.map((classroom, i) => {
+                          const unfinished =
+                            classroom.generationComplete === false &&
+                            (classroom.outlineCount ?? 0) > classroom.sceneCount;
+                          const parked = parkedSessions.find((p) => p.stageId === classroom.id);
+                          return (
                           <motion.div
                             key={classroom.id}
                             initial={{ opacity: 0, y: 16 }}
@@ -1591,6 +1609,54 @@ function HomePage() {
                                     onMove={(folderId) => handleMoveCourse(classroom.id, folderId)}
                                     onCreateAndMove={handleCreateAndMove(classroom.id)}
                                   />
+                                  {/* Per-course generation status lives on the card,
+                                      not in a single global banner. */}
+                                  {(unfinished || parked) && (
+                                    <div
+                                      className="absolute bottom-2 right-2 z-20 flex items-center gap-1"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <span className="inline-flex items-center gap-1 rounded-md bg-violet-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+                                        {parked ? (
+                                          <Loader2 className="size-2.5 animate-spin" />
+                                        ) : (
+                                          <Pause className="size-2.5" />
+                                        )}
+                                        {unfinished
+                                          ? `${classroom.sceneCount}/${classroom.outlineCount}`
+                                          : t('generation.pendingGenerationTitle')}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        aria-label={t('stage.resumeGeneration')}
+                                        title={t('stage.resumeGeneration')}
+                                        className="rounded-md bg-violet-600 p-1 text-white transition-colors hover:bg-violet-500"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          resumeCourse(classroom.id);
+                                        }}
+                                      >
+                                        <ChevronRight className="size-3" />
+                                      </button>
+                                      {parked && (
+                                        <button
+                                          type="button"
+                                          aria-label="Stop generation"
+                                          title="Stop generation"
+                                          className="rounded-md bg-white/80 p-1 text-slate-700 transition-colors hover:bg-white"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            void stopParkedGeneration(parked);
+                                            setParkedSessions((prev) =>
+                                              prev.filter((s) => s.sessionId !== parked.sessionId),
+                                            );
+                                          }}
+                                        >
+                                          <Square className="size-3" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
                                   {/* Search view: show the owning folder as a badge. */}
                                   {isSearching && classroom.folderId && (
                                     <span className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 rounded-md bg-violet-500/80 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm pointer-events-none">
@@ -1602,7 +1668,8 @@ function HomePage() {
                               }
                             />
                           </motion.div>
-                        ))}
+                          );
+                        })}
                       </motion.div>
                     </AnimatePresence>
                   </div>
