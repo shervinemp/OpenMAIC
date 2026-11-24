@@ -124,14 +124,24 @@ export async function saveSceneDraft(
 }
 
 export async function deleteSceneDraft(stageId: string, outlineId: string): Promise<void> {
-  await withStageLock(stageId, async () => {
-    const drafts = await readStage(stageId);
-    const id = sceneDraftId(stageId, outlineId);
-    const next = drafts.filter((draft) => draft.id !== id);
-    if (next.length !== drafts.length) await writeStage(stageId, next);
-  });
+  // Evacuation happens after a scene commits. A cache failure must never turn
+  // that successful commit into a failed job, so swallow I/O errors here.
+  try {
+    await withStageLock(stageId, async () => {
+      const drafts = await readStage(stageId);
+      const id = sceneDraftId(stageId, outlineId);
+      const next = drafts.filter((draft) => draft.id !== id);
+      if (next.length !== drafts.length) await writeStage(stageId, next);
+    });
+  } catch (error) {
+    log.warn('Failed to delete scene draft:', error);
+  }
 }
 
 export async function clearSceneDraftsForStage(stageId: string): Promise<void> {
-  await withStageLock(stageId, () => writeStage(stageId, []));
+  try {
+    await withStageLock(stageId, () => writeStage(stageId, []));
+  } catch (error) {
+    log.warn('Failed to clear scene drafts:', error);
+  }
 }
