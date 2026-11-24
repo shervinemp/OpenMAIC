@@ -1693,9 +1693,6 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       if (runStageId) registerStageGeneration(runStageId, fetchAbortRef.current);
       const signal = fetchAbortRef.current.signal;
 
-      // Durable raw drafts from a previous interrupted run. Loading also
-      // sweeps stale/oversized entries, so the cache cannot grow without bound.
-      const drafts = runStageId ? await loadSceneDrafts(runStageId) : new Map<string, SceneDraft>();
       const draftKeyFor = (outline: SceneOutline): string => {
         const stage = store.getState().stage;
         return sceneDraftSourceKey({
@@ -1790,6 +1787,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         generatingRef.current = false;
         return;
       }
+
+      // Durable raw drafts from a previous interrupted run. Load only when
+      // there is work to do: an empty batch must not even touch the cache.
+      const drafts = runStageId ? await loadSceneDrafts(runStageId) : new Map<string, SceneDraft>();
 
       runQueueRef.current = new Set(pending.map((o) => o.id));
       store.getState().setGeneratingOutlines((current) => {

@@ -6,6 +6,13 @@ import type { Scene as AppScene } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import type { SceneOutline } from '@/lib/types/generation';
 import { putSceneBringingCurrent } from '@/lib/server/agent-runtime/document-writes';
+import {
+  clearSceneDraftsForStage,
+  deleteSceneDraft,
+  loadSceneDrafts,
+  saveSceneDraft,
+} from '@/lib/server/scene-draft-store';
+import { sceneDraftSourceKey } from '@/lib/utils/scene-draft-key';
 import { synthesizeSceneNarration } from '@/lib/server/agent-runtime/scene-tts';
 import {
   createContinueJob,
@@ -188,6 +195,26 @@ export async function runContinueGenerationJob(
       message: `Generating ${pending.length} scene(s)`,
     });
 
+    // One shared draft cache for both engines. Reuse is safe only when the
+    // fingerprint still matches; the payload still runs gates, TTS and media.
+    const drafts = await loadSceneDrafts(input.stageId);
+    const stageInfo = (document.stage ?? {}) as unknown as Record<string, unknown>;
+    const draftKeyFor = (outline: SceneOutline): string =>
+      sceneDraftSourceKey({
+        stageId: input.stageId,
+        outline,
+        languageDirective: input.languageDirective,
+        userProfile: input.userProfile,
+        model: headers['x-model'] ?? '',
+        taskEngineMode: input.taskEngineMode,
+        // The server job has no browser PDF images or agent roster; drafts
+        // created with those inputs simply won't match and are regenerated.
+        pdfImagesCount: 0,
+        stageName: typeof stageInfo.name === 'string' ? stageInfo.name : undefined,
+        stageDescription: typeof stageInfo.description === 'string' ? stageInfo.description : undefined,
+        stageStyle: typeof stageInfo.style === 'string' ? stageInfo.style : undefined,
+      });
+
     log.info(`Job ${jobId}: entering scene loop, ${pending.length} pending`);
     let generated = 0;
     let failed = 0;
@@ -204,31 +231,39 @@ export async function runContinueGenerationJob(
       if (signal.aborted) throw new Error('aborted');
       log.info(`Job ${jobId}: content for "${outline.title}"`);
 
+      const draftKey = draftKeyFor(outline);
+      const draft = drafts.get(outline.id);
+      const contentDraft = draft?.sourceKey === draftKey ? draft.content : undefined;
       let contentResult: ApiResult;
-      try {
-        contentResult = await postInternal(
-          input.baseUrl,
-          '/api/generate/scene-content',
-          headers,
-          {
-            outline,
-            allOutlines: outlines,
-            stageId: input.stageId,
-            languageDirective: input.languageDirective,
-            userProfile: input.userProfile,
-            ...(input.taskEngineMode ? { requirements: { taskEngineMode: true } } : {}),
-          },
-          signal,
-        );
-      } catch (error) {
-        if (signal.aborted) throw error;
-        failed += 1;
-        log.warn(`Content failed for "${outline.title}":`, error);
-        await updateContinueJob(jobId, {
-          scenesFailed: failed,
-          message: `Content failed for: ${outline.title}`,
-        });
-        continue;
+      if (contentDraft !== undefined) {
+        contentResult = contentDraft as ApiResult;
+        log.info(`Job ${jobId}: reused content draft for "${outline.title}"`);
+      } else {
+        try {
+          contentResult = await postInternal(
+            input.baseUrl,
+            '/api/generate/scene-content',
+            headers,
+            {
+              outline,
+              allOutlines: outlines,
+              stageId: input.stageId,
+              languageDirective: input.languageDirective,
+              userProfile: input.userProfile,
+              ...(input.taskEngineMode ? { requirements: { taskEngineMode: true } } : {}),
+            },
+            signal,
+          );
+        } catch (error) {
+          if (signal.aborted) throw error;
+          failed += 1;
+          log.warn(`Content failed for "${outline.title}":`, error);
+          await updateContinueJob(jobId, {
+            scenesFailed: failed,
+            message: `Content failed for: ${outline.title}`,
+          });
+          continue;
+        }
       }
       if (!contentResult.success || contentResult.content == null) {
         failed += 1;
@@ -238,34 +273,46 @@ export async function runContinueGenerationJob(
         });
         continue;
       }
+      if (contentDraft === undefined) {
+        await saveSceneDraft(input.stageId, outline.id, {
+          sourceKey: draftKey,
+          content: contentResult,
+        });
+      }
 
       log.info(`Job ${jobId}: actions for "${outline.title}"`);
+      const actionsDraft = draft?.sourceKey === draftKey ? draft.actions : undefined;
       let actionsResult: ApiResult;
-      try {
-        actionsResult = await postInternal(
-          input.baseUrl,
-          '/api/generate/scene-actions',
-          headers,
-          {
-            outline,
-            allOutlines: outlines,
-            content: contentResult.content,
-            stageId: input.stageId,
-            previousSpeeches,
-            languageDirective: input.languageDirective,
-            userProfile: input.userProfile,
-          },
-          signal,
-        );
-      } catch (error) {
-        if (signal.aborted) throw error;
-        failed += 1;
-        log.warn(`Actions failed for "${outline.title}":`, error);
-        await updateContinueJob(jobId, {
-          scenesFailed: failed,
-          message: `Actions failed for: ${outline.title}`,
-        });
-        continue;
+      if (actionsDraft !== undefined) {
+        actionsResult = actionsDraft as ApiResult;
+        log.info(`Job ${jobId}: reused actions draft for "${outline.title}"`);
+      } else {
+        try {
+          actionsResult = await postInternal(
+            input.baseUrl,
+            '/api/generate/scene-actions',
+            headers,
+            {
+              outline,
+              allOutlines: outlines,
+              content: contentResult.content,
+              stageId: input.stageId,
+              previousSpeeches,
+              languageDirective: input.languageDirective,
+              userProfile: input.userProfile,
+            },
+            signal,
+          );
+        } catch (error) {
+          if (signal.aborted) throw error;
+          failed += 1;
+          log.warn(`Actions failed for "${outline.title}":`, error);
+          await updateContinueJob(jobId, {
+            scenesFailed: failed,
+            message: `Actions failed for: ${outline.title}`,
+          });
+          continue;
+        }
       }
       const scene = actionsResult.scene;
       if (!actionsResult.success || !scene) {
@@ -275,6 +322,12 @@ export async function runContinueGenerationJob(
           message: `Actions failed for: ${outline.title}`,
         });
         continue;
+      }
+      if (actionsDraft === undefined) {
+        await saveSceneDraft(input.stageId, outline.id, {
+          sourceKey: draftKey,
+          actions: actionsResult,
+        });
       }
 
       scene.stageId = input.stageId;
@@ -292,6 +345,8 @@ export async function runContinueGenerationJob(
       }
 
       await putSceneBringingCurrent(store, input.stageId, scene);
+      // The raw payload is no longer needed once its scene is durable.
+      await deleteSceneDraft(input.stageId, outline.id);
       generated += 1;
       previousSpeeches = (scene.actions ?? [])
         .filter((action): action is Action => action.type === 'speech' && 'text' in action)
@@ -321,6 +376,7 @@ export async function runContinueGenerationJob(
       }
     }
     await setProducer(store, input.stageId, null);
+    await clearSceneDraftsForStage(input.stageId);
     await updateContinueJob(jobId, {
       status: 'succeeded',
       completedAt: new Date().toISOString(),
