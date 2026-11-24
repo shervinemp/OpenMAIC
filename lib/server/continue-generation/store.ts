@@ -22,6 +22,8 @@ export interface ContinueJobInput {
   userProfile?: string;
   taskEngineMode?: boolean;
   enableTTS?: boolean;
+  /** Optional scope: regenerate only these outlines (a scoped retry). */
+  outlineIds?: string[];
   /** Model/provider selection only — never credentials. */
   headers?: Record<string, string>;
   /** Server-relative base url used only for messages; no credentials here. */
@@ -119,6 +121,18 @@ export async function readContinueJobInput(jobId: string): Promise<ContinueJobIn
   } catch {
     return null;
   }
+}
+
+/** Newest queued/running job for a course, if one currently owns it. */
+export async function findActiveContinueJobByStage(stageId: string): Promise<ContinueJob | null> {
+  const ids = await listContinueJobIds();
+  const jobs = await Promise.all(ids.map((id) => readContinueJob(id)));
+  const activeJobs = jobs.filter(
+    (job): job is ContinueJob =>
+      !!job && job.stageId === stageId && (job.status === 'queued' || job.status === 'running'),
+  );
+  activeJobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return activeJobs[0] ?? null;
 }
 
 export async function deleteContinueJobInput(jobId: string): Promise<void> {

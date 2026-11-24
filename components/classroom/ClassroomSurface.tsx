@@ -58,6 +58,10 @@ import {
   shouldResumeClassroomGeneration,
 } from '@/lib/classroom/progressive-load-policy';
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
+import {
+  hasActiveBackendRun,
+  startBackendGeneration,
+} from '@/lib/utils/backend-generation-client';
 import { consumeAutoResumeOptions } from '@/lib/classroom/auto-resume-marker';
 import {
   clearGenerationIntent,
@@ -748,6 +752,16 @@ export function ClassroomSurface({
   const handleResumeGeneration = useCallback(async () => {
     const stage = useStageStore.getState().stage;
     if (!stage) return;
+    if (useStageStore.getState().outlineProducer === 'server-job') {
+      // Same control plane as the Home Resume card: one backend job owns the
+      // course. Never spin up a second, browser-side producer here.
+      if (hasActiveBackendRun(classroomId)) return;
+      markGenerationActive(classroomId);
+      await startBackendGeneration(classroomId, { includeFailed: true }).catch((error) =>
+        log.warn('[Classroom] Backend resume failed:', error),
+      );
+      return;
+    }
     // This is an explicit owner action: refresh the intent and reset the
     // automatic-resume budget, just like the Home card's Resume button.
     markGenerationActive(classroomId);

@@ -92,4 +92,17 @@ describe('continue generation job store', () => {
     expect((await store.findClaimableContinueJobs()).map((job) => job.id)).toContain('job-7');
     expect(await store.claimContinueJob('job-7', 'worker-b')).toBe(true);
   });
+
+  it('finds the active run for a course, ignoring settled jobs and other courses', async () => {
+    await store.createContinueJob('job-8', input('controlled-stage'));
+    await store.updateContinueJob('job-8', { status: 'running' });
+    await store.createContinueJob('job-9', input('controlled-stage'));
+    await store.updateContinueJob('job-9', { status: 'cancelled' });
+    await store.createContinueJob('job-10', input('other-stage'));
+    await store.updateContinueJob('job-10', { status: 'running' });
+
+    expect((await store.findActiveContinueJobByStage('controlled-stage'))?.id).toBe('job-8');
+    expect((await store.findActiveContinueJobByStage('other-stage'))?.id).toBe('job-10');
+    expect(await store.findActiveContinueJobByStage('never-used')).toBeNull();
+  });
 });

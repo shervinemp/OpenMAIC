@@ -4,7 +4,11 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
 import { createLogger } from '@/lib/logger';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
-import { createContinueJob, type ContinueJobInput } from '@/lib/server/continue-generation/store';
+import {
+  createContinueJob,
+  findActiveContinueJobByStage,
+  type ContinueJobInput,
+} from '@/lib/server/continue-generation/store';
 import { ensureContinueWorker } from '@/lib/server/continue-generation/worker-starter';
 
 export const runtime = 'nodejs';
@@ -38,11 +42,28 @@ async function start(req: NextRequest, ownerId: string): Promise<Response> {
       userProfile?: string;
       taskEngineMode?: boolean;
       enableTTS?: boolean;
+      outlineIds?: string[];
     };
     stageId = body.stageId ?? 'unknown';
     if (!body.stageId) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageId is required');
     }
+
+    // One active run per course. Every surface (Home, classroom retry, preview)
+    // funnels through here, so a second engine can never start for the same doc.
+    const active = await findActiveContinueJobByStage(stageId);
+    if (active) {
+      return apiError(
+        'GENERATION_ALREADY_ACTIVE',
+        409,
+        'A generation job is already active for this course; stop it first',
+        active.id,
+      );
+    }
+
+    const outlineIds = Array.isArray(body.outlineIds)
+      ? body.outlineIds.filter((id): id is string => typeof id === 'string' && id.length > 0).slice(0, 500)
+      : undefined;
 
     const baseUrl = buildRequestOrigin(req);
     const jobId = nanoid(10);
@@ -57,6 +78,7 @@ async function start(req: NextRequest, ownerId: string): Promise<Response> {
       ...(typeof body.userProfile === 'string' ? { userProfile: body.userProfile } : {}),
       ...(typeof body.taskEngineMode === 'boolean' ? { taskEngineMode: body.taskEngineMode } : {}),
       ...(typeof body.enableTTS === 'boolean' ? { enableTTS: body.enableTTS } : {}),
+      ...(outlineIds?.length ? { outlineIds } : {}),
     };
     const job = await createContinueJob(jobId, {
       ...input,
@@ -83,6 +105,14 @@ async function start(req: NextRequest, ownerId: string): Promise<Response> {
       error instanceof Error ? error.message : String(error),
     );
   }
+}
+
+/** Unified status lookup for a course, used by every generation surface. */
+export async function GET(req: NextRequest): Promise<Response> {
+  const stageId = req.nextUrl.searchParams.get('stageId');
+  if (!stageId) return apiError('MISSING_REQUIRED_FIELD', 400, 'stageId is required');
+  const job = await findActiveContinueJobByStage(stageId);
+  return apiSuccess({ job });
 }
 
 export async function POST(req: NextRequest): Promise<Response> {

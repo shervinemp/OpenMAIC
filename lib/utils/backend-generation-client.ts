@@ -15,6 +15,26 @@ export interface BackendGenerationJob {
   updatedAt: string;
 }
 
+/**
+ * Runs started by this browser. Synchronous so generation guards never need
+ * an extra network round-trip (and never interfere with provider fetch mocks).
+ * On a fresh page load the document's `producer: 'server-job'` is the durable
+ * equivalent; this set covers the window between start and settlement.
+ */
+const locallyActiveRuns = new Set<string>();
+
+export function markBackendRunActive(stageId: string): void {
+  locallyActiveRuns.add(stageId);
+}
+
+export function clearBackendRun(stageId: string): void {
+  locallyActiveRuns.delete(stageId);
+}
+
+export function hasActiveBackendRun(stageId: string): boolean {
+  return locallyActiveRuns.has(stageId);
+}
+
 function generationHeaders(): Record<string, string> {
   const config = getCurrentModelConfig();
   const settings = useSettingsStore.getState();
@@ -47,6 +67,8 @@ export async function startBackendGeneration(
     languageDirective?: string;
     userProfile?: string;
     taskEngineMode?: boolean;
+    /** Retry only these outlines; omit to fill all missing scenes. */
+    outlineIds?: string[];
   } = {},
 ): Promise<{ jobId: string; pollUrl: string }> {
   const response = await fetch('/api/generation/continue', {
@@ -62,7 +84,32 @@ export async function startBackendGeneration(
   if (!response.ok || !data.jobId || !data.pollUrl) {
     throw new Error(data.error?.message || `Generation start failed (${response.status})`);
   }
+  markBackendRunActive(stageId);
   return { jobId: data.jobId, pollUrl: data.pollUrl };
+}
+
+/** The single source of truth for "is a server job producing this course?". */
+export async function getActiveBackendRun(stageId: string): Promise<BackendGenerationJob | null> {
+  try {
+    const response = await fetch(
+      `/api/generation/continue?stageId=${encodeURIComponent(stageId)}`,
+      { cache: 'no-store' },
+    );
+    if (!response.ok) return null;
+    const data = (await response.json().catch(() => ({}))) as { job?: BackendGenerationJob };
+    if (data.job) markBackendRunActive(stageId);
+    else clearBackendRun(stageId);
+    return data.job ?? null;
+  } catch {
+    // This is a guard, not a capability: an unreachable status endpoint must
+    // not break the browser's existing generation path.
+    return null;
+  }
+}
+
+/** Route an in-course Retry through the same backend control plane as Home. */
+export async function retryOutlineOnServer(stageId: string, outlineId: string): Promise<void> {
+  await startBackendGeneration(stageId, { outlineIds: [outlineId], includeFailed: true });
 }
 
 export async function pollBackendGeneration(jobId: string): Promise<BackendGenerationJob | null> {
@@ -70,9 +117,15 @@ export async function pollBackendGeneration(jobId: string): Promise<BackendGener
   const data = (await response.json().catch(() => ({}))) as {
     job?: BackendGenerationJob;
   };
-  return response.ok ? data.job ?? null : null;
+  const job = response.ok ? data.job ?? null : null;
+  if (job?.stageId && (job.status === 'succeeded' || job.status === 'failed' || job.status === 'cancelled')) {
+    clearBackendRun(job.stageId);
+  }
+  return job;
 }
 
 export async function cancelBackendGeneration(jobId: string): Promise<void> {
+  const job = await pollBackendGeneration(jobId);
   await fetch(`/api/generation/continue/${jobId}`, { method: 'DELETE' }).catch(() => undefined);
+  if (job?.stageId) clearBackendRun(job.stageId);
 }

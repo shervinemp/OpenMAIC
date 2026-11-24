@@ -172,8 +172,15 @@ export async function runContinueGenerationJob(
     ) as SceneOutline[];
     const byOutlineId = new Set(document.scenes.map((scene) => scene.outlineId).filter(Boolean));
     const byOrder = new Set(document.scenes.map((scene) => scene.order));
+    // A scoped retry names the outlines to redo (they may already have a scene
+    // from a failed pass); an ordinary run fills only missing outlines.
+    const scope = input.outlineIds?.length ? new Set(input.outlineIds) : null;
     const pending = outlines
-      .filter((outline) => !byOutlineId.has(outline.id) && !byOrder.has(outline.order))
+      .filter((outline) =>
+        scope
+          ? scope.has(outline.id)
+          : !byOutlineId.has(outline.id) && !byOrder.has(outline.order),
+      )
       .sort((a, b) => a.order - b.order);
 
     await updateContinueJob(jobId, {

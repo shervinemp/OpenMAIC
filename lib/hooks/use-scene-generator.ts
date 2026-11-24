@@ -37,6 +37,10 @@ import {
 } from '@/lib/media/generated-media-references';
 import { commitToPool } from '@/lib/media/commit-to-pool';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
+import {
+  hasActiveBackendRun,
+  retryOutlineOnServer,
+} from '@/lib/utils/backend-generation-client';
 import { registerStageGeneration } from '@/lib/classroom/generation-abort';
 import { claimGenerationLease } from '@/lib/classroom/generation-lease';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
@@ -2283,6 +2287,17 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         }
       }
       if (!outline || !state.stage || !params) return;
+      // Containment: a server-owned course has exactly one producer. Route the
+      // retry into the same backend control plane as Home instead of starting a
+      // second browser generator against the same document.
+      if (state.outlineProducer === 'server-job') {
+        if (hasActiveBackendRun(state.stage.id)) return;
+        await retryOutlineOnServer(state.stage.id, outlineId).catch((error) =>
+          log.warn('[SceneGenerator] Backend retry failed:', error),
+        );
+        return;
+      }
+      if (hasActiveBackendRun(state.stage.id)) return;
       // A whole-outline retry runs content, actions and narration on the
       // operator's keys. The surfaces already withhold the affordance when
       // generation is not permitted; refusing here keeps the precondition and
