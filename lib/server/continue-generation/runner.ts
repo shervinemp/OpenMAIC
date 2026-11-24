@@ -28,9 +28,22 @@ const log = createLogger('ContinueGeneration');
 
 type Store = DocumentStore<AppScene, AppStage>;
 
-/** In-flight jobs, so DELETE can abort them. */
-const active = new Map<string, AbortController>();
-const running = new Set<string>();
+/**
+ * In-flight jobs, so DELETE can abort them and a second dispatch cannot start a
+ * second loop. Kept on globalThis: Next dev hot-reloads modules, and a fresh
+ * module instance with an empty guard would otherwise race the old loop.
+ */
+const generationState = ((globalThis as typeof globalThis & {
+  __openmaicContinueGeneration?: {
+    active: Map<string, AbortController>;
+    running: Set<string>;
+  };
+}).__openmaicContinueGeneration ??= {
+  active: new Map<string, AbortController>(),
+  running: new Set<string>(),
+});
+const active = generationState.active;
+const running = generationState.running;
 
 export function cancelContinueJob(jobId: string): boolean {
   const controller = active.get(jobId);

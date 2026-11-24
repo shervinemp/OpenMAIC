@@ -21,9 +21,13 @@ const baseUrl =
 const LEASE_MS = 60_000;
 const HEARTBEAT_MS = 20_000;
 const SCAN_MS = 2_000;
+const POLL_MS = 5_000;
+const STALL_MS = 45 * 60_000;
+const MAX_STATUS_FAILURES = 12;
 const WORKER_ID = `${process.pid}-${Date.now()}`;
 
 const inFlight = new Set();
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function lockPath(id) {
   return path.join(jobsDir, `${id}.lock`);
@@ -42,9 +46,10 @@ async function tryClaim(id) {
   }
   let stale = true;
   try {
-    const owner = JSON.parse(await fs.readFile(file, 'utf-8'));
-    const claimedAt = owner.claimedAt ?? 0;
-    stale = now - claimedAt > LEASE_MS;
+    // Lease freshness is the heartbeat's mtime, not the original claim time:
+    // claimedAt never changes, so a live run would go stale after LEASE_MS.
+    const stat = await fs.stat(file);
+    stale = now - stat.mtimeMs > LEASE_MS;
   } catch {
     stale = true;
   }
@@ -62,21 +67,59 @@ async function dispatch(id) {
   if (!response.ok) throw new Error(`execute returned ${response.status}`);
 }
 
+async function readJob(id) {
+  const response = await fetch(`${baseUrl}/api/generation/continue/${id}`, {
+    headers: { accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error(`status returned ${response.status}`);
+  const payload = await response.json();
+  return payload.job ?? payload.data?.job ?? null;
+}
+
 async function runOne(id) {
   inFlight.add(id);
   const heartbeat = setInterval(() => {
     void fs.utimes(lockPath(id), new Date(), new Date()).catch(() => undefined);
   }, HEARTBEAT_MS);
   heartbeat.unref?.();
+  let progressKey = '';
+  let lastProgress = Date.now();
+  let failures = 0;
+  let stalled = false;
   try {
     await dispatch(id);
+    // The /execute response only acknowledges the dispatch: the scene loop is
+    // detached and runs for hours. Hold the lease until the job settles, or a
+    // 60s lease expiry makes this worker re-dispatch the same job repeatedly.
+    for (;;) {
+      await sleep(POLL_MS);
+      let job;
+      try {
+        job = await readJob(id);
+        failures = 0;
+      } catch (error) {
+        failures += 1;
+        if (failures >= MAX_STATUS_FAILURES) throw error;
+        continue;
+      }
+      if (!job || (job.status !== 'queued' && job.status !== 'running')) break;
+      const key = `${job.scenesGenerated}/${job.scenesFailed}`;
+      if (key !== progressKey) {
+        progressKey = key;
+        lastProgress = Date.now();
+      }
+      if (Date.now() - lastProgress > STALL_MS) {
+        stalled = true;
+        break;
+      }
+    }
   } catch (error) {
     console.error(`[continue-worker] ${id}:`, error.message);
-    // A job the new process never accepted must be given back.
-    await fs.rm(lockPath(id), { force: true }).catch(() => undefined);
   } finally {
     clearInterval(heartbeat);
+    await fs.rm(lockPath(id), { force: true }).catch(() => undefined);
     inFlight.delete(id);
+    if (stalled) console.error(`[continue-worker] ${id}: stalled, lease released for re-dispatch`);
   }
 }
 
