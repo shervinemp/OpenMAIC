@@ -41,8 +41,10 @@ export async function ensureContinueWorker(baseUrl?: string): Promise<number | n
       [WORKER_SCRIPT, '--base-url', origin],
       {
         cwd: process.cwd(),
+        // Detached so the worker survives Next.js restarts. windowsHide keeps
+        // that detached child from allocating a visible console window on
+        // Windows (CREATE_NO_WINDOW instead of DETACHED_PROCESS).
         detached: true,
-        // No console window when the worker is launched from a hidden shell.
         windowsHide: true,
         stdio: ['ignore', logHandle.fd, logHandle.fd],
         env: process.env,
