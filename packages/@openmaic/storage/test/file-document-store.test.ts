@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -35,6 +35,22 @@ describe('JsonFileDocumentStore', () => {
       );
     },
   }));
+
+  // A crash between rename and disk flush can leave the target zero-filled.
+  // The previous valid document must survive beside it for recovery.
+  test('keeps the previous valid document as a backup on overwrite', async () => {
+    const first = makeDocument('stage-1');
+    await store.saveDocument(first);
+    await store.saveDocument({
+      ...first,
+      stage: { ...first.stage, name: 'Second version', updatedAt: first.stage.updatedAt + 1 },
+    });
+
+    const file = join(dir, 'documents', 'stage-1.json');
+    const backup = JSON.parse(await readFile(`${file}.bak`, 'utf8'));
+    expect(backup.stage.name).toBe(first.stage.name);
+    expect((await store.loadDocument('stage-1'))?.stage.name).toBe('Second version');
+  });
 
   // Incremental writes are read-modify-write; without the per-document write
   // mutex, concurrent requests interleave (each reads the same base) and all

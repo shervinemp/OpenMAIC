@@ -71,8 +71,26 @@ export async function writeJsonFileAtomic(filePath: string, data: unknown) {
 
   const tempFilePath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   const content = JSON.stringify(data, null, 2);
-  await fs.writeFile(tempFilePath, content, 'utf-8');
+  // Atomic rename protects the name, not the bytes: without fsync an abrupt
+  // kill can leave the file allocated but zero-filled on Windows.
+  const handle = await fs.open(tempFilePath, 'w');
+  try {
+    await handle.writeFile(content, 'utf-8');
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
   await fs.rename(tempFilePath, filePath);
+  try {
+    const dir = await fs.open(path.dirname(filePath), 'r');
+    try {
+      await dir.sync();
+    } finally {
+      await dir.close();
+    }
+  } catch {
+    // Directory fsync is unavailable on Windows; best effort only.
+  }
 }
 
 /**

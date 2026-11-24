@@ -22,16 +22,18 @@
  * - `listDocuments` tolerates a corrupt file by omission, matching the
  *   "one poison row must not break the whole listing" precedent.
  *
- * Durability: every write goes through a temp file + atomic rename, so a
- * crash mid-write leaves either the old or the new aggregate, never a torn
- * file. Concurrency: incremental writes are read-modify-write, so requests
+ * Durability: every write goes through a synced temp file + atomic rename, so
+ * a crash mid-write leaves either the old or the new aggregate, never a torn
+ * file. The previous valid aggregate is also kept at `<document>.bak` so an
+ * abrupt kill between rename and disk flush can be recovered. Concurrency:
+ * incremental writes are read-modify-write, so requests
  * for the SAME document are serialized in-process (two classroom tabs, or a
  * maintenance pass racing a classroom save, otherwise lose updates and race
  * the rename — the Windows EPERM storm). Cross-process contention still
  * relies on the bounded rename retry below.
  */
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import {
@@ -182,6 +184,43 @@ export class JsonFileDocumentStore<
     }
   }
 
+  /**
+   * Flush a written file to disk before publishing its name. Directory fsync
+   * is not available on Windows, so that half is deliberately best-effort.
+   */
+  private async syncBytes(filePath: string): Promise<void> {
+    try {
+      const handle = await open(filePath, 'r');
+      try {
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+    } catch {
+      // Best effort: a platform that cannot fsync still gets atomic rename.
+    }
+  }
+
+  /**
+   * Keep the previous KNOWN-GOOD document beside the target. A zeroed or
+   * truncated target can then never destroy the last valid aggregate; recovery
+   * can copy the `.bak` back in. Backup failures are non-fatal.
+   */
+  private async backupCurrent(path: string): Promise<void> {
+    try {
+      const current = await readFile(path, 'utf8');
+      JSON.parse(current); // never promote a corrupt target to "known good"
+      const backup = `${path}.bak`;
+      const tmpBackup = `${backup}.tmp-${randomBytes(6).toString('hex')}`;
+      await writeFile(tmpBackup, current, 'utf8');
+      await this.syncBytes(tmpBackup);
+      await rename(tmpBackup, backup);
+      await this.syncBytes(backup);
+    } catch {
+      // Cache/backup failure must never block a document write.
+    }
+  }
+
   private async writeAtomic(stageId: string, document: unknown): Promise<void> {
     await mkdir(this.documentDir(), { recursive: true });
     const path = this.documentPath(stageId);
@@ -208,12 +247,19 @@ export class JsonFileDocumentStore<
     } catch {
       // hygiene is best-effort; never block the write path
     }
+    // Preserve the last valid aggregate before touching the target. Done once
+    // per write, not per rename retry, so contention cannot churn backups.
+    await this.backupCurrent(path);
+
     const maxAttempts = 6;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const tmp = `${path}.tmp-${randomBytes(6).toString('hex')}`;
       try {
         await writeFile(tmp, JSON.stringify(document), 'utf8');
+        await this.syncBytes(tmp);
         await rename(tmp, path);
+        await this.syncBytes(path);
+        await this.syncBytes(this.documentDir());
         return;
       } catch (error) {
         try {
