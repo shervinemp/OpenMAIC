@@ -180,6 +180,12 @@ export class JsonFileDocumentStore<
       return JSON.parse(raw) as MaicDocument<TScene, TStage>;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      if (error instanceof SyntaxError) {
+        // A zeroed/torn aggregate carries no valid revision to fence against.
+        // Treat it as absent so a deliberate restore can write a fresh copy,
+        // matching the corrupt-file tolerance already used by listDocuments.
+        return null;
+      }
       throw error;
     }
   }

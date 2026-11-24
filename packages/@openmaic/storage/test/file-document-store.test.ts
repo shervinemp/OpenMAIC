@@ -52,6 +52,18 @@ describe('JsonFileDocumentStore', () => {
     expect((await store.loadDocument('stage-1'))?.stage.name).toBe('Second version');
   });
 
+  // A zeroed aggregate must not wedge the store: there is no valid revision to
+  // fence against, so a deliberate restore has to be able to overwrite it.
+  test('allows overwriting a corrupt stored document', async () => {
+    const file = join(dir, 'documents', 'stage-corrupt.json');
+    await mkdir(join(dir, 'documents'), { recursive: true });
+    await writeFile(file, '\u0000'.repeat(4096), 'utf8');
+
+    const restored = makeDocument('stage-corrupt');
+    await expect(store.saveDocument(restored)).resolves.toBeUndefined();
+    expect((await store.loadDocument('stage-corrupt'))?.stage.name).toBe(restored.stage.name);
+  });
+
   // Incremental writes are read-modify-write; without the per-document write
   // mutex, concurrent requests interleave (each reads the same base) and all
   // but the last scene vanish — the lost-update class the classroom's two-tab
