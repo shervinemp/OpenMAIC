@@ -65,6 +65,7 @@ import { markGenerationStopped } from '@/lib/generation/run-intent';
 import { useActiveGenerationStageIds } from '@/lib/hooks/use-active-generations';
 import {
   cancelBackendGeneration,
+  getActiveBackendRun,
   pollBackendGeneration,
   startBackendGeneration,
   type BackendGenerationJob,
@@ -550,6 +551,17 @@ function HomePage() {
       }));
       toast.success('Generation started in the background');
     } catch (error) {
+      // The control plane allows one run per course. A 409 means another
+      // surface already owns this course: re-attach to that job. Falling back
+      // to the browser here would put two producers on the same document.
+      if (error instanceof Error && /already active/i.test(error.message)) {
+        const existing = await getActiveBackendRun(stageId);
+        if (existing) {
+          setBackendJobs((current) => ({ ...current, [stageId]: existing }));
+          toast.success('Generation is already running in the background');
+          return;
+        }
+      }
       log.warn('Server generation unavailable, falling back to classroom:', error);
       markAutoResume(stageId, Date.now(), true);
       router.push(`/classroom/${stageId}`);
