@@ -265,7 +265,12 @@ function spawnService(service) {
     const child = spawn(service.command, Array.isArray(service.args) ? service.args : [], {
       cwd,
       env: { ...process.env, ...(service.env || {}) },
-      detached: IS_WIN,
+      // Do NOT detach on Windows: DETACHED_PROCESS allocates a new console
+      // even with windowsHide, which is what pops a terminal window on every
+      // respawn. The supervisor owns these children and kills the tree on
+      // shutdown, so detaching is unnecessary here.
+      detached: false,
+      windowsHide: true,
       stdio: ['ignore', out, out],
     });
     children.set(name, child);

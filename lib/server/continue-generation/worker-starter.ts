@@ -42,6 +42,8 @@ export async function ensureContinueWorker(baseUrl?: string): Promise<number | n
       {
         cwd: process.cwd(),
         detached: true,
+        // No console window when the worker is launched from a hidden shell.
+        windowsHide: true,
         stdio: ['ignore', logHandle.fd, logHandle.fd],
         env: process.env,
       },
