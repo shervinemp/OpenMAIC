@@ -16,6 +16,11 @@ import { sceneDraftSourceKey } from '@/lib/utils/scene-draft-key';
 import { synthesizeSceneNarration } from '@/lib/server/agent-runtime/scene-tts';
 import { resolveSceneMedia } from '@/lib/server/scene-media-generation';
 import {
+  applyRelayoutMoves,
+  computeRelayoutPlan,
+  sanitizeSceneCanvas,
+} from '@/lib/maintenance/layout-relayout';
+import {
   createContinueJob,
   deleteContinueJobInput,
   findInterruptedContinueJobs,
@@ -354,6 +359,23 @@ export async function runContinueGenerationJob(
       } catch (error) {
         log.warn(`Media resolution failed for "${outline.title}":`, error);
       }
+
+      // The browser generation path runs layout checks before committing.
+      // Apply the same deterministic relayout here so backend scenes do not
+      // accumulate occlusions just because no tab was open.
+      try {
+        const plan = computeRelayoutPlan(scene);
+        if (plan) {
+          const moves = applyRelayoutMoves(scene, plan);
+          const clamped = sanitizeSceneCanvas(scene);
+          if (moves.length || clamped) {
+            log.info(`Layout for "${outline.title}": ${moves.length} moved, ${clamped} clamped`);
+          }
+        }
+      } catch (error) {
+        log.warn(`Layout check failed for "${outline.title}":`, error);
+      }
+
       if (actionsDraft === undefined) {
         await saveSceneDraft(input.stageId, outline.id, {
           sourceKey: draftKey,
