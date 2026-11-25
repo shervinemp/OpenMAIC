@@ -510,10 +510,6 @@ async function applyLanguageGate(
 ): Promise<SceneContentResult> {
   if (!content || !options.languageDirective?.trim()) return content;
 
-  // Interactive widgets are mostly HTML/JS. Their visible prose is small and
-  // the code around it would dominate the script count.
-  if (outline.type === 'interactive') return content;
-
   const log = options.logger ?? noopGenerationLogger;
   const drift = detectLanguageDrift(collectLearnerText(content), options.languageDirective);
   if (!drift) return content;
@@ -3477,11 +3473,7 @@ export async function generateSceneActions(
   options: SceneActionsOptions = {},
 ): Promise<Action[]> {
   const actions = await generateSceneActionsOnce(outline, content, aiCall, options);
-  if (
-    actions.length === 0 ||
-    !options.languageDirective?.trim() ||
-    outline.type === 'interactive'
-  ) {
+  if (actions.length === 0 || !options.languageDirective?.trim()) {
     return actions;
   }
 

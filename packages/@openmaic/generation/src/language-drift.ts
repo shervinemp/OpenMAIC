@@ -812,7 +812,6 @@ const SKIP_KEYS = new Set([
   'href',
   'path',
   'code',
-  'html',
   'css',
   'js',
   'javascript',
@@ -857,6 +856,14 @@ const SKIP_KEYS = new Set([
 ]);
 
 /** Flatten learner-visible prose from any generated content shape. */
+/** Strip executable/non-visible HTML blocks before sampling learner prose. */
+function htmlVisibleText(html: string): string {
+  return html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ');
+}
+
 export function collectLearnerText(value: unknown, maxChars = 200_000): string {
   const parts: string[] = [];
   let size = 0;
@@ -883,7 +890,13 @@ export function collectLearnerText(value: unknown, maxChars = 200_000): string {
     if (node && typeof node === 'object') {
       for (const [key, child] of Object.entries(node)) {
         if (SKIP_KEYS.has(key)) continue;
-        visit(child);
+        // Widget HTML holds the learner-visible labels and node text. Script
+        // and style blocks are not prose and would skew the script counts.
+        if (key === 'html' && typeof child === 'string') {
+          visit(htmlVisibleText(child));
+        } else {
+          visit(child);
+        }
       }
     }
   };
