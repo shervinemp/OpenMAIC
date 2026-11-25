@@ -146,9 +146,11 @@ export async function ensureCoverSlide({
     }),
     signal: AbortSignal.timeout(30 * 60_000),
   });
+  // scene-content returns the canvas itself; scene-actions wraps it into the
+  // final scene.content = { type, canvas }, so do not wrap it here.
   const content = contentResult.content;
-  if (!content || content.type !== 'slide') {
-    throw new Error(`cover content was not a slide: ${JSON.stringify(content).slice(0, 200)}`);
+  if (!content || !Array.isArray(content.elements)) {
+    throw new Error(`cover content had no canvas elements: ${JSON.stringify(content).slice(0, 200)}`);
   }
 
   const actionsResult = await jsonRequest(`${base}/api/generate/scene-actions`, {
@@ -183,6 +185,7 @@ export async function ensureCoverSlide({
   const assetId = await allocateAsset(base, token, bytes, mimeType);
 
   const scene = replaceRefs(actionsResult.scene, 'gen_img_1', assetId);
+  scene.type = 'slide';
   const orders = (document.scenes ?? []).map((item) => Number(item.order ?? 0));
   scene.id = `cover_${randomBytes(9).toString('base64url')}`;
   scene.stageId = stageId;
@@ -190,7 +193,6 @@ export async function ensureCoverSlide({
   scene.type = 'slide';
   scene.order = orders.length ? Math.min(...orders) - 1 : 0;
   scene.title = title;
-  scene.content = replaceRefs(content, 'gen_img_1', assetId);
   scene.createdAt = Date.now();
   scene.updatedAt = Date.now();
 
