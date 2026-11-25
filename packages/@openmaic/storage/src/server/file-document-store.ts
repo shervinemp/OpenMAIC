@@ -120,7 +120,11 @@ async function withProcessLock<T>(path: string, task: () => Promise<T>): Promise
   const lock = `${path}.lock`;
   await mkdir(dirname(lock), { recursive: true });
   const token = `${process.pid}:${Date.now()}:${randomBytes(6).toString('hex')}`;
-  for (let attempt = 0; attempt < 10; attempt += 1) {
+  // A maintenance pass can hold the lock repeatedly for minutes; a brief
+  // retry budget would fail an otherwise healthy generation job. Wait up to
+  // one minute with bounded backoff, then surface a real deadlock.
+  const deadline = Date.now() + 60_000;
+  for (let attempt = 0; Date.now() < deadline; attempt += 1) {
     let acquired = false;
     try {
       const handle = await open(lock, 'wx');
@@ -145,7 +149,7 @@ async function withProcessLock<T>(path: string, task: () => Promise<T>): Promise
         await rm(lock, { force: true }).catch(() => undefined);
         continue;
       }
-      await new Promise((resolve) => setTimeout(resolve, Math.min(40 * (attempt + 1), 400)));
+      await new Promise((resolve) => setTimeout(resolve, Math.min(50 * (attempt + 1), 500)));
     }
     if (acquired) {
       try {
