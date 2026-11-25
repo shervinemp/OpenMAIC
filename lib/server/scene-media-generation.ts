@@ -6,11 +6,26 @@
  * render the media, allocate it in the asset pool, then write the allocated id
  * back into the scene before it is committed.
  */
+import { Agent, fetch as undiciFetch } from 'undici';
+
 import { storeGeneratedAssetOrThrow } from '@/lib/server/store-generated-asset';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
 
 const REQUEST_TIMEOUT = 90 * 60_000;
+
+/**
+ * Media generation routinely takes five to ten minutes. Node's global fetch
+ * uses undici's default 300 s `headersTimeout`, so a video that finishes in
+ * ~306 s is abandoned by the client even though the provider returned 200 -
+ * the caller only sees `fetch failed`. Give both the header and body phases
+ * the full request budget, as the LLM transport does for long thinking calls.
+ */
+const mediaRequestAgent = new Agent({
+  headersTimeout: REQUEST_TIMEOUT,
+  bodyTimeout: REQUEST_TIMEOUT,
+  connectTimeout: 30_000,
+});
 
 export function replaceMediaRefs(value: unknown, from: string, to: string): unknown {
   if (typeof value === 'string') return value.split(from).join(to);
@@ -24,11 +39,12 @@ export function replaceMediaRefs(value: unknown, from: string, to: string): unkn
 }
 
 async function postJson(path: string, body: Record<string, unknown>) {
-  const response = await fetch(`http://127.0.0.1:${process.env.PORT ?? 3000}${path}`, {
+  const response = await undiciFetch(`http://127.0.0.1:${process.env.PORT ?? 3000}${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+    dispatcher: mediaRequestAgent,
   });
   const text = await response.text();
   let payload: Record<string, unknown> = {};
@@ -69,7 +85,10 @@ export async function mediaBytes(result: Record<string, unknown>, fallbackMime: 
     };
   }
 
-  const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT) });
+  const response = await undiciFetch(url, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+    dispatcher: mediaRequestAgent,
+  });
   if (!response.ok) throw new Error(`media download failed: ${response.status}`);
   return {
     bytes: Buffer.from(await response.arrayBuffer()),
