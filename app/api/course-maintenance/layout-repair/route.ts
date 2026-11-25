@@ -63,6 +63,8 @@ interface RequestBody {
    * silently — the pass deletes only clearly redundant rows.
    */
   allowMerge?: boolean;
+  /** Ignore the green-ledger freshness shortcut (for a full content scrub). */
+  force?: boolean;
 }
 
 const MERGE_SYSTEM_PROMPT = [
@@ -107,7 +109,7 @@ export async function POST(req: NextRequest) {
   // full apply pass. The flight returns a plain payload — a shared
   // `NextResponse` would hand two requests one single-use body stream.
   const requestedKey = body.sceneIds?.length ? [...body.sceneIds].sort().join(',') : 'full';
-  const jobKey = `layout-repair:${courseId}:${body.dryRun === true ? 'dry' : 'apply'}:${body.allowMerge === true ? 'merge' : 'plain'}:${requestedKey}`;
+  const jobKey = `layout-repair:${courseId}:${body.dryRun === true ? 'dry' : 'apply'}:${body.allowMerge === true ? 'merge' : 'plain'}:${body.force === true ? 'force' : 'normal'}:${requestedKey}`;
   const outcome = await singleFlight(jobKey, () => runLayoutRepair(req, body, courseId, fileDir));
   return outcome.ok
     ? apiSuccess(outcome.payload)
@@ -292,7 +294,7 @@ async function runLayoutRepair(
   const targets = document.scenes.filter((scene) => {
     if (scene.type !== 'slide' || prunedIds.has(scene.id)) return false;
     if (requestedIds) return requestedIds.includes(scene.id);
-    if (isLayoutEvidenceFresh(scene)) {
+    if (!body.force && isLayoutEvidenceFresh(scene)) {
       skippedFresh += 1;
       return false;
     }
