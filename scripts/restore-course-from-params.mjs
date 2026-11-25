@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { ensureCoverSlide } from './lib/cover-slide.mjs';
 
 const arg = (name, fallback = '') => {
   const i = process.argv.indexOf(name);
@@ -285,6 +286,22 @@ const saved = await fetch(base + '/api/persistence/documents/' + stageId, {
 });
 if (!saved.ok) throw new Error('document save failed: ' + saved.status + ' ' + (await saved.text()).slice(0, 500));
 console.log('saved stage=' + stageId + ' outlines=' + outlines.length + ' lessons=' + lessonGroups.length);
+
+// A graphic opening slide makes the course card a real preview instead of a
+// text wall. It is optional: a provider failure must never block generation.
+try {
+  const cover = await ensureCoverSlide({
+    base,
+    token: token(),
+    stageId,
+    title,
+    description: requirement,
+    modelHeaders,
+  });
+  console.log('cover=' + JSON.stringify(cover));
+} catch (error) {
+  console.error('cover slide skipped: ' + String(error).slice(0, 400));
+}
 
 const started = await fetch(base + '/api/generation/continue', {
   method: 'POST',
