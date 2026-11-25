@@ -411,7 +411,14 @@ type SceneContentResult =
 export function stripSourceProvenance(value: unknown): void {
   const visit = (node: unknown): void => {
     if (Array.isArray(node)) {
-      for (const item of node) visit(item);
+      for (let i = 0; i < node.length; i += 1) {
+        const item = node[i];
+        if (typeof item === 'string') {
+          (node as string[])[i] = item.replace(/\[source[^\]]{0,60}\]/gi, '');
+        } else {
+          visit(item);
+        }
+      }
       return;
     }
     if (!node || typeof node !== 'object') return;

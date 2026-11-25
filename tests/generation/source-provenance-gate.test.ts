@@ -13,7 +13,11 @@ describe('generation source-provenance gate', () => {
       },
       actions: [{ narration: 'See [source 12] for details.' }],
       questions: [
-        { prompt: 'Why [source 7]?', analysis: 'Managed service [source p.154].' },
+        {
+          prompt: 'Why [source 7]?',
+          analysis: 'Managed service [source p.154].',
+          correctAnswer: ['First [source 9]', 'Second [source p.282]'],
+        },
       ],
       html: '<button>Next [source 4]</button>',
     };

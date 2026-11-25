@@ -418,16 +418,25 @@ export function stripSourceProvenance(scene: SlideSceneLike): number {
  */
 export function stripSourceProvenanceEverywhere(scene: unknown): number {
   let changed = 0;
-  const clean = (text: string): string => {
-    SOURCE_PROVENANCE_RE.lastIndex = 0;
-    return text
-      .replace(SOURCE_PROVENANCE_RE, '')
+  const clean = (text: string): string =>
+    text
+      .replace(/\[source[^\]]{0,60}\]/gi, '')
       .replace(/[ \t]{2,}/g, ' ')
       .replace(/\s+([.,;])/g, '$1');
-  };
   const visit = (node: unknown): void => {
     if (Array.isArray(node)) {
-      for (const item of node) visit(item);
+      for (let i = 0; i < node.length; i += 1) {
+        const item = node[i];
+        if (typeof item === 'string') {
+          const next = clean(item);
+          if (next !== item) {
+            node[i] = next;
+            changed += 1;
+          }
+        } else {
+          visit(item);
+        }
+      }
       return;
     }
     if (!node || typeof node !== 'object') return;
