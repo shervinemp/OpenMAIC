@@ -43,6 +43,7 @@ import {
   splitFamilyFindings,
   stripDeadActionAnchors,
   stripSourceProvenance,
+  stripSourceProvenanceEverywhere,
   type ContentFinding,
 } from '@/lib/maintenance/content-audit';
 
@@ -127,6 +128,8 @@ type LayoutRepairOutcome =
         /** Part titles renumbered (nested or gapped "(part N)" suffixes). */
         retitled: number;
         skippedFresh: number;
+        /** Strings scrubbed in quiz/widget scenes outside the canvas. */
+        scrubbedNonSlide: number;
         reports: Array<
           RelayoutPlan & {
             applied: boolean;
@@ -230,6 +233,20 @@ async function runLayoutRepair(
     }
   }
   const prunedIds = new Set(prunePlan.sceneIds);
+  // Quizzes and widgets hold learner text outside canvas.elements, so the
+  // per-slide provenance strip below never reaches their "[source N]" markers.
+  // Scrub those scenes on their own, with the same delete-only byte rule.
+  let scrubbedNonSlide = 0;
+  if (!body.dryRun) {
+    for (const scene of document.scenes) {
+      if (scene.type === 'slide' || prunedIds.has(scene.id)) continue;
+      const stripped = stripSourceProvenanceEverywhere(scene);
+      if (stripped > 0) {
+        scrubbedNonSlide += stripped;
+        await persistScene(scene);
+      }
+    }
+  }
   // Tier-1 content-integrity indexes: cross-split-family duplicate element
   // ids and split-title continuity are FAMILY-level properties (one id
   // carried onto every part page; one page missing the shared heading), so
@@ -832,6 +849,7 @@ async function runLayoutRepair(
       regrouped,
       retitled,
       skippedFresh,
+      scrubbedNonSlide,
       reports,
     },
   };

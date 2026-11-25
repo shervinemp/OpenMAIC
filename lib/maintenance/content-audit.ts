@@ -410,6 +410,43 @@ export function stripSourceProvenance(scene: SlideSceneLike): number {
   return changed;
 }
 
+/**
+ * Quizzes and interactive widgets carry learner prose outside
+ * `canvas.elements`, where the slide-only strip cannot reach it. Scrub every
+ * string in the scene envelope (same delete-only rule, byte-level, idempotent)
+ * so an unresolved citation marker is not shown to the learner.
+ */
+export function stripSourceProvenanceEverywhere(scene: unknown): number {
+  let changed = 0;
+  const clean = (text: string): string => {
+    SOURCE_PROVENANCE_RE.lastIndex = 0;
+    return text
+      .replace(SOURCE_PROVENANCE_RE, '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\s+([.,;])/g, '$1');
+  };
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    for (const [key, value] of Object.entries(node)) {
+      if (typeof value === 'string') {
+        const next = clean(value);
+        if (next !== value) {
+          (node as Record<string, unknown>)[key] = next;
+          changed += 1;
+        }
+      } else {
+        visit(value);
+      }
+    }
+  };
+  visit(scene);
+  return changed;
+}
+
 export function hasSourceProvenance(scene: SlideSceneLike): boolean {
   return sourceIdsOf(scene).size > 0;
 }

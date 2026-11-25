@@ -57,7 +57,8 @@ describe('embedded persistence route: file-backed mode', () => {
 
     // One portable JSON file per lesson on disk — the entire point of the mode.
     const files = await readdir(join(dir, 'documents'));
-    expect(files).toEqual(['stage-file-1.json']);
+    expect(files.filter((file) => file.endsWith('.json'))).toEqual(['stage-file-1.json']);
+    expect(files).toContain('stage-file-1.json.bak.gz');
     await expect(readFile(join(dir, 'documents', 'stage-file-1.json'), 'utf8')).resolves.toContain(
       '"Intro Course"',
     );
