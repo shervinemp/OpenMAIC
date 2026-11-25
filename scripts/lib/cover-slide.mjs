@@ -192,7 +192,7 @@ export async function ensureCoverSlide({
   scene.outlineId = outlineId;
   scene.type = 'slide';
   scene.order = orders.length ? Math.min(...orders) - 1 : 0;
-  scene.title = title;
+  scene.title = `Course overview: ${title}`;
   scene.createdAt = Date.now();
   scene.updatedAt = Date.now();
 

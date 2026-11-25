@@ -363,6 +363,7 @@ const document = {
     updatedAt: now,
   },
 };
+if (languageDirective) document.outline.languageDirective = languageDirective;
 const saved = await fetch(base + '/api/persistence/documents/' + stageId, {
   method: 'PUT',
   headers: {
@@ -394,7 +395,11 @@ try {
 const started = await fetch(base + '/api/generation/continue', {
   method: 'POST',
   headers: modelHeaders,
-  body: JSON.stringify({ stageId, includeFailed: true }),
+  body: JSON.stringify({
+    stageId,
+    includeFailed: true,
+    languageDirective: languageDirective || undefined,
+  }),
 });
 if (!started.ok) throw new Error('job start failed: ' + started.status + ' ' + (await started.text()).slice(0, 500));
 const job = await started.json();
