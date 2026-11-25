@@ -280,7 +280,11 @@ async function runLayoutRepair(
   // subset.
   const auditScene = (s: unknown, dup?: Set<string>): ContentFinding[] =>
     sceneContentFindings(s as never, dup);
-  const stripScene = (s: unknown): number => stripSourceProvenance(s as never);
+  // The canvas helper also normalizes spacing inside text elements; the
+  // generic sweep then reaches narration, actions and any other string field
+  // where a marker can appear on a slide scene.
+  const stripScene = (s: unknown): number =>
+    stripSourceProvenance(s as never) + stripSourceProvenanceEverywhere(s);
   const sourceIds = (s: unknown): Set<string> => sourceIdsOf(s as never);
   const sceneHasSources = (s: unknown): boolean => hasSourceProvenance(s as never);
   const sceneTitleFindings = (s: unknown): ContentFinding[] =>
