@@ -55,7 +55,7 @@ interface SlideSceneLike {
 const SPLIT_PART_SUFFIX = /__p\d+$/;
 
 /** `[source N]` — the unresolved citation placeholder class. */
-export const SOURCE_PROVENANCE_RE = /\[source\s*\d+\]/gi;
+export const SOURCE_PROVENANCE_RE = /\[source[^\]]{0,60}\]/gi;
 
 /** Family key: base id shared by a scene and its `__pN` split parts. */
 export function sceneFamilyKey(sceneId: string): string {

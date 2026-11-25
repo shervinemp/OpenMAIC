@@ -417,7 +417,7 @@ export function stripSourceProvenance(value: unknown): void {
     if (!node || typeof node !== 'object') return;
     for (const [key, child] of Object.entries(node)) {
       if (typeof child === 'string') {
-        (node as Record<string, unknown>)[key] = child.replace(/\[source\s*\d+\]/gi, '');
+        (node as Record<string, unknown>)[key] = child.replace(/\[source[^\]]{0,60}\]/gi, '');
       } else {
         visit(child);
       }

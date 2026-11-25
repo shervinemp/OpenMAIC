@@ -12,13 +12,15 @@ describe('generation source-provenance gate', () => {
         },
       },
       actions: [{ narration: 'See [source 12] for details.' }],
-      questions: [{ prompt: 'Why [source 7]?' }],
+      questions: [
+        { prompt: 'Why [source 7]?', analysis: 'Managed service [source p.154].' },
+      ],
       html: '<button>Next [source 4]</button>',
     };
 
     stripSourceProvenance(content);
 
-    expect(JSON.stringify(content)).not.toMatch(/\[source\s*\d+\]/i);
+    expect(JSON.stringify(content)).not.toMatch(/\[source[^\]]{0,60}\]/i);
     expect(content.content.canvas.elements[0].content).toBe('<p>Atomic writes  are durable.</p>');
     expect(content.actions[0].narration).toBe('See  for details.');
   });
