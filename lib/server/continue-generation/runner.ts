@@ -20,6 +20,8 @@ import {
   computeRelayoutPlan,
   sanitizeSceneCanvas,
 } from '@/lib/maintenance/layout-relayout';
+import { applyLayoutPatch } from '@/lib/slides/slide-layout-verify';
+import { sanitizeSlidePlacement, validateSlidePlacement } from '@openmaic/dsl';
 import {
   createContinueJob,
   deleteContinueJobInput,
@@ -374,6 +376,33 @@ export async function runContinueGenerationJob(
         }
       } catch (error) {
         log.warn(`Layout check failed for "${outline.title}":`, error);
+      }
+
+      // The browser also asks the LLM layout judge to move elements that the
+      // deterministic pass could not separate. Fail open: an unavailable
+      // judge must not discard an otherwise valid scene.
+      const canvas = (scene.content as { canvas?: { elements?: unknown[] } } | undefined)?.canvas;
+      if (canvas && Array.isArray(canvas.elements)) {
+        const findings = validateSlidePlacement(canvas as never);
+        if (findings.length) {
+          try {
+            const verified = await postInternal(
+              input.baseUrl,
+              '/api/generate/scene-verify',
+              headers,
+              { scene, intent: 'layout-repair', geometryFindings: findings },
+              signal,
+            );
+            const elements = (verified as { layoutPatch?: { elements?: unknown } }).layoutPatch
+              ?.elements;
+            if (Array.isArray(elements) && applyLayoutPatch(canvas as never, elements as never)) {
+              sanitizeSlidePlacement(canvas as never);
+              log.info(`Layout judge patched "${outline.title}"`);
+            }
+          } catch (error) {
+            log.warn(`Layout judge failed for "${outline.title}":`, error);
+          }
+        }
       }
 
       if (actionsDraft === undefined) {
