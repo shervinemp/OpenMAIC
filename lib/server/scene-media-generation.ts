@@ -6,6 +6,7 @@
  * render the media, allocate it in the asset pool, then write the allocated id
  * back into the scene before it is committed.
  */
+import { storeGeneratedAssetOrThrow } from '@/lib/server/store-generated-asset';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
 
@@ -61,32 +62,6 @@ async function mediaBytes(result: Record<string, unknown>, fallbackMime: string)
   };
 }
 
-async function allocateAsset(bytes: Buffer, mimeType: string): Promise<string> {
-  const token = process.env.PERSISTENCE_DEV_TOKEN;
-  const form = new FormData();
-  form.set(
-    'meta',
-    new Blob([JSON.stringify({ origin: 'server-media' })], { type: 'application/json' }),
-    'meta.json',
-  );
-  form.set('bytes', new Blob([new Uint8Array(bytes)], { type: mimeType }), 'media');
-  const response = await fetch(
-    `http://127.0.0.1:${process.env.PORT ?? 3000}/api/persistence/assets`,
-    {
-      method: 'POST',
-      headers: token ? { authorization: `Bearer ${token}` } : {},
-      body: form,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT),
-    },
-  );
-  if (response.status !== 201) {
-    throw new Error(`asset allocation failed: ${response.status} ${(await response.text()).slice(0, 300)}`);
-  }
-  const body = (await response.json()) as { id?: unknown };
-  if (typeof body.id !== 'string' || !body.id) throw new Error('asset allocation returned no id');
-  return body.id;
-}
-
 export interface SceneMediaSummary {
   scene: Scene;
   generated: string[];
@@ -101,9 +76,13 @@ export interface SceneMediaSummary {
 export async function resolveSceneMedia({
   scene,
   outline,
+  stageId,
+  ownerId,
 }: {
   scene: Scene;
   outline: SceneOutline;
+  stageId: string;
+  ownerId: string;
 }): Promise<SceneMediaSummary> {
   const requests = (outline.mediaGenerations ?? []).filter(
     (request) => request.type === 'image' || request.type === 'video',
@@ -133,7 +112,13 @@ export async function resolveSceneMedia({
         result as Record<string, unknown>,
         request.type === 'image' ? 'image/png' : 'video/mp4',
       );
-      const assetId = await allocateAsset(bytes, mimeType);
+      const assetId = await storeGeneratedAssetOrThrow({
+        ownerId,
+        stageId,
+        bytes: new Uint8Array(bytes),
+        mimeType,
+        kind: request.type === 'image' ? 'image' : 'video',
+      });
       next = replaceMediaRefs(next, request.elementId, assetId) as Scene;
       generated.push(request.elementId);
     } catch (error) {

@@ -341,7 +341,12 @@ export async function runContinueGenerationJob(
       // Backend jobs have no browser to run the media orchestrator, so resolve
       // this outline's gen_img_*/gen_vid_* placeholders before committing.
       try {
-        const media = await resolveSceneMedia({ scene, outline });
+        const media = await resolveSceneMedia({
+          scene,
+          outline,
+          stageId: input.stageId,
+          ownerId: input.ownerId,
+        });
         scene = media.scene;
         if (media.generated.length) {
           log.info(`Media for "${outline.title}": ${media.generated.join(', ')}`);
