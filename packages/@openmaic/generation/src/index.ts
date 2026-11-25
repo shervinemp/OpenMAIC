@@ -14,6 +14,7 @@ export {
   generateWidgetContent,
   PBLGenerationError,
   resolveImageIds,
+  stripSourceProvenance,
 } from './scene-generator.js';
 export type {
   SceneActionsOptions,

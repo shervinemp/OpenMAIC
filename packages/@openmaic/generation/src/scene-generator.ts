@@ -402,6 +402,30 @@ type SceneContentResult =
  * a strengthened directive; if that still drifts, the scene is kept (a usable
  * lesson beats a missing one) and the finding is recorded for the job model.
  */
+/**
+ * The model sometimes writes `[source N]` markers into learner-facing copy.
+ * They are unresolved references, not content, and reach every scene type
+ * (quiz options and widget HTML included). Strip them at the generation gate
+ * so new scenes never ship the defect the maintenance pass has to clean up.
+ */
+export function stripSourceProvenance(value: unknown): void {
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    for (const [key, child] of Object.entries(node)) {
+      if (typeof child === 'string') {
+        (node as Record<string, unknown>)[key] = child.replace(/\[source\s*\d+\]/gi, '');
+      } else {
+        visit(child);
+      }
+    }
+  };
+  visit(value);
+}
+
 export async function generateSceneContent(
   outline: SceneOutline,
   aiCall: AICallFn,
@@ -414,6 +438,7 @@ export async function generateSceneContent(
   let content = await generateSceneContentOnce(outline, contractedAiCall, options);
   content = await applyLanguageGate(outline, content, contractedAiCall, options);
   if (!content) return content;
+  stripSourceProvenance(content);
 
   const log = options.logger ?? noopGenerationLogger;
 
