@@ -34,7 +34,12 @@
  */
 import { randomBytes } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { gunzip, gzip } from 'node:zlib';
+import { promisify } from 'node:util';
+
+const gzipAsync = promisify(gzip);
+const gunzipAsync = promisify(gunzip);
 
 import {
   DSL_VERSION,
@@ -84,13 +89,74 @@ const documentWriteLocks = new Map<string, Promise<unknown>>();
 
 function withDocumentWriteLock<T>(path: string, task: () => Promise<T>): Promise<T> {
   const previous = documentWriteLocks.get(path) ?? Promise.resolve();
-  const run = previous.catch(() => undefined).then(task);
+  const run = previous.catch(() => undefined).then(() => withProcessLock(path, task));
   const tail = run.catch(() => undefined);
   documentWriteLocks.set(path, tail);
   void tail.then(() => {
     if (documentWriteLocks.get(path) === tail) documentWriteLocks.delete(path);
   });
   return run;
+}
+
+const PROCESS_LOCK_MAX_AGE_MS = 60_000;
+
+function processAlive(pid: unknown): boolean {
+  if (!Number.isInteger(pid) || (pid as number) <= 0) return false;
+  try {
+    process.kill(pid as number, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * The in-process chain above is not enough: a second app instance, a script,
+ * or another tool can write the same file. An exclusive lock file fences the
+ * read-modify-write across processes. A lock whose owner died or aged out is
+ * removed rather than blocking generation forever.
+ */
+async function withProcessLock<T>(path: string, task: () => Promise<T>): Promise<T> {
+  const lock = `${path}.lock`;
+  await mkdir(dirname(lock), { recursive: true });
+  const token = `${process.pid}:${Date.now()}:${randomBytes(6).toString('hex')}`;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    let acquired = false;
+    try {
+      const handle = await open(lock, 'wx');
+      try {
+        await handle.writeFile(token);
+      } finally {
+        await handle.close();
+      }
+      acquired = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      const owner = await readFile(lock, 'utf8').catch(() => null);
+      const parts = owner?.split(':') ?? [];
+      const pid = Number(parts[0]);
+      const at = Number(parts[1]);
+      const stale =
+        !owner ||
+        !processAlive(pid) ||
+        !Number.isFinite(at) ||
+        Date.now() - at > PROCESS_LOCK_MAX_AGE_MS;
+      if (stale) {
+        await rm(lock, { force: true }).catch(() => undefined);
+        continue;
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(40 * (attempt + 1), 400)));
+    }
+    if (acquired) {
+      try {
+        return await task();
+      } finally {
+        const current = await readFile(lock, 'utf8').catch(() => null);
+        if (current === token) await rm(lock, { force: true }).catch(() => undefined);
+      }
+    }
+  }
+  throw new Error(`@openmaic/storage: could not acquire document lock for ${path}`);
 }
 
 /**
@@ -174,20 +240,122 @@ export class JsonFileDocumentStore<
     return withDocumentWriteLock(this.documentPath(stageId), task);
   }
 
-  private async readStored(stageId: string): Promise<MaicDocument<TScene, TStage> | null> {
+  /**
+   * Candidate restores, newest first. Backups are gzipped: the aggregate is
+   * highly repetitive JSON, so this keeps a three-generation chain small.
+   * The legacy uncompressed `.bak` is kept as the last fallback so an install
+   * upgrading in place can still recover its last good copy.
+   */
+  private backupPaths(path: string): string[] {
+    return [`${path}.bak.gz`, `${path}.bak.1.gz`, `${path}.bak.2.gz`, `${path}.bak`];
+  }
+
+  /** The exact text of a valid JSON file, or null for missing/corrupt. */
+  private async validJsonFile(path: string): Promise<string | null> {
     try {
-      const raw = await readFile(this.documentPath(stageId), 'utf8');
-      return JSON.parse(raw) as MaicDocument<TScene, TStage>;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-      if (error instanceof SyntaxError) {
-        // A zeroed/torn aggregate carries no valid revision to fence against.
-        // Treat it as absent so a deliberate restore can write a fresh copy,
-        // matching the corrupt-file tolerance already used by listDocuments.
-        return null;
+      const raw = await readFile(path, 'utf8');
+      JSON.parse(raw);
+      return raw;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Decompress and validate a backup; plain JSON is accepted for upgrades. */
+  private async validBackup(path: string): Promise<string | null> {
+    try {
+      const bytes = await readFile(path);
+      let text: string;
+      try {
+        text = (await gunzipAsync(bytes)).toString('utf8');
+      } catch {
+        text = bytes.toString('utf8');
       }
+      JSON.parse(text);
+      return text;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Write a compressed, read-back-verified backup generation. */
+  private async publishBackup(path: string, payload: string): Promise<void> {
+    const compressed = await gzipAsync(Buffer.from(payload, 'utf8'));
+    const tmp = `${path}.tmp-${randomBytes(6).toString('hex')}`;
+    try {
+      await writeFile(tmp, compressed);
+      await this.syncBytes(tmp);
+      await rename(tmp, path);
+      await this.syncBytes(path);
+      if ((await this.validBackup(path)) !== payload) {
+        throw new Error('backup failed read-back verification');
+      }
+    } catch (error) {
+      await rm(tmp, { force: true }).catch(() => undefined);
       throw error;
     }
+  }
+
+  /** Publish payload by verified atomic rename; never leave an unchecked target. */
+  private async publishVerified(path: string, payload: string): Promise<void> {
+    const tmp = `${path}.tmp-${randomBytes(6).toString('hex')}`;
+    try {
+      await writeFile(tmp, payload, 'utf8');
+      await this.syncBytes(tmp);
+      await rename(tmp, path);
+      await this.syncBytes(path);
+      if ((await this.validJsonFile(path)) !== payload) {
+        throw new Error('published file failed read-back verification');
+      }
+    } catch (error) {
+      await rm(tmp, { force: true }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  /** Restore the newest valid backup over a corrupt target. */
+  private async restoreFromBackup(path: string): Promise<boolean> {
+    for (const candidate of this.backupPaths(path)) {
+      const raw = await this.validBackup(candidate);
+      if (raw === null) continue;
+      try {
+        await this.publishVerified(path, raw);
+        return true;
+      } catch {
+        // A backup can itself be unusable (locked, or corrupted on the way
+        // out); fall through to the next generation rather than give up.
+      }
+    }
+    return false;
+  }
+
+  private async readStored(stageId: string): Promise<MaicDocument<TScene, TStage> | null> {
+    const path = this.documentPath(stageId);
+    const raw = await this.validJsonFile(path);
+    if (raw !== null) return JSON.parse(raw) as MaicDocument<TScene, TStage>;
+
+    // A missing file is simply not found. A present-but-unparseable file is a
+    // corruption event: restore the newest verified backup before answering.
+    // Treating it as absent hid a zeroed aggregate for hours and let writes
+    // keep going against a course that no longer existed.
+    let present = false;
+    try {
+      await stat(path);
+      present = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    if (!present) return null;
+
+    const restored = await this.restoreFromBackup(path);
+    if (!restored) {
+      console.error(`@openmaic/storage: document ${stageId} and every backup are invalid`);
+      return null;
+    }
+    const recovered = await this.validJsonFile(path);
+    if (recovered === null) return null;
+    console.warn(`@openmaic/storage: recovered document ${stageId} from backup`);
+    return JSON.parse(recovered) as MaicDocument<TScene, TStage>;
   }
 
   /**
@@ -214,16 +382,19 @@ export class JsonFileDocumentStore<
    */
   private async backupCurrent(path: string): Promise<void> {
     try {
-      const current = await readFile(path, 'utf8');
-      JSON.parse(current); // never promote a corrupt target to "known good"
-      const backup = `${path}.bak`;
-      const tmpBackup = `${backup}.tmp-${randomBytes(6).toString('hex')}`;
-      await writeFile(tmpBackup, current, 'utf8');
-      await this.syncBytes(tmpBackup);
-      await rename(tmpBackup, backup);
-      await this.syncBytes(backup);
+      const current = await this.validJsonFile(path);
+      if (current === null) return; // never promote a corrupt target
+      const [backup, backup1, backup2] = this.backupPaths(path);
+      const previous = await this.validBackup(backup);
+      if (previous !== null) {
+        const older = await this.validBackup(backup1);
+        if (older !== null) await this.publishBackup(backup2, older);
+        await this.publishBackup(backup1, previous);
+      }
+      await this.publishBackup(backup, current);
     } catch {
-      // Cache/backup failure must never block a document write.
+      // A backup failure must never block a document write: the live target
+      // still has read-back verification and the older generations survive.
     }
   }
 
@@ -257,22 +428,21 @@ export class JsonFileDocumentStore<
     // per write, not per rename retry, so contention cannot churn backups.
     await this.backupCurrent(path);
 
+    const payload = JSON.stringify(document);
     const maxAttempts = 6;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const tmp = `${path}.tmp-${randomBytes(6).toString('hex')}`;
       try {
-        await writeFile(tmp, JSON.stringify(document), 'utf8');
-        await this.syncBytes(tmp);
-        await rename(tmp, path);
-        await this.syncBytes(path);
+        // publishVerified renames only after fsync and re-reads the published
+        // bytes, so a zeroed/torn write cannot be reported as a success.
+        await this.publishVerified(path, payload);
         await this.syncBytes(this.documentDir());
+        // The first write has no previous version to back up. Once it lands,
+        // make sure a verified copy exists so a later corruption is survivable.
+        if ((await this.validBackup(this.backupPaths(path)[0]!)) === null) {
+          await this.backupCurrent(path);
+        }
         return;
       } catch (error) {
-        try {
-          await rm(tmp, { force: true });
-        } catch {
-          // best effort cleanup
-        }
         const code = (error as NodeJS.ErrnoException).code ?? '';
         if (['EPERM', 'EACCES', 'EBUSY'].includes(code) && attempt < maxAttempts) {
           await new Promise((resolve) =>
@@ -280,6 +450,9 @@ export class JsonFileDocumentStore<
           );
           continue;
         }
+        // A verification failure may have published bad bytes over the target.
+        // Put the last verified generation back before surfacing the error.
+        await this.restoreFromBackup(path).catch(() => false);
         throw error;
       }
     }

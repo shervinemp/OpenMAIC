@@ -195,6 +195,18 @@ export async function runContinueGenerationJob(
     const document = await store.loadDocument(input.stageId);
     if (!document) throw new Error(`Course ${input.stageId} not found`);
 
+    // The language gate is a no-op without a directive, and a backend job does
+    // not always carry one (a resumed job may have been started from Home).
+    // Fall back to the course's own directive, then to English: a missing
+    // directive must never silently let widget prose drift into another
+    // language and get committed.
+    const storedDirective = (document.outline as { languageDirective?: unknown } | undefined)
+      ?.languageDirective;
+    const languageDirective =
+      input.languageDirective?.trim() ||
+      (typeof storedDirective === 'string' && storedDirective.trim()) ||
+      'Teach the entire course in English. Write all learner-facing text, labels, widget copy and narration in English.';
+
     const outlines: SceneOutline[] = (
       (document.outline as { outlines?: SceneOutline[] } | undefined)?.outlines ?? []
     ) as SceneOutline[];
@@ -224,7 +236,7 @@ export async function runContinueGenerationJob(
       sceneDraftSourceKey({
         stageId: input.stageId,
         outline,
-        languageDirective: input.languageDirective,
+        languageDirective,
         userProfile: input.userProfile,
         model: headers['x-model'] ?? '',
         taskEngineMode: input.taskEngineMode,
@@ -269,7 +281,7 @@ export async function runContinueGenerationJob(
               outline,
               allOutlines: outlines,
               stageId: input.stageId,
-              languageDirective: input.languageDirective,
+              languageDirective,
               userProfile: input.userProfile,
               ...(input.taskEngineMode ? { requirements: { taskEngineMode: true } } : {}),
             },
@@ -319,7 +331,7 @@ export async function runContinueGenerationJob(
               content: contentResult.content,
               stageId: input.stageId,
               previousSpeeches,
-              languageDirective: input.languageDirective,
+              languageDirective,
               userProfile: input.userProfile,
             },
             signal,
