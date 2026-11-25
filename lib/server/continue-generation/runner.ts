@@ -418,6 +418,29 @@ export async function runContinueGenerationJob(
         }
       }
 
+      // Fail closed: a slide that still has error-severity occlusion after
+      // both deterministic relayout and the LLM judge is not a usable lesson.
+      // Leave the outline uncommitted so a later pass regenerates it instead
+      // of growing the occlusion debt the maintenance audit keeps finding.
+      const remainingFindings = canvas ? validateSlidePlacement(canvas as never) : [];
+      const elements = (canvas?.elements ?? []) as Array<{ id?: string; type?: string }>;
+      const typeById = new Map(elements.map((element) => [element.id, element.type]));
+      // Decorative shapes behind text are intentional and are pinned by the
+      // relayout; only two overlapping *text* rows make a slide unreadable.
+      const hardOcclusions = remainingFindings.filter((finding) => {
+        if (finding.severity !== 'error') return false;
+        const a = typeById.get((finding as { elementId?: string }).elementId);
+        const b = typeById.get((finding as { otherElementId?: string }).otherElementId);
+        return a === 'text' && b === 'text';
+      });
+      if (hardOcclusions.length > 0) {
+        failed += 1;
+        log.warn(
+          `Layout gate rejected "${outline.title}": ${hardOcclusions.length} occlusion error(s)`,
+        );
+        continue;
+      }
+
       if (actionsDraft === undefined) {
         await saveSceneDraft(input.stageId, outline.id, {
           sourceKey: draftKey,
