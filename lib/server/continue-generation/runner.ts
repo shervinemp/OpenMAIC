@@ -21,6 +21,7 @@ import {
   sanitizeSceneCanvas,
 } from '@/lib/maintenance/layout-relayout';
 import { applyLayoutPatch } from '@/lib/slides/slide-layout-verify';
+import { auditScenesSample } from '@/lib/maintenance/sample-audit';
 import { sanitizeSlidePlacement, validateSlidePlacement } from '@openmaic/dsl';
 import {
   createContinueJob,
@@ -467,6 +468,28 @@ export async function runContinueGenerationJob(
             generationComplete: true,
           },
         });
+
+        // Part of the flow, not a one-off: sample the finished course with
+        // the same statistical design the maintenance API uses, and attach
+        // the result to the job so a faulty scene cannot go unnoticed.
+        try {
+          const qa = auditScenesSample(finalDocument as never, input.stageId);
+          await updateContinueJob(jobId, {
+            qa: {
+              population: qa.population,
+              sampleSize: qa.sampleSize,
+              summary: qa.summary,
+              faultyScenes: qa.findings.length,
+              checkedAt: qa.checkedAt,
+            },
+          });
+          log.info(
+            `QA sample ${input.stageId}: n=${qa.sampleSize} layout=${qa.summary.layout} ` +
+              `source=${qa.summary.source} cjk=${qa.summary.cjk} widget=${qa.summary.noCanvas}`,
+          );
+        } catch (error) {
+          log.warn(`QA sample failed for ${input.stageId}:`, error);
+        }
       }
     }
     await setProducer(store, input.stageId, null);

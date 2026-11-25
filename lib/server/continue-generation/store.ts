@@ -48,6 +48,14 @@ export interface ContinueJob {
   leaseExpiresAt?: number;
   heartbeatAt?: number;
   error?: string;
+  /** Statistical QA sample taken when the job finished. */
+  qa?: {
+    population: number;
+    sampleSize: number;
+    summary: { layout: number; cjk: number; source: number; noCanvas: number };
+    faultyScenes: number;
+    checkedAt: number;
+  };
 }
 
 const locks = new Map<string, Promise<void>>();
