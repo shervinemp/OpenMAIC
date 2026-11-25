@@ -110,6 +110,18 @@ const LOCK_PATH = join(tmpdir(), 'openmaic-dev-services', 'supervisor.lock');
 const LOCK_MAX_AGE_MS = 10 * 60_000;
 let lockToken = null;
 
+/** A lock left by a crashed supervisor is stale however recent its timestamp. */
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means the process exists but is owned by another user.
+    return error?.code === 'EPERM';
+  }
+}
+
 function acquireLock() {
   mkdirSync(dirname(LOCK_PATH), { recursive: true });
   const token = `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
@@ -134,9 +146,7 @@ function acquireLock() {
     // Unreadable lock: treat as stale rather than deadlocking forever.
   }
   const fresh =
-    Number.isInteger(owner.pid) &&
-    owner.pid > 0 &&
-    Date.now() - Number(owner.startedAt || 0) < LOCK_MAX_AGE_MS;
+    pidAlive(owner.pid) && Date.now() - Number(owner.startedAt || 0) < LOCK_MAX_AGE_MS;
   if (fresh) {
     log(`another supervisor is running (pid ${owner.pid}); exiting`);
     return false;
