@@ -14,6 +14,7 @@ export interface CourseGenerationCourse {
   sceneCount: number;
   outlineCount?: number;
   generationComplete?: boolean;
+  generationActive?: boolean;
 }
 
 export function deriveCourseGenerationStatus({
@@ -25,9 +26,10 @@ export function deriveCourseGenerationStatus({
   active: boolean;
   parked: boolean;
 }): CourseGenerationStatus | null {
-  // A live run (server job or browser loop) can always be paused. If the user
-  // wants it gone instead, the explicit delete control removes the course.
-  if (active || parked) return { action: 'pause' };
+  // A live run (server job, browser loop, or an outline pass that has not
+  // committed a document yet) can always be paused. If the user wants it gone
+  // instead, the explicit delete control removes the course.
+  if (active || parked || classroom.generationActive) return { action: 'pause' };
 
   // A course with no committed scenes has nothing to teach. With outlines it
   // can be regenerated; without them the only useful action is deleting it.

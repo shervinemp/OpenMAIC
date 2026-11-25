@@ -20,6 +20,16 @@ describe('deriveCourseGenerationStatus', () => {
     ).toEqual({ action: 'pause' });
   });
 
+  it('pauses an outline pass that has not produced a document yet', () => {
+    expect(
+      deriveCourseGenerationStatus({
+        classroom: { sceneCount: 0, outlineCount: 0, generationActive: true },
+        active: false,
+        parked: false,
+      }),
+    ).toEqual({ action: 'pause' });
+  });
+
   it('regenerates an empty course that still has outlines', () => {
     expect(
       deriveCourseGenerationStatus({

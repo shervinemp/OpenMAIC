@@ -123,6 +123,8 @@ export interface StageListItem {
   outlineCount?: number;
   /** Whether the generator marked this deck complete. Unfinished decks resume. */
   generationComplete?: boolean;
+  /** True while an outline pass is running before any scenes exist. */
+  generationActive?: boolean;
 }
 
 function stampStage(stageId: string, stage: Stage, now: number): Stage {

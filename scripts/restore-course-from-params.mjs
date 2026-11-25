@@ -35,7 +35,7 @@ function token() {
   return match ? match[1].trim() : '';
 }
 
-async function readSse(response, label) {
+async function readSse(response, label, onFrame) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -51,6 +51,7 @@ async function readSse(response, label) {
       buffer = buffer.slice(idx + 2);
       const line = frame.split('\n').find((l) => l.startsWith('data:'));
       if (!line) continue;
+      onFrame?.();
       events += 1;
       let evt;
       try {
@@ -135,6 +136,63 @@ if (handle) {
 }
 console.log('handle=' + indexDone.handle);
 
+// Publish a placeholder immediately so the course card exists (and is
+// pausable/removable) while the outline stream is still running.
+const now = Date.now();
+const stageId = requestedStageId || 'stage-' + randomBytes(9).toString('base64url');
+const cancelPath = path.join(root, 'data', 'course-creation', `${stageId}.cancel`);
+const persistenceHeaders = {
+  'content-type': 'application/json',
+  authorization: 'Bearer ' + token(),
+  'x-learner-key': 'local',
+};
+const putDocument = async (document) => {
+  const saved = await fetch(base + '/api/persistence/documents/' + stageId, {
+    method: 'PUT',
+    headers: persistenceHeaders,
+    body: JSON.stringify(document),
+  });
+  if (!saved.ok) {
+    throw new Error('document save failed: ' + saved.status + ' ' + (await saved.text()).slice(0, 500));
+  }
+};
+await putDocument({
+  dslVersion: '0.3.0',
+  stage: {
+    id: stageId,
+    name: arg('--title') || 'Course (generating)',
+    style: 'professional',
+    createdAt: now,
+    updatedAt: now,
+    interactiveMode: false,
+    taskEngineMode: false,
+  },
+  scenes: [],
+  outline: {
+    outlines: [],
+    lessonGroups: [],
+    requirement,
+    generationComplete: false,
+    generationActive: true,
+    createdAt: now,
+    updatedAt: now,
+  },
+});
+console.log('placeholder stage=' + stageId);
+
+const setActive = async (active) => {
+  const response = await fetch(base + '/api/persistence/documents/' + stageId, {
+    headers: persistenceHeaders,
+  });
+  if (!response.ok) return;
+  const payload = await response.json();
+  const document = payload.document ?? payload.data ?? payload;
+  if (!document.outline) return;
+  document.outline.generationActive = active;
+  document.stage.updatedAt = Date.now();
+  await putDocument(document);
+};
+
 const outlineBody = {
   requirements: {
     requirement,
@@ -195,7 +253,18 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     console.error('outline stream status=' + stream.status + ' ' + (await stream.text()).slice(0, 400));
     continue;
   }
-  const run = await readSse(stream, 'outlines');
+  let run;
+  try {
+    run = await readSse(stream, 'outlines', () => {
+      if (fs.existsSync(cancelPath)) throw new Error('OUTLINE_CANCELLED');
+    });
+  } catch (error) {
+    if (!String(error).includes('OUTLINE_CANCELLED')) throw error;
+    fs.rmSync(cancelPath, { force: true });
+    await setActive(false);
+    console.log('outline generation cancelled by user');
+    process.exit(0);
+  }
   for (const o of run.outlines) if (o?.id) collected.set(o.id, o);
   if (run.syllabus) syllabus = run.syllabus;
   if (run.unitDone >= 0) resumeFromUnitIndex = Math.max(resumeFromUnitIndex, run.unitDone + 1);
@@ -229,8 +298,6 @@ const title = arg('--title') || final.courseTitle || 'Unix and Linux System Admi
 const languageDirective = final.languageDirective || '';
 if (!outlines.length) throw new Error('no outlines generated');
 
-const now = Date.now();
-const stageId = requestedStageId || 'stage-' + randomBytes(9).toString('base64url');
 const groups = new Map();
 for (const outline of outlines) {
   const lessonId = outline.lessonId || (blueprint?.lessons || []).find((l) =>
@@ -271,6 +338,7 @@ const document = {
     lessonGroups,
     requirement,
     generationComplete: false,
+    generationActive: false,
     createdAt: now,
     updatedAt: now,
   },

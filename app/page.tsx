@@ -318,6 +318,33 @@ function HomePage() {
       window.clearInterval(timer);
     };
   }, [activeBackendJobKey]);
+
+  // Jobs started outside this browser (the course-creation helper, another
+  // tab, a recovered worker) must produce the same Pause control as jobs we
+  // started ourselves. Re-attach to the control plane for every course.
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const results = await Promise.all(
+        classrooms.map(async (course) =>
+          [course.id, await getActiveBackendRun(course.id)] as const,
+        ),
+      );
+      if (cancelled) return;
+      setBackendJobs((current) => {
+        const next = { ...current };
+        for (const [stageId, job] of results) if (job) next[stageId] = job;
+        return next;
+      });
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [classrooms]);
+
   // Courses already in the library carry their own status/controls on their
   // card. The banner is only for sessions whose course was never persisted.
   const barSessions = parkedSessions.filter(
@@ -389,6 +416,7 @@ function HomePage() {
             generationById[stageId] = {
               outlineCount: outline.outlines?.length,
               generationComplete: outline.generationComplete,
+              generationActive: (outline as { generationActive?: boolean }).generationActive,
             };
           },
         );
@@ -489,9 +517,18 @@ function HomePage() {
     stageId: string,
     job: BackendGenerationJob | undefined,
     parked: ParkedGenerationSession | undefined,
+    generationActive: boolean,
   ) => {
-    if (action === 'pause') void stopCourseGeneration(stageId, job, parked);
-    else if (action === 'delete') requestDelete(stageId);
+    if (action === 'pause') {
+      if (job?.id || parked) void stopCourseGeneration(stageId, job, parked);
+      else if (generationActive) {
+        void fetch('/api/generation/cancel-outline', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ stageId }),
+        }).catch((error) => log.warn('Outline cancel failed:', error));
+      }
+    } else if (action === 'delete') requestDelete(stageId);
     else void resumeCourse(stageId);
   };
 
@@ -1754,7 +1791,13 @@ function HomePage() {
                               formatDate={formatDate}
                               generation={generation}
                               onGenerationAction={(action) =>
-                                handleGenerationAction(action, classroom.id, backendJob, parked)
+                                handleGenerationAction(
+                                  action,
+                                  classroom.id,
+                                  backendJob,
+                                  parked,
+                                  classroom.generationActive === true,
+                                )
                               }
                               onDelete={handleDelete}
                               onRename={handleRename}
