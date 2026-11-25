@@ -14,6 +14,7 @@ import {
 } from '@/lib/server/scene-draft-store';
 import { sceneDraftSourceKey } from '@/lib/utils/scene-draft-key';
 import { synthesizeSceneNarration } from '@/lib/server/agent-runtime/scene-tts';
+import { resolveSceneMedia } from '@/lib/server/scene-media-generation';
 import {
   createContinueJob,
   deleteContinueJobInput,
@@ -327,7 +328,7 @@ export async function runContinueGenerationJob(
           continue;
         }
       }
-      const scene = actionsResult.scene;
+      let scene = actionsResult.scene;
       if (!actionsResult.success || !scene) {
         failed += 1;
         await updateContinueJob(jobId, {
@@ -335,6 +336,18 @@ export async function runContinueGenerationJob(
           message: `Actions failed for: ${outline.title}`,
         });
         continue;
+      }
+
+      // Backend jobs have no browser to run the media orchestrator, so resolve
+      // this outline's gen_img_*/gen_vid_* placeholders before committing.
+      try {
+        const media = await resolveSceneMedia({ scene, outline });
+        scene = media.scene;
+        if (media.generated.length) {
+          log.info(`Media for "${outline.title}": ${media.generated.join(', ')}`);
+        }
+      } catch (error) {
+        log.warn(`Media resolution failed for "${outline.title}":`, error);
       }
       if (actionsDraft === undefined) {
         await saveSceneDraft(input.stageId, outline.id, {

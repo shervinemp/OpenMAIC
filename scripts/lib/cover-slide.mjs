@@ -207,5 +207,21 @@ export async function ensureCoverSlide({
   if (!saved.ok) {
     throw new Error(`document save failed: ${saved.status} ${(await saved.text()).slice(0, 300)}`);
   }
-  return { created: true, sceneId: scene.id, assetId, imageBytes: bytes.length };
+
+  // Cover slides are inserted outside the scene loop, so use the same server
+  // TTS path the runner uses for every other scene. Optional: a provider
+  // failure must not undo a valid cover slide.
+  let narration;
+  try {
+    const narrated = await fetch(`${base}/api/generation/narrate-cover`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ stageId }),
+      signal: AbortSignal.timeout(10 * 60_000),
+    });
+    narration = await narrated.json().catch(() => undefined);
+  } catch (error) {
+    narration = { error: String(error).slice(0, 200) };
+  }
+  return { created: true, sceneId: scene.id, assetId, imageBytes: bytes.length, narration };
 }
