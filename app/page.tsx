@@ -2391,8 +2391,11 @@ function ClassroomCard({
             </TooltipContent>
           </Tooltip>
         )}
-        <span className="inline-flex items-center rounded-full bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:text-violet-400">
-          {classroom.sceneCount} {t('classroom.slides')} · {formatDate(classroom.updatedAt)}
+        <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:text-violet-400">
+          <span>{classroom.sceneCount}</span>
+          <span>{t('classroom.slides')}</span>
+          <span aria-hidden="true">·</span>
+          <span>{formatDate(classroom.updatedAt)}</span>
         </span>
       </div>
     </div>
