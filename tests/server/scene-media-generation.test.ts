@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
-import { replaceMediaRefs } from '@/lib/server/scene-media-generation';
+import { mediaBytes, replaceMediaRefs } from '@/lib/server/scene-media-generation';
+
+describe('mediaBytes', () => {
+  it('decodes inline base64 data URIs even when the base64 has line breaks', async () => {
+    const expected = Buffer.from('a real generated video');
+    const base64 = expected.toString('base64').replace(/(.{8})/g, '$1\n');
+    const media = await mediaBytes({ url: `data:video/mp4;base64,${base64}` }, 'video/mp4');
+    expect(media.bytes).toEqual(expected);
+    expect(media.mimeType).toBe('video/mp4');
+  });
+
+  it('decodes non-base64 inline data URIs', async () => {
+    const media = await mediaBytes({ url: 'data:text/plain,hello%20world' }, 'text/plain');
+    expect(media.bytes.toString()).toBe('hello world');
+  });
+});
 
 describe('replaceMediaRefs', () => {
   it('rewrites placeholders in nested canvas and action fields', () => {

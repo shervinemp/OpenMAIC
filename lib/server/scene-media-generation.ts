@@ -41,7 +41,7 @@ async function postJson(path: string, body: Record<string, unknown>) {
   return payload;
 }
 
-async function mediaBytes(result: Record<string, unknown>, fallbackMime: string) {
+export async function mediaBytes(result: Record<string, unknown>, fallbackMime: string) {
   const inline = result.base64;
   if (typeof inline === 'string') {
     return {
@@ -51,6 +51,24 @@ async function mediaBytes(result: Record<string, unknown>, fallbackMime: string)
   }
   const url = result.ossUrl || result.url;
   if (typeof url !== 'string' || !url) throw new Error('media provider returned no bytes or URL');
+
+  // Providers return inline data URIs. Decode them here instead of putting
+  // them through fetch(): a data URL whose base64 carries line breaks (as
+  // ComfyUI's can) makes undici reject it with "failed to fetch the data URL".
+  const inlineUri = /^data:([^,]*),([\s\S]*)$/.exec(url);
+  if (inlineUri) {
+    const header = inlineUri[1] ?? '';
+    const mediaType = header.split(';', 1)[0] || fallbackMime;
+    const payload = inlineUri[2] ?? '';
+    const bytes = /;base64/i.test(header)
+      ? Buffer.from(payload.replace(/\s/g, ''), 'base64')
+      : Buffer.from(decodeURIComponent(payload));
+    return {
+      bytes,
+      mimeType: (typeof result.mimeType === 'string' ? result.mimeType : null) || mediaType,
+    };
+  }
+
   const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT) });
   if (!response.ok) throw new Error(`media download failed: ${response.status}`);
   return {
