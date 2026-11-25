@@ -80,7 +80,24 @@ export async function writeJsonFileAtomic(filePath: string, data: unknown) {
   } finally {
     await handle.close();
   }
-  await fs.rename(tempFilePath, filePath);
+  // Windows rename can transiently fail with EPERM/EACCES/EBUSY while another
+  // reader or the worker holds the target. Bounded backoff: a lock held longer
+  // than ~3s is a real fault, not contention.
+  const renameContention = new Set(['EPERM', 'EACCES', 'EBUSY']);
+  const maxAttempts = 6;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      await fs.rename(tempFilePath, filePath);
+      break;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!code || !renameContention.has(code) || attempt === maxAttempts - 1) {
+        await fs.rm(tempFilePath, { force: true }).catch(() => undefined);
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50 * 2 ** attempt));
+    }
+  }
   try {
     const dir = await fs.open(path.dirname(filePath), 'r');
     try {
