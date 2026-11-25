@@ -30,6 +30,20 @@ describe('deriveCourseGenerationStatus', () => {
     ).toEqual({ action: 'pause' });
   });
 
+  it('ignores a stale outline flag left by a crashed helper', () => {
+    expect(
+      deriveCourseGenerationStatus({
+        classroom: {
+          sceneCount: 0,
+          generationActive: true,
+          updatedAt: Date.now() - 7 * 60 * 60_000,
+        },
+        active: false,
+        parked: false,
+      }),
+    ).toEqual({ action: 'delete' });
+  });
+
   it('regenerates an empty course that still has outlines', () => {
     expect(
       deriveCourseGenerationStatus({

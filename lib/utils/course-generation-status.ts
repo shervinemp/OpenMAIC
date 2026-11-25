@@ -15,7 +15,11 @@ export interface CourseGenerationCourse {
   outlineCount?: number;
   generationComplete?: boolean;
   generationActive?: boolean;
+  updatedAt?: number;
 }
+
+/** An outline flag left behind by a crashed helper must not offer a dead Pause. */
+const GENERATION_ACTIVE_TTL = 6 * 60 * 60_000;
 
 export function deriveCourseGenerationStatus({
   classroom,
@@ -29,7 +33,10 @@ export function deriveCourseGenerationStatus({
   // A live run (server job, browser loop, or an outline pass that has not
   // committed a document yet) can always be paused. If the user wants it gone
   // instead, the explicit delete control removes the course.
-  if (active || parked || classroom.generationActive) return { action: 'pause' };
+  const outlineRunning =
+    classroom.generationActive === true &&
+    (!classroom.updatedAt || Date.now() - classroom.updatedAt < GENERATION_ACTIVE_TTL);
+  if (active || parked || outlineRunning) return { action: 'pause' };
 
   // A course with no committed scenes has nothing to teach. With outlines it
   // can be regenerated; without them the only useful action is deleting it.

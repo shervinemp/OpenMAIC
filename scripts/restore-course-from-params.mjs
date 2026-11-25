@@ -228,6 +228,25 @@ if (fs.existsSync(outlineFile)) {
   console.log('loaded outlines from ' + outlineFile + ' count=' + (final.outlines || []).length);
 } else {
 const MAX_ATTEMPTS = 8;
+let cancelled = false;
+const cancelController = new AbortController();
+const cancelWatch = setInterval(() => {
+  if (!cancelled && fs.existsSync(cancelPath)) {
+    cancelled = true;
+    cancelController.abort();
+  }
+}, 5_000);
+cancelWatch.unref?.();
+const hardTimeout = setTimeout(() => cancelController.abort(), 4 * 60 * 60 * 1000);
+hardTimeout.unref?.();
+const finishCancel = async () => {
+  clearInterval(cancelWatch);
+  clearTimeout(hardTimeout);
+  fs.rmSync(cancelPath, { force: true });
+  await setActive(false);
+  console.log('outline generation cancelled by user');
+  process.exit(0);
+};
 for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
   const body = { ...outlineBody };
   if (collected.size) body.resumeOutlines = [...collected.values()];
@@ -243,9 +262,10 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
       method: 'POST',
       headers: modelHeaders,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(4 * 60 * 60 * 1000),
+      signal: cancelController.signal,
     });
   } catch (error) {
+    if (cancelled) await finishCancel();
     console.error('outline stream fetch failed: ' + String(error).slice(0, 300));
     continue;
   }
@@ -256,14 +276,12 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
   let run;
   try {
     run = await readSse(stream, 'outlines', () => {
-      if (fs.existsSync(cancelPath)) throw new Error('OUTLINE_CANCELLED');
+      if (cancelled) throw new Error('OUTLINE_CANCELLED');
     });
   } catch (error) {
+    if (cancelled) await finishCancel();
     if (!String(error).includes('OUTLINE_CANCELLED')) throw error;
-    fs.rmSync(cancelPath, { force: true });
-    await setActive(false);
-    console.log('outline generation cancelled by user');
-    process.exit(0);
+    await finishCancel();
   }
   for (const o of run.outlines) if (o?.id) collected.set(o.id, o);
   if (run.syllabus) syllabus = run.syllabus;
@@ -283,6 +301,8 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
   );
   console.log('checkpoint saved: ' + checkpoint);
 }
+clearInterval(cancelWatch);
+clearTimeout(hardTimeout);
 if (!final) throw new Error('outline stream did not complete after ' + MAX_ATTEMPTS + ' attempts');
 fs.rmSync(checkpoint, { force: true });
 // Persist the expensive outline result BEFORE any document write: a later
