@@ -1379,8 +1379,10 @@
     "coverageGaps": "{{count}} source section(s) are not covered by any lesson",
     "coverageDigestTrimmed": "{{count}} topic(s) were trimmed from the coverage map to fit the outline budget",
     "pendingGenerationTitle": "Course generation in progress",
-    "pendingGenerationDesc": "Resume where you left off — your outlines are safe.",
+    "pendingGenerationDesc": "Resume where you left off - your outlines are safe.",
     "stopGeneration": "Stop generation",
+    "pauseGeneration": "Pause generation",
+    "regenerateCourse": "Regenerate course",
     "readiness": {
       "title": "Generation readiness check",
       "description": "Some of the enabled generation targets are not reachable or not set up. You can continue, but those parts of the course will fail or be skipped.",

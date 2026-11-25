@@ -15,6 +15,7 @@ import {
   ImagePlus,
   Pause,
   Pencil,
+  RotateCcw,
   Square,
   Trash2,
   Search,
@@ -102,6 +103,11 @@ import {
 } from '@/lib/utils/stage-storage';
 import type { FolderRecord } from '@/lib/types/folder';
 import { displayNameWidth, FOLDER_NAME_MAX_WIDTH } from '@/lib/utils/folder-name-validation';
+import {
+  deriveCourseGenerationStatus,
+  type CourseGenerationAction,
+  type CourseGenerationStatus,
+} from '@/lib/utils/course-generation-status';
 import { FolderCard } from '@/components/discovery/folder-card';
 import { NewFolderDialog } from '@/components/discovery/folder-dialogs';
 import { MoveToFolderMenu } from '@/components/discovery/move-to-folder-menu';
@@ -474,9 +480,24 @@ function HomePage() {
     };
   }, []);
 
+  const requestDelete = (id: string) => setPendingDeleteId(id);
+
+  // One control per course card: pause a live run, resume/regenerate a course
+  // with outlines, or delete a course that never got any content.
+  const handleGenerationAction = (
+    action: CourseGenerationAction,
+    stageId: string,
+    job: BackendGenerationJob | undefined,
+    parked: ParkedGenerationSession | undefined,
+  ) => {
+    if (action === 'pause') void stopCourseGeneration(stageId, job, parked);
+    else if (action === 'delete') requestDelete(stageId);
+    else void resumeCourse(stageId);
+  };
+
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setPendingDeleteId(id);
+    requestDelete(id);
   };
 
   const confirmDelete = async (id: string) => {
@@ -565,6 +586,27 @@ function HomePage() {
       log.warn('Server generation unavailable, falling back to classroom:', error);
       markAutoResume(stageId, Date.now(), true);
       router.push(`/classroom/${stageId}`);
+    }
+  };
+
+  // An explicit Stop must cover both producers: a server-owned job and a
+  // legacy browser loop parked when its tab closed.
+  const stopCourseGeneration = async (
+    stageId: string,
+    job: BackendGenerationJob | undefined,
+    parked: ParkedGenerationSession | undefined,
+  ) => {
+    if (job?.id) {
+      await cancelBackendGeneration(job.id);
+      setBackendJobs((current) =>
+        current[stageId]
+          ? { ...current, [stageId]: { ...current[stageId], status: 'cancelled' } }
+          : current,
+      );
+    }
+    if (parked) {
+      await stopParkedGeneration(parked);
+      setParkedSessions((prev) => prev.filter((s) => s.sessionId !== parked.sessionId));
     }
   };
 
@@ -1683,13 +1725,15 @@ function HomePage() {
 
                         {/* Course tiles for the active view. */}
                         {visibleClassrooms.map((classroom, i) => {
-                          const unfinished =
-                            classroom.generationComplete === false &&
-                            (classroom.outlineCount ?? 0) > classroom.sceneCount;
                           const parked = parkedSessions.find((p) => p.stageId === classroom.id);
                           const backendJob = backendJobs[classroom.id];
                           const backendActive =
                             backendJob?.status === 'queued' || backendJob?.status === 'running';
+                          const generation = deriveCourseGenerationStatus({
+                            classroom,
+                            active: backendActive,
+                            parked: Boolean(parked),
+                          });
                           const activelyGenerating =
                             activeGenerationStages.has(classroom.id) || backendActive;
                           return (
@@ -1708,6 +1752,10 @@ function HomePage() {
                               classroom={classroom}
                               slide={thumbnails[classroom.id]}
                               formatDate={formatDate}
+                              generation={generation}
+                              onGenerationAction={(action) =>
+                                handleGenerationAction(action, classroom.id, backendJob, parked)
+                              }
                               onDelete={handleDelete}
                               onRename={handleRename}
                               confirmingDelete={pendingDeleteId === classroom.id}
@@ -1722,96 +1770,6 @@ function HomePage() {
                                     onMove={(folderId) => handleMoveCourse(classroom.id, folderId)}
                                     onCreateAndMove={handleCreateAndMove(classroom.id)}
                                   />
-                                  {/* Per-course generation status lives on the card,
-                                      not in a single global banner. */}
-                                  {(unfinished || parked) && (
-                                    <div
-                                      className="absolute bottom-2 right-2 z-20 flex items-center gap-1"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <span
-                                        aria-label={
-                                          activelyGenerating
-                                            ? t('generation.pendingGenerationTitle')
-                                            : t('generation.pausedGenerationTitle')
-                                        }
-                                        className={cn(
-                                          'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm',
-                                          activelyGenerating
-                                            ? 'bg-violet-600/90 animate-pulse'
-                                            : 'bg-slate-600/80',
-                                        )}
-                                      >
-                                        {activelyGenerating ? (
-                                          <span className="size-2 rounded-full bg-emerald-300 shadow-[0_0_6px_rgba(110,231,183,0.9)]" />
-                                        ) : parked ? (
-                                          <Loader2 className="size-2.5" />
-                                        ) : (
-                                          <Pause className="size-2.5" />
-                                        )}
-                                        {backendActive && backendJob?.totalScenes
-                                          ? `${backendJob.scenesGenerated}/${backendJob.totalScenes}`
-                                          : unfinished
-                                            ? `${classroom.sceneCount}/${classroom.outlineCount}`
-                                            : t('generation.pendingGenerationTitle')}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        aria-label={t('stage.resumeGeneration')}
-                                        title={t('stage.resumeGeneration')}
-                                        className="rounded-md bg-violet-600 p-1 text-white transition-colors hover:bg-violet-500"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          void resumeCourse(classroom.id);
-                                        }}
-                                      >
-                                        <ChevronRight className="size-3" />
-                                      </button>
-                                      {backendActive && (
-                                        <button
-                                          type="button"
-                                          aria-label={t('generation.stopGeneration')}
-                                          title={t('generation.stopGeneration')}
-                                          className="rounded-md bg-white/80 p-1 text-slate-700 transition-colors hover:bg-white"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            void (async () => {
-                                              if (backendJob?.id) await cancelBackendGeneration(backendJob.id);
-                                              setBackendJobs((current) => {
-                                                const next = { ...current };
-                                                if (next[classroom.id] && backendJob) {
-                                                  next[classroom.id] = {
-                                                    ...backendJob,
-                                                    status: 'cancelled',
-                                                  };
-                                                }
-                                                return next;
-                                              });
-                                            })();
-                                          }}
-                                        >
-                                          <Square className="size-3" />
-                                        </button>
-                                      )}
-                                      {parked && (
-                                        <button
-                                          type="button"
-                                          aria-label={t('generation.stopGeneration')}
-                                          title={t('generation.stopGeneration')}
-                                          className="rounded-md bg-white/80 p-1 text-slate-700 transition-colors hover:bg-white"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            void stopParkedGeneration(parked);
-                                            setParkedSessions((prev) =>
-                                              prev.filter((s) => s.sessionId !== parked.sessionId),
-                                            );
-                                          }}
-                                        >
-                                          <Square className="size-3" />
-                                        </button>
-                                      )}
-                                    </div>
-                                  )}
                                   {/* Search view: show the owning folder as a badge. */}
                                   {isSearching && classroom.folderId && (
                                     <span className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 rounded-md bg-violet-500/80 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm pointer-events-none">
@@ -2146,6 +2104,8 @@ function ClassroomCard({
   slide,
   formatDate,
   overlay,
+  generation,
+  onGenerationAction,
   onDelete,
   onRename,
   confirmingDelete,
@@ -2158,6 +2118,8 @@ function ClassroomCard({
   formatDate: (ts: number) => string;
   /** Extra absolutely-positioned layers over the thumbnail (move menu, badges). */
   overlay?: React.ReactNode;
+  generation?: CourseGenerationStatus | null;
+  onGenerationAction: (action: CourseGenerationAction) => void;
   onDelete: (id: string, e: React.MouseEvent) => void;
   onRename: (id: string, newName: string) => void;
   confirmingDelete: boolean;
@@ -2190,6 +2152,14 @@ function ClassroomCard({
   const showModeBadge = classroom.interactiveMode || isTaskEngineMode;
   const ModeBadgeIcon = isTaskEngineMode ? Sparkles : Atom;
   const modeBadgeLabel = isTaskEngineMode ? 'Vocational Mode' : t('toolbar.interactiveModeLabel');
+  const generationLabelKey = generation
+    ? {
+        pause: 'generation.pauseGeneration',
+        resume: 'stage.resumeGeneration',
+        regenerate: 'generation.regenerateCourse',
+        delete: 'classroom.delete',
+      }[generation.action]
+    : '';
 
   const startRename = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -2271,7 +2241,32 @@ function ClassroomCard({
           </Tooltip>
         )}
 
-        {/* Delete — top-right, only on hover */}
+        {/* One state-driven control on the thumbnail. Its presence is the
+            status indicator; the icon says what it will do. */}
+        {generation && (
+          <button
+            type="button"
+            aria-label={t(generationLabelKey)}
+            title={t(generationLabelKey)}
+            className="absolute bottom-2 right-2 z-20 flex size-7 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:bg-white dark:bg-slate-900/80 dark:text-slate-200"
+            onClick={(e) => {
+              e.stopPropagation();
+              onGenerationAction(generation.action);
+            }}
+          >
+            {generation.action === 'pause' ? (
+              <Pause className="size-3.5" />
+            ) : generation.action === 'resume' ? (
+              <ChevronRight className="size-3.5" />
+            ) : generation.action === 'regenerate' ? (
+              <RotateCcw className="size-3.5" />
+            ) : (
+              <Trash2 className="size-3.5" />
+            )}
+          </button>
+        )}
+
+        {/* Delete - top-right, only on hover */}
         <AnimatePresence>
           {!confirmingDelete && (
             <motion.div
