@@ -59,6 +59,7 @@ export async function POST(request: Request): Promise<Response> {
 
     let repaired = 0;
     const failed: string[] = [];
+    const reasons: Record<string, string> = {};
     for (const scene of targets) {
       const outline = outlines.get(String((scene as unknown as { outlineId?: string }).outlineId ?? ''));
       if (!outline) {
@@ -100,24 +101,35 @@ export async function POST(request: Request): Promise<Response> {
         });
         if (result.status !== 200) {
           failed.push(scene.id);
+          reasons[scene.id] = `generation HTTP ${result.status}: ${result.text.slice(0, 120)}`;
           continue;
         }
         const parsed = JSON.parse(result.text) as { success?: boolean; content?: unknown };
         if (!parsed.success || !parsed.content) {
           failed.push(scene.id);
+          reasons[scene.id] = 'generation returned no content';
           continue;
         }
         if (CJK_RE.test(JSON.stringify(parsed.content))) {
           failed.push(scene.id);
+          reasons[scene.id] = 'regenerated content still contains CJK';
           continue;
         }
-        await store.putScene(courseId, { ...scene, content: parsed.content as never } as never);
+        // The generation response is a content payload, not a full scene: it
+        // can omit `type`. Restore the scene's own type so the DSL validator
+        // can match content to scene before the in-place write.
+        const nextContent = {
+          ...(parsed.content as Record<string, unknown>),
+          type: (parsed.content as { type?: unknown }).type ?? (scene.content as { type?: unknown }).type,
+        };
+        await store.putScene(courseId, { ...scene, content: nextContent } as never);
         repaired += 1;
-      } catch {
+      } catch (error) {
         failed.push(scene.id);
+        reasons[scene.id] = error instanceof Error ? error.message.slice(0, 160) : String(error);
       }
     }
-    return apiSuccess({ courseId, scanned: targets.length, repaired, failed });
+    return apiSuccess({ courseId, scanned: targets.length, repaired, failed, reasons });
   } catch (error) {
     return apiError(
       'INTERNAL_ERROR',
