@@ -481,38 +481,39 @@ export async function runContinueGenerationJob(
 
     // Reload before marking complete: scene writes and this flag commit in
     // separate operations, so saving the original snapshot would drop them.
-    if (failed === 0) {
-      const finalDocument = await store.loadDocument(input.stageId);
-      if (finalDocument) {
-        await store.saveDocument({
-          ...finalDocument,
-          outline: {
-            ...(finalDocument.outline as Record<string, unknown>),
-            generationComplete: true,
+    const finalDocument = await store.loadDocument(input.stageId);
+    if (failed === 0 && finalDocument) {
+      await store.saveDocument({
+        ...finalDocument,
+        outline: {
+          ...(finalDocument.outline as Record<string, unknown>),
+          generationComplete: true,
+        },
+      });
+    }
+
+    // Part of the flow, not a one-off: sample the finished course with the
+    // same statistical design the maintenance API uses, and attach the result
+    // to the job so a faulty scene cannot go unnoticed. Failed outlines do not
+    // exempt a course from QA — the scenes that *were* written still count.
+    if (finalDocument) {
+      try {
+        const qa = auditScenesSample(finalDocument as never, input.stageId);
+        await updateContinueJob(jobId, {
+          qa: {
+            population: qa.population,
+            sampleSize: qa.sampleSize,
+            summary: qa.summary,
+            faultyScenes: qa.findings.length,
+            checkedAt: qa.checkedAt,
           },
         });
-
-        // Part of the flow, not a one-off: sample the finished course with
-        // the same statistical design the maintenance API uses, and attach
-        // the result to the job so a faulty scene cannot go unnoticed.
-        try {
-          const qa = auditScenesSample(finalDocument as never, input.stageId);
-          await updateContinueJob(jobId, {
-            qa: {
-              population: qa.population,
-              sampleSize: qa.sampleSize,
-              summary: qa.summary,
-              faultyScenes: qa.findings.length,
-              checkedAt: qa.checkedAt,
-            },
-          });
-          log.info(
-            `QA sample ${input.stageId}: n=${qa.sampleSize} layout=${qa.summary.layout} ` +
-              `source=${qa.summary.source} cjk=${qa.summary.cjk} widget=${qa.summary.noCanvas}`,
-          );
-        } catch (error) {
-          log.warn(`QA sample failed for ${input.stageId}:`, error);
-        }
+        log.info(
+          `QA sample ${input.stageId}: n=${qa.sampleSize} layout=${qa.summary.layout} ` +
+            `source=${qa.summary.source} cjk=${qa.summary.cjk} widget=${qa.summary.noCanvas}`,
+        );
+      } catch (error) {
+        log.warn(`QA sample failed for ${input.stageId}:`, error);
       }
     }
     await setProducer(store, input.stageId, null);

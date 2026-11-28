@@ -13,6 +13,7 @@ import {
   generateSceneActions,
   buildCompleteScene,
   buildVisionUserContent,
+  stripSourceProvenance,
   type SceneGenerationContext,
   type AgentInfo,
 } from '@openmaic/generation';
@@ -194,6 +195,11 @@ export async function POST(req: NextRequest) {
 
       return apiError('GENERATION_FAILED', 500, `Failed to build scene: ${outline.title}`);
     }
+
+    // Actions come from a separate LLM call, so the content-stage provenance
+    // strip never sees narration text. Scrub the assembled scene here so the
+    // backend generation path cannot ship unresolved [source N] markers.
+    stripSourceProvenance(scene);
 
     // ── Extract speeches for cross-scene coherence ──
     const outputPreviousSpeeches = (scene.actions || [])
